@@ -40,7 +40,16 @@ def main():
 
     print(f"Bullpen starting — workspace: {workspace}, port: {args.port}")
 
-    # TODO: init .bullpen/, create app, start server
+    from server.app import create_app, socketio
+
+    app = create_app(workspace, no_browser=args.no_browser)
+
+    if not args.no_browser:
+        import webbrowser
+        import threading
+        threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{args.port}")).start()
+
+    socketio.run(app, host="0.0.0.0", port=args.port, debug=False)
 
 
 if __name__ == "__main__":
