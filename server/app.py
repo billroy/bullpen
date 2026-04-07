@@ -8,6 +8,7 @@ from flask_socketio import SocketIO
 from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json
+from server.profiles import list_profiles
 
 
 socketio = SocketIO()
@@ -60,9 +61,12 @@ def load_state(bp_dir, workspace):
                 task = {**meta, "id": slug or fname[:-3], "body": body}
                 tasks.append(task)
 
+    profiles = list_profiles(bp_dir)
+
     return {
         "workspace": workspace,
         "config": config,
         "layout": layout,
         "tasks": tasks,
+        "profiles": profiles,
     }
