@@ -11,6 +11,11 @@ from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
 from server.teams import save_team, load_team, list_teams
 from server import workers as worker_mod
+from server.validation import (
+    ValidationError, validate_task_create, validate_task_update,
+    validate_id, validate_slot, validate_worker_configure,
+    validate_payload_size,
+)
 
 
 # Single-writer queue to serialize mutations
@@ -34,6 +39,8 @@ def register_events(socketio, app):
             with _write_lock:
                 try:
                     return fn(data)
+                except ValidationError as e:
+                    emit("error", {"message": str(e)})
                 except Exception as e:
                     emit("error", {"message": str(e)})
         wrapper.__name__ = fn.__name__
@@ -45,13 +52,14 @@ def register_events(socketio, app):
     @with_lock
     def on_task_create(data):
         bp_dir = app.config["bp_dir"]
+        clean = validate_task_create(data)
         task = task_mod.create_task(
             bp_dir,
-            title=data.get("title", "Untitled"),
-            description=data.get("description", ""),
-            task_type=data.get("type", "task"),
-            priority=data.get("priority", "normal"),
-            tags=data.get("tags", []),
+            title=clean["title"],
+            description=clean["description"],
+            task_type=clean["type"],
+            priority=clean["priority"],
+            tags=clean["tags"],
         )
         socketio.emit("task:created", task)
 
@@ -59,11 +67,7 @@ def register_events(socketio, app):
     @with_lock
     def on_task_update(data):
         bp_dir = app.config["bp_dir"]
-        task_id = data.get("id")
-        if not task_id:
-            emit("error", {"message": "task:update requires id"})
-            return
-        fields = {k: v for k, v in data.items() if k != "id"}
+        task_id, fields = validate_task_update(data)
         task = task_mod.update_task(bp_dir, task_id, fields)
         socketio.emit("task:updated", task)
 
@@ -71,10 +75,7 @@ def register_events(socketio, app):
     @with_lock
     def on_task_delete(data):
         bp_dir = app.config["bp_dir"]
-        task_id = data.get("id")
-        if not task_id:
-            emit("error", {"message": "task:delete requires id"})
-            return
+        task_id = validate_id(data)
         task_mod.delete_task(bp_dir, task_id)
         socketio.emit("task:deleted", {"id": task_id})
 
@@ -82,10 +83,7 @@ def register_events(socketio, app):
     @with_lock
     def on_task_clear_output(data):
         bp_dir = app.config["bp_dir"]
-        task_id = data.get("id")
-        if not task_id:
-            emit("error", {"message": "task:clear_output requires id"})
-            return
+        task_id = validate_id(data)
         task = task_mod.clear_task_output(bp_dir, task_id)
         socketio.emit("task:updated", task)
 
@@ -193,9 +191,9 @@ def register_events(socketio, app):
     def on_worker_configure(data):
         bp_dir = app.config["bp_dir"]
         layout = _load_layout(bp_dir)
-        slot_index = data.get("slot")
+        slot_index, fields = validate_worker_configure(data, max_slots=200)
 
-        if slot_index is None or slot_index >= len(layout["slots"]):
+        if slot_index >= len(layout["slots"]):
             emit("error", {"message": "worker:configure requires valid slot"})
             return
 
@@ -204,9 +202,8 @@ def register_events(socketio, app):
             emit("error", {"message": "No worker in slot"})
             return
 
-        fields = data.get("fields", {})
         for k, v in fields.items():
-            if k not in ("task_queue", "state"):  # don't allow overwriting runtime state
+            if k not in ("task_queue", "state"):
                 worker[k] = v
 
         _save_layout(bp_dir, layout)
