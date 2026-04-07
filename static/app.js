@@ -1,4 +1,4 @@
-const { createApp, reactive, ref } = Vue;
+const { createApp, reactive, ref, computed } = Vue;
 
 const app = createApp({
   components: {
@@ -7,6 +7,8 @@ const app = createApp({
     KanbanTab,
     BullpenTab,
     FilesTab,
+    TaskCreateModal,
+    TaskDetailPanel,
     ToastContainer,
   },
   setup() {
@@ -21,7 +23,14 @@ const app = createApp({
     const activeTab = ref('kanban');
     const leftPaneVisible = ref(true);
     const toasts = reactive([]);
+    const showCreateModal = ref(false);
+    const selectedTaskId = ref(null);
     let toastId = 0;
+
+    const selectedTask = computed(() => {
+      if (!selectedTaskId.value) return null;
+      return state.tasks.find(t => t.id === selectedTaskId.value) || null;
+    });
 
     // Socket.io connection
     const socket = io();
@@ -36,7 +45,6 @@ const app = createApp({
       state.tasks = data.tasks;
     });
 
-    // Task events
     socket.on('task:created', (task) => {
       state.tasks.push(task);
     });
@@ -52,6 +60,9 @@ const app = createApp({
 
     socket.on('task:deleted', (data) => {
       state.tasks = state.tasks.filter(t => t.id !== data.id);
+      if (selectedTaskId.value === data.id) {
+        selectedTaskId.value = null;
+      }
     });
 
     socket.on('error', (data) => {
@@ -71,8 +82,16 @@ const app = createApp({
       socket.emit('task:delete', { id });
     }
 
+    function clearTaskOutput(id) {
+      socket.emit('task:clear_output', { id });
+    }
+
     function moveTask({ id, status }) {
       socket.emit('task:update', { id, status });
+    }
+
+    function selectTask(id) {
+      selectedTaskId.value = id;
     }
 
     function toggleLeftPane() {
@@ -96,11 +115,15 @@ const app = createApp({
       activeTab,
       leftPaneVisible,
       toasts,
+      showCreateModal,
+      selectedTask,
       toggleLeftPane,
       createTask,
       updateTask,
       deleteTask,
+      clearTaskOutput,
       moveTask,
+      selectTask,
       addToast,
     };
   },
@@ -116,8 +139,8 @@ const app = createApp({
         <LeftPane
           :tasks="state.tasks"
           :visible="leftPaneVisible"
-          @new-task="createTask({ title: 'New Task' })"
-          @select-task="selectedTaskId = $event"
+          @new-task="showCreateModal = true"
+          @select-task="selectTask"
         />
         <div class="main-pane">
           <div class="tab-bar">
@@ -134,7 +157,7 @@ const app = createApp({
               v-if="activeTab === 'kanban'"
               :tasks="state.tasks"
               :columns="state.config.columns"
-              @select-task="selectedTaskId = $event"
+              @select-task="selectTask"
               @move-task="moveTask"
             />
             <BullpenTab
@@ -145,7 +168,20 @@ const app = createApp({
             <FilesTab v-if="activeTab === 'files'" />
           </div>
         </div>
+        <TaskDetailPanel
+          :task="selectedTask"
+          :columns="state.config.columns"
+          @close="selectTask(null)"
+          @update="updateTask"
+          @delete="deleteTask"
+          @clear-output="clearTaskOutput"
+        />
       </div>
+      <TaskCreateModal
+        :visible="showCreateModal"
+        @close="showCreateModal = false"
+        @create="createTask"
+      />
       <ToastContainer :toasts="toasts" />
     </div>
   `
