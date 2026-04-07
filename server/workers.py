@@ -99,7 +99,7 @@ def start_worker(bp_dir, slot_index, socketio=None):
         _on_agent_error(bp_dir, slot_index, task_id, f"Unknown agent: {worker.get('agent')}", socketio)
         return
 
-    model = worker.get("model", "sonnet")
+    model = worker.get("model", "claude-sonnet-4-6")
     argv = adapter.build_argv(prompt, model, workspace)
 
     # Launch subprocess in background thread

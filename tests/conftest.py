@@ -43,9 +43,6 @@ class MockAdapter(AgentAdapter):
     def available(self):
         return True
 
-    def list_models(self):
-        return ["mock-model"]
-
     def build_argv(self, prompt, model, workspace):
         # Use echo to simulate output; actual execution handled by worker
         return ["echo", self._output]

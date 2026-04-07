@@ -32,9 +32,6 @@ class CodexAdapter(AgentAdapter):
     def available(self):
         return _find_codex() is not None
 
-    def list_models(self):
-        return ["o3-mini", "o4-mini"]
-
     def build_argv(self, prompt, model, workspace):
         codex_bin = _find_codex() or "codex"
         argv = [

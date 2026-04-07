@@ -33,9 +33,6 @@ class ClaudeAdapter(AgentAdapter):
     def available(self):
         return _find_claude() is not None
 
-    def list_models(self):
-        return ["haiku", "sonnet", "opus"]
-
     def build_argv(self, prompt, model, workspace):
         claude_bin = _find_claude() or "claude"
         argv = [

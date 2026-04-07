@@ -14,7 +14,7 @@ const WorkerConfigModal = {
           this.form = {
             name: w.name || '',
             agent: w.agent || 'claude',
-            model: w.model || 'sonnet',
+            model: w.model || 'claude-sonnet-4-6',
             activation: w.activation || 'on_drop',
             disposition: w.disposition || 'review',
             watch_column: w.watch_column || '',
@@ -28,9 +28,9 @@ const WorkerConfigModal = {
   computed: {
     modelOptions() {
       if (this.form.agent === 'claude') {
-        return ['haiku', 'sonnet', 'opus'];
+        return ['claude-sonnet-4-5-20250514', 'claude-sonnet-4-6', 'claude-opus-4-5-20250514', 'claude-opus-4-6', 'claude-haiku-4-5-20250414'];
       } else if (this.form.agent === 'codex') {
-        return ['o3-mini', 'o4-mini'];
+        return ['o3-mini', 'o4-mini', 'codex-1'];
       }
       return ['default'];
     }
@@ -57,9 +57,10 @@ const WorkerConfigModal = {
             </label>
             <label class="form-label">
               Model
-              <select class="form-select" v-model="form.model">
+              <input class="form-input" v-model="form.model" list="model-options" placeholder="Type or select a model slug">
+              <datalist id="model-options">
                 <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
-              </select>
+              </datalist>
             </label>
           </div>
           <div class="form-row">

@@ -13,13 +13,6 @@ class TestClaudeAdapter:
         adapter = ClaudeAdapter()
         assert adapter.name == "claude"
 
-    def test_models(self):
-        adapter = ClaudeAdapter()
-        models = adapter.list_models()
-        assert "sonnet" in models
-        assert "opus" in models
-        assert "haiku" in models
-
     def test_build_argv(self):
         adapter = ClaudeAdapter()
         argv = adapter.build_argv("test prompt", "sonnet", "/workspace")
@@ -45,12 +38,6 @@ class TestCodexAdapter:
     def test_name(self):
         adapter = CodexAdapter()
         assert adapter.name == "codex"
-
-    def test_models(self):
-        adapter = CodexAdapter()
-        models = adapter.list_models()
-        assert "o3-mini" in models
-        assert "o4-mini" in models
 
     def test_build_argv(self):
         adapter = CodexAdapter()

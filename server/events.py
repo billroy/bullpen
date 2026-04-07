@@ -119,7 +119,7 @@ def register_events(socketio, app):
             "profile": profile_id,
             "name": profile["name"],
             "agent": profile.get("default_agent", "claude"),
-            "model": profile.get("default_model", "sonnet"),
+            "model": profile.get("default_model", "claude-sonnet-4-6"),
             "activation": "on_drop",
             "disposition": "review",
             "watch_column": None,

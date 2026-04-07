@@ -18,11 +18,6 @@ class AgentAdapter(ABC):
         ...
 
     @abstractmethod
-    def list_models(self):
-        """Return list of supported model names."""
-        ...
-
-    @abstractmethod
     def build_argv(self, prompt, model, workspace):
         """Build command argv list for subprocess execution.
 
