@@ -49,7 +49,7 @@ def main():
         import threading
         threading.Timer(1.0, lambda: webbrowser.open(f"http://localhost:{args.port}")).start()
 
-    socketio.run(app, host="0.0.0.0", port=args.port, debug=False)
+    socketio.run(app, host="0.0.0.0", port=args.port, debug=False, allow_unsafe_werkzeug=True)
 
 
 if __name__ == "__main__":
