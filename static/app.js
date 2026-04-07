@@ -21,17 +21,13 @@ const app = createApp({
     const activeTab = ref('kanban');
     const leftPaneVisible = ref(true);
     const toasts = reactive([]);
+    let toastId = 0;
 
     // Socket.io connection
     const socket = io();
 
-    socket.on('connect', () => {
-      connected.value = true;
-    });
-
-    socket.on('disconnect', () => {
-      connected.value = false;
-    });
+    socket.on('connect', () => { connected.value = true; });
+    socket.on('disconnect', () => { connected.value = false; });
 
     socket.on('state:init', (data) => {
       state.workspace = data.workspace;
@@ -40,8 +36,58 @@ const app = createApp({
       state.tasks = data.tasks;
     });
 
+    // Task events
+    socket.on('task:created', (task) => {
+      state.tasks.push(task);
+    });
+
+    socket.on('task:updated', (task) => {
+      const idx = state.tasks.findIndex(t => t.id === task.id);
+      if (idx >= 0) {
+        state.tasks[idx] = task;
+      } else {
+        state.tasks.push(task);
+      }
+    });
+
+    socket.on('task:deleted', (data) => {
+      state.tasks = state.tasks.filter(t => t.id !== data.id);
+    });
+
+    socket.on('error', (data) => {
+      addToast(data.message, 'error');
+    });
+
+    // Actions
+    function createTask(data) {
+      socket.emit('task:create', data);
+    }
+
+    function updateTask(data) {
+      socket.emit('task:update', data);
+    }
+
+    function deleteTask(id) {
+      socket.emit('task:delete', { id });
+    }
+
+    function moveTask({ id, status }) {
+      socket.emit('task:update', { id, status });
+    }
+
     function toggleLeftPane() {
       leftPaneVisible.value = !leftPaneVisible.value;
+    }
+
+    function addToast(message, type = 'info') {
+      const id = ++toastId;
+      toasts.push({ id, message, type });
+      if (type !== 'error') {
+        setTimeout(() => {
+          const idx = toasts.findIndex(t => t.id === id);
+          if (idx >= 0) toasts.splice(idx, 1);
+        }, 5000);
+      }
     }
 
     return {
@@ -51,6 +97,11 @@ const app = createApp({
       leftPaneVisible,
       toasts,
       toggleLeftPane,
+      createTask,
+      updateTask,
+      deleteTask,
+      moveTask,
+      addToast,
     };
   },
   template: `
@@ -65,6 +116,8 @@ const app = createApp({
         <LeftPane
           :tasks="state.tasks"
           :visible="leftPaneVisible"
+          @new-task="createTask({ title: 'New Task' })"
+          @select-task="selectedTaskId = $event"
         />
         <div class="main-pane">
           <div class="tab-bar">
@@ -81,6 +134,8 @@ const app = createApp({
               v-if="activeTab === 'kanban'"
               :tasks="state.tasks"
               :columns="state.config.columns"
+              @select-task="selectedTaskId = $event"
+              @move-task="moveTask"
             />
             <BullpenTab
               v-if="activeTab === 'bullpen'"
