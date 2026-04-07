@@ -3,6 +3,8 @@ const WorkerCard = {
   emits: ['configure'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver }"
+         draggable="true"
+         @dragstart="onDragStart"
          @dragover.prevent="onDragOver"
          @dragleave="onDragLeave"
          @drop="onDrop">
@@ -66,6 +68,10 @@ const WorkerCard = {
     }
   },
   methods: {
+    onDragStart(e) {
+      e.dataTransfer.setData('application/x-worker-slot', String(this.slotIndex));
+      e.dataTransfer.effectAllowed = 'move';
+    },
     onDragOver(e) {
       if (e.dataTransfer.types.includes('text/plain')) {
         e.dataTransfer.dropEffect = 'move';
