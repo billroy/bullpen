@@ -1,0 +1,282 @@
+"""End-to-end workflow tests via socket.io test client."""
+
+import os
+import tempfile
+import time
+import threading
+
+import pytest
+
+from server.app import create_app, socketio
+from server.agents import register_adapter
+from tests.conftest import MockAdapter
+
+
+@pytest.fixture
+def client():
+    """Create a Flask-SocketIO test client with mock adapter."""
+    with tempfile.TemporaryDirectory(prefix="bullpen_e2e_") as ws:
+        app = create_app(ws, no_browser=True)
+        # Register mock adapter
+        register_adapter("mock", MockAdapter(output="Task completed successfully"))
+        client = socketio.test_client(app)
+        client.get_received()
+        yield client, app
+        client.disconnect()
+
+
+def get_event(client, name):
+    for evt in client.get_received():
+        if evt["name"] == name:
+            return evt["args"][0]
+    return None
+
+
+def get_all_events(client, name):
+    return [evt["args"][0] for evt in client.get_received() if evt["name"] == name]
+
+
+class TestHappyPath:
+    """Create task → assign to worker → run → output → complete."""
+
+    def test_create_assign_flow(self, client):
+        c, app = client
+
+        # 1. Create a task
+        c.emit("task:create", {"title": "Implement login", "type": "feature", "priority": "high"})
+        task = get_event(c, "task:created")
+        assert task is not None
+        assert task["title"] == "Implement login"
+        assert task["status"] == "inbox"
+        task_id = task["id"]
+
+        # 2. Add a worker
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0] is not None
+        assert layout["slots"][0]["name"] == "Feature Architect"
+
+        # 3. Assign task to worker
+        c.emit("task:assign", {"task_id": task_id, "slot": 0})
+        received = c.get_received()
+        # Should get task:updated (status=assigned) and layout:updated (task in queue)
+        events = {e["name"]: e["args"][0] for e in received}
+        assert "task:updated" in events
+        assert events["task:updated"]["status"] in ("assigned", "in_progress", "in-progress")
+        assert "layout:updated" in events
+        assert task_id in events["layout:updated"]["slots"][0]["task_queue"]
+
+    def test_full_create_to_multiple_tasks(self, client):
+        c, _ = client
+
+        # Create multiple tasks
+        for i in range(3):
+            c.emit("task:create", {"title": f"Task {i}", "type": "task"})
+        c.get_received()
+
+        # Move one to different status
+        c.emit("task:create", {"title": "To be moved", "type": "bug", "priority": "urgent"})
+        task = get_event(c, "task:created")
+        c.emit("task:update", {"id": task["id"], "status": "in-progress"})
+        updated = get_event(c, "task:updated")
+        assert updated["status"] == "in-progress"
+
+
+class TestTeamWorkflow:
+    """Load team → assign tasks → save as new team."""
+
+    def test_team_save_load(self, client):
+        c, app = client
+
+        # Add workers
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:add", {"slot": 1, "profile": "code-reviewer"})
+        c.get_received()
+
+        # Save as team
+        c.emit("team:save", {"name": "review-team"})
+        teams = get_event(c, "teams:updated")
+        assert "review-team" in teams
+
+        # Remove all workers
+        c.emit("worker:remove", {"slot": 0})
+        c.get_received()
+        c.emit("worker:remove", {"slot": 1})
+        c.get_received()
+
+        # Load team back
+        c.emit("team:load", {"name": "review-team"})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0] is not None
+        assert layout["slots"][1] is not None
+        assert layout["slots"][0]["name"] == "Feature Architect"
+
+
+class TestSecurityValidation:
+    """XSS in title/body, path traversal slug, oversized payload."""
+
+    def test_xss_in_title(self, client):
+        c, _ = client
+        c.emit("task:create", {"title": '<script>alert("xss")</script>'})
+        task = get_event(c, "task:created")
+        # Title should be stored as-is (rendering sanitized by markdown-it html:false)
+        assert task["title"] == '<script>alert("xss")</script>'
+
+    def test_path_traversal_id_rejected(self, client):
+        c, _ = client
+        c.emit("task:update", {"id": "../../../etc/passwd", "title": "hacked"})
+        err = get_event(c, "error")
+        assert err is not None
+        assert "Invalid" in err["message"]
+
+    def test_oversized_title_rejected(self, client):
+        c, _ = client
+        c.emit("task:create", {"title": "x" * 300})
+        err = get_event(c, "error")
+        assert err is not None
+        assert "exceeds" in err["message"]
+
+    def test_invalid_priority_rejected(self, client):
+        c, _ = client
+        c.emit("task:create", {"priority": "super-mega-critical"})
+        err = get_event(c, "error")
+        assert err is not None
+        assert "Invalid priority" in err["message"]
+
+    def test_invalid_agent_rejected(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:configure", {"slot": 0, "fields": {"agent": "chatgpt"}})
+        err = get_event(c, "error")
+        assert err is not None
+        assert "Invalid agent" in err["message"]
+
+
+class TestSchemaCompat:
+    """Fixtures with missing/extra fields."""
+
+    def test_create_with_extra_fields(self, client):
+        c, _ = client
+        c.emit("task:create", {
+            "title": "Valid task",
+            "type": "task",
+            "unknown_field": "should be ignored",
+            "another_bad": 42,
+        })
+        task = get_event(c, "task:created")
+        assert task is not None
+        assert task["title"] == "Valid task"
+
+    def test_create_with_missing_fields(self, client):
+        c, _ = client
+        c.emit("task:create", {})
+        task = get_event(c, "task:created")
+        assert task is not None
+        assert task["title"] == "Untitled"
+        assert task["status"] == "inbox"
+
+    def test_update_only_specified_fields(self, client):
+        c, _ = client
+        c.emit("task:create", {"title": "Original", "priority": "high"})
+        task = get_event(c, "task:created")
+
+        c.emit("task:update", {"id": task["id"], "title": "Changed"})
+        updated = get_event(c, "task:updated")
+        assert updated["title"] == "Changed"
+        assert updated["priority"] == "high"  # unchanged
+
+
+class TestDualClient:
+    """Two tabs — create in one, appears in other."""
+
+    def test_dual_client_sync(self):
+        with tempfile.TemporaryDirectory(prefix="bullpen_dual_") as ws:
+            app = create_app(ws, no_browser=True)
+            c1 = socketio.test_client(app)
+            c1.get_received()
+            c2 = socketio.test_client(app)
+            c2.get_received()
+
+            # Client 1 creates a task
+            c1.emit("task:create", {"title": "Shared task"})
+            c1.get_received()
+
+            # Client 2 should see it (broadcast)
+            task = get_event(c2, "task:created")
+            assert task is not None
+            assert task["title"] == "Shared task"
+
+            c1.disconnect()
+            c2.disconnect()
+
+
+class TestWorkerManagement:
+    """Worker add/remove/move/configure flows."""
+
+    def test_move_worker(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:move", {"from": 0, "to": 5})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0] is None
+        assert layout["slots"][5] is not None
+        assert layout["slots"][5]["name"] == "Feature Architect"
+
+    def test_configure_worker(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:configure", {"slot": 0, "fields": {
+            "name": "Custom Name",
+            "agent": "codex",
+            "disposition": "done",
+        }})
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+        assert worker["name"] == "Custom Name"
+        assert worker["agent"] == "codex"
+        assert worker["disposition"] == "done"
+
+    def test_remove_nonexistent_worker(self, client):
+        c, _ = client
+        c.emit("worker:remove", {"slot": 99})
+        err = get_event(c, "error")
+        assert err is not None
+
+
+class TestTaskLifecycle:
+    """Delete, clear output, status transitions."""
+
+    def test_delete_task(self, client):
+        c, _ = client
+        c.emit("task:create", {"title": "To delete"})
+        task = get_event(c, "task:created")
+
+        c.emit("task:delete", {"id": task["id"]})
+        deleted = get_event(c, "task:deleted")
+        assert deleted["id"] == task["id"]
+
+    def test_clear_output(self, client):
+        c, _ = client
+        c.emit("task:create", {"title": "Has output"})
+        task = get_event(c, "task:created")
+
+        c.emit("task:clear_output", {"id": task["id"]})
+        updated = get_event(c, "task:updated")
+        assert updated is not None
+
+    def test_status_transitions(self, client):
+        c, _ = client
+        c.emit("task:create", {"title": "Workflow task"})
+        task = get_event(c, "task:created")
+        assert task["status"] == "inbox"
+
+        for status in ["assigned", "in-progress", "review", "done"]:
+            c.emit("task:update", {"id": task["id"], "status": status})
+            updated = get_event(c, "task:updated")
+            assert updated["status"] == status
