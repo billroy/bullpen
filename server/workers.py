@@ -372,9 +372,11 @@ def _write_log(bp_dir, slot_index, task_id, prompt, result):
     # Truncate prompt in log
     log_prompt = prompt[:500] + "..." if len(prompt) > 500 else prompt
 
-    content = f"Task: {task_id}\nTimestamp: {_now_iso()}\nSuccess: {result['success']}\n\n"
+    output_text = result.get('output', '')
+    content = f"Task: {task_id}\nTimestamp: {_now_iso()}\nSuccess: {result['success']}\n"
+    content += f"Output length: {len(output_text)} chars\n\n"
     content += f"--- Prompt (truncated) ---\n{log_prompt}\n\n"
-    content += f"--- Output ---\n{result.get('output', '')}\n"
+    content += f"--- Output ---\n{output_text}\n"
     if result.get("error"):
         content += f"\n--- Error ---\n{result['error']}\n"
 

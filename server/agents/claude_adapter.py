@@ -1,8 +1,27 @@
 """Claude CLI adapter."""
 
+import os
 import shutil
 
 from server.agents.base import AgentAdapter
+
+# Common install locations for claude CLI
+_CLAUDE_SEARCH_PATHS = [
+    os.path.expanduser("~/.local/bin/claude"),
+    "/usr/local/bin/claude",
+    "/opt/homebrew/bin/claude",
+]
+
+
+def _find_claude():
+    """Find the claude binary on PATH or common install locations."""
+    found = shutil.which("claude")
+    if found:
+        return found
+    for path in _CLAUDE_SEARCH_PATHS:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
 
 
 class ClaudeAdapter(AgentAdapter):
@@ -12,19 +31,20 @@ class ClaudeAdapter(AgentAdapter):
         return "claude"
 
     def available(self):
-        return shutil.which("claude") is not None
+        return _find_claude() is not None
 
     def list_models(self):
         return ["haiku", "sonnet", "opus"]
 
     def build_argv(self, prompt, model, workspace):
+        claude_bin = _find_claude() or "claude"
         argv = [
-            "claude",
+            claude_bin,
             "--print",
             "--dangerously-skip-permissions",
             "--model", model,
         ]
-        # Prompt is delivered via stdin
+        # Prompt is delivered via stdin in _run_agent
         return argv
 
     def parse_output(self, stdout, stderr, exit_code):

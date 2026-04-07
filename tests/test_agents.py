@@ -23,7 +23,7 @@ class TestClaudeAdapter:
     def test_build_argv(self):
         adapter = ClaudeAdapter()
         argv = adapter.build_argv("test prompt", "sonnet", "/workspace")
-        assert "claude" in argv
+        assert any("claude" in arg for arg in argv)
         assert "--model" in argv
         assert "sonnet" in argv
 
