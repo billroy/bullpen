@@ -1,5 +1,5 @@
 const BullpenTab = {
-  props: ['layout', 'config', 'profiles'],
+  props: ['layout', 'config', 'profiles', 'tasks'],
   emits: ['add-worker', 'configure-worker'],
   components: { WorkerCard },
   data() {
@@ -24,6 +24,7 @@ const BullpenTab = {
             v-if="getSlot(i - 1)"
             :worker="getSlot(i - 1)"
             :slot-index="i - 1"
+            :tasks="tasks"
             @configure="$emit('configure-worker', $event)"
           />
           <div v-else class="grid-slot empty-slot"

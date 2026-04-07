@@ -88,6 +88,11 @@ const app = createApp({
     function configureWorker(slot, fields) { socket.emit('worker:configure', { slot, fields }); }
     function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', { slot, fields }); }
 
+    // Execution actions
+    function assignTask(taskId, slot) { socket.emit('task:assign', { task_id: taskId, slot }); }
+    function startWorkerSlot(slot) { socket.emit('worker:start', { slot }); }
+    function stopWorkerSlot(slot) { socket.emit('worker:stop', { slot }); }
+
     // Config/team actions
     function updateConfig(data) { socket.emit('config:update', data); }
     function saveTeam(name) { socket.emit('team:save', { name }); }
@@ -112,8 +117,8 @@ const app = createApp({
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, createTask, updateTask, deleteTask, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
-      configureWorker, saveWorkerConfig, updateConfig, saveTeam, loadTeam,
-      saveProfile, addToast,
+      configureWorker, saveWorkerConfig, assignTask, startWorkerSlot,
+      stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast,
     };
   },
   template: `
@@ -154,6 +159,7 @@ const app = createApp({
               :layout="state.layout"
               :config="state.config"
               :profiles="state.profiles"
+              :tasks="state.tasks"
               @add-worker="addWorker"
               @configure-worker="configureSlot = $event"
             />

@@ -450,6 +450,31 @@ body {
   flex: 1;
 }
 
+.worker-card-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.worker-action-btn {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.worker-action-btn:hover {
+  background: rgba(255,255,255,0.35);
+}
+
+.start-btn { color: #86efac; }
+.stop-btn { color: #fca5a5; }
+
 .worker-card-edit {
   background: none;
   border: none;
@@ -523,6 +548,24 @@ body {
   color: var(--text-muted);
   text-align: center;
   padding: 8px 0;
+}
+
+.worker-card-output {
+  margin-top: 4px;
+}
+
+.worker-card-output pre {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 9px;
+  font-family: monospace;
+  white-space: pre-wrap;
+  max-height: 80px;
+  overflow-y: auto;
+  color: var(--text-secondary);
+  line-height: 1.4;
 }
 
 /* === Profile Library === */
