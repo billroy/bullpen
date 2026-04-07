@@ -17,6 +17,7 @@ const app = createApp({
       config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [] },
       layout: { slots: [] },
       tasks: [],
+      profiles: [],
     });
 
     const connected = ref(false);
@@ -25,6 +26,7 @@ const app = createApp({
     const toasts = reactive([]);
     const showCreateModal = ref(false);
     const selectedTaskId = ref(null);
+    const configureSlot = ref(null);
     let toastId = 0;
 
     const selectedTask = computed(() => {
@@ -43,8 +45,10 @@ const app = createApp({
       state.config = data.config;
       state.layout = data.layout;
       state.tasks = data.tasks;
+      state.profiles = data.profiles || [];
     });
 
+    // Task events
     socket.on('task:created', (task) => {
       state.tasks.push(task);
     });
@@ -65,38 +69,40 @@ const app = createApp({
       }
     });
 
+    // Layout/config events
+    socket.on('layout:updated', (layout) => {
+      state.layout = layout;
+    });
+
+    socket.on('config:updated', (config) => {
+      state.config = config;
+    });
+
+    socket.on('profiles:updated', (profiles) => {
+      state.profiles = profiles;
+    });
+
     socket.on('error', (data) => {
       addToast(data.message, 'error');
     });
 
-    // Actions
-    function createTask(data) {
-      socket.emit('task:create', data);
-    }
+    // Task actions
+    function createTask(data) { socket.emit('task:create', data); }
+    function updateTask(data) { socket.emit('task:update', data); }
+    function deleteTask(id) { socket.emit('task:delete', { id }); }
+    function clearTaskOutput(id) { socket.emit('task:clear_output', { id }); }
+    function moveTask({ id, status }) { socket.emit('task:update', { id, status }); }
+    function selectTask(id) { selectedTaskId.value = id; }
 
-    function updateTask(data) {
-      socket.emit('task:update', data);
-    }
+    // Worker actions
+    function addWorker({ slot, profile }) { socket.emit('worker:add', { slot, profile }); }
+    function removeWorker(slot) { socket.emit('worker:remove', { slot }); }
+    function moveWorker(from, to) { socket.emit('worker:move', { from, to }); }
+    function configureWorker(slot, fields) { socket.emit('worker:configure', { slot, fields }); }
 
-    function deleteTask(id) {
-      socket.emit('task:delete', { id });
-    }
-
-    function clearTaskOutput(id) {
-      socket.emit('task:clear_output', { id });
-    }
-
-    function moveTask({ id, status }) {
-      socket.emit('task:update', { id, status });
-    }
-
-    function selectTask(id) {
-      selectedTaskId.value = id;
-    }
-
-    function toggleLeftPane() {
-      leftPaneVisible.value = !leftPaneVisible.value;
-    }
+    // Config actions
+    function updateConfig(data) { socket.emit('config:update', data); }
+    function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
 
     function addToast(message, type = 'info') {
       const id = ++toastId;
@@ -117,6 +123,7 @@ const app = createApp({
       toasts,
       showCreateModal,
       selectedTask,
+      configureSlot,
       toggleLeftPane,
       createTask,
       updateTask,
@@ -124,6 +131,11 @@ const app = createApp({
       clearTaskOutput,
       moveTask,
       selectTask,
+      addWorker,
+      removeWorker,
+      moveWorker,
+      configureWorker,
+      updateConfig,
       addToast,
     };
   },
@@ -164,6 +176,9 @@ const app = createApp({
               v-if="activeTab === 'bullpen'"
               :layout="state.layout"
               :config="state.config"
+              :profiles="state.profiles"
+              @add-worker="addWorker"
+              @configure-worker="configureSlot = $event"
             />
             <FilesTab v-if="activeTab === 'files'" />
           </div>
