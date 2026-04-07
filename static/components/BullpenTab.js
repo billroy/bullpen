@@ -74,6 +74,14 @@ const BullpenTab = {
       }
       return opts;
     },
+    maxOccupiedSlot() {
+      const slots = this.layout?.slots || [];
+      let max = -1;
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i]) max = i;
+      }
+      return max;
+    },
     sortedProfiles() {
       return (this.profiles || []).slice().sort((a, b) => a.name.localeCompare(b.name));
     }
@@ -92,6 +100,12 @@ const BullpenTab = {
     },
     onGridResize(e) {
       const [rows, cols] = e.target.value.split('x').map(Number);
+      const newTotal = rows * cols;
+      if (this.maxOccupiedSlot >= newTotal) {
+        alert(`Cannot resize: worker in slot ${this.maxOccupiedSlot + 1} would be displaced. Move or remove workers first.`);
+        e.target.value = this.rows + 'x' + this.cols;
+        return;
+      }
       this.$root.updateConfig({ grid: { rows, cols } });
     },
     onDropOnEmpty(e, slotIndex) {

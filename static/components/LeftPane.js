@@ -1,5 +1,5 @@
 const LeftPane = {
-  props: ['tasks', 'visible'],
+  props: ['tasks', 'layout', 'visible'],
   emits: ['new-task', 'select-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
@@ -41,8 +41,10 @@ const LeftPane = {
         .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
     },
     workerList() {
-      // Placeholder — will be populated in Phase 3
-      return [];
+      if (!this.layout?.slots) return [];
+      return this.layout.slots
+        .map((s, i) => s ? { slot: i, name: s.name, state: s.state || 'idle' } : null)
+        .filter(Boolean);
     }
   },
   methods: {

@@ -76,14 +76,26 @@ const app = createApp({
     // Task actions
     function createTask(data) { socket.emit('task:create', data); }
     function updateTask(data) { socket.emit('task:update', data); }
-    function deleteTask(id) { socket.emit('task:delete', { id }); }
+    function deleteTask(id) {
+      const task = state.tasks.find(t => t.id === id);
+      if (task && (task.status === 'assigned' || task.status === 'in-progress')) {
+        if (!confirm(`Task "${task.title}" is ${task.status}. Delete anyway?`)) return;
+      }
+      socket.emit('task:delete', { id });
+    }
     function clearTaskOutput(id) { socket.emit('task:clear_output', { id }); }
     function moveTask({ id, status }) { socket.emit('task:update', { id, status }); }
     function selectTask(id) { selectedTaskId.value = id; }
 
     // Worker actions
     function addWorker({ slot, profile }) { socket.emit('worker:add', { slot, profile }); }
-    function removeWorker(slot) { socket.emit('worker:remove', { slot }); }
+    function removeWorker(slot) {
+      const worker = state.layout?.slots?.[slot];
+      if (worker?.task_queue?.length) {
+        if (!confirm(`Worker "${worker.name}" has ${worker.task_queue.length} task(s) queued. Remove anyway?`)) return;
+      }
+      socket.emit('worker:remove', { slot });
+    }
     function moveWorker(from, to) { socket.emit('worker:move', { from, to }); }
     function configureWorker(slot, fields) { socket.emit('worker:configure', { slot, fields }); }
     function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', { slot, fields }); }
@@ -104,6 +116,8 @@ const app = createApp({
     function addToast(message, type = 'info') {
       const id = ++toastId;
       toasts.push({ id, message, type });
+      // Cap at 5 visible
+      while (toasts.length > 5) toasts.shift();
       if (type !== 'error') {
         setTimeout(() => {
           const idx = toasts.findIndex(t => t.id === id);
@@ -112,13 +126,18 @@ const app = createApp({
       }
     }
 
+    function dismissToast(id) {
+      const idx = toasts.findIndex(t => t.id === id);
+      if (idx >= 0) toasts.splice(idx, 1);
+    }
+
     return {
       state, connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, createTask, updateTask, deleteTask, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       configureWorker, saveWorkerConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast,
+      stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
     };
   },
   template: `
@@ -132,6 +151,7 @@ const app = createApp({
       <div class="app-body">
         <LeftPane
           :tasks="state.tasks"
+          :layout="state.layout"
           :visible="leftPaneVisible"
           @new-task="showCreateModal = true"
           @select-task="selectTask"
@@ -189,7 +209,7 @@ const app = createApp({
         @remove="removeWorker"
         @save-profile="saveProfile"
       />
-      <ToastContainer :toasts="toasts" />
+      <ToastContainer :toasts="toasts" @dismiss="dismissToast" />
     </div>
   `
 });
