@@ -131,3 +131,104 @@ class TestTaskEvents:
         # Verify gone from disk
         path = os.path.join(app.config["bp_dir"], "tasks", f"{task_id}.md")
         assert not os.path.exists(path)
+
+
+class TestWorkerEvents:
+    def test_add_worker(self, client):
+        c, app = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        assert layout["slots"][0] is not None
+        assert layout["slots"][0]["profile"] == "feature-architect"
+        assert layout["slots"][0]["name"] == "Feature Architect"
+        assert layout["slots"][0]["state"] == "idle"
+
+    def test_add_worker_persists(self, client):
+        c, app = client
+        c.emit("worker:add", {"slot": 2, "profile": "code-reviewer"})
+        c.get_received()
+
+        # Verify layout.json updated
+        from server.persistence import read_json
+        layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert layout["slots"][2]["profile"] == "code-reviewer"
+
+    def test_remove_worker(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:remove", {"slot": 0})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0] is None
+
+    def test_move_worker(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:move", {"from": 0, "to": 3})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0] is None
+        assert layout["slots"][3] is not None
+        assert layout["slots"][3]["profile"] == "feature-architect"
+
+    def test_configure_worker(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:configure", {"slot": 0, "fields": {
+            "activation": "on_queue",
+            "watch_column": "inbox",
+            "max_retries": 3,
+        }})
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+        assert worker["activation"] == "on_queue"
+        assert worker["watch_column"] == "inbox"
+        assert worker["max_retries"] == 3
+
+    def test_add_worker_invalid_profile(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "nonexistent"})
+        err = get_event(c, "error")
+        assert err is not None
+        assert "not found" in err["message"]
+
+
+class TestConfigEvents:
+    def test_config_update(self, client):
+        c, app = client
+        c.emit("config:update", {"name": "My Team"})
+        config = get_event(c, "config:updated")
+        assert config is not None
+        assert config["name"] == "My Team"
+
+    def test_prompt_update(self, client):
+        c, app = client
+        c.emit("prompt:update", {"type": "workspace", "content": "This is a Flask project."})
+        result = get_event(c, "prompt:updated")
+        assert result is not None
+        assert result["type"] == "workspace"
+        assert result["content"] == "This is a Flask project."
+
+        # Verify file
+        path = os.path.join(app.config["bp_dir"], "workspace_prompt.md")
+        assert open(path).read() == "This is a Flask project."
+
+    def test_profile_create(self, client):
+        c, _ = client
+        c.emit("profile:create", {
+            "id": "custom",
+            "name": "Custom",
+            "default_agent": "claude",
+            "default_model": "sonnet",
+            "color_hint": "pink",
+            "expertise_prompt": "Custom worker.",
+        })
+        profiles = get_event(c, "profiles:updated")
+        assert profiles is not None
+        ids = {p["id"] for p in profiles}
+        assert "custom" in ids
