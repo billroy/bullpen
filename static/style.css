@@ -185,6 +185,10 @@ body {
   background: var(--bg-hover);
 }
 
+.inbox-item[draggable="true"] {
+  cursor: grab;
+}
+
 .inbox-title {
   font-size: 12px;
   white-space: nowrap;
@@ -192,6 +196,32 @@ body {
   text-overflow: ellipsis;
   flex: 1;
   margin-right: 8px;
+}
+
+/* === Worker Roster === */
+.roster-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.roster-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.roster-dot.status-idle { background: var(--gray); }
+.roster-dot.status-working { background: var(--blue); }
+.roster-dot.status-queued { background: var(--purple); }
+
+.roster-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* === Badges === */

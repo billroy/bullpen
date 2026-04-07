@@ -1,5 +1,6 @@
 const LeftPane = {
   props: ['tasks', 'visible'],
+  emits: ['new-task', 'select-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
       <div class="left-pane-section">
@@ -11,6 +12,8 @@ const LeftPane = {
           <div v-if="inboxTasks.length === 0" class="empty-state">No tasks in inbox</div>
           <div v-for="task in inboxTasks" :key="task.id"
                class="inbox-item"
+               draggable="true"
+               @dragstart="onDragStart($event, task.id)"
                @click="$emit('select-task', task.id)">
             <span class="inbox-title">{{ task.title }}</span>
             <span class="badge" :class="'priority-' + (task.priority || 'normal')">{{ task.priority || 'normal' }}</span>
@@ -22,7 +25,11 @@ const LeftPane = {
           <h3>Workers</h3>
         </div>
         <div class="worker-roster">
-          <div class="empty-state">No workers configured</div>
+          <div v-if="!workerList.length" class="empty-state">No workers configured</div>
+          <div v-for="w in workerList" :key="w.slot" class="roster-item">
+            <span class="roster-dot" :class="'status-' + (w.state || 'idle')"></span>
+            <span class="roster-name">{{ w.name }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -32,6 +39,16 @@ const LeftPane = {
       return (this.tasks || [])
         .filter(t => t.status === 'inbox')
         .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    },
+    workerList() {
+      // Placeholder — will be populated in Phase 3
+      return [];
+    }
+  },
+  methods: {
+    onDragStart(e, taskId) {
+      e.dataTransfer.setData('text/plain', taskId);
+      e.dataTransfer.effectAllowed = 'move';
     }
   }
 };
