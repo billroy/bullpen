@@ -10,6 +10,7 @@ from server import tasks as task_mod
 from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
 from server.teams import save_team, load_team, list_teams
+from server import workers as worker_mod
 
 
 # Single-writer queue to serialize mutations
@@ -287,3 +288,36 @@ def register_events(socketio, app):
             return
         _save_layout(bp_dir, team_layout)
         socketio.emit("layout:updated", team_layout)
+
+    # --- Execution events ---
+
+    @socketio.on("task:assign")
+    @with_lock
+    def on_task_assign(data):
+        bp_dir = app.config["bp_dir"]
+        task_id = data.get("task_id")
+        slot = data.get("slot")
+        if task_id is None or slot is None:
+            emit("error", {"message": "task:assign requires task_id and slot"})
+            return
+        worker_mod.assign_task(bp_dir, slot, task_id, socketio)
+
+    @socketio.on("worker:start")
+    @with_lock
+    def on_worker_start(data):
+        bp_dir = app.config["bp_dir"]
+        slot = data.get("slot")
+        if slot is None:
+            emit("error", {"message": "worker:start requires slot"})
+            return
+        worker_mod.start_worker(bp_dir, slot, socketio)
+
+    @socketio.on("worker:stop")
+    @with_lock
+    def on_worker_stop(data):
+        bp_dir = app.config["bp_dir"]
+        slot = data.get("slot")
+        if slot is None:
+            emit("error", {"message": "worker:stop requires slot"})
+            return
+        worker_mod.stop_worker(bp_dir, slot, socketio)
