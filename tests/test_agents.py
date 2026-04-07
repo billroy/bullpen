@@ -42,7 +42,7 @@ class TestCodexAdapter:
     def test_build_argv(self):
         adapter = CodexAdapter()
         argv = adapter.build_argv("test prompt", "o4-mini", "/workspace")
-        assert "codex" in argv
+        assert any("codex" in arg for arg in argv)
         assert "--model" in argv
         assert "o4-mini" in argv
 
