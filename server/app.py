@@ -5,6 +5,7 @@ import os
 from flask import Flask
 from flask_socketio import SocketIO
 
+from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json
 
@@ -36,6 +37,8 @@ def create_app(workspace, no_browser=False):
     def on_connect():
         state = load_state(app.config["bp_dir"], workspace)
         socketio.emit("state:init", state)
+
+    register_events(socketio, app)
 
     return app
 
