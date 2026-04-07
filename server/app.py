@@ -9,6 +9,7 @@ from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json
 from server.profiles import list_profiles
+from server.teams import list_teams
 
 
 socketio = SocketIO()
@@ -62,6 +63,7 @@ def load_state(bp_dir, workspace):
                 tasks.append(task)
 
     profiles = list_profiles(bp_dir)
+    teams = list_teams(bp_dir)
 
     return {
         "workspace": workspace,
@@ -69,4 +71,5 @@ def load_state(bp_dir, workspace):
         "layout": layout,
         "tasks": tasks,
         "profiles": profiles,
+        "teams": teams,
     }

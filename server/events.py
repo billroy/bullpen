@@ -9,6 +9,7 @@ from flask_socketio import emit
 from server import tasks as task_mod
 from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
+from server.teams import save_team, load_team, list_teams
 
 
 # Single-writer queue to serialize mutations
@@ -256,3 +257,33 @@ def register_events(socketio, app):
         profile = create_profile(bp_dir, data)
         profiles = list_profiles(bp_dir)
         socketio.emit("profiles:updated", profiles)
+
+    # --- Team events ---
+
+    @socketio.on("team:save")
+    @with_lock
+    def on_team_save(data):
+        bp_dir = app.config["bp_dir"]
+        name = data.get("name")
+        if not name:
+            emit("error", {"message": "team:save requires name"})
+            return
+        layout = _load_layout(bp_dir)
+        save_team(bp_dir, name, layout)
+        teams = list_teams(bp_dir)
+        socketio.emit("teams:updated", teams)
+
+    @socketio.on("team:load")
+    @with_lock
+    def on_team_load(data):
+        bp_dir = app.config["bp_dir"]
+        name = data.get("name")
+        if not name:
+            emit("error", {"message": "team:load requires name"})
+            return
+        team_layout = load_team(bp_dir, name)
+        if not team_layout:
+            emit("error", {"message": f"Team not found: {name}"})
+            return
+        _save_layout(bp_dir, team_layout)
+        socketio.emit("layout:updated", team_layout)

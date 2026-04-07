@@ -593,6 +593,10 @@ body {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
+.modal-wide {
+  width: 560px;
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -615,10 +619,16 @@ body {
 
 .modal-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--border);
+}
+
+.modal-footer-right {
+  display: flex;
+  gap: 8px;
 }
 
 /* === Forms === */

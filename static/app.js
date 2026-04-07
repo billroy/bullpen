@@ -9,6 +9,7 @@ const app = createApp({
     FilesTab,
     TaskCreateModal,
     TaskDetailPanel,
+    WorkerConfigModal,
     ToastContainer,
   },
   setup() {
@@ -18,6 +19,7 @@ const app = createApp({
       layout: { slots: [] },
       tasks: [],
       profiles: [],
+      teams: [],
     });
 
     const connected = ref(false);
@@ -34,7 +36,12 @@ const app = createApp({
       return state.tasks.find(t => t.id === selectedTaskId.value) || null;
     });
 
-    // Socket.io connection
+    const configureWorkerData = computed(() => {
+      if (configureSlot.value === null) return null;
+      return state.layout?.slots?.[configureSlot.value] || null;
+    });
+
+    // Socket.io
     const socket = io();
 
     socket.on('connect', () => { connected.value = true; });
@@ -46,45 +53,25 @@ const app = createApp({
       state.layout = data.layout;
       state.tasks = data.tasks;
       state.profiles = data.profiles || [];
+      state.teams = data.teams || [];
     });
 
-    // Task events
-    socket.on('task:created', (task) => {
-      state.tasks.push(task);
-    });
-
+    socket.on('task:created', (task) => { state.tasks.push(task); });
     socket.on('task:updated', (task) => {
       const idx = state.tasks.findIndex(t => t.id === task.id);
-      if (idx >= 0) {
-        state.tasks[idx] = task;
-      } else {
-        state.tasks.push(task);
-      }
+      if (idx >= 0) state.tasks[idx] = task;
+      else state.tasks.push(task);
     });
-
     socket.on('task:deleted', (data) => {
       state.tasks = state.tasks.filter(t => t.id !== data.id);
-      if (selectedTaskId.value === data.id) {
-        selectedTaskId.value = null;
-      }
+      if (selectedTaskId.value === data.id) selectedTaskId.value = null;
     });
 
-    // Layout/config events
-    socket.on('layout:updated', (layout) => {
-      state.layout = layout;
-    });
-
-    socket.on('config:updated', (config) => {
-      state.config = config;
-    });
-
-    socket.on('profiles:updated', (profiles) => {
-      state.profiles = profiles;
-    });
-
-    socket.on('error', (data) => {
-      addToast(data.message, 'error');
-    });
+    socket.on('layout:updated', (layout) => { state.layout = layout; });
+    socket.on('config:updated', (config) => { state.config = config; });
+    socket.on('profiles:updated', (profiles) => { state.profiles = profiles; });
+    socket.on('teams:updated', (teams) => { state.teams = teams; });
+    socket.on('error', (data) => { addToast(data.message, 'error'); });
 
     // Task actions
     function createTask(data) { socket.emit('task:create', data); }
@@ -99,9 +86,14 @@ const app = createApp({
     function removeWorker(slot) { socket.emit('worker:remove', { slot }); }
     function moveWorker(from, to) { socket.emit('worker:move', { from, to }); }
     function configureWorker(slot, fields) { socket.emit('worker:configure', { slot, fields }); }
+    function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', { slot, fields }); }
 
-    // Config actions
+    // Config/team actions
     function updateConfig(data) { socket.emit('config:update', data); }
+    function saveTeam(name) { socket.emit('team:save', { name }); }
+    function loadTeam(name) { socket.emit('team:load', { name }); }
+    function saveProfile(data) { socket.emit('profile:create', data); }
+
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
 
     function addToast(message, type = 'info') {
@@ -116,27 +108,12 @@ const app = createApp({
     }
 
     return {
-      state,
-      connected,
-      activeTab,
-      leftPaneVisible,
-      toasts,
-      showCreateModal,
-      selectedTask,
-      configureSlot,
-      toggleLeftPane,
-      createTask,
-      updateTask,
-      deleteTask,
-      clearTaskOutput,
-      moveTask,
-      selectTask,
-      addWorker,
-      removeWorker,
-      moveWorker,
-      configureWorker,
-      updateConfig,
-      addToast,
+      state, connected, activeTab, leftPaneVisible, toasts,
+      showCreateModal, selectedTask, configureSlot, configureWorkerData,
+      toggleLeftPane, createTask, updateTask, deleteTask, clearTaskOutput,
+      moveTask, selectTask, addWorker, removeWorker, moveWorker,
+      configureWorker, saveWorkerConfig, updateConfig, saveTeam, loadTeam,
+      saveProfile, addToast,
     };
   },
   template: `
@@ -196,6 +173,15 @@ const app = createApp({
         :visible="showCreateModal"
         @close="showCreateModal = false"
         @create="createTask"
+      />
+      <WorkerConfigModal
+        :worker="configureWorkerData"
+        :slot-index="configureSlot"
+        :columns="state.config.columns"
+        @close="configureSlot = null"
+        @save="saveWorkerConfig"
+        @remove="removeWorker"
+        @save-profile="saveProfile"
       />
       <ToastContainer :toasts="toasts" />
     </div>
