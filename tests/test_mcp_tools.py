@@ -28,6 +28,36 @@ class _DummySio:
         raise AssertionError("emit should not be called when disconnected")
 
 
+class _ConnectedClient:
+    def __init__(self, *_args, **_kwargs):
+        self.connected = True
+
+    def disconnect(self):
+        return None
+
+
+def _frame(msg):
+    payload = json.dumps(msg, separators=(",", ":")).encode("utf-8")
+    return b"Content-Length: " + str(len(payload)).encode("ascii") + b"\r\n\r\n" + payload
+
+
+def _parse_framed_messages(raw):
+    stream = io.BytesIO(raw)
+    out = []
+    while True:
+        header = stream.readline()
+        if not header:
+            break
+        if not header.strip():
+            continue
+        assert header.lower().startswith(b"content-length:")
+        length = int(header.split(b":", 1)[1].strip())
+        assert stream.readline() == b"\r\n"
+        body = stream.read(length)
+        out.append(json.loads(body.decode("utf-8")))
+    return out
+
+
 def test_list_tasks_alias_returns_ticket_summary(tmp_workspace, monkeypatch):
     bp_dir = init_workspace(tmp_workspace)
     created = create_task(bp_dir, "MCP alias test")
@@ -102,3 +132,38 @@ def test_write_emits_mcp_content_length_frame():
     parsed = json.loads(body.decode("utf-8"))
     assert parsed["id"] == 9
     assert parsed["result"]["ok"] is True
+
+
+def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    created = create_task(bp_dir, "MCP integration test")
+
+    req = b"".join([
+        _frame({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        _frame({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}),
+        _frame({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        _frame({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "list_tasks", "arguments": {}},
+        }),
+    ])
+
+    in_stream = io.BytesIO(req)
+    out_stream = io.BytesIO()
+    monkeypatch.setattr(mcp_tools, "BullpenClient", _ConnectedClient)
+    monkeypatch.setattr(mcp_tools.sys, "stdin", io.TextIOWrapper(in_stream, encoding="utf-8"))
+    stdout = io.TextIOWrapper(out_stream, encoding="utf-8")
+    monkeypatch.setattr(mcp_tools.sys, "stdout", stdout)
+
+    mcp_tools.main(bp_dir, "127.0.0.1", 5050)
+    stdout.flush()
+    responses = _parse_framed_messages(out_stream.getvalue())
+
+    assert [r["id"] for r in responses] == [1, 2, 3]
+    tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
+    assert "list_tasks" in tool_names
+    summary = json.loads(responses[2]["result"]["content"][0]["text"])
+    ids = {item["id"] for item in summary}
+    assert created["id"] in ids
