@@ -139,7 +139,7 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         return
 
     model = worker.get("model", "claude-sonnet-4-6")
-    argv = adapter.build_argv(prompt, model, agent_cwd)
+    argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
 
     # Launch subprocess in background thread
     config = read_json(os.path.join(bp_dir, "config.json"))
@@ -365,44 +365,65 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         timer.daemon = True
         timer.start()
 
-        # Stream stdout line by line
-        output_lines = []
+        # Stream stdout and stderr line by line.
+        # Codex CLI emits live output on stderr, so both streams must be drained.
+        stdout_lines = []
+        stderr_lines = []
+        combined_lines = []
         batch = []
-        last_emit = time.time()
+        batch_lock = threading.Lock()
+        last_emit = [time.time()]
+
+        def _append_stream_line(line, sink):
+            if len(line) > MAX_LINE_LEN:
+                line = line[:MAX_LINE_LEN] + "[line truncated]\n"
+            sink.append(line)
+            stripped = line.rstrip("\n")
+            combined_lines.append(stripped)
+
+            # Append to server-side buffer (cap at MAX_OUTPUT_BUFFER)
+            with _process_lock:
+                e = _processes.get((ws_id, slot_index))
+                if e:
+                    e["buffer"].append(stripped)
+                    e["buffer_size"] += len(stripped) + 1
+                    while e["buffer_size"] > MAX_OUTPUT_BUFFER and e["buffer"]:
+                        removed = e["buffer"].pop(0)
+                        e["buffer_size"] -= len(removed) + 1
+
+            # Batch emit every 200ms
+            to_emit = None
+            with batch_lock:
+                batch.append(stripped)
+                now = time.time()
+                if socketio and now - last_emit[0] >= 0.2:
+                    to_emit = list(batch)
+                    batch.clear()
+                    last_emit[0] = now
+            if socketio and to_emit:
+                _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
+
+        def _drain_stderr():
+            try:
+                while True:
+                    line = proc.stderr.readline()
+                    if not line:
+                        break
+                    _append_stream_line(line, stderr_lines)
+            except (ValueError, OSError):
+                pass  # stderr closed
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
 
         try:
             while True:
                 line = proc.stdout.readline()
                 if not line:
                     break
-                if len(line) > MAX_LINE_LEN:
-                    line = line[:MAX_LINE_LEN] + "[line truncated]\n"
-                output_lines.append(line)
-                stripped = line.rstrip("\n")
-                batch.append(stripped)
-
-                # Append to server-side buffer (cap at MAX_OUTPUT_BUFFER)
-                with _process_lock:
-                    e = _processes.get((ws_id, slot_index))
-                    if e:
-                        e["buffer"].append(stripped)
-                        e["buffer_size"] += len(stripped) + 1
-                        while e["buffer_size"] > MAX_OUTPUT_BUFFER and e["buffer"]:
-                            removed = e["buffer"].pop(0)
-                            e["buffer_size"] -= len(removed) + 1
-
-                # Batch emit every 200ms
-                now = time.time()
-                if socketio and now - last_emit >= 0.2:
-                    _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": batch}, ws_id)
-                    last_emit = now
-                    batch = []
+                _append_stream_line(line, stdout_lines)
         except (ValueError, OSError):
             pass  # stdout closed
-
-        # Flush remaining batch
-        if socketio and batch:
-            _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": batch}, ws_id)
 
         # Wait for process to finish and read stderr
         try:
@@ -411,18 +432,24 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             proc.kill()
             proc.wait()
         timer.cancel()
+        stderr_thread.join(timeout=2)
 
-        stderr = ""
-        try:
-            stderr = proc.stderr.read()
-        except (ValueError, OSError):
-            pass
+        # Flush remaining batch
+        to_emit = None
+        with batch_lock:
+            if socketio and batch:
+                to_emit = list(batch)
+                batch.clear()
+        if socketio and to_emit:
+            _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
+
+        stderr = "".join(stderr_lines)
 
         if timed_out:
             _on_agent_error(bp_dir, slot_index, task_id, "Agent timed out", socketio, ws_id=ws_id)
             return
 
-        stdout = "".join(output_lines)
+        stdout = "".join(stdout_lines)
         exit_code = proc.returncode
         result = adapter.parse_output(stdout, stderr, exit_code)
 
@@ -431,7 +458,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 
         # Emit final output so focus view always has complete data
         if socketio:
-            final_lines = [l.rstrip("\n") for l in output_lines]
+            final_lines = [l.rstrip("\n") for l in combined_lines]
             _ws_emit(socketio, "worker:output:done", {"slot": slot_index, "lines": final_lines}, ws_id)
 
         if result["success"]:
@@ -444,6 +471,14 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
     finally:
         with _process_lock:
             _processes.pop((ws_id, slot_index), None)
+        # Clean up temp MCP config file if one was generated
+        for i, arg in enumerate(argv):
+            if arg == "--mcp-config" and i + 1 < len(argv):
+                try:
+                    os.unlink(argv[i + 1])
+                except OSError:
+                    pass
+                break
 
 
 def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None):

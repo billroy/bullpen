@@ -51,6 +51,13 @@ class TestCodexAdapter:
         assert "--approval-mode" not in argv
         assert "--quiet" not in argv
 
+    def test_parse_success_falls_back_to_stderr_when_stdout_empty(self):
+        adapter = CodexAdapter()
+        result = adapter.parse_output("", "assistant reply from stderr", 0)
+        assert result["success"] is True
+        assert result["output"] == "assistant reply from stderr"
+        assert result["error"] is None
+
 
 class TestMockAdapter:
     def test_basic(self):

@@ -46,9 +46,12 @@ class CodexAdapter(AgentAdapter):
 
     def parse_output(self, stdout, stderr, exit_code):
         if exit_code == 0:
+            output = stdout.strip()
+            if not output and stderr:
+                output = stderr.strip()
             return {
                 "success": True,
-                "output": stdout.strip(),
+                "output": output,
                 "error": None,
             }
         return {
