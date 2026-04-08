@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
-"""Minimal MCP stdio server exposing bullpen ticket tools to agents.
+"""Bullpen MCP stdio server.
 
-Speaks JSON-RPC 2.0 over stdin/stdout using MCP stdio framing
-(`Content-Length` headers + JSON body).
-Connects to the bullpen socket.io server for create/update operations
-so the UI updates live. Uses direct file reads for list operations.
-
-Usage:
-    python -m server.mcp_tools --bp-dir /path/to/.bullpen --port 5000
+This process exposes ticket tools over JSON-RPC 2.0 using MCP stdio framing.
+It supports both framed MCP input and a legacy one-line JSON fallback for tests.
 """
+
+from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 import threading
+from dataclasses import dataclass
+from typing import Any
 
 import socketio
 
-from server import tasks as task_mod
+from server import tasks as task_store
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
 VALID_PRIORITIES = ("low", "normal", "high", "urgent")
@@ -26,12 +24,12 @@ VALID_PRIORITIES = ("low", "normal", "high", "urgent")
 TOOLS = [
     {
         "name": "create_ticket",
-        "description": "Create a new ticket in the bullpen inbox.",
+        "description": "Create a new ticket in inbox.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Short title for the ticket"},
-                "description": {"type": "string", "description": "Detailed description (markdown)", "default": ""},
+                "title": {"type": "string", "description": "Ticket title"},
+                "description": {"type": "string", "description": "Markdown description", "default": ""},
                 "type": {"type": "string", "enum": list(VALID_TYPES), "default": "task"},
                 "priority": {"type": "string", "enum": list(VALID_PRIORITIES), "default": "normal"},
                 "tags": {"type": "array", "items": {"type": "string"}, "default": []},
@@ -41,19 +39,18 @@ TOOLS = [
     },
     {
         "name": "list_tickets",
-        "description": "List all tickets, optionally filtered by status.",
+        "description": "List tickets with optional status filter.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "status": {
                     "type": "string",
-                    "description": "Filter by status (inbox, assigned, in_progress, review, done, blocked). Omit for all.",
-                },
+                    "description": "Optional status filter (inbox, assigned, in_progress, review, done, blocked).",
+                }
             },
         },
     },
     {
-        # Compatibility alias.
         "name": "list_tasks",
         "description": "Alias for list_tickets.",
         "inputSchema": {
@@ -61,20 +58,20 @@ TOOLS = [
             "properties": {
                 "status": {
                     "type": "string",
-                    "description": "Filter by status (inbox, assigned, in_progress, review, done, blocked). Omit for all.",
-                },
+                    "description": "Optional status filter (inbox, assigned, in_progress, review, done, blocked).",
+                }
             },
         },
     },
     {
         "name": "update_ticket",
-        "description": "Update fields on an existing ticket.",
+        "description": "Update an existing ticket.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "id": {"type": "string", "description": "Ticket ID (slug)"},
+                "id": {"type": "string", "description": "Ticket id"},
                 "title": {"type": "string"},
-                "body": {"type": "string", "description": "Full body text (markdown)"},
+                "body": {"type": "string", "description": "Full markdown body"},
                 "type": {"type": "string", "enum": list(VALID_TYPES)},
                 "priority": {"type": "string", "enum": list(VALID_PRIORITIES)},
                 "status": {"type": "string"},
@@ -86,24 +83,29 @@ TOOLS = [
 ]
 
 
-# --- JSON-RPC helpers ---
-
-def _parse_content_length(header_line):
-    """Parse `Content-Length: N` header line."""
+def _parse_content_length(header_line: bytes) -> int:
+    """Parse a single Content-Length header line."""
     try:
-        _, value = header_line.split(b":", 1)
+        name, value = header_line.split(b":", 1)
     except ValueError as exc:
         raise ValueError("Invalid Content-Length header") from exc
+    if name.strip().lower() != b"content-length":
+        raise ValueError("Invalid Content-Length header")
     try:
-        return int(value.strip())
+        parsed = int(value.strip())
     except ValueError as exc:
         raise ValueError("Invalid Content-Length value") from exc
+    if parsed < 0:
+        raise ValueError("Invalid Content-Length value")
+    return parsed
 
 
-def _read(in_stream=None):
-    """Read one JSON-RPC message.
+def _read(in_stream: Any | None = None) -> dict[str, Any] | None:
+    """Read one JSON-RPC message from stdin.
 
-    Supports MCP framed stdio transport and a legacy JSON-line fallback.
+    Supported formats:
+    - MCP framed messages (headers + body)
+    - newline-delimited JSON (legacy test fallback)
     """
     if in_stream is None:
         in_stream = sys.stdin.buffer
@@ -115,93 +117,110 @@ def _read(in_stream=None):
         if not line.strip():
             continue
 
-        # MCP stdio framing: read header block (order-agnostic), then body bytes.
-        # Accept optional headers like Content-Type before Content-Length.
-        if b":" in line and not line.lstrip().startswith((b"{", b"[")):
-            headers = [line]
-            while True:
-                header = in_stream.readline()
-                if not header:
-                    return None
-                if not header.strip():
-                    break
-                headers.append(header)
+        is_header = b":" in line and not line.lstrip().startswith((b"{", b"["))
+        if not is_header:
+            return json.loads(line.decode("utf-8"))
 
-            content_length = None
-            for header in headers:
-                if header.lower().startswith(b"content-length:"):
-                    content_length = _parse_content_length(header)
-                    break
-            if content_length is None:
-                raise ValueError("Missing Content-Length header")
-
-            body = in_stream.read(content_length)
-            if not body or len(body) < content_length:
+        headers = [line]
+        while True:
+            header_line = in_stream.readline()
+            if not header_line:
                 return None
-            return json.loads(body.decode("utf-8"))
+            if not header_line.strip():
+                break
+            headers.append(header_line)
 
-        # Legacy fallback for newline-delimited JSON.
-        return json.loads(line.decode("utf-8"))
+        content_length = None
+        for header in headers:
+            if header.lower().startswith(b"content-length:"):
+                content_length = _parse_content_length(header)
+                break
+        if content_length is None:
+            raise ValueError("Missing Content-Length header")
+
+        body = in_stream.read(content_length)
+        if body is None or len(body) != content_length:
+            return None
+        return json.loads(body.decode("utf-8"))
 
 
-def _write(msg, out_stream=None):
+def _write(msg: dict[str, Any], out_stream: Any | None = None) -> None:
+    """Write one framed JSON-RPC message."""
     if out_stream is None:
         out_stream = sys.stdout.buffer
-    payload = json.dumps(msg, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    payload = json.dumps(msg, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     out_stream.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
     out_stream.write(payload)
     out_stream.flush()
 
 
-def _result(msg_id, result):
+def _result(msg_id: Any, result: dict[str, Any]) -> None:
     _write({"jsonrpc": "2.0", "id": msg_id, "result": result})
 
 
-def _error(msg_id, code, message):
+def _error(msg_id: Any, code: int, message: str) -> None:
     _write({"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}})
 
 
-def _tool_result(msg_id, text, is_error=False):
+def _tool_result(msg_id: Any, text: str, is_error: bool = False) -> None:
     _result(msg_id, {"content": [{"type": "text", "text": text}], "isError": is_error})
 
 
-# --- Socket.io client for write operations ---
+@dataclass
+class _Pending:
+    event: threading.Event
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
 
 class BullpenClient:
-    """Socket.io client that connects to the bullpen server for write ops."""
+    """Small socket.io helper for create/update operations."""
 
-    def __init__(self, host, port):
-        self.sio = socketio.Client(logger=False, engineio_logger=False)
-        self.ws_id = None
-        self.connected = False
+    def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self._pending = {}  # msg_id -> threading.Event, result
+        self.sio = socketio.Client(logger=False, engineio_logger=False)
+        self.connected = False
+        self.workspace_id: str | None = None
         self._lock = threading.Lock()
+        self._pending: dict[str, _Pending] = {}
+
+        @self.sio.on("connect")
+        def _on_connect() -> None:
+            self.connected = True
+
+        @self.sio.on("disconnect")
+        def _on_disconnect() -> None:
+            self.connected = False
 
         @self.sio.on("state:init")
-        def on_state_init(data):
-            self.ws_id = data.get("workspaceId")
+        def _on_state_init(data: dict[str, Any]) -> None:
+            self.workspace_id = data.get("workspaceId")
 
         @self.sio.on("task:created")
-        def on_task_created(data):
-            self._resolve_pending("create", data)
+        def _on_task_created(data: dict[str, Any]) -> None:
+            self._resolve("create", result=data)
 
         @self.sio.on("task:updated")
-        def on_task_updated(data):
-            self._resolve_pending("update", data)
+        def _on_task_updated(data: dict[str, Any]) -> None:
+            self._resolve("update", result=data)
 
         @self.sio.on("error")
-        def on_error(data):
-            self._resolve_pending_error(data.get("message", "Unknown error"))
+        def _on_error(data: dict[str, Any]) -> None:
+            message = "Unknown error"
+            if isinstance(data, dict):
+                message = str(data.get("message", message))
+            self._resolve_any_error(message)
 
-    def _candidate_urls(self):
+        self._connect_best_effort()
+
+    def _candidate_urls(self) -> list[str]:
         hosts = [self.host]
         if self.host == "0.0.0.0":
             hosts.extend(["127.0.0.1", "localhost"])
-        return [f"http://{h}:{self.port}" for h in hosts]
+        return [f"http://{candidate}:{self.port}" for candidate in hosts]
 
-    def _connect_best_effort(self):
+    def _connect_best_effort(self) -> bool:
         if self.connected:
             return True
         for url in self._candidate_urls():
@@ -211,144 +230,189 @@ class BullpenClient:
                 return True
             except Exception:
                 continue
+        self.connected = False
         return False
 
-    def _resolve_pending(self, op, data):
-        with self._lock:
-            entry = self._pending.pop(op, None)
-        if entry:
-            entry["result"] = data
-            entry["event"].set()
-
-    def _resolve_pending_error(self, message):
-        with self._lock:
-            # Resolve any pending operation with the error
-            for key in list(self._pending.keys()):
-                entry = self._pending.pop(key)
-                entry["error"] = message
-                entry["event"].set()
-                break
-
-    def _wait_for(self, op, timeout=10):
-        event = threading.Event()
-        entry = {"event": event, "result": None, "error": None}
+    def _prepare_pending(self, op: str) -> _Pending:
+        entry = _Pending(event=threading.Event())
         with self._lock:
             self._pending[op] = entry
-        return entry, event
+        return entry
 
-    def create_ticket(self, args):
+    def _resolve(self, op: str, result: dict[str, Any] | None = None, error: str | None = None) -> None:
+        with self._lock:
+            pending = self._pending.pop(op, None)
+        if pending is None:
+            return
+        pending.result = result
+        pending.error = error
+        pending.event.set()
+
+    def _resolve_any_error(self, error: str) -> None:
+        with self._lock:
+            keys = list(self._pending.keys())
+        if not keys:
+            return
+        self._resolve(keys[0], error=error)
+
+    def create_ticket(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         if not self._connect_best_effort():
             return None, "Bullpen socket connection unavailable for create_ticket"
-        entry, event = self._wait_for("create")
-        self.sio.emit("task:create", {
-            "workspaceId": self.ws_id,
+
+        pending = self._prepare_pending("create")
+        payload = {
+            "workspaceId": self.workspace_id,
             "title": args.get("title", "Untitled"),
             "description": args.get("description", ""),
             "type": args.get("type", "task"),
             "priority": args.get("priority", "normal"),
             "tags": args.get("tags", []),
-        })
-        event.wait(timeout=10)
-        if entry["error"]:
-            return None, entry["error"]
-        return entry["result"], None
+        }
+        self.sio.emit("task:create", payload)
+        pending.event.wait(timeout=10)
+        if pending.error:
+            return None, pending.error
+        return pending.result, None
 
-    def update_ticket(self, args):
+    def update_ticket(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         if not self._connect_best_effort():
             return None, "Bullpen socket connection unavailable for update_ticket"
-        entry, event = self._wait_for("update")
-        payload = {k: v for k, v in args.items()}
-        payload["workspaceId"] = self.ws_id
-        self.sio.emit("task:update", payload)
-        event.wait(timeout=10)
-        if entry["error"]:
-            return None, entry["error"]
-        return entry["result"], None
 
-    def disconnect(self):
+        pending = self._prepare_pending("update")
+        payload = dict(args)
+        payload["workspaceId"] = self.workspace_id
+        self.sio.emit("task:update", payload)
+        pending.event.wait(timeout=10)
+        if pending.error:
+            return None, pending.error
+        return pending.result, None
+
+    def disconnect(self) -> None:
         try:
             if self.connected:
                 self.sio.disconnect()
         except Exception:
-            pass
+            return
 
 
-# --- Tool dispatch ---
+def _render_ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": ticket.get("id"),
+        "title": ticket.get("title"),
+        "status": ticket.get("status"),
+        "type": ticket.get("type"),
+        "priority": ticket.get("priority"),
+    }
 
-def handle_call(bp_dir, client, msg_id, name, args):
+
+def handle_call(bp_dir: str, client: BullpenClient | None, msg_id: Any, name: str, args: dict[str, Any]) -> None:
+    """Dispatch a tools/call request."""
     if name == "create_ticket":
-        title = args.get("title", "").strip()
+        title = str(args.get("title", "")).strip()
         if not title:
-            return _tool_result(msg_id, "Error: title is required", is_error=True)
-        task, err = client.create_ticket(args)
+            _tool_result(msg_id, "Error: title is required", is_error=True)
+            return
+        if client is None:
+            _tool_result(msg_id, "Error: create_ticket unavailable", is_error=True)
+            return
+        created, err = client.create_ticket(args)
         if err:
-            return _tool_result(msg_id, f"Error: {err}", is_error=True)
-        _tool_result(msg_id, json.dumps({"id": task["id"], "title": task["title"], "status": task["status"]}))
+            _tool_result(msg_id, f"Error: {err}", is_error=True)
+            return
+        _tool_result(msg_id, json.dumps(_render_ticket_summary(created or {})))
+        return
 
-    elif name in ("list_tickets", "list_tasks"):
-        # Read-only: direct file access is fine
-        tasks = task_mod.list_tasks(bp_dir)
+    if name in {"list_tickets", "list_tasks"}:
         status_filter = args.get("status")
+        tickets = task_store.list_tasks(bp_dir)
         if status_filter:
-            tasks = [t for t in tasks if t.get("status") == status_filter]
-        summary = [{"id": t["id"], "title": t["title"], "status": t.get("status"),
-                     "type": t.get("type"), "priority": t.get("priority")} for t in tasks]
-        _tool_result(msg_id, json.dumps(summary, indent=2))
+            tickets = [item for item in tickets if item.get("status") == status_filter]
+        payload = [_render_ticket_summary(ticket) for ticket in tickets]
+        _tool_result(msg_id, json.dumps(payload, indent=2))
+        return
 
-    elif name == "update_ticket":
-        ticket_id = args.get("id", "").strip()
+    if name == "update_ticket":
+        ticket_id = str(args.get("id", "")).strip()
         if not ticket_id:
-            return _tool_result(msg_id, "Error: id is required", is_error=True)
-        task, err = client.update_ticket(args)
+            _tool_result(msg_id, "Error: id is required", is_error=True)
+            return
+        if client is None:
+            _tool_result(msg_id, "Error: update_ticket unavailable", is_error=True)
+            return
+        updated, err = client.update_ticket(args)
         if err:
-            return _tool_result(msg_id, f"Error: {err}", is_error=True)
-        _tool_result(msg_id, json.dumps({"id": task["id"], "title": task["title"], "status": task.get("status")}))
+            _tool_result(msg_id, f"Error: {err}", is_error=True)
+            return
+        _tool_result(msg_id, json.dumps(_render_ticket_summary(updated or {})))
+        return
 
-    else:
-        _error(msg_id, -32602, f"Unknown tool: {name}")
+    _error(msg_id, -32602, f"Unknown tool: {name}")
 
 
-# --- Main loop ---
+def _initialize_result() -> dict[str, Any]:
+    return {
+        "protocolVersion": "2025-11-25",
+        "capabilities": {
+            "tools": {
+                "listChanged": False,
+            }
+        },
+        "serverInfo": {
+            "name": "bullpen",
+            "version": "2.0.0",
+        },
+    }
 
-def main(bp_dir, host, port):
+
+def main(bp_dir: str, host: str, port: int) -> None:
     client = BullpenClient(host, port)
-
     try:
         while True:
-            msg = _read()
-            if msg is None:
+            message = _read()
+            if message is None:
                 break
 
-            method = msg.get("method")
-            msg_id = msg.get("id")
+            method = message.get("method")
+            msg_id = message.get("id")
 
             if method == "initialize":
-                _result(msg_id, {
-                    "protocolVersion": "2025-11-25",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "bullpen", "version": "1.0.0"},
-                })
+                _result(msg_id, _initialize_result())
+                continue
 
-            elif method == "notifications/initialized":
-                pass
+            if method == "notifications/initialized":
+                continue
 
-            elif method == "tools/list":
+            if method == "tools/list":
                 _result(msg_id, {"tools": TOOLS, "nextCursor": None})
+                continue
 
-            elif method == "tools/call":
-                params = msg.get("params", {})
-                handle_call(bp_dir, client, msg_id, params.get("name"), params.get("arguments", {}))
+            if method == "tools/call":
+                params = message.get("params", {})
+                name = params.get("name")
+                args = params.get("arguments", {})
+                if not isinstance(name, str):
+                    _error(msg_id, -32602, "Invalid tools/call request: missing tool name")
+                    continue
+                if not isinstance(args, dict):
+                    _error(msg_id, -32602, "Invalid tools/call request: arguments must be an object")
+                    continue
+                handle_call(bp_dir, client, msg_id, name, args)
+                continue
 
-            elif msg_id is not None:
+            if msg_id is not None:
                 _error(msg_id, -32601, f"Method not found: {method}")
     finally:
         client.disconnect()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run bullpen MCP stdio server")
     parser.add_argument("--bp-dir", required=True, help="Path to .bullpen directory")
-    parser.add_argument("--host", default="127.0.0.1", help="Bullpen server host")
-    parser.add_argument("--port", type=int, default=5000, help="Bullpen server port")
-    args = parser.parse_args()
-    main(args.bp_dir, args.host, args.port)
+    parser.add_argument("--host", default="127.0.0.1", help="Bullpen socket.io host")
+    parser.add_argument("--port", default=5000, type=int, help="Bullpen socket.io port")
+    return parser
+
+
+if __name__ == "__main__":
+    cli_args = _build_arg_parser().parse_args()
+    main(cli_args.bp_dir, cli_args.host, cli_args.port)
