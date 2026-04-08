@@ -34,9 +34,9 @@ const WorkerConfigModal = {
   computed: {
     modelOptions() {
       if (this.form.agent === 'claude') {
-        return ['claude-sonnet-4-5-20250514', 'claude-sonnet-4-6', 'claude-opus-4-5-20250514', 'claude-opus-4-6', 'claude-haiku-4-5-20250414'];
+        return ['claude-sonnet-4-5-20250514', 'claude-sonnet-4-6', 'claude-opus-4-5-20250514', 'claude-opus-4-6', 'claude-haiku-4-5-20250414', 'claude-haiku-4-6'];
       } else if (this.form.agent === 'codex') {
-        return ['o3-mini', 'o4-mini', 'codex-1'];
+        return ['o3', 'o3-mini', 'o4-mini', 'gpt-4.1', 'codex-1'];
       }
       return ['default'];
     }
@@ -55,7 +55,7 @@ const WorkerConfigModal = {
           </label>
           <div class="form-row">
             <label class="form-label">
-              Agent
+              AI Provider
               <select class="form-select" v-model="form.agent" @change="onAgentChange">
                 <option value="claude">Claude</option>
                 <option value="codex">Codex</option>
@@ -88,7 +88,7 @@ const WorkerConfigModal = {
               </select>
             </label>
             <label class="form-label" v-if="form.activation === 'at_time'">
-              Trigger Time (HH:MM)
+              Trigger Time (HH:MM, local)
               <input class="form-input" v-model="form.trigger_time" placeholder="09:00" pattern="\\d{2}:\\d{2}">
             </label>
             <label class="form-label form-label-inline" v-if="form.activation === 'at_time'">

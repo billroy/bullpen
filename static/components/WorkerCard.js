@@ -7,7 +7,8 @@ const WorkerCard = {
          @dragstart="onDragStart"
          @dragover.prevent="onDragOver"
          @dragleave="onDragLeave"
-         @drop="onDrop">
+         @drop="onDrop"
+         @dblclick="$emit('configure', slotIndex)"
       <div class="worker-card-header" :style="{ background: agentColor }">
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
