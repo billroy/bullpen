@@ -35,9 +35,9 @@ const WorkerConfigModal = {
   computed: {
     modelOptions() {
       if (this.form.agent === 'claude') {
-        return ['claude-sonnet-4-5-20250514', 'claude-sonnet-4-6', 'claude-opus-4-5-20250514', 'claude-opus-4-6', 'claude-haiku-4-5-20250414', 'claude-haiku-4-6'];
+        return ['claude-opus-4-6', 'claude-opus-4-5-20250514', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250514', 'claude-haiku-4-6', 'claude-haiku-4-5-20250414'];
       } else if (this.form.agent === 'codex') {
-        return ['o3', 'o3-mini', 'o4-mini', 'gpt-4.1', 'codex-1'];
+        return ['o3', 'gpt-4.1', 'codex-1', 'o4-mini', 'o3-mini'];
       }
       return ['default'];
     },
