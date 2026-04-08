@@ -265,6 +265,27 @@ body {
   padding: 0;
 }
 
+.quick-create-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-input, var(--bg-secondary));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  outline: none;
+}
+
+.quick-create-input::placeholder {
+  color: var(--text-muted);
+}
+
+.quick-create-input:focus {
+  border-color: var(--accent, #6B7280);
+}
+
 .inbox-list {
   display: flex;
   flex-direction: column;

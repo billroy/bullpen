@@ -232,6 +232,7 @@ const app = createApp({
 
     // Task actions
     function createTask(data) { socket.emit('task:create', _wsData(data)); }
+    function quickCreateTask(title) { socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description: '' })); }
     function updateTask(data) { socket.emit('task:update', _wsData(data)); }
     function deleteTask(id) {
       const task = state.tasks.find(t => t.id === id);
@@ -389,7 +390,7 @@ const app = createApp({
       addProject, removeProject,
       connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
-      toggleLeftPane, toggleTheme, createTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
+      toggleLeftPane, toggleTheme, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
@@ -416,6 +417,7 @@ const app = createApp({
           :active-workspace-id="activeWorkspaceId"
           :workspaces="workspaces"
           @new-task="showCreateModal = true"
+          @quick-create-task="quickCreateTask"
           @select-task="selectTask"
           @switch-workspace="switchWorkspace"
           @add-project="addProject"

@@ -1,6 +1,6 @@
 const LeftPane = {
   props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces'],
-  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'remove-project'],
+  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'remove-project', 'quick-create-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
       <div v-if="projects && projects.length > 1" class="left-pane-section">
@@ -28,6 +28,12 @@ const LeftPane = {
           </select>
           <button class="btn btn-sm" @click="$emit('new-task')">+ New Ticket</button>
         </div>
+        <input
+          class="quick-create-input"
+          v-model="quickCreateText"
+          placeholder="New ticket title..."
+          @keyup.enter="submitQuickCreate"
+        />
         <div class="inbox-list">
           <div v-if="filteredTasks.length === 0" class="empty-state">No tickets in {{ selectedColumnLabel }}</div>
           <div v-for="task in filteredTasks" :key="task.id"
@@ -94,9 +100,15 @@ const LeftPane = {
     }
   },
   data() {
-    return { rosterDragSlot: null, selectedColumn: 'inbox' };
+    return { rosterDragSlot: null, selectedColumn: 'inbox', quickCreateText: '' };
   },
   methods: {
+    submitQuickCreate() {
+      const title = this.quickCreateText.trim();
+      if (!title) return;
+      this.$emit('quick-create-task', title);
+      this.quickCreateText = '';
+    },
     onDragStart(e, taskId) {
       e.dataTransfer.setData('text/plain', taskId);
       e.dataTransfer.effectAllowed = 'move';
