@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Bullpen MCP stdio server.
 
-This process exposes ticket tools over JSON-RPC 2.0 using MCP stdio framing.
-It supports both framed MCP input and a legacy one-line JSON fallback for tests.
+This process exposes ticket tools over JSON-RPC 2.0. It supports both:
+- MCP stdio framing (`Content-Length` headers + body)
+- newline-delimited JSON messages
+
+Responses are emitted using the same transport format as the request.
 """
 
 from __future__ import annotations
@@ -102,12 +105,12 @@ def _parse_content_length(header_line: bytes) -> int:
     return parsed
 
 
-def _read(in_stream: Any | None = None) -> dict[str, Any] | None:
+def _read(in_stream: Any | None = None, return_mode: bool = False):
     """Read one JSON-RPC message from stdin.
 
     Supported formats:
-    - MCP framed messages (headers + body)
-    - newline-delimited JSON (legacy test fallback)
+    - MCP framed messages (headers + body) -> mode "framed"
+    - newline-delimited JSON -> mode "line"
     """
     if in_stream is None:
         in_stream = sys.stdin.buffer
@@ -121,7 +124,10 @@ def _read(in_stream: Any | None = None) -> dict[str, Any] | None:
 
         is_header = b":" in line and not line.lstrip().startswith((b"{", b"["))
         if not is_header:
-            return json.loads(line.decode("utf-8"))
+            parsed = json.loads(line.decode("utf-8"))
+            if return_mode:
+                return parsed, "line"
+            return parsed
 
         headers = [line]
         while True:
@@ -143,29 +149,35 @@ def _read(in_stream: Any | None = None) -> dict[str, Any] | None:
         body = in_stream.read(content_length)
         if body is None or len(body) != content_length:
             return None
-        return json.loads(body.decode("utf-8"))
+        parsed = json.loads(body.decode("utf-8"))
+        if return_mode:
+            return parsed, "framed"
+        return parsed
 
 
-def _write(msg: dict[str, Any], out_stream: Any | None = None) -> None:
-    """Write one framed JSON-RPC message."""
+def _write(msg: dict[str, Any], out_stream: Any | None = None, mode: str = "framed") -> None:
+    """Write one JSON-RPC message using the selected transport."""
     if out_stream is None:
         out_stream = sys.stdout.buffer
     payload = json.dumps(msg, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    out_stream.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
-    out_stream.write(payload)
+    if mode == "line":
+        out_stream.write(payload + b"\n")
+    else:
+        out_stream.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
+        out_stream.write(payload)
     out_stream.flush()
 
 
-def _result(msg_id: Any, result: dict[str, Any]) -> None:
-    _write({"jsonrpc": "2.0", "id": msg_id, "result": result})
+def _result(msg_id: Any, result: dict[str, Any], mode: str = "framed") -> None:
+    _write({"jsonrpc": "2.0", "id": msg_id, "result": result}, mode=mode)
 
 
-def _error(msg_id: Any, code: int, message: str) -> None:
-    _write({"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}})
+def _error(msg_id: Any, code: int, message: str, mode: str = "framed") -> None:
+    _write({"jsonrpc": "2.0", "id": msg_id, "error": {"code": code, "message": message}}, mode=mode)
 
 
-def _tool_result(msg_id: Any, text: str, is_error: bool = False) -> None:
-    _result(msg_id, {"content": [{"type": "text", "text": text}], "isError": is_error})
+def _tool_result(msg_id: Any, text: str, is_error: bool = False, mode: str = "framed") -> None:
+    _result(msg_id, {"content": [{"type": "text", "text": text}], "isError": is_error}, mode=mode)
 
 
 @dataclass
@@ -321,21 +333,28 @@ def _render_ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def handle_call(bp_dir: str, client: BullpenClient | None, msg_id: Any, name: str, args: dict[str, Any]) -> None:
+def handle_call(
+    bp_dir: str,
+    client: BullpenClient | None,
+    msg_id: Any,
+    name: str,
+    args: dict[str, Any],
+    io_mode: str = "framed",
+) -> None:
     """Dispatch a tools/call request."""
     if name == "create_ticket":
         title = str(args.get("title", "")).strip()
         if not title:
-            _tool_result(msg_id, "Error: title is required", is_error=True)
+            _tool_result(msg_id, "Error: title is required", is_error=True, mode=io_mode)
             return
         if client is None:
-            _tool_result(msg_id, "Error: create_ticket unavailable", is_error=True)
+            _tool_result(msg_id, "Error: create_ticket unavailable", is_error=True, mode=io_mode)
             return
         created, err = client.create_ticket(args)
         if err:
-            _tool_result(msg_id, f"Error: {err}", is_error=True)
+            _tool_result(msg_id, f"Error: {err}", is_error=True, mode=io_mode)
             return
-        _tool_result(msg_id, json.dumps(_render_ticket_summary(created or {})))
+        _tool_result(msg_id, json.dumps(_render_ticket_summary(created or {})), mode=io_mode)
         return
 
     if name in {"list_tickets", "list_tasks"}:
@@ -344,25 +363,25 @@ def handle_call(bp_dir: str, client: BullpenClient | None, msg_id: Any, name: st
         if status_filter:
             tickets = [item for item in tickets if item.get("status") == status_filter]
         payload = [_render_ticket_summary(ticket) for ticket in tickets]
-        _tool_result(msg_id, json.dumps(payload, indent=2))
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
         return
 
     if name == "update_ticket":
         ticket_id = str(args.get("id", "")).strip()
         if not ticket_id:
-            _tool_result(msg_id, "Error: id is required", is_error=True)
+            _tool_result(msg_id, "Error: id is required", is_error=True, mode=io_mode)
             return
         if client is None:
-            _tool_result(msg_id, "Error: update_ticket unavailable", is_error=True)
+            _tool_result(msg_id, "Error: update_ticket unavailable", is_error=True, mode=io_mode)
             return
         updated, err = client.update_ticket(args)
         if err:
-            _tool_result(msg_id, f"Error: {err}", is_error=True)
+            _tool_result(msg_id, f"Error: {err}", is_error=True, mode=io_mode)
             return
-        _tool_result(msg_id, json.dumps(_render_ticket_summary(updated or {})))
+        _tool_result(msg_id, json.dumps(_render_ticket_summary(updated or {})), mode=io_mode)
         return
 
-    _error(msg_id, -32602, f"Unknown tool: {name}")
+    _error(msg_id, -32602, f"Unknown tool: {name}", mode=io_mode)
 
 
 def _initialize_result() -> dict[str, Any]:
@@ -382,24 +401,26 @@ def _initialize_result() -> dict[str, Any]:
 
 def main(bp_dir: str, host: str, port: int) -> None:
     client = BullpenClient(host, port)
+    io_mode = "framed"
     try:
         while True:
-            message = _read()
-            if message is None:
+            read_result = _read(return_mode=True)
+            if read_result is None:
                 break
+            message, io_mode = read_result
 
             method = message.get("method")
             msg_id = message.get("id")
 
             if method == "initialize":
-                _result(msg_id, _initialize_result())
+                _result(msg_id, _initialize_result(), mode=io_mode)
                 continue
 
             if method == "notifications/initialized":
                 continue
 
             if method == "tools/list":
-                _result(msg_id, {"tools": TOOLS, "nextCursor": None})
+                _result(msg_id, {"tools": TOOLS, "nextCursor": None}, mode=io_mode)
                 continue
 
             if method == "tools/call":
@@ -407,16 +428,16 @@ def main(bp_dir: str, host: str, port: int) -> None:
                 name = params.get("name")
                 args = params.get("arguments", {})
                 if not isinstance(name, str):
-                    _error(msg_id, -32602, "Invalid tools/call request: missing tool name")
+                    _error(msg_id, -32602, "Invalid tools/call request: missing tool name", mode=io_mode)
                     continue
                 if not isinstance(args, dict):
-                    _error(msg_id, -32602, "Invalid tools/call request: arguments must be an object")
+                    _error(msg_id, -32602, "Invalid tools/call request: arguments must be an object", mode=io_mode)
                     continue
-                handle_call(bp_dir, client, msg_id, name, args)
+                handle_call(bp_dir, client, msg_id, name, args, io_mode=io_mode)
                 continue
 
             if msg_id is not None:
-                _error(msg_id, -32601, f"Method not found: {method}")
+                _error(msg_id, -32601, f"Method not found: {method}", mode=io_mode)
     finally:
         client.disconnect()
 

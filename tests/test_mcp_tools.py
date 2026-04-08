@@ -100,13 +100,23 @@ def _parse_framed_messages(raw):
     return out
 
 
+def _parse_line_messages(raw):
+    out = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        out.append(json.loads(line.decode("utf-8")))
+    return out
+
+
 def test_list_tasks_alias_returns_ticket_summary(tmp_workspace, monkeypatch):
     bp_dir = init_workspace(tmp_workspace)
     created = create_task(bp_dir, "MCP alias test")
 
     captured = {}
 
-    def fake_tool_result(msg_id, text, is_error=False):
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
         captured["id"] = msg_id
         captured["text"] = text
         captured["is_error"] = is_error
@@ -177,6 +187,15 @@ def test_read_parses_mcp_content_length_frame():
     assert msg["id"] == 1
 
 
+def test_read_returns_line_mode_for_newline_json():
+    raw = b'{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}\n'
+    parsed, mode = mcp_tools._read(io.BytesIO(raw), return_mode=True)
+
+    assert mode == "line"
+    assert parsed["method"] == "tools/list"
+    assert parsed["id"] == 4
+
+
 def test_read_parses_mcp_frame_when_content_type_precedes_length():
     msg = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
     parsed = mcp_tools._read(io.BytesIO(_frame(msg, content_type_first=True)))
@@ -197,6 +216,16 @@ def test_write_emits_mcp_content_length_frame():
     parsed = json.loads(body.decode("utf-8"))
     assert parsed["id"] == 9
     assert parsed["result"]["ok"] is True
+
+
+def test_write_emits_line_json_when_mode_line():
+    out = io.BytesIO()
+    mcp_tools._write({"jsonrpc": "2.0", "id": 10, "result": {"ok": True}}, out_stream=out, mode="line")
+    parsed = _parse_line_messages(out.getvalue())
+
+    assert len(parsed) == 1
+    assert parsed[0]["id"] == 10
+    assert parsed[0]["result"]["ok"] is True
 
 
 def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, monkeypatch):
@@ -257,3 +286,39 @@ def test_main_initialize_and_tools_list_do_not_require_socket_connect(tmp_worksp
     responses = _parse_framed_messages(out_stream.getvalue())
 
     assert [r["id"] for r in responses] == [1, 2]
+
+
+def test_main_processes_line_json_initialize_tools_and_list_tasks(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    created = create_task(bp_dir, "MCP line-json test")
+
+    req = b"\n".join([
+        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}).encode("utf-8"),
+        json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}).encode("utf-8"),
+        json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}).encode("utf-8"),
+        json.dumps({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "list_tasks", "arguments": {}},
+        }).encode("utf-8"),
+        b"",
+    ])
+
+    in_stream = io.BytesIO(req)
+    out_stream = io.BytesIO()
+    monkeypatch.setattr(mcp_tools, "BullpenClient", _ConnectedClient)
+    monkeypatch.setattr(mcp_tools.sys, "stdin", io.TextIOWrapper(in_stream, encoding="utf-8"))
+    stdout = io.TextIOWrapper(out_stream, encoding="utf-8")
+    monkeypatch.setattr(mcp_tools.sys, "stdout", stdout)
+
+    mcp_tools.main(bp_dir, "127.0.0.1", 5050)
+    stdout.flush()
+    responses = _parse_line_messages(out_stream.getvalue())
+
+    assert [r["id"] for r in responses] == [1, 2, 3]
+    tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
+    assert "list_tasks" in tool_names
+    summary = json.loads(responses[2]["result"]["content"][0]["text"])
+    ids = {item["id"] for item in summary}
+    assert created["id"] in ids
