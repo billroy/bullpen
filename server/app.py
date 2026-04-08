@@ -10,6 +10,7 @@ from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json, write_json, read_frontmatter, ensure_within, atomic_write
 from server.profiles import list_profiles
+from server.scheduler import Scheduler
 from server.teams import list_teams
 
 
@@ -105,6 +106,11 @@ def create_app(workspace, no_browser=False):
         socketio.emit("state:init", state)
 
     register_events(socketio, app)
+
+    # Start time-based scheduler
+    scheduler = Scheduler(bp_dir, socketio)
+    scheduler.start()
+    app.config["scheduler"] = scheduler
 
     return app
 
