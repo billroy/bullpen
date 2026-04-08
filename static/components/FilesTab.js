@@ -237,6 +237,8 @@ const FilesTab = {
       const existing = this.openFiles.find(f => f.path === node.path);
       if (existing) {
         this.activeFile = existing;
+        // Re-fetch content from disk unless currently editing
+        if (!this.editing) this.reloadActiveFile();
         return;
       }
       // Images/PDFs don't need content fetch
