@@ -131,6 +131,7 @@ def register_events(socketio, app):
             "expertise_prompt": profile.get("expertise_prompt", ""),
             "max_retries": 1,
             "use_worktree": False,
+            "auto_commit": False,
             "task_queue": [],
             "state": "idle",
         }

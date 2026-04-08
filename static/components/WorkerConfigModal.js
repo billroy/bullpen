@@ -21,6 +21,7 @@ const WorkerConfigModal = {
             expertise_prompt: w.expertise_prompt || '',
             max_retries: w.max_retries ?? 1,
             use_worktree: w.use_worktree || false,
+            auto_commit: w.auto_commit || false,
           };
         }
       }
@@ -104,6 +105,11 @@ const WorkerConfigModal = {
               <input type="checkbox" v-model="form.use_worktree">
               Use Git Worktree
               <span class="form-hint">(isolate agent work in a separate branch)</span>
+            </label>
+            <label class="form-label form-label-inline">
+              <input type="checkbox" v-model="form.auto_commit">
+              Auto-Commit
+              <span class="form-hint">(commit agent changes on success)</span>
             </label>
           </div>
           <label class="form-label">

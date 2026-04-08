@@ -201,6 +201,42 @@ def _assemble_prompt(bp_dir, worker, task):
     return prompt
 
 
+def _auto_commit(cwd, task_title, task_id):
+    """Stage all changes and commit. Returns commit hash or None."""
+    # Stage all changes
+    result = subprocess.run(
+        ["git", "add", "-A"],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    # Check if there's anything to commit
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        # Nothing staged
+        return None
+
+    # Commit
+    msg = f"bullpen: {task_title} [{task_id}]"
+    result = subprocess.run(
+        ["git", "commit", "-m", msg],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    # Get commit hash
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
 def _setup_worktree(workspace, bp_dir, task_id):
     """Create a git worktree for isolated agent execution. Returns worktree path."""
     # Verify workspace is a git repo
@@ -257,7 +293,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         _write_log(bp_dir, slot_index, task_id, prompt, result)
 
         if result["success"]:
-            _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio)
+            _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace)
         else:
             _on_agent_error(bp_dir, slot_index, task_id, result.get("error", "Unknown error"), socketio, result.get("output", ""))
 
@@ -268,7 +304,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             _processes.pop(slot_index, None)
 
 
-def _on_agent_success(bp_dir, slot_index, task_id, output, socketio):
+def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None):
     """Handle successful agent completion."""
     with _write_lock:
         layout = _load_layout(bp_dir)
@@ -278,6 +314,14 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio):
 
         # Append output to task
         _append_output(bp_dir, task_id, worker, output)
+
+        # Auto-commit if enabled
+        if worker.get("auto_commit") and agent_cwd:
+            task = task_mod.read_task(bp_dir, task_id)
+            task_title = task.get("title", "untitled") if task else "untitled"
+            commit_hash = _auto_commit(agent_cwd, task_title, task_id)
+            if commit_hash:
+                _append_output(bp_dir, task_id, worker, f"Commit: {commit_hash}")
 
         # Remove from queue
         queue = worker.get("task_queue", [])

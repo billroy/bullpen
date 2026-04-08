@@ -177,6 +177,8 @@ def validate_worker_configure(data, max_slots=100):
         sanitized["max_retries"] = _int(fields["max_retries"], "max_retries", min_val=0, max_val=10)
     if "use_worktree" in fields:
         sanitized["use_worktree"] = bool(fields["use_worktree"])
+    if "auto_commit" in fields:
+        sanitized["auto_commit"] = bool(fields["auto_commit"])
 
     return slot, sanitized
 

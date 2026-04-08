@@ -14,6 +14,7 @@ from server.workers import (
     start_worker,
     stop_worker,
     _assemble_prompt,
+    _auto_commit,
     _load_layout,
     _setup_worktree,
 )
@@ -254,6 +255,44 @@ class TestWorktree:
         # Verify worktree directory was created
         worktree_path = os.path.join(bp_dir, "worktrees", task["id"])
         assert os.path.isdir(worktree_path)
+
+
+class TestAutoCommit:
+    def test_auto_commit_creates_commit(self, tmp_workspace):
+        """Auto-commit stages and commits changes."""
+        subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
+
+        # Create a file to commit
+        with open(os.path.join(tmp_workspace, "output.txt"), "w") as f:
+            f.write("agent output")
+
+        commit_hash = _auto_commit(tmp_workspace, "Test Task", "task-123")
+        assert commit_hash is not None
+        assert len(commit_hash) == 40  # full SHA
+
+        # Verify commit message
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%s"],
+            cwd=tmp_workspace, capture_output=True, text=True,
+        )
+        assert "bullpen: Test Task [task-123]" in result.stdout
+
+    def test_auto_commit_nothing_to_commit(self, tmp_workspace):
+        """Auto-commit returns None when there are no changes."""
+        subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
+
+        commit_hash = _auto_commit(tmp_workspace, "Test Task", "task-456")
+        assert commit_hash is None
+
+    def test_auto_commit_not_git_repo(self, tmp_workspace):
+        """Auto-commit returns None gracefully when not a git repo."""
+        with open(os.path.join(tmp_workspace, "output.txt"), "w") as f:
+            f.write("agent output")
+
+        commit_hash = _auto_commit(tmp_workspace, "Test Task", "task-789")
+        assert commit_hash is None
 
 
 class TestSharedLock:
