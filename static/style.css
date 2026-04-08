@@ -513,6 +513,78 @@ body {
   margin-top: 4px;
 }
 
+/* === View Mode Selector === */
+.view-mode-selector {
+  display: flex;
+  gap: 2px;
+}
+
+.view-mode-btn {
+  font-size: 15px;
+  padding: 4px 7px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+
+.view-mode-btn.active {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+/* === Ticket List View === */
+.ticket-list {
+  width: 100%;
+}
+
+.ticket-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ticket-list-table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.ticket-list-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.ticket-list-row:hover {
+  background: var(--bg-hover);
+}
+
+.ticket-list-row td {
+  padding: 7px 10px;
+  vertical-align: middle;
+}
+
+.ticket-list-col-title {
+  width: 100%;
+}
+
+.ticket-list-col-priority,
+.ticket-list-col-status,
+.ticket-list-col-type,
+.ticket-list-col-worker {
+  white-space: nowrap;
+}
+
+.ticket-list-empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+}
+
 /* === Bullpen Grid === */
 .bullpen-grid-container {
   height: 100%;

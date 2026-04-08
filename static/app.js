@@ -75,6 +75,7 @@ const app = createApp({
 
     const connected = ref(false);
     const activeTab = ref('tasks');
+    const ticketsViewMode = ref('kanban');
     const leftPaneVisible = ref(true);
     const toasts = reactive([]);
     const showCreateModal = ref(false);
@@ -394,6 +395,7 @@ const app = createApp({
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       gridOptions, onTabBarGridResize, duplicateWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
+      ticketsViewMode,
     };
   },
   template: `
@@ -434,6 +436,12 @@ const app = createApp({
                 <span v-if="tab.isFocus" class="tab-close" @click.stop="closeFocusTab(tab.slotIndex)">&times;</span>
               </button>
             </div>
+            <div v-if="activeTab === 'tasks'" class="tab-bar-right">
+              <div class="view-mode-selector">
+                <button class="btn-icon view-mode-btn" :class="{ active: ticketsViewMode === 'kanban' }" @click="ticketsViewMode = 'kanban'" title="Kanban view">&#10697;</button>
+                <button class="btn-icon view-mode-btn" :class="{ active: ticketsViewMode === 'list' }" @click="ticketsViewMode = 'list'" title="List view">&#9776;</button>
+              </div>
+            </div>
             <div v-if="activeTab === 'workers'" class="tab-bar-right">
               <span class="bullpen-path" :title="state.workspace">{{ state.workspace ? state.workspace.split('/').slice(-2).join('/') : '' }}</span>
               <select class="form-select" :value="(state.config.grid?.rows || 4) + 'x' + (state.config.grid?.cols || 6)" @change="onTabBarGridResize">
@@ -447,6 +455,7 @@ const app = createApp({
               :tasks="state.tasks"
               :columns="state.config.columns"
               :layout="state.layout"
+              :view-mode="ticketsViewMode"
               @select-task="selectTask"
               @move-task="moveTask"
               @archive-done="archiveDone"
