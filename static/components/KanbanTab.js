@@ -26,9 +26,15 @@ const KanbanTab = {
   `,
   methods: {
     columnTasks(key) {
+      const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       return (this.tasks || [])
         .filter(t => t.status === key)
-        .sort((a, b) => (a.order || '').localeCompare(b.order || ''));
+        .sort((a, b) => {
+          const pa = weight[a.priority] ?? weight.normal;
+          const pb = weight[b.priority] ?? weight.normal;
+          if (pa !== pb) return pa - pb;
+          return (a.order || '').localeCompare(b.order || '');
+        });
     },
     onDragOver(e, colKey) {
       e.dataTransfer.dropEffect = 'move';

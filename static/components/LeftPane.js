@@ -36,9 +36,15 @@ const LeftPane = {
   `,
   computed: {
     inboxTasks() {
+      const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       return (this.tasks || [])
         .filter(t => t.status === 'inbox')
-        .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+        .sort((a, b) => {
+          const pa = weight[a.priority] ?? weight.normal;
+          const pb = weight[b.priority] ?? weight.normal;
+          if (pa !== pb) return pa - pb;
+          return (b.created_at || '').localeCompare(a.created_at || '');
+        });
     },
     workerList() {
       if (!this.layout?.slots) return [];
