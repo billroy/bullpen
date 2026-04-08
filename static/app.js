@@ -7,6 +7,7 @@ const app = createApp({
     KanbanTab,
     BullpenTab,
     FilesTab,
+    LiveAgentChatTab,
     WorkerFocusView,
     TaskCreateModal,
     TaskDetailPanel,
@@ -99,6 +100,7 @@ const app = createApp({
 
     // Socket.io
     const socket = io();
+    window._bullpenSocket = socket;
 
     socket.on('connect', () => { connected.value = true; });
     socket.on('disconnect', () => { connected.value = false; });
@@ -302,6 +304,7 @@ const app = createApp({
         { id: 'tasks', label: 'Tickets' },
         { id: 'workers', label: 'Workers' },
         { id: 'files', label: 'Files' },
+        { id: 'chat', label: 'Live Agent' },
       ];
       for (const ft of focusTabs) {
         tabs.push({ id: 'focus-' + ft.slotIndex, label: ft.label, isFocus: true, slotIndex: ft.slotIndex });
@@ -476,6 +479,7 @@ const app = createApp({
               @open-focus="openFocusTab"
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
+            <LiveAgentChatTab v-if="activeTab === 'chat'" />
             <WorkerFocusView
               v-for="ft in focusTabs"
               v-show="activeTab === 'focus-' + ft.slotIndex"

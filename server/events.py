@@ -2,6 +2,8 @@
 
 import logging
 import os
+import subprocess
+import threading
 
 from flask import request
 from flask_socketio import emit
@@ -524,3 +526,141 @@ def register_events(socketio, app):
     def on_project_list(data=None):
         manager = app.config["manager"]
         emit("projects:updated", manager.list_projects())
+
+    # --- Chat events ---
+
+    # In-memory chat sessions: sessionId -> list of {role, content}
+    _chat_sessions = {}
+    _chat_lock = threading.Lock()
+
+    def _run_chat(session_id, message, argv, adapter, response_collector):
+        """Run chat agent subprocess, emit streaming lines, then emit done."""
+        collected = []
+        try:
+            proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            prompt = response_collector["prompt"]
+            try:
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+
+            batch = []
+            batch_lock = threading.Lock()
+            import time
+            last_emit = [time.time()]
+
+            def _drain_stdout():
+                for line in proc.stdout:
+                    display = adapter.format_stream_line(line)
+                    if display is None:
+                        continue
+                    for dl in display.split("\n"):
+                        collected.append(dl)
+                        to_emit = None
+                        with batch_lock:
+                            batch.append(dl)
+                            now = time.time()
+                            if now - last_emit[0] >= 0.2:
+                                to_emit = list(batch)
+                                batch.clear()
+                                last_emit[0] = now
+                        if to_emit:
+                            socketio.emit("chat:output", {"sessionId": session_id, "lines": to_emit})
+
+            def _drain_stderr():
+                try:
+                    proc.stderr.read()
+                except Exception:
+                    pass
+
+            t_err = threading.Thread(target=_drain_stderr, daemon=True)
+            t_err.start()
+            _drain_stdout()
+            proc.wait()
+            t_err.join(timeout=2)
+
+            # Flush remaining batch
+            with batch_lock:
+                if batch:
+                    socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)})
+                    batch.clear()
+
+            full_response = "\n".join(collected).strip()
+
+            # Update session history
+            with _chat_lock:
+                if session_id in _chat_sessions:
+                    _chat_sessions[session_id].append({"role": "user", "content": message})
+                    _chat_sessions[session_id].append({"role": "assistant", "content": full_response})
+
+            socketio.emit("chat:done", {"sessionId": session_id})
+
+        except Exception as e:
+            logging.exception("Chat agent error for session %s", session_id)
+            socketio.emit("chat:error", {"sessionId": session_id, "message": str(e)})
+
+    @socketio.on("chat:send")
+    def on_chat_send(data):
+        from server.agents import get_adapter as _get_adapter
+        session_id = data.get("sessionId", "")
+        provider = data.get("provider", "claude")
+        model = data.get("model", "claude-sonnet-4-6")
+        message = (data.get("message") or "").strip()
+        ws_id, bp_dir = _resolve(data)
+
+        if not session_id or not message:
+            emit("chat:error", {"sessionId": session_id, "message": "sessionId and message are required"})
+            return
+        if len(message) > 100_000:
+            emit("chat:error", {"sessionId": session_id, "message": "Message too long"})
+            return
+
+        adapter = _get_adapter(provider)
+        if not adapter:
+            emit("chat:error", {"sessionId": session_id, "message": f"Unknown provider: {provider}"})
+            return
+
+        # Build prompt with conversation history
+        with _chat_lock:
+            if session_id not in _chat_sessions:
+                _chat_sessions[session_id] = []
+            history = list(_chat_sessions[session_id])
+
+        parts = []
+        if history:
+            parts.append("The following is a conversation history. Continue the conversation as the assistant.")
+            parts.append("")
+            for turn in history:
+                role = "Human" if turn["role"] == "user" else "Assistant"
+                parts.append(f"{role}: {turn['content']}")
+            parts.append("")
+        parts.append(f"Human: {message}")
+        parts.append("")
+        parts.append("Reply as a helpful AI assistant. Do not prefix your reply with 'Assistant:'.")
+        full_prompt = "\n".join(parts)
+
+        workspace = os.path.dirname(bp_dir)
+        argv = adapter.build_argv(full_prompt, model, workspace)
+
+        response_collector = {"prompt": full_prompt}
+        thread = threading.Thread(
+            target=_run_chat,
+            args=(session_id, message, argv, adapter, response_collector),
+            daemon=True,
+        )
+        thread.start()
+
+    @socketio.on("chat:clear")
+    def on_chat_clear(data):
+        session_id = data.get("sessionId", "")
+        with _chat_lock:
+            _chat_sessions.pop(session_id, None)
+        emit("chat:cleared", {"sessionId": session_id})
