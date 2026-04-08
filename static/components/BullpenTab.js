@@ -1,6 +1,6 @@
 const BullpenTab = {
   props: ['layout', 'config', 'profiles', 'tasks'],
-  emits: ['add-worker', 'configure-worker'],
+  emits: ['add-worker', 'configure-worker', 'select-task'],
   components: { WorkerCard },
   data() {
     return {
@@ -26,6 +26,7 @@ const BullpenTab = {
             :slot-index="i - 1"
             :tasks="tasks"
             @configure="$emit('configure-worker', $event)"
+            @select-task="$emit('select-task', $event)"
           />
           <div v-else class="grid-slot empty-slot"
                @click="openLibrary(i - 1)"

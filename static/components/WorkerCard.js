@@ -1,6 +1,6 @@
 const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks'],
-  emits: ['configure'],
+  emits: ['configure', 'select-task'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver }"
          draggable="true"
@@ -24,7 +24,8 @@ const WorkerCard = {
           <span class="worker-card-agent">{{ worker.agent }}/{{ worker.model }}</span>
         </div>
         <div class="worker-card-queue" v-if="queuedTasks.length">
-          <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title">
+          <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
+               @click.stop="$emit('select-task', t.id)">
             {{ t.title }}
           </div>
         </div>
@@ -73,7 +74,7 @@ const WorkerCard = {
       e.dataTransfer.effectAllowed = 'move';
     },
     onDragOver(e) {
-      if (e.dataTransfer.types.includes('text/plain')) {
+      if (e.dataTransfer.types.includes('text/plain') || e.dataTransfer.types.includes('application/x-worker-slot')) {
         e.dataTransfer.dropEffect = 'move';
         this.dragOver = true;
       }
@@ -81,6 +82,13 @@ const WorkerCard = {
     onDragLeave() { this.dragOver = false; },
     onDrop(e) {
       this.dragOver = false;
+      // Worker-to-worker swap
+      const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
+      if (fromSlot !== '' && Number(fromSlot) !== this.slotIndex) {
+        this.$root.moveWorker(Number(fromSlot), this.slotIndex);
+        return;
+      }
+      // Task assignment
       const taskId = e.dataTransfer.getData('text/plain');
       if (taskId) {
         this.$root.assignTask(taskId, this.slotIndex);

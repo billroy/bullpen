@@ -182,6 +182,7 @@ const app = createApp({
               :tasks="state.tasks"
               @add-worker="addWorker"
               @configure-worker="configureSlot = $event"
+              @select-task="selectTask"
             />
             <FilesTab v-if="activeTab === 'files'" />
           </div>

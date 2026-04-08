@@ -26,9 +26,16 @@ const LeftPane = {
         </div>
         <div class="worker-roster">
           <div v-if="!workerList.length" class="empty-state">No workers configured</div>
-          <div v-for="w in workerList" :key="w.slot" class="roster-item">
+          <div v-for="w in workerList" :key="w.slot"
+               class="roster-item"
+               :class="{ 'drag-over': rosterDragSlot === w.slot }"
+               :style="{ borderLeftColor: agentColor(w.agent) }"
+               @dragover.prevent="onRosterDragOver($event, w)"
+               @dragleave="onRosterDragLeave"
+               @drop="onRosterDrop($event, w.slot)">
             <span class="roster-dot" :class="'status-' + (w.state || 'idle')"></span>
             <span class="roster-name">{{ w.name }}</span>
+            <span class="agent-badge" :style="{ color: agentColor(w.agent) }">{{ w.agent }}</span>
           </div>
         </div>
       </div>
@@ -49,14 +56,36 @@ const LeftPane = {
     workerList() {
       if (!this.layout?.slots) return [];
       return this.layout.slots
-        .map((s, i) => s ? { slot: i, name: s.name, state: s.state || 'idle' } : null)
+        .map((s, i) => s ? { slot: i, name: s.name, state: s.state || 'idle', agent: s.agent } : null)
         .filter(Boolean);
     }
+  },
+  data() {
+    return { rosterDragSlot: null };
   },
   methods: {
     onDragStart(e, taskId) {
       e.dataTransfer.setData('text/plain', taskId);
       e.dataTransfer.effectAllowed = 'move';
+    },
+    agentColor(agent) {
+      return { claude: '#da7756', codex: '#10a37f' }[agent] || '#6B7280';
+    },
+    onRosterDragOver(e, w) {
+      if (e.dataTransfer.types.includes('text/plain')) {
+        e.dataTransfer.dropEffect = 'move';
+        this.rosterDragSlot = w.slot;
+      }
+    },
+    onRosterDragLeave() {
+      this.rosterDragSlot = null;
+    },
+    onRosterDrop(e, slot) {
+      this.rosterDragSlot = null;
+      const taskId = e.dataTransfer.getData('text/plain');
+      if (taskId) {
+        this.$root.assignTask(taskId, slot);
+      }
     }
   }
 };
