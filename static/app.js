@@ -20,6 +20,7 @@ const app = createApp({
       tasks: [],
       profiles: [],
       teams: [],
+      filesVersion: 0,
     });
 
     const connected = ref(false);
@@ -73,6 +74,7 @@ const app = createApp({
     socket.on('profiles:updated', (profiles) => { state.profiles = profiles; });
     socket.on('teams:updated', (teams) => { state.teams = teams; });
     socket.on('error', (data) => { addToast(data.message, 'error'); });
+    socket.on('files:changed', () => { state.filesVersion++; });
 
     // Task actions
     function createTask(data) { socket.emit('task:create', data); }
@@ -201,7 +203,7 @@ const app = createApp({
               @configure-worker="configureSlot = $event"
               @select-task="selectTask"
             />
-            <FilesTab v-if="activeTab === 'files'" />
+            <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
           </div>
         </div>
         <TaskDetailPanel

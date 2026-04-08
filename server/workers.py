@@ -263,6 +263,7 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio):
         task = task_mod.read_task(bp_dir, task_id)
         socketio.emit("task:updated", task)
         socketio.emit("layout:updated", layout)
+        socketio.emit("files:changed")
 
     # Auto-advance if more tasks in queue
     if queue and worker.get("activation") in ("on_drop", "on_queue"):

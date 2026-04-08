@@ -43,6 +43,7 @@ const FileTreeNode = {
 };
 
 const FilesTab = {
+  props: ['filesVersion'],
   template: `
     <div class="files-container">
       <div class="files-tree-pane">
@@ -66,15 +67,27 @@ const FilesTab = {
             :key="f.path"
             class="file-tab"
             :class="{ active: activeFile?.path === f.path }"
-            @click="activeFile = f"
+            @click="switchToFile(f)"
           >
             <span class="file-tab-name">{{ f.name }}</span>
             <button class="file-tab-close" @click.stop="closeFile(f.path)">&times;</button>
           </div>
         </div>
         <div class="files-viewer-body" v-if="activeFile">
+          <!-- Editor toolbar -->
+          <div v-if="canEdit" class="file-editor-toolbar">
+            <button v-if="!editing" class="btn btn-sm" @click="startEditing">Edit</button>
+            <template v-if="editing">
+              <button class="btn btn-sm btn-primary" @click="saveEdit">Save</button>
+              <button class="btn btn-sm" @click="cancelEdit">Cancel</button>
+            </template>
+          </div>
+          <!-- Edit mode -->
+          <div v-if="editing" class="file-edit-container">
+            <textarea class="file-editor-textarea" v-model="editContent"></textarea>
+          </div>
           <!-- Image -->
-          <div v-if="isImage" class="file-view-image">
+          <div v-else-if="isImage" class="file-view-image">
             <img :src="'/api/files/' + activeFile.path" :alt="activeFile.name" />
           </div>
           <!-- PDF -->
@@ -117,6 +130,8 @@ const FilesTab = {
       openFiles: [],
       activeFile: null,
       viewMode: 'preview',
+      editing: false,
+      editContent: '',
     };
   },
   computed: {
@@ -137,6 +152,15 @@ const FilesTab = {
     },
     isMarkdown() {
       return this.ext === '.md';
+    },
+    isTextFile() {
+      return !this.isImage && !this.isPdf;
+    },
+    canEdit() {
+      if (!this.activeFile || !this.isTextFile) return false;
+      // Size guard: skip if content > 1MB
+      if (this.activeFile.content && this.activeFile.content.length > 1_000_000) return false;
+      return true;
     },
     renderedMarkdown() {
       if (!this.activeFile?.content) return '';
@@ -167,6 +191,13 @@ const FilesTab = {
   watch: {
     activeFile() {
       this.viewMode = 'preview';
+      this.editing = false;
+    },
+    filesVersion() {
+      this.loadTree();
+      if (this.activeFile && !this.editing) {
+        this.reloadActiveFile();
+      }
     }
   },
   mounted() {
@@ -207,12 +238,59 @@ const FilesTab = {
         console.error('Failed to open file', e);
       }
     },
+    switchToFile(f) {
+      if (this.editing) {
+        if (!confirm('Discard unsaved changes?')) return;
+        this.editing = false;
+      }
+      this.activeFile = f;
+    },
     closeFile(path) {
+      if (this.editing && this.activeFile?.path === path) {
+        if (!confirm('Discard unsaved changes?')) return;
+        this.editing = false;
+      }
       const idx = this.openFiles.findIndex(f => f.path === path);
       if (idx < 0) return;
       this.openFiles.splice(idx, 1);
       if (this.activeFile?.path === path) {
         this.activeFile = this.openFiles[Math.min(idx, this.openFiles.length - 1)] || null;
+      }
+    },
+    startEditing() {
+      this.editContent = this.activeFile.content || '';
+      this.editing = true;
+    },
+    async saveEdit() {
+      try {
+        const res = await fetch('/api/files/' + encodeURI(this.activeFile.path), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'text/plain' },
+          body: this.editContent,
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          alert('Save failed: ' + (data.error || 'Unknown error'));
+          return;
+        }
+        this.activeFile.content = this.editContent;
+        this.editing = false;
+      } catch (e) {
+        alert('Save failed: ' + e.message);
+      }
+    },
+    cancelEdit() {
+      this.editing = false;
+    },
+    async reloadActiveFile() {
+      if (!this.activeFile || this.isImage || this.isPdf) return;
+      try {
+        const res = await fetch('/api/files/' + encodeURI(this.activeFile.path));
+        if (!res.ok) return;
+        const data = await res.json();
+        this.activeFile.content = data.content;
+      } catch (e) {
+        // Silently skip reload failures
       }
     },
     getExt(name) {

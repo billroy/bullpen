@@ -8,7 +8,7 @@ from flask_socketio import SocketIO
 
 from server.events import register_events
 from server.init import init_workspace
-from server.persistence import read_json, write_json, read_frontmatter, ensure_within
+from server.persistence import read_json, write_json, read_frontmatter, ensure_within, atomic_write
 from server.profiles import list_profiles
 from server.teams import list_teams
 
@@ -72,6 +72,32 @@ def create_app(workspace, no_browser=False):
             return jsonify({"path": filepath, "content": content, "mime": mime or "text/plain"})
         except Exception:
             abort(500)
+
+    @app.route("/api/files/<path:filepath>", methods=["PUT"])
+    def file_write(filepath):
+        """Write file content."""
+        ws = app.config["workspace"]
+        full_path = os.path.join(ws, filepath)
+        try:
+            ensure_within(full_path, ws)
+        except ValueError:
+            abort(403)
+
+        content = request.get_data(as_text=True)
+        if len(content) > 1_000_000:
+            return jsonify({"error": "File too large (max 1MB)"}), 400
+
+        # Reject binary content
+        try:
+            content.encode("utf-8")
+        except UnicodeEncodeError:
+            return jsonify({"error": "Binary files cannot be edited"}), 400
+
+        try:
+            atomic_write(full_path, content)
+            return jsonify({"ok": True})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     @socketio.on("connect")
     def on_connect():
