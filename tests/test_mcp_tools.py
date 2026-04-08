@@ -36,9 +36,13 @@ class _ConnectedClient:
         return None
 
 
-def _frame(msg):
+def _frame(msg, content_type_first=False):
     payload = json.dumps(msg, separators=(",", ":")).encode("utf-8")
-    return b"Content-Length: " + str(len(payload)).encode("ascii") + b"\r\n\r\n" + payload
+    headers = []
+    if content_type_first:
+        headers.append(b"Content-Type: application/json\r\n")
+    headers.append(b"Content-Length: " + str(len(payload)).encode("ascii") + b"\r\n")
+    return b"".join(headers) + b"\r\n" + payload
 
 
 def _parse_framed_messages(raw):
@@ -120,6 +124,14 @@ def test_read_parses_mcp_content_length_frame():
     assert msg["id"] == 1
 
 
+def test_read_parses_mcp_frame_when_content_type_precedes_length():
+    msg = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+    parsed = mcp_tools._read(io.BytesIO(_frame(msg, content_type_first=True)))
+
+    assert parsed["method"] == "tools/list"
+    assert parsed["id"] == 2
+
+
 def test_write_emits_mcp_content_length_frame():
     out = io.BytesIO()
     mcp_tools._write({"jsonrpc": "2.0", "id": 9, "result": {"ok": True}}, out_stream=out)
@@ -147,7 +159,7 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
             "id": 3,
             "method": "tools/call",
             "params": {"name": "list_tasks", "arguments": {}},
-        }),
+        }, content_type_first=True),
     ])
 
     in_stream = io.BytesIO(req)

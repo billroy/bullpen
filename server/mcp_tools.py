@@ -115,17 +115,25 @@ def _read(in_stream=None):
         if not line.strip():
             continue
 
-        # MCP stdio framing: read headers then body bytes.
-        if line.lower().startswith(b"content-length:"):
-            content_length = _parse_content_length(line)
+        # MCP stdio framing: read header block (order-agnostic), then body bytes.
+        # Accept optional headers like Content-Type before Content-Length.
+        if b":" in line and not line.lstrip().startswith((b"{", b"[")):
+            headers = [line]
             while True:
                 header = in_stream.readline()
                 if not header:
                     return None
                 if not header.strip():
                     break
+                headers.append(header)
+
+            content_length = None
+            for header in headers:
                 if header.lower().startswith(b"content-length:"):
                     content_length = _parse_content_length(header)
+                    break
+            if content_length is None:
+                raise ValueError("Missing Content-Length header")
 
             body = in_stream.read(content_length)
             if not body or len(body) < content_length:
@@ -186,8 +194,6 @@ class BullpenClient:
         @self.sio.on("error")
         def on_error(data):
             self._resolve_pending_error(data.get("message", "Unknown error"))
-
-        self._connect_best_effort()
 
     def _candidate_urls(self):
         hosts = [self.host]
@@ -306,12 +312,6 @@ def handle_call(bp_dir, client, msg_id, name, args):
 
 def main(bp_dir, host, port):
     client = BullpenClient(host, port)
-    if not client.connected:
-        logging.warning(
-            "Bullpen MCP write channel unavailable at startup (%s:%s); read-only tools still active",
-            host,
-            port,
-        )
 
     try:
         while True:
