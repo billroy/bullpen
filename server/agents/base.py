@@ -40,3 +40,11 @@ class AgentAdapter(ABC):
             dict with keys: success (bool), output (str), error (str or None)
         """
         ...
+
+    def format_stream_line(self, line):
+        """Convert a raw stdout line into display text for the focus view.
+
+        Returns a string to display, or None to skip the line.
+        Override in adapters that use structured output (e.g. stream-json).
+        """
+        return line.rstrip("\n")

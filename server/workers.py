@@ -462,30 +462,38 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             if len(line) > MAX_LINE_LEN:
                 line = line[:MAX_LINE_LEN] + "[line truncated]\n"
             sink.append(line)
-            stripped = line.rstrip("\n")
-            combined_lines.append(stripped)
 
-            # Append to server-side buffer (cap at MAX_OUTPUT_BUFFER)
-            with _process_lock:
-                e = _processes.get((ws_id, slot_index))
-                if e:
-                    e["buffer"].append(stripped)
-                    e["buffer_size"] += len(stripped) + 1
-                    while e["buffer_size"] > MAX_OUTPUT_BUFFER and e["buffer"]:
-                        removed = e["buffer"].pop(0)
-                        e["buffer_size"] -= len(removed) + 1
+            # Format for display (adapter may extract text from JSON, etc.)
+            display = adapter.format_stream_line(line)
+            if display is None:
+                return  # Adapter says skip this line
 
-            # Batch emit every 200ms
-            to_emit = None
-            with batch_lock:
-                batch.append(stripped)
-                now = time.time()
-                if socketio and now - last_emit[0] >= 0.2:
-                    to_emit = list(batch)
-                    batch.clear()
-                    last_emit[0] = now
-            if socketio and to_emit:
-                _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
+            # Split multi-line display text into individual lines
+            display_lines = display.split("\n")
+            for dl in display_lines:
+                combined_lines.append(dl)
+
+                # Append to server-side buffer (cap at MAX_OUTPUT_BUFFER)
+                with _process_lock:
+                    e = _processes.get((ws_id, slot_index))
+                    if e:
+                        e["buffer"].append(dl)
+                        e["buffer_size"] += len(dl) + 1
+                        while e["buffer_size"] > MAX_OUTPUT_BUFFER and e["buffer"]:
+                            removed = e["buffer"].pop(0)
+                            e["buffer_size"] -= len(removed) + 1
+
+                # Batch emit every 200ms
+                to_emit = None
+                with batch_lock:
+                    batch.append(dl)
+                    now = time.time()
+                    if socketio and now - last_emit[0] >= 0.2:
+                        to_emit = list(batch)
+                        batch.clear()
+                        last_emit[0] = now
+                if socketio and to_emit:
+                    _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
 
         def _drain_stderr():
             try:

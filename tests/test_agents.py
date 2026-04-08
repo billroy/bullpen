@@ -1,5 +1,7 @@
 """Tests for agent adapters."""
 
+import json
+
 import pytest
 
 from server.agents import get_adapter, register_adapter, list_adapters
@@ -19,10 +21,14 @@ class TestClaudeAdapter:
         assert any("claude" in arg for arg in argv)
         assert "--model" in argv
         assert "sonnet" in argv
+        assert "--output-format" in argv
+        assert "stream-json" in argv
 
     def test_parse_success(self):
         adapter = ClaudeAdapter()
-        result = adapter.parse_output("Hello world", "", 0)
+        stdout = json.dumps({"type": "result", "subtype": "success",
+                             "is_error": False, "result": "Hello world"})
+        result = adapter.parse_output(stdout, "", 0)
         assert result["success"] is True
         assert result["output"] == "Hello world"
         assert result["error"] is None
@@ -32,6 +38,46 @@ class TestClaudeAdapter:
         result = adapter.parse_output("", "Something failed", 1)
         assert result["success"] is False
         assert result["error"] == "Something failed"
+
+    def test_parse_error_result(self):
+        adapter = ClaudeAdapter()
+        stdout = json.dumps({"type": "result", "is_error": True,
+                             "result": "Task failed"})
+        result = adapter.parse_output(stdout, "", 0)
+        assert result["success"] is False
+        assert result["error"] == "Task failed"
+
+    def test_parse_fallback_to_assistant_text(self):
+        """If no result line, extract text from assistant messages."""
+        adapter = ClaudeAdapter()
+        stdout = json.dumps({"type": "assistant", "message": {
+            "content": [{"type": "text", "text": "Fallback output"}]}})
+        result = adapter.parse_output(stdout, "", 0)
+        assert result["success"] is True
+        assert result["output"] == "Fallback output"
+
+    def test_format_stream_line_assistant_text(self):
+        adapter = ClaudeAdapter()
+        line = json.dumps({"type": "assistant", "message": {
+            "content": [{"type": "text", "text": "Hello"}]}})
+        assert adapter.format_stream_line(line) == "Hello"
+
+    def test_format_stream_line_tool_use(self):
+        adapter = ClaudeAdapter()
+        line = json.dumps({"type": "assistant", "message": {
+            "content": [{"type": "tool_use", "name": "Bash",
+                         "input": {"command": "ls -la"}}]}})
+        assert adapter.format_stream_line(line) == "$ ls -la"
+
+    def test_format_stream_line_skips_system(self):
+        adapter = ClaudeAdapter()
+        line = json.dumps({"type": "system", "subtype": "init"})
+        assert adapter.format_stream_line(line) is None
+
+    def test_format_stream_line_skips_result(self):
+        adapter = ClaudeAdapter()
+        line = json.dumps({"type": "result", "result": "done"})
+        assert adapter.format_stream_line(line) is None
 
 
 class TestCodexAdapter:
