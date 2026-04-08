@@ -30,6 +30,17 @@ def _save_layout(bp_dir, layout):
     write_json(os.path.join(bp_dir, "layout.json"), layout)
 
 
+def create_auto_task(bp_dir, slot_index, worker, socketio=None):
+    """Create an ephemeral task for a self-directed worker with no queue."""
+    worker_name = worker.get("name", "Worker")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    title = f"[Auto] {worker_name} — {timestamp}"
+
+    task = task_mod.create_task(bp_dir, title, task_type="chore")
+    assign_task(bp_dir, slot_index, task["id"], socketio)
+    return task
+
+
 def assign_task(bp_dir, slot_index, task_id, socketio=None):
     """Add task to worker's queue, update ticket status."""
     layout = _load_layout(bp_dir)
@@ -69,7 +80,14 @@ def start_worker(bp_dir, slot_index, socketio=None):
 
     queue = worker.get("task_queue", [])
     if not queue:
-        return
+        # Auto-create a task for manual start with empty queue
+        auto_task = create_auto_task(bp_dir, slot_index, worker, socketio)
+        # Re-read layout since assign_task modified it
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][slot_index]
+        queue = worker.get("task_queue", [])
+        if not queue:
+            return
 
     task_id = queue[0]
     task = task_mod.read_task(bp_dir, task_id)

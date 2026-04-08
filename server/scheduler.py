@@ -8,7 +8,6 @@ from datetime import datetime
 
 from server.locks import write_lock
 from server.persistence import read_json
-from server import tasks as task_mod
 from server import workers as worker_mod
 
 log = logging.getLogger(__name__)
@@ -90,15 +89,6 @@ class Scheduler:
         for slot_index, worker in to_fire:
             if not worker.get("task_queue"):
                 # Auto-create an ephemeral task for self-directed workers
-                self._create_auto_task(slot_index, worker)
+                task = worker_mod.create_auto_task(self.bp_dir, slot_index, worker, self.socketio)
+                log.info("Auto-created task %s for worker %s (slot %d)", task["id"], worker.get("name"), slot_index)
             worker_mod.start_worker(self.bp_dir, slot_index, self.socketio)
-
-    def _create_auto_task(self, slot_index, worker):
-        """Create a task automatically for a time-triggered worker with no queue."""
-        worker_name = worker.get("name", "Worker")
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        title = f"[Auto] {worker_name} — {timestamp}"
-
-        task = task_mod.create_task(self.bp_dir, title, task_type="chore")
-        worker_mod.assign_task(self.bp_dir, slot_index, task["id"], self.socketio)
-        log.info("Auto-created task %s for worker %s (slot %d)", task["id"], worker_name, slot_index)

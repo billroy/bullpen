@@ -44,7 +44,7 @@ const WorkerCard = {
     workerState() { return this.worker.state || 'idle'; },
     isWorking() { return this.workerState === 'working'; },
     canStart() {
-      return this.workerState === 'idle' && this.worker.task_queue && this.worker.task_queue.length > 0;
+      return this.workerState === 'idle';
     },
     agentColor() {
       return { claude: '#da7756', codex: '#10a37f' }[this.worker.agent] || '#6B7280';

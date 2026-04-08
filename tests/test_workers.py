@@ -11,6 +11,7 @@ from server.persistence import read_json, write_json
 from server.tasks import create_task, read_task
 from server.workers import (
     assign_task,
+    create_auto_task,
     start_worker,
     stop_worker,
     _assemble_prompt,
@@ -116,10 +117,25 @@ class TestStartWorker:
         assert "## Agent Output" in updated["body"]
         assert "Mock agent output" in updated["body"]
 
-    def test_empty_queue_noop(self, bp_dir, worker_slot):
+    def test_empty_queue_auto_creates_task(self, bp_dir, worker_slot):
+        """Starting a worker with empty queue auto-creates a task and executes."""
         start_worker(bp_dir, worker_slot)
-        layout = _load_layout(bp_dir)
-        assert layout["slots"][worker_slot]["state"] == "idle"
+        time.sleep(0.5)
+
+        # An auto task should have been created
+        from server.tasks import list_tasks
+        tasks = list_tasks(bp_dir)
+        auto_tasks = [t for t in tasks if t["title"].startswith("[Auto]")]
+        assert len(auto_tasks) == 1
+        assert "Test Worker" in auto_tasks[0]["title"]
+        assert auto_tasks[0]["type"] == "chore"
+
+    def test_auto_created_task_format(self, bp_dir, worker_slot):
+        """Auto-created task has correct title format and type."""
+        task = create_auto_task(bp_dir, worker_slot,
+                                _load_layout(bp_dir)["slots"][worker_slot])
+        assert task["title"].startswith("[Auto] Test Worker")
+        assert task["type"] == "chore"
 
 
 class TestStopWorker:
