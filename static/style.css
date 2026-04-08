@@ -907,6 +907,7 @@ body {
   flex: 1;
   overflow: hidden;
   display: flex;
+  position: relative;
 }
 
 .file-editor-textarea {
@@ -922,6 +923,52 @@ body {
   line-height: 1.5;
   resize: none;
   tab-size: 2;
+}
+
+/* === Find/Replace Bar === */
+.find-replace-bar {
+  position: absolute;
+  top: 0;
+  right: 20px;
+  z-index: 10;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.find-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.find-input {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 180px;
+}
+
+.find-input:focus {
+  border-color: var(--accent);
+}
+
+.find-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: center;
 }
 
 /* === Empty State === */

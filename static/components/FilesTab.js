@@ -84,7 +84,21 @@ const FilesTab = {
           </div>
           <!-- Edit mode -->
           <div v-if="editing" class="file-edit-container">
-            <textarea class="file-editor-textarea" v-model="editContent"></textarea>
+            <div v-if="showFind" class="find-replace-bar">
+              <div class="find-replace-row">
+                <input class="find-input" v-model="findText" placeholder="Find" ref="findInput" @keydown.enter="findNext" @keydown.esc="closeFind" @input="updateFindCount" />
+                <span class="find-count">{{ findText ? findIndex + ' / ' + findCount : '' }}</span>
+                <button class="btn btn-sm" @click="findPrev" title="Previous">&#9650;</button>
+                <button class="btn btn-sm" @click="findNext" title="Next">&#9660;</button>
+                <button class="btn btn-sm" @click="closeFind" title="Close">&times;</button>
+              </div>
+              <div v-if="showReplace" class="find-replace-row">
+                <input class="find-input" v-model="replaceText" placeholder="Replace" @keydown.esc="closeFind" />
+                <button class="btn btn-sm" @click="doReplace">Replace</button>
+                <button class="btn btn-sm" @click="doReplaceAll">Replace All</button>
+              </div>
+            </div>
+            <textarea class="file-editor-textarea" v-model="editContent" ref="editTextarea" @keydown="onEditorKeydown"></textarea>
           </div>
           <!-- Image -->
           <div v-else-if="isImage" class="file-view-image">
@@ -132,6 +146,12 @@ const FilesTab = {
       viewMode: 'preview',
       editing: false,
       editContent: '',
+      showFind: false,
+      showReplace: false,
+      findText: '',
+      replaceText: '',
+      findCount: 0,
+      findIndex: 0,
     };
   },
   computed: {
@@ -281,6 +301,97 @@ const FilesTab = {
     },
     cancelEdit() {
       this.editing = false;
+      this.closeFind();
+    },
+    onEditorKeydown(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        this.showFind = true;
+        this.showReplace = false;
+        this.$nextTick(() => this.$refs.findInput?.focus());
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
+        e.preventDefault();
+        this.showFind = true;
+        this.showReplace = true;
+        this.$nextTick(() => this.$refs.findInput?.focus());
+      }
+    },
+    closeFind() {
+      this.showFind = false;
+      this.showReplace = false;
+      this.findText = '';
+      this.replaceText = '';
+      this.findCount = 0;
+      this.findIndex = 0;
+    },
+    updateFindCount() {
+      if (!this.findText) {
+        this.findCount = 0;
+        this.findIndex = 0;
+        return;
+      }
+      const matches = this.editContent.split(this.findText).length - 1;
+      this.findCount = matches;
+      this.findIndex = matches > 0 ? 1 : 0;
+    },
+    findNext() {
+      if (!this.findText || this.findCount === 0) return;
+      const ta = this.$refs.editTextarea;
+      const start = (ta.selectionEnd || 0);
+      const idx = this.editContent.indexOf(this.findText, start);
+      if (idx >= 0) {
+        ta.focus();
+        ta.setSelectionRange(idx, idx + this.findText.length);
+        this.findIndex = this._matchIndexAt(idx);
+      } else {
+        // Wrap around
+        const wrapIdx = this.editContent.indexOf(this.findText);
+        if (wrapIdx >= 0) {
+          ta.focus();
+          ta.setSelectionRange(wrapIdx, wrapIdx + this.findText.length);
+          this.findIndex = 1;
+        }
+      }
+    },
+    findPrev() {
+      if (!this.findText || this.findCount === 0) return;
+      const ta = this.$refs.editTextarea;
+      const end = (ta.selectionStart || this.editContent.length) - 1;
+      const idx = this.editContent.lastIndexOf(this.findText, end);
+      if (idx >= 0) {
+        ta.focus();
+        ta.setSelectionRange(idx, idx + this.findText.length);
+        this.findIndex = this._matchIndexAt(idx);
+      } else {
+        // Wrap around
+        const wrapIdx = this.editContent.lastIndexOf(this.findText);
+        if (wrapIdx >= 0) {
+          ta.focus();
+          ta.setSelectionRange(wrapIdx, wrapIdx + this.findText.length);
+          this.findIndex = this.findCount;
+        }
+      }
+    },
+    _matchIndexAt(pos) {
+      const before = this.editContent.substring(0, pos);
+      return before.split(this.findText).length;
+    },
+    doReplace() {
+      if (!this.findText || this.findCount === 0) return;
+      const ta = this.$refs.editTextarea;
+      const selected = this.editContent.substring(ta.selectionStart, ta.selectionEnd);
+      if (selected === this.findText) {
+        this.editContent = this.editContent.substring(0, ta.selectionStart) + this.replaceText + this.editContent.substring(ta.selectionEnd);
+        this.updateFindCount();
+        this.findNext();
+      } else {
+        this.findNext();
+      }
+    },
+    doReplaceAll() {
+      if (!this.findText) return;
+      this.editContent = this.editContent.replaceAll(this.findText, this.replaceText);
+      this.updateFindCount();
     },
     async reloadActiveFile() {
       if (!this.activeFile || this.isImage || this.isPdf) return;
