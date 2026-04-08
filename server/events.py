@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import re
 import subprocess
 import threading
 import time
@@ -80,47 +79,6 @@ def _load_layout(bp_dir):
 
 def _save_layout(bp_dir, layout):
     write_json(os.path.join(bp_dir, "layout.json"), layout)
-
-
-def _detect_local_ticket_list_request(message):
-    """Return status filter for a direct list-tickets fallback, or None."""
-    text = (message or "").strip().lower()
-    if not text:
-        return None
-    if not re.match(r"^(list|show|get)\b", text):
-        return None
-    if "task" not in text and "ticket" not in text:
-        return None
-
-    if "in progress" in text or "in_progress" in text:
-        return "in_progress"
-    if "inbox" in text:
-        return "inbox"
-    if "assigned" in text:
-        return "assigned"
-    if "review" in text:
-        return "review"
-    if "done" in text:
-        return "done"
-    if "blocked" in text:
-        return "blocked"
-    return ""
-
-
-def _format_local_ticket_list_lines(tasks, status_filter):
-    scope = status_filter or "all"
-    lines = [f"[Local fallback] Claude MCP unavailable; showing {len(tasks)} ticket(s) for status: {scope}."]
-    if not tasks:
-        lines.append("No tickets found.")
-        return lines
-    for ticket in tasks[:100]:
-        lines.append(
-            f"- {ticket.get('id')} [{ticket.get('status', '?')}] "
-            f"{ticket.get('title', '(untitled)')}"
-        )
-    if len(tasks) > 100:
-        lines.append(f"... {len(tasks) - 100} more ticket(s) not shown.")
-    return lines
 
 
 def register_events(socketio, app):
@@ -769,25 +727,6 @@ def register_events(socketio, app):
         if len(message) > 100_000:
             emit("chat:error", {"sessionId": session_id, "message": "Message too long"})
             return
-
-        # Emergency fallback: Claude MCP is currently unreliable in this environment.
-        # Handle direct list-ticket requests locally so users are not blocked.
-        if provider == "claude":
-            status_filter = _detect_local_ticket_list_request(message)
-            if status_filter is not None:
-                tasks = task_mod.list_tasks(bp_dir)
-                if status_filter:
-                    tasks = [t for t in tasks if t.get("status") == status_filter]
-                lines = _format_local_ticket_list_lines(tasks, status_filter)
-                socketio.emit("chat:output", {"sessionId": session_id, "lines": lines})
-                full_response = "\n".join(lines)
-                with _chat_lock:
-                    if session_id not in _chat_sessions:
-                        _chat_sessions[session_id] = []
-                    _chat_sessions[session_id].append({"role": "user", "content": message})
-                    _chat_sessions[session_id].append({"role": "assistant", "content": full_response})
-                socketio.emit("chat:done", {"sessionId": session_id})
-                return
 
         adapter = _get_adapter(provider)
         if not adapter:

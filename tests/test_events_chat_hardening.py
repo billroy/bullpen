@@ -2,12 +2,7 @@
 
 import json
 
-from server.events import (
-    _claude_mcp_startup_state,
-    _detect_local_ticket_list_request,
-    _format_local_ticket_list_lines,
-    _harden_live_agent_argv,
-)
+from server.events import _claude_mcp_startup_state, _harden_live_agent_argv
 
 
 def test_harden_live_agent_argv_for_claude_adds_strict_and_disallowed_tools():
@@ -56,20 +51,3 @@ def test_claude_mcp_startup_state_error_when_server_missing():
     state, msg = _claude_mcp_startup_state(line)
     assert state == "error"
     assert "not loaded" in msg
-
-
-def test_detect_local_ticket_list_request_basic_and_status():
-    assert _detect_local_ticket_list_request("list tasks") == ""
-    assert _detect_local_ticket_list_request("show tickets in inbox") == "inbox"
-    assert _detect_local_ticket_list_request("get tasks in progress") == "in_progress"
-    assert _detect_local_ticket_list_request("how do I list tasks") is None
-
-
-def test_format_local_ticket_list_lines():
-    lines = _format_local_ticket_list_lines(
-        [{"id": "abc", "status": "inbox", "title": "Do thing"}],
-        "inbox",
-    )
-    assert "Local fallback" in lines[0]
-    assert "status: inbox" in lines[0]
-    assert "- abc [inbox] Do thing" in lines[1]
