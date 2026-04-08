@@ -48,12 +48,13 @@ const LeftPane = {
           <div v-if="!workerList.length" class="empty-state">No workers configured</div>
           <div v-for="w in workerList" :key="w.slot"
                class="roster-item"
-               :class="{ 'drag-over': rosterDragSlot === w.slot, 'roster-idle': (w.state || 'idle') === 'idle' }"
+               :class="{ 'drag-over': rosterDragSlot === w.slot }"
                :style="{ background: agentColor(w.agent) }"
                @dragover.prevent="onRosterDragOver($event, w)"
                @dragleave="onRosterDragLeave"
                @drop="onRosterDrop($event, w.slot)">
             <span class="roster-name">{{ w.name }}</span>
+            <span class="status-pill" :class="'status-' + (w.state || 'idle')">{{ (w.state || 'idle').toUpperCase() }}</span>
           </div>
         </div>
       </div>

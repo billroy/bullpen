@@ -307,22 +307,20 @@ body {
 
 .roster-item {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  padding: 5px 8px;
+  padding: 8px 10px;
   font-size: 12px;
   font-weight: 600;
   color: white;
   border-radius: var(--radius);
-  transition: opacity 0.15s, filter 0.15s;
+  transition: filter 0.15s;
   cursor: default;
 }
 
-.roster-item.roster-idle {
-  opacity: 0.75;
-}
-
 .roster-item.drag-over {
-  filter: brightness(1.2);
+  filter: brightness(1.4);
+  outline: 2px solid white;
 }
 
 .roster-name {
