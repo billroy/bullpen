@@ -165,6 +165,8 @@ def build_file_tree(workspace):
             for line in result.stdout.strip().split("\n"):
                 if line:
                     gitignored.add(line.rstrip("/"))
+        # Always show .bullpen regardless of .gitignore
+        gitignored.discard(".bullpen")
     except Exception:
         pass
 
