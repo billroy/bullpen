@@ -18,13 +18,14 @@ class AgentAdapter(ABC):
         ...
 
     @abstractmethod
-    def build_argv(self, prompt, model, workspace):
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
         """Build command argv list for subprocess execution.
 
         Args:
             prompt: The full prompt text to send to the agent.
             model: The model name to use.
             workspace: The workspace directory path.
+            bp_dir: The .bullpen directory path (for MCP tools).
 
         Returns:
             List of strings for subprocess argv.

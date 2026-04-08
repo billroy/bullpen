@@ -7,7 +7,7 @@
 - This feels like a missing feature.  editing a ticket is a basic function.  what am I missing?
 
 - Escape should dismiss add worker modal
-  - Escape should dismiss all modals.  Review all modals for compliance.
+  - Escape should dismiss all modals.  Review all modals for compliance, fix, and commit.
 
 - Inbox in the Tickets tab should have a +New ticket button just like Inbox in the LeftPane
 

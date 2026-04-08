@@ -1,7 +1,10 @@
 """Claude CLI adapter."""
 
+import json
 import os
 import shutil
+import sys
+import tempfile
 
 from server.agents.base import AgentAdapter
 
@@ -33,7 +36,7 @@ class ClaudeAdapter(AgentAdapter):
     def available(self):
         return _find_claude() is not None
 
-    def build_argv(self, prompt, model, workspace):
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
         claude_bin = _find_claude() or "claude"
         argv = [
             claude_bin,
@@ -41,8 +44,32 @@ class ClaudeAdapter(AgentAdapter):
             "--dangerously-skip-permissions",
             "--model", model,
         ]
+        if bp_dir:
+            config = self._mcp_config(bp_dir)
+            argv.extend(["--mcp-config", config])
         # Prompt is delivered via stdin in _run_agent
         return argv
+
+    def _mcp_config(self, bp_dir):
+        """Generate a temporary MCP config file pointing to bullpen tools."""
+        server_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mcp_tools.py")
+        # Read server host/port from config
+        from server.persistence import read_json
+        bp_config = read_json(os.path.join(bp_dir, "config.json"))
+        host = bp_config.get("server_host", "127.0.0.1")
+        port = str(bp_config.get("server_port", 5000))
+        config = {
+            "mcpServers": {
+                "bullpen": {
+                    "command": sys.executable,
+                    "args": [server_script, "--bp-dir", bp_dir, "--host", host, "--port", port],
+                }
+            }
+        }
+        fd, path = tempfile.mkstemp(suffix=".json", prefix="bullpen-mcp-")
+        with os.fdopen(fd, "w") as f:
+            json.dump(config, f)
+        return path
 
     def parse_output(self, stdout, stderr, exit_code):
         if exit_code == 0:

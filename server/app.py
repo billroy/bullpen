@@ -45,6 +45,15 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
         cors_origin = f"http://{host}:{port}"
     socketio.init_app(app, cors_allowed_origins=cors_origin, async_mode="threading")
 
+    # Store server address so MCP tools can connect back
+    app.config["host"] = host
+    app.config["port"] = port
+    for ws in manager.all_workspaces():
+        config = read_json(os.path.join(ws.bp_dir, "config.json"))
+        config["server_host"] = host
+        config["server_port"] = port
+        write_json(os.path.join(ws.bp_dir, "config.json"), config)
+
     # Startup reconciliation for all registered workspaces
     for ws in manager.all_workspaces():
         reconcile(ws.bp_dir)
