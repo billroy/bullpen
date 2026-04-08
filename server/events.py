@@ -648,7 +648,7 @@ def register_events(socketio, app):
         full_prompt = "\n".join(parts)
 
         workspace = os.path.dirname(bp_dir)
-        argv = adapter.build_argv(full_prompt, model, workspace)
+        argv = adapter.build_argv(full_prompt, model, workspace, bp_dir=bp_dir)
 
         response_collector = {"prompt": full_prompt}
         thread = threading.Thread(
