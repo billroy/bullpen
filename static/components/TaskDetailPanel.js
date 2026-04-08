@@ -5,6 +5,10 @@ const TaskDetailPanel = {
     return {
       editing: false,
       editBody: '',
+      editingTitle: false,
+      editTitle: '',
+      editingTags: false,
+      editTagsValue: '',
     };
   },
   computed: {
@@ -30,12 +34,22 @@ const TaskDetailPanel = {
   watch: {
     'task.id'() {
       this.editing = false;
+      this.editingTitle = false;
+      this.editingTags = false;
     }
   },
   template: `
     <div v-if="task" class="detail-panel">
       <div class="detail-header">
-        <h2 class="detail-title">{{ task.title }}</h2>
+        <div v-if="editingTitle" class="detail-title-edit">
+          <input class="form-input detail-title-input" v-model="editTitle"
+                 @keyup.enter="saveTitle" @keyup.escape="cancelTitle" ref="titleInput" />
+          <div class="detail-title-actions">
+            <button class="btn btn-sm" @click="cancelTitle">Cancel</button>
+            <button class="btn btn-sm btn-primary" @click="saveTitle">Save</button>
+          </div>
+        </div>
+        <h2 v-else class="detail-title" @click="startEditTitle" title="Click to edit">{{ task.title }}</h2>
         <button class="btn btn-icon" @click="$emit('close')">&times;</button>
       </div>
 
@@ -69,8 +83,19 @@ const TaskDetailPanel = {
         </label>
       </div>
 
-      <div class="detail-tags" v-if="task.tags && task.tags.length">
-        <span class="badge type-badge" v-for="tag in task.tags" :key="tag">{{ tag }}</span>
+      <div class="detail-tags-section">
+        <div v-if="editingTags">
+          <input class="form-input" v-model="editTagsValue" placeholder="comma-separated tags"
+                 @keyup.enter="saveTags" @keyup.escape="cancelTags" />
+          <div class="detail-edit-actions">
+            <button class="btn btn-sm" @click="cancelTags">Cancel</button>
+            <button class="btn btn-sm btn-primary" @click="saveTags">Save</button>
+          </div>
+        </div>
+        <div v-else class="detail-tags">
+          <span class="badge type-badge" v-for="tag in task.tags" :key="tag">{{ tag }}</span>
+          <button class="btn btn-sm" @click="startEditTags">{{ task.tags && task.tags.length ? 'Edit Tags' : 'Add Tags' }}</button>
+        </div>
       </div>
 
       <div class="detail-id">
@@ -107,6 +132,33 @@ const TaskDetailPanel = {
     </div>
   `,
   methods: {
+    startEditTitle() {
+      this.editTitle = this.task.title;
+      this.editingTitle = true;
+      this.$nextTick(() => this.$refs.titleInput?.focus());
+    },
+    saveTitle() {
+      const title = this.editTitle.trim();
+      if (title && title !== this.task.title) {
+        this.$emit('update', { id: this.task.id, title });
+      }
+      this.editingTitle = false;
+    },
+    cancelTitle() {
+      this.editingTitle = false;
+    },
+    startEditTags() {
+      this.editTagsValue = (this.task.tags || []).join(', ');
+      this.editingTags = true;
+    },
+    saveTags() {
+      const tags = this.editTagsValue.split(',').map(t => t.trim()).filter(Boolean);
+      this.$emit('update', { id: this.task.id, tags });
+      this.editingTags = false;
+    },
+    cancelTags() {
+      this.editingTags = false;
+    },
     toggleEdit() {
       if (!this.editing) {
         this.editBody = this.bodyWithoutOutput;

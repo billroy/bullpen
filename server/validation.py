@@ -132,6 +132,8 @@ def validate_task_update(data):
         fields["order"] = str(data["order"])
     if "assigned_to" in data:
         fields["assigned_to"] = data["assigned_to"]
+    if "body" in data:
+        fields["body"] = _str(data["body"], MAX_DESCRIPTION, "body")
 
     return task_id, fields
 

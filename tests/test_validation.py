@@ -74,6 +74,14 @@ class TestTaskUpdateValidation:
         task_id, fields = validate_task_update({"id": "abc", "title": "Ok", "unknown_field": "bad"})
         assert "unknown_field" not in fields
 
+    def test_body_field_passes_through(self):
+        task_id, fields = validate_task_update({"id": "abc", "body": "New description"})
+        assert fields["body"] == "New description"
+
+    def test_body_too_long(self):
+        with pytest.raises(ValidationError):
+            validate_task_update({"id": "abc", "body": "x" * (MAX_DESCRIPTION + 1)})
+
 
 class TestIdValidation:
     def test_valid_id(self):
