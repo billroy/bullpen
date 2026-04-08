@@ -12,6 +12,7 @@ from server.persistence import read_json, write_json, read_frontmatter, ensure_w
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
+from server.workspace_manager import WorkspaceManager
 
 
 socketio = SocketIO()
@@ -20,21 +21,29 @@ socketio = SocketIO()
 def create_app(workspace, no_browser=False):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
-    bp_dir = init_workspace(workspace)
+
+    # Initialize workspace manager and register startup project
+    manager = WorkspaceManager()
+    startup_id = manager.register_project(workspace)
+    bp_dir = manager.get_bp_dir(startup_id)
 
     app = Flask(
         __name__,
         static_folder=os.path.join(os.path.dirname(os.path.dirname(__file__)), "static"),
         static_url_path="",
     )
+    app.config["manager"] = manager
+    app.config["startup_workspace_id"] = startup_id
+    # Backward-compat: existing handlers still use these directly
     app.config["workspace"] = workspace
     app.config["bp_dir"] = bp_dir
     app.config["no_browser"] = no_browser
 
     socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
 
-    # Startup reconciliation
-    reconcile(bp_dir)
+    # Startup reconciliation for all registered workspaces
+    for ws in manager.all_workspaces():
+        reconcile(ws.bp_dir)
 
     @app.route("/")
     def index():
@@ -43,17 +52,19 @@ def create_app(workspace, no_browser=False):
     @app.route("/api/files")
     def file_tree():
         """Return workspace file tree."""
-        ws = app.config["workspace"]
-        tree = build_file_tree(ws)
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws_path = manager.get_workspace_path(ws_id)
+        tree = build_file_tree(ws_path)
         return jsonify(tree)
 
     @app.route("/api/files/<path:filepath>")
     def file_content(filepath):
         """Return file content."""
-        ws = app.config["workspace"]
-        full_path = os.path.join(ws, filepath)
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws_path = manager.get_workspace_path(ws_id)
+        full_path = os.path.join(ws_path, filepath)
         try:
-            ensure_within(full_path, ws)
+            ensure_within(full_path, ws_path)
         except ValueError:
             abort(403)
 
@@ -77,10 +88,11 @@ def create_app(workspace, no_browser=False):
     @app.route("/api/files/<path:filepath>", methods=["PUT"])
     def file_write(filepath):
         """Write file content."""
-        ws = app.config["workspace"]
-        full_path = os.path.join(ws, filepath)
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws_path = manager.get_workspace_path(ws_id)
+        full_path = os.path.join(ws_path, filepath)
         try:
-            ensure_within(full_path, ws)
+            ensure_within(full_path, ws_path)
         except ValueError:
             abort(403)
 
@@ -102,15 +114,19 @@ def create_app(workspace, no_browser=False):
 
     @socketio.on("connect")
     def on_connect():
-        state = load_state(app.config["bp_dir"], workspace)
-        socketio.emit("state:init", state)
+        # Send state for all active workspaces
+        for ws in manager.all_workspaces():
+            state = load_state(ws.bp_dir, ws.path)
+            state["workspaceId"] = ws.id
+            socketio.emit("state:init", state)
 
     register_events(socketio, app)
 
-    # Start time-based scheduler
-    scheduler = Scheduler(bp_dir, socketio)
-    scheduler.start()
-    app.config["scheduler"] = scheduler
+    # Start time-based scheduler for each workspace
+    for ws in manager.all_workspaces():
+        scheduler = Scheduler(ws.bp_dir, socketio)
+        scheduler.start()
+        ws.scheduler = scheduler
 
     return app
 
