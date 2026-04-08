@@ -1,6 +1,7 @@
 """Worker state machine, queue management, agent execution."""
 
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -237,6 +238,32 @@ def _auto_commit(cwd, task_title, task_id):
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _auto_pr(cwd, task_title, task_id, branch_name):
+    """Push branch and create PR. Returns PR URL or error string."""
+    if not shutil.which("gh"):
+        return "Error: gh CLI not available"
+
+    # Push branch
+    result = subprocess.run(
+        ["git", "push", "-u", "origin", branch_name],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return f"Push failed: {result.stderr.strip()}"
+
+    # Create PR
+    result = subprocess.run(
+        ["gh", "pr", "create",
+         "--title", f"bullpen: {task_title}",
+         "--body", f"Task: {task_id}"],
+        cwd=cwd, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        return f"PR creation failed: {result.stderr.strip()}"
+
+    return result.stdout.strip()
+
+
 def _setup_worktree(workspace, bp_dir, task_id):
     """Create a git worktree for isolated agent execution. Returns worktree path."""
     # Verify workspace is a git repo
@@ -322,6 +349,12 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
             commit_hash = _auto_commit(agent_cwd, task_title, task_id)
             if commit_hash:
                 _append_output(bp_dir, task_id, worker, f"Commit: {commit_hash}")
+
+                # Auto-PR if enabled (requires worktree + auto-commit)
+                if worker.get("auto_pr") and worker.get("use_worktree"):
+                    branch_name = f"bullpen/{task_id}"
+                    pr_result = _auto_pr(agent_cwd, task_title, task_id, branch_name)
+                    _append_output(bp_dir, task_id, worker, f"PR: {pr_result}")
 
         # Remove from queue
         queue = worker.get("task_queue", [])

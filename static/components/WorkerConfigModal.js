@@ -22,6 +22,7 @@ const WorkerConfigModal = {
             max_retries: w.max_retries ?? 1,
             use_worktree: w.use_worktree || false,
             auto_commit: w.auto_commit || false,
+            auto_pr: w.auto_pr || false,
           };
         }
       }
@@ -110,6 +111,11 @@ const WorkerConfigModal = {
               <input type="checkbox" v-model="form.auto_commit">
               Auto-Commit
               <span class="form-hint">(commit agent changes on success)</span>
+            </label>
+            <label class="form-label form-label-inline">
+              <input type="checkbox" v-model="form.auto_pr" :disabled="!form.use_worktree || !form.auto_commit">
+              Auto-PR
+              <span class="form-hint">(open PR after commit; requires worktree + auto-commit)</span>
             </label>
           </div>
           <label class="form-label">

@@ -132,6 +132,7 @@ def register_events(socketio, app):
             "max_retries": 1,
             "use_worktree": False,
             "auto_commit": False,
+            "auto_pr": False,
             "task_queue": [],
             "state": "idle",
         }

@@ -15,6 +15,7 @@ from server.workers import (
     stop_worker,
     _assemble_prompt,
     _auto_commit,
+    _auto_pr,
     _load_layout,
     _setup_worktree,
 )
@@ -293,6 +294,28 @@ class TestAutoCommit:
 
         commit_hash = _auto_commit(tmp_workspace, "Test Task", "task-789")
         assert commit_hash is None
+
+
+class TestAutoPR:
+    def test_auto_pr_no_gh(self, tmp_workspace, monkeypatch):
+        """Auto-PR returns error when gh CLI is not available."""
+        import shutil as _shutil
+        monkeypatch.setattr(_shutil, "which", lambda x: None)
+        from server.workers import _auto_pr
+        result = _auto_pr(tmp_workspace, "Test", "task-1", "bullpen/task-1")
+        assert "gh CLI not available" in result
+
+    def test_auto_pr_push_failure(self, tmp_workspace):
+        """Auto-PR returns error when push fails (no remote)."""
+        subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
+
+        import shutil
+        if not shutil.which("gh"):
+            pytest.skip("gh CLI not available")
+
+        result = _auto_pr(tmp_workspace, "Test", "task-1", "main")
+        assert "Push failed" in result or "Error" in result
 
 
 class TestSharedLock:
