@@ -54,7 +54,7 @@ const WorkerFocusView = {
       return this.worker?.state === 'working';
     },
     outputText() {
-      return this.outputLines.join('\n');
+      return (this.outputLines || []).join('\n');
     },
     renderedDescription() {
       if (!this.task?.body) return '';

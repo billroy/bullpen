@@ -340,6 +340,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             stderr=subprocess.PIPE,
             cwd=workspace,
             text=True,
+            bufsize=1,  # Line-buffered for streaming
         )
 
         entry = {"proc": proc, "buffer": [], "task_id": task_id, "buffer_size": 0}
@@ -370,7 +371,10 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         last_emit = time.time()
 
         try:
-            for line in proc.stdout:
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    break
                 if len(line) > MAX_LINE_LEN:
                     line = line[:MAX_LINE_LEN] + "[line truncated]\n"
                 output_lines.append(line)
@@ -424,6 +428,11 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 
         # Log the invocation
         _write_log(bp_dir, slot_index, task_id, prompt, result)
+
+        # Emit final output so focus view always has complete data
+        if socketio:
+            final_lines = [l.rstrip("\n") for l in output_lines]
+            _ws_emit(socketio, "worker:output:done", {"slot": slot_index, "lines": final_lines}, ws_id)
 
         if result["success"]:
             _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace, ws_id)

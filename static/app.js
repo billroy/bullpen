@@ -197,9 +197,12 @@ const app = createApp({
     });
 
     // Worker output streaming
+    function _ensureBuffer(slot) {
+      if (!outputBuffers[slot]) outputBuffers[slot] = reactive([]);
+    }
     socket.on('worker:output', (data) => {
       const slot = data.slot;
-      if (!outputBuffers[slot]) outputBuffers[slot] = [];
+      _ensureBuffer(slot);
       outputBuffers[slot].push(...data.lines);
       // Cap at 5000 lines client-side
       if (outputBuffers[slot].length > 5000) {
@@ -208,7 +211,16 @@ const app = createApp({
     });
     socket.on('worker:output:catchup', (data) => {
       const slot = data.slot;
-      outputBuffers[slot] = data.lines || [];
+      _ensureBuffer(slot);
+      outputBuffers[slot].length = 0;
+      outputBuffers[slot].push(...(data.lines || []));
+    });
+    socket.on('worker:output:done', (data) => {
+      const slot = data.slot;
+      _ensureBuffer(slot);
+      // Replace buffer with complete final output
+      outputBuffers[slot].length = 0;
+      outputBuffers[slot].push(...(data.lines || []));
     });
 
     // Helper to attach workspaceId to outgoing events
@@ -264,8 +276,8 @@ const app = createApp({
         focusTabs.push({ slotIndex, workspaceId: activeWorkspaceId.value, label: worker.name });
       }
       activeTab.value = 'focus-' + slotIndex;
-      // Clear stale buffer and request catchup
-      outputBuffers[slotIndex] = outputBuffers[slotIndex] || [];
+      // Ensure reactive buffer and request catchup
+      _ensureBuffer(slotIndex);
       socket.emit('worker:output:request', _wsData({ slot: slotIndex }));
     }
     function closeFocusTab(slotIndex) {
@@ -458,7 +470,7 @@ const app = createApp({
               :worker="state.layout?.slots?.[ft.slotIndex]"
               :slot-index="ft.slotIndex"
               :task="focusTask(ft.slotIndex)"
-              :output-lines="outputBuffers[ft.slotIndex] || []"
+              :output-lines="outputBuffers[ft.slotIndex]"
               @stop="stopWorkerSlot(ft.slotIndex)"
               @close="closeFocusTab(ft.slotIndex)"
             />
