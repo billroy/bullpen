@@ -29,6 +29,20 @@ def _save_layout(bp_dir, layout):
 def register_events(socketio, app):
     """Register all socket.io event handlers."""
 
+    def _resolve(data):
+        """Resolve workspaceId from event data, return (workspace_id, bp_dir)."""
+        manager = app.config["manager"]
+        ws_id = data.get("workspaceId") if isinstance(data, dict) else None
+        if not ws_id:
+            ws_id = app.config["startup_workspace_id"]
+        return ws_id, manager.get_bp_dir(ws_id)
+
+    def _emit(event, payload, ws_id):
+        """Emit an event with workspaceId attached."""
+        if isinstance(payload, dict):
+            payload["workspaceId"] = ws_id
+        socketio.emit(event, payload)
+
     def with_lock(fn):
         """Execute fn under write lock, emit error on failure."""
         def wrapper(data):
@@ -47,7 +61,7 @@ def register_events(socketio, app):
     @socketio.on("task:create")
     @with_lock
     def on_task_create(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         clean = validate_task_create(data)
         task = task_mod.create_task(
             bp_dir,
@@ -57,38 +71,38 @@ def register_events(socketio, app):
             priority=clean["priority"],
             tags=clean["tags"],
         )
-        socketio.emit("task:created", task)
+        _emit("task:created", task, ws_id)
 
     @socketio.on("task:update")
     @with_lock
     def on_task_update(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         task_id, fields = validate_task_update(data)
         task = task_mod.update_task(bp_dir, task_id, fields)
-        socketio.emit("task:updated", task)
+        _emit("task:updated", task, ws_id)
 
     @socketio.on("task:delete")
     @with_lock
     def on_task_delete(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         task_id = validate_id(data)
         task_mod.delete_task(bp_dir, task_id)
-        socketio.emit("task:deleted", {"id": task_id})
+        _emit("task:deleted", {"id": task_id}, ws_id)
 
     @socketio.on("task:clear_output")
     @with_lock
     def on_task_clear_output(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         task_id = validate_id(data)
         task = task_mod.clear_task_output(bp_dir, task_id)
-        socketio.emit("task:updated", task)
+        _emit("task:updated", task, ws_id)
 
     # --- Worker / Layout events ---
 
     @socketio.on("worker:add")
     @with_lock
     def on_worker_add(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         layout = _load_layout(bp_dir)
         slot_index = data.get("slot")
         profile_id = data.get("profile")
@@ -148,12 +162,12 @@ def register_events(socketio, app):
 
         layout["slots"][slot_index] = worker
         _save_layout(bp_dir, layout)
-        socketio.emit("layout:updated", layout)
+        _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:remove")
     @with_lock
     def on_worker_remove(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         layout = _load_layout(bp_dir)
         slot_index = data.get("slot")
 
@@ -163,12 +177,12 @@ def register_events(socketio, app):
 
         layout["slots"][slot_index] = None
         _save_layout(bp_dir, layout)
-        socketio.emit("layout:updated", layout)
+        _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:move")
     @with_lock
     def on_worker_move(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         layout = _load_layout(bp_dir)
         from_slot = data.get("from")
         to_slot = data.get("to")
@@ -197,12 +211,12 @@ def register_events(socketio, app):
                 layout["slots"][i]["col"] = i % cols
 
         _save_layout(bp_dir, layout)
-        socketio.emit("layout:updated", layout)
+        _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:duplicate")
     @with_lock
     def on_worker_duplicate(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         layout = _load_layout(bp_dir)
         slot_index = data.get("slot")
 
@@ -270,12 +284,12 @@ def register_events(socketio, app):
 
         layout["slots"][target] = clone
         _save_layout(bp_dir, layout)
-        socketio.emit("layout:updated", layout)
+        _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:configure")
     @with_lock
     def on_worker_configure(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         layout = _load_layout(bp_dir)
         slot_index, fields = validate_worker_configure(data, max_slots=200)
 
@@ -293,36 +307,38 @@ def register_events(socketio, app):
                 worker[k] = v
 
         _save_layout(bp_dir, layout)
-        socketio.emit("layout:updated", layout)
+        _emit("layout:updated", layout, ws_id)
 
     @socketio.on("layout:update")
     @with_lock
     def on_layout_update(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         config = read_json(os.path.join(bp_dir, "config.json"))
 
         if "grid" in data:
             config["grid"] = data["grid"]
             write_json(os.path.join(bp_dir, "config.json"), config)
 
-        socketio.emit("config:updated", config)
+        _emit("config:updated", config, ws_id)
 
     @socketio.on("config:update")
     @with_lock
     def on_config_update(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         config = read_json(os.path.join(bp_dir, "config.json"))
 
         for k, v in data.items():
+            if k == "workspaceId":
+                continue
             config[k] = v
 
         write_json(os.path.join(bp_dir, "config.json"), config)
-        socketio.emit("config:updated", config)
+        _emit("config:updated", config, ws_id)
 
     @socketio.on("prompt:update")
     @with_lock
     def on_prompt_update(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         prompt_type = data.get("type")  # "workspace" or "bullpen"
         content = data.get("content", "")
 
@@ -332,22 +348,22 @@ def register_events(socketio, app):
 
         path = os.path.join(bp_dir, f"{prompt_type}_prompt.md")
         atomic_write(path, content)
-        socketio.emit("prompt:updated", {"type": prompt_type, "content": content})
+        _emit("prompt:updated", {"type": prompt_type, "content": content}, ws_id)
 
     @socketio.on("profile:create")
     @with_lock
     def on_profile_create(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         profile = create_profile(bp_dir, data)
         profiles = list_profiles(bp_dir)
-        socketio.emit("profiles:updated", profiles)
+        _emit("profiles:updated", profiles, ws_id)
 
     # --- Team events ---
 
     @socketio.on("team:save")
     @with_lock
     def on_team_save(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         name = data.get("name")
         if not name:
             emit("error", {"message": "team:save requires name"})
@@ -355,12 +371,12 @@ def register_events(socketio, app):
         layout = _load_layout(bp_dir)
         save_team(bp_dir, name, layout)
         teams = list_teams(bp_dir)
-        socketio.emit("teams:updated", teams)
+        _emit("teams:updated", teams, ws_id)
 
     @socketio.on("team:load")
     @with_lock
     def on_team_load(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         name = data.get("name")
         if not name:
             emit("error", {"message": "team:load requires name"})
@@ -370,37 +386,37 @@ def register_events(socketio, app):
             emit("error", {"message": f"Team not found: {name}"})
             return
         _save_layout(bp_dir, team_layout)
-        socketio.emit("layout:updated", team_layout)
+        _emit("layout:updated", team_layout, ws_id)
 
     # --- Execution events ---
 
     @socketio.on("task:assign")
     @with_lock
     def on_task_assign(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         task_id = data.get("task_id")
         slot = data.get("slot")
         if task_id is None or slot is None:
             emit("error", {"message": "task:assign requires task_id and slot"})
             return
-        worker_mod.assign_task(bp_dir, slot, task_id, socketio)
+        worker_mod.assign_task(bp_dir, slot, task_id, socketio, ws_id)
 
     @socketio.on("worker:start")
     @with_lock
     def on_worker_start(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         slot = data.get("slot")
         if slot is None:
             emit("error", {"message": "worker:start requires slot"})
             return
-        worker_mod.start_worker(bp_dir, slot, socketio)
+        worker_mod.start_worker(bp_dir, slot, socketio, ws_id)
 
     @socketio.on("worker:stop")
     @with_lock
     def on_worker_stop(data):
-        bp_dir = app.config["bp_dir"]
+        ws_id, bp_dir = _resolve(data)
         slot = data.get("slot")
         if slot is None:
             emit("error", {"message": "worker:stop requires slot"})
             return
-        worker_mod.stop_worker(bp_dir, slot, socketio)
+        worker_mod.stop_worker(bp_dir, slot, socketio, ws_id)

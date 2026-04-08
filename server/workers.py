@@ -18,6 +18,13 @@ _processes = {}
 _process_lock = threading.Lock()
 
 
+def _ws_emit(socketio, event, payload, ws_id=None):
+    """Emit a socket event with workspaceId attached."""
+    if ws_id and isinstance(payload, dict):
+        payload["workspaceId"] = ws_id
+    socketio.emit(event, payload)
+
+
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -41,7 +48,7 @@ def create_auto_task(bp_dir, slot_index, worker, socketio=None):
     return task
 
 
-def assign_task(bp_dir, slot_index, task_id, socketio=None):
+def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None):
     """Add task to worker's queue, update ticket status."""
     layout = _load_layout(bp_dir)
     worker = layout["slots"][slot_index]
@@ -62,16 +69,16 @@ def assign_task(bp_dir, slot_index, task_id, socketio=None):
 
     if socketio:
         task = task_mod.read_task(bp_dir, task_id)
-        socketio.emit("task:updated", task)
-        socketio.emit("layout:updated", layout)
+        _ws_emit(socketio, "task:updated", task, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id)
 
     # Check if worker should auto-start
     activation = worker.get("activation", "on_drop")
     if activation in ("on_drop", "on_queue") and worker.get("state") == "idle":
-        start_worker(bp_dir, slot_index, socketio)
+        start_worker(bp_dir, slot_index, socketio, ws_id)
 
 
-def start_worker(bp_dir, slot_index, socketio=None):
+def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Dequeue next task and invoke agent."""
     layout = _load_layout(bp_dir)
     worker = layout["slots"][slot_index]
@@ -96,7 +103,7 @@ def start_worker(bp_dir, slot_index, socketio=None):
         queue.pop(0)
         _save_layout(bp_dir, layout)
         if queue:
-            start_worker(bp_dir, slot_index, socketio)
+            start_worker(bp_dir, slot_index, socketio, ws_id)
         return
 
     # Update state
@@ -106,8 +113,8 @@ def start_worker(bp_dir, slot_index, socketio=None):
 
     if socketio:
         updated_task = task_mod.read_task(bp_dir, task_id)
-        socketio.emit("task:updated", updated_task)
-        socketio.emit("layout:updated", layout)
+        _ws_emit(socketio, "task:updated", updated_task, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id)
 
     # Build prompt
     prompt = _assemble_prompt(bp_dir, worker, task)
@@ -119,13 +126,13 @@ def start_worker(bp_dir, slot_index, socketio=None):
         try:
             agent_cwd = _setup_worktree(workspace, bp_dir, task_id)
         except Exception as e:
-            _on_agent_error(bp_dir, slot_index, task_id, f"Worktree setup failed: {e}", socketio)
+            _on_agent_error(bp_dir, slot_index, task_id, f"Worktree setup failed: {e}", socketio, ws_id=ws_id)
             return
 
     # Get adapter
     adapter = get_adapter(worker.get("agent", "claude"))
     if not adapter:
-        _on_agent_error(bp_dir, slot_index, task_id, f"Unknown agent: {worker.get('agent')}", socketio)
+        _on_agent_error(bp_dir, slot_index, task_id, f"Unknown agent: {worker.get('agent')}", socketio, ws_id=ws_id)
         return
 
     model = worker.get("model", "claude-sonnet-4-6")
@@ -137,13 +144,13 @@ def start_worker(bp_dir, slot_index, socketio=None):
 
     thread = threading.Thread(
         target=_run_agent,
-        args=(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, agent_cwd, socketio),
+        args=(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, agent_cwd, socketio, ws_id),
         daemon=True,
     )
     thread.start()
 
 
-def stop_worker(bp_dir, slot_index, socketio=None):
+def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Stop a working agent. Task goes back to Assigned."""
     with _process_lock:
         proc = _processes.get(slot_index)
@@ -165,11 +172,11 @@ def stop_worker(bp_dir, slot_index, socketio=None):
             task_mod.update_task(bp_dir, task_id, {"status": "assigned"})
             if socketio:
                 task = task_mod.read_task(bp_dir, task_id)
-                socketio.emit("task:updated", task)
+                _ws_emit(socketio, "task:updated", task, ws_id)
 
         _save_layout(bp_dir, layout)
         if socketio:
-            socketio.emit("layout:updated", layout)
+            _ws_emit(socketio, "layout:updated", layout, ws_id)
 
 
 def _assemble_prompt(bp_dir, worker, task):
@@ -307,7 +314,7 @@ def _setup_worktree(workspace, bp_dir, task_id):
     return worktree_dir
 
 
-def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio):
+def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None):
     """Run agent subprocess and handle completion."""
     try:
         proc = subprocess.Popen(
@@ -328,7 +335,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
-            _on_agent_error(bp_dir, slot_index, task_id, "Agent timed out", socketio)
+            _on_agent_error(bp_dir, slot_index, task_id, "Agent timed out", socketio, ws_id=ws_id)
             return
 
         exit_code = proc.returncode
@@ -338,18 +345,18 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         _write_log(bp_dir, slot_index, task_id, prompt, result)
 
         if result["success"]:
-            _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace)
+            _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace, ws_id)
         else:
-            _on_agent_error(bp_dir, slot_index, task_id, result.get("error", "Unknown error"), socketio, result.get("output", ""))
+            _on_agent_error(bp_dir, slot_index, task_id, result.get("error", "Unknown error"), socketio, result.get("output", ""), ws_id)
 
     except Exception as e:
-        _on_agent_error(bp_dir, slot_index, task_id, str(e), socketio)
+        _on_agent_error(bp_dir, slot_index, task_id, str(e), socketio, ws_id=ws_id)
     finally:
         with _process_lock:
             _processes.pop(slot_index, None)
 
 
-def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None):
+def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None):
     """Handle successful agent completion."""
     with _write_lock:
         layout = _load_layout(bp_dir)
@@ -392,18 +399,18 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
 
         if socketio:
             task = task_mod.read_task(bp_dir, task_id)
-            socketio.emit("task:updated", task)
-            socketio.emit("layout:updated", layout)
-            socketio.emit("files:changed")
+            _ws_emit(socketio, "task:updated", task, ws_id)
+            _ws_emit(socketio, "layout:updated", layout, ws_id)
+            _ws_emit(socketio, "files:changed", {}, ws_id)
 
         has_more = queue and worker.get("activation") in ("on_drop", "on_queue")
 
     # Auto-advance outside lock to avoid deadlock with start_worker
     if has_more:
-        start_worker(bp_dir, slot_index, socketio)
+        start_worker(bp_dir, slot_index, socketio, ws_id)
 
 
-def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output=""):
+def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="", ws_id=None):
     """Handle agent failure. Retry or block."""
     should_retry = False
     retry_delay = 0
@@ -455,8 +462,8 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="")
 
             if socketio:
                 task = task_mod.read_task(bp_dir, task_id)
-                socketio.emit("task:updated", task)
-                socketio.emit("layout:updated", layout)
+                _ws_emit(socketio, "task:updated", task, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id)
 
             should_advance = queue and worker.get("activation") in ("on_drop", "on_queue")
 
@@ -464,10 +471,10 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="")
     if should_retry:
         def do_retry():
             time.sleep(retry_delay)
-            start_worker(bp_dir, slot_index, socketio)
+            start_worker(bp_dir, slot_index, socketio, ws_id)
         threading.Thread(target=do_retry, daemon=True).start()
     elif should_advance:
-        start_worker(bp_dir, slot_index, socketio)
+        start_worker(bp_dir, slot_index, socketio, ws_id)
 
 
 def _append_output(bp_dir, task_id, worker, output):

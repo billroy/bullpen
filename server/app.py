@@ -124,7 +124,7 @@ def create_app(workspace, no_browser=False):
 
     # Start time-based scheduler for each workspace
     for ws in manager.all_workspaces():
-        scheduler = Scheduler(ws.bp_dir, socketio)
+        scheduler = Scheduler(ws.bp_dir, socketio, ws_id=ws.id)
         scheduler.start()
         ws.scheduler = scheduler
 

@@ -16,10 +16,11 @@ log = logging.getLogger(__name__)
 class Scheduler:
     """Background thread that checks time-based activation triggers."""
 
-    def __init__(self, bp_dir, socketio, interval=60):
+    def __init__(self, bp_dir, socketio, interval=60, ws_id=None):
         self.bp_dir = bp_dir
         self.socketio = socketio
         self.interval = interval
+        self.ws_id = ws_id
         self._stop_event = threading.Event()
         self._thread = None
 
@@ -93,4 +94,4 @@ class Scheduler:
                 # Auto-create an ephemeral task for self-directed workers
                 task = worker_mod.create_auto_task(self.bp_dir, slot_index, worker, self.socketio)
                 log.info("Auto-created task %s for worker %s (slot %d)", task["id"], worker.get("name"), slot_index)
-            worker_mod.start_worker(self.bp_dir, slot_index, self.socketio)
+            worker_mod.start_worker(self.bp_dir, slot_index, self.socketio, self.ws_id)
