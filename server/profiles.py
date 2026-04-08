@@ -2,7 +2,8 @@
 
 import os
 
-from server.persistence import read_json, write_json
+from server.persistence import ensure_within, read_json, write_json
+from server.validation import _id
 
 
 def _profiles_dir(bp_dir):
@@ -25,7 +26,9 @@ def list_profiles(bp_dir):
 
 def get_profile(bp_dir, profile_id):
     """Get a single profile by ID. Returns dict or None."""
+    _id(profile_id, "profile_id")
     path = os.path.join(_profiles_dir(bp_dir), f"{profile_id}.json")
+    ensure_within(path, _profiles_dir(bp_dir))
     if not os.path.exists(path):
         return None
     return read_json(path)
@@ -36,6 +39,8 @@ def create_profile(bp_dir, data):
     profile_id = data.get("id")
     if not profile_id:
         raise ValueError("Profile must have an id")
+    _id(profile_id, "profile_id")
     path = os.path.join(_profiles_dir(bp_dir), f"{profile_id}.json")
+    ensure_within(path, _profiles_dir(bp_dir))
     write_json(path, data)
     return data

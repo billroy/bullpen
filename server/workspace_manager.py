@@ -85,12 +85,16 @@ class WorkspaceManager:
         Initializes the workspace and creates a WorkspaceState.
         """
         path = os.path.abspath(path)
-        if not os.path.isdir(path):
+        real_path = os.path.realpath(path)
+        if not os.path.isdir(real_path):
             raise ValueError(f"Not a directory: {path}")
 
         # Reject non-absolute paths or paths with ..
         if ".." in path.split(os.sep):
             raise ValueError(f"Invalid path: {path}")
+
+        # Use resolved path to prevent symlink-based traversal
+        path = real_path
 
         with self._lock:
             # Check if already registered

@@ -2,7 +2,8 @@
 
 import os
 
-from server.persistence import read_json, write_json
+from server.persistence import ensure_within, read_json, write_json
+from server.validation import _id
 
 
 def _teams_dir(bp_dir):
@@ -20,14 +21,18 @@ def save_team(bp_dir, name, layout):
             saved = {k: v for k, v in slot.items() if k not in ("task_queue", "state")}
             team_layout["slots"].append(saved)
 
+    _id(name, "team name")
     path = os.path.join(_teams_dir(bp_dir), f"{name}.json")
+    ensure_within(path, _teams_dir(bp_dir))
     write_json(path, team_layout)
     return team_layout
 
 
 def load_team(bp_dir, name):
     """Load a named team. Returns layout dict or None."""
+    _id(name, "team name")
     path = os.path.join(_teams_dir(bp_dir), f"{name}.json")
+    ensure_within(path, _teams_dir(bp_dir))
     if not os.path.exists(path):
         return None
     team = read_json(path)

@@ -63,3 +63,15 @@ class TestTeams:
 
     def test_load_nonexistent(self, bp_dir):
         assert load_team(bp_dir, "nope") is None
+
+    def test_path_traversal_save_rejected(self, bp_dir):
+        """Path traversal in team name should be rejected on save."""
+        from server.validation import ValidationError
+        with pytest.raises(ValidationError, match="Invalid team name"):
+            save_team(bp_dir, "../../etc/evil", {"slots": []})
+
+    def test_path_traversal_load_rejected(self, bp_dir):
+        """Path traversal in team name should be rejected on load."""
+        from server.validation import ValidationError
+        with pytest.raises(ValidationError, match="Invalid team name"):
+            load_team(bp_dir, "../../../passwd")

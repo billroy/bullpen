@@ -4,7 +4,9 @@ import pytest
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_worker_configure,
-    validate_payload_size, MAX_TITLE, MAX_DESCRIPTION,
+    validate_payload_size, validate_config_update, validate_worker_move,
+    validate_layout_update, validate_team_name,
+    MAX_TITLE, MAX_DESCRIPTION,
 )
 
 
@@ -148,3 +150,71 @@ class TestPayloadSize:
     def test_oversized_payload_rejected(self):
         with pytest.raises(ValidationError, match="Payload too large"):
             validate_payload_size({"data": "x" * 1_100_000})
+
+
+class TestConfigUpdate:
+    def test_valid_keys_accepted(self):
+        result = validate_config_update({"name": "test", "auto_commit": True, "workspaceId": "ws1"})
+        assert result == {"name": "test", "auto_commit": True}
+        assert "workspaceId" not in result
+
+    def test_unknown_key_rejected(self):
+        with pytest.raises(ValidationError, match="Unknown config key"):
+            validate_config_update({"evil_key": "payload"})
+
+    def test_grid_key_accepted(self):
+        result = validate_config_update({"grid": {"rows": 3, "cols": 6}})
+        assert "grid" in result
+
+
+class TestWorkerMove:
+    def test_valid_move(self):
+        from_s, to_s = validate_worker_move({"from": 0, "to": 5})
+        assert from_s == 0
+        assert to_s == 5
+
+    def test_missing_from(self):
+        with pytest.raises(ValidationError, match="requires from and to"):
+            validate_worker_move({"to": 5})
+
+    def test_negative_slot(self):
+        with pytest.raises(ValidationError, match="must be >= 0"):
+            validate_worker_move({"from": -1, "to": 5})
+
+    def test_slot_too_large(self):
+        with pytest.raises(ValidationError, match="must be <="):
+            validate_worker_move({"from": 0, "to": 200})
+
+
+class TestLayoutUpdate:
+    def test_valid_grid(self):
+        result = validate_layout_update({"grid": {"rows": 3, "cols": 6}})
+        assert result == {"rows": 3, "cols": 6}
+
+    def test_no_grid(self):
+        assert validate_layout_update({}) is None
+
+    def test_invalid_grid_type(self):
+        with pytest.raises(ValidationError, match="grid must be an object"):
+            validate_layout_update({"grid": "not-a-dict"})
+
+    def test_grid_rows_out_of_range(self):
+        with pytest.raises(ValidationError, match="must be <="):
+            validate_layout_update({"grid": {"rows": 99, "cols": 6}})
+
+
+class TestTeamName:
+    def test_valid_name(self):
+        assert validate_team_name("my-team") == "my-team"
+
+    def test_empty_name(self):
+        with pytest.raises(ValidationError, match="requires team name"):
+            validate_team_name("")
+
+    def test_none_name(self):
+        with pytest.raises(ValidationError, match="requires team name"):
+            validate_team_name(None)
+
+    def test_traversal_name(self):
+        with pytest.raises(ValidationError, match="Invalid team name"):
+            validate_team_name("../../etc/passwd")

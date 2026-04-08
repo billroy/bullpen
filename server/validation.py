@@ -206,3 +206,57 @@ def validate_grid(data):
     rows = _int(grid.get("rows"), "rows", min_val=1, max_val=10)
     cols = _int(grid.get("cols"), "cols", min_val=1, max_val=15)
     return rows, cols
+
+
+# Allowed keys for config:update
+VALID_CONFIG_KEYS = {
+    "name", "grid", "columns", "agent_timeout_seconds",
+    "max_prompt_chars", "auto_commit", "auto_pr",
+}
+
+
+def validate_config_update(data):
+    """Validate config:update payload. Returns sanitized dict of allowed keys."""
+    validate_payload_size(data)
+    sanitized = {}
+    for k, v in data.items():
+        if k == "workspaceId":
+            continue
+        if k not in VALID_CONFIG_KEYS:
+            raise ValidationError(f"Unknown config key: '{k}'")
+        sanitized[k] = v
+    return sanitized
+
+
+def validate_worker_move(data, max_slots=200):
+    """Validate worker:move payload. Returns (from_slot, to_slot)."""
+    from_slot = _int(data.get("from"), "from", min_val=0, max_val=max_slots - 1)
+    to_slot = _int(data.get("to"), "to", min_val=0, max_val=max_slots - 1)
+    if from_slot is None or to_slot is None:
+        raise ValidationError("worker:move requires from and to")
+    return from_slot, to_slot
+
+
+def validate_layout_update(data):
+    """Validate layout:update payload. Returns validated grid dict or None."""
+    validate_payload_size(data)
+    if "grid" not in data:
+        return None
+    grid = data["grid"]
+    if not isinstance(grid, dict):
+        raise ValidationError("grid must be an object")
+    rows = _int(grid.get("rows"), "rows", min_val=1, max_val=10)
+    cols = _int(grid.get("cols"), "cols", min_val=1, max_val=15)
+    result = {}
+    if rows is not None:
+        result["rows"] = rows
+    if cols is not None:
+        result["cols"] = cols
+    return result
+
+
+def validate_team_name(name):
+    """Validate a team name (used as filename). Returns sanitized name."""
+    if not name:
+        raise ValidationError("requires team name")
+    return _id(name, "team name")

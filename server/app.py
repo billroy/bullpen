@@ -4,7 +4,7 @@ import os
 import subprocess
 
 from flask import Flask, jsonify, request, abort
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, join_room
 
 from server.events import register_events
 from server.init import init_workspace
@@ -18,7 +18,7 @@ from server.workspace_manager import WorkspaceManager
 socketio = SocketIO()
 
 
-def create_app(workspace, no_browser=False, global_dir=None):
+def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", port=5000):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
 
@@ -39,7 +39,11 @@ def create_app(workspace, no_browser=False, global_dir=None):
     app.config["bp_dir"] = bp_dir
     app.config["no_browser"] = no_browser
 
-    socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+    if host == "0.0.0.0":
+        cors_origin = "*"
+    else:
+        cors_origin = f"http://{host}:{port}"
+    socketio.init_app(app, cors_allowed_origins=cors_origin, async_mode="threading")
 
     # Startup reconciliation for all registered workspaces
     for ws in manager.all_workspaces():
@@ -114,13 +118,17 @@ def create_app(workspace, no_browser=False, global_dir=None):
 
     @socketio.on("connect")
     def on_connect():
-        # Send state for all active workspaces
+        # Join rooms for all active workspaces
+        for ws in manager.all_workspaces():
+            join_room(ws.id)
+        # Send state for all active workspaces (to this client only)
+        sid = request.sid
         for ws in manager.all_workspaces():
             state = load_state(ws.bp_dir, ws.path)
             state["workspaceId"] = ws.id
-            socketio.emit("state:init", state)
-        # Send project list
-        socketio.emit("projects:updated", manager.list_projects())
+            socketio.emit("state:init", state, to=sid)
+        # Send project list (to this client only)
+        socketio.emit("projects:updated", manager.list_projects(), to=sid)
 
     register_events(socketio, app)
 
@@ -151,22 +159,36 @@ def build_file_tree(workspace):
     except Exception:
         pass
 
-    def walk(path, rel=""):
+    MAX_DEPTH = 20
+    MAX_NODES = 10_000
+    node_count = [0]  # mutable counter for nested scope
+
+    def walk(path, rel="", depth=0):
         entries = []
+        if depth >= MAX_DEPTH or node_count[0] >= MAX_NODES:
+            return entries
         try:
             items = sorted(os.listdir(path))
         except PermissionError:
             return entries
 
         for name in items:
+            if node_count[0] >= MAX_NODES:
+                break
             if name.startswith(".") and name in excluded:
                 continue
             rel_path = os.path.join(rel, name) if rel else name
             if rel_path in gitignored or name in excluded:
                 continue
             full = os.path.join(path, name)
-            if os.path.isdir(full):
-                children = walk(full, rel_path)
+            node_count[0] += 1
+            if os.path.islink(full):
+                # Skip symlinked directories to prevent traversal/loops
+                if os.path.isdir(full):
+                    continue
+                entries.append({"name": name, "path": rel_path, "type": "file"})
+            elif os.path.isdir(full):
+                children = walk(full, rel_path, depth + 1)
                 entries.append({"name": name, "path": rel_path, "type": "dir", "children": children})
             else:
                 entries.append({"name": name, "path": rel_path, "type": "file"})

@@ -67,6 +67,18 @@ class TestProfiles:
         with pytest.raises(ValueError):
             create_profile(bp_dir, {"name": "No ID"})
 
+    def test_path_traversal_get_rejected(self, bp_dir):
+        """Path traversal in profile_id should be rejected."""
+        from server.validation import ValidationError
+        with pytest.raises(ValidationError, match="Invalid profile_id"):
+            get_profile(bp_dir, "../../etc/passwd")
+
+    def test_path_traversal_create_rejected(self, bp_dir):
+        """Path traversal in profile create should be rejected."""
+        from server.validation import ValidationError
+        with pytest.raises(ValidationError, match="Invalid profile_id"):
+            create_profile(bp_dir, {"id": "../../../evil", "name": "Evil"})
+
     def test_profiles_in_state_init(self, bp_dir):
         """Verify profiles are included in state:init."""
         import tempfile

@@ -1,5 +1,6 @@
 """Socket event handlers."""
 
+import logging
 import os
 
 from flask import request
@@ -14,7 +15,8 @@ from server.locks import write_lock as _write_lock
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_worker_configure,
-    validate_payload_size,
+    validate_payload_size, validate_config_update, validate_worker_move,
+    validate_layout_update, validate_team_name,
 )
 
 
@@ -38,10 +40,10 @@ def register_events(socketio, app):
         return ws_id, manager.get_bp_dir(ws_id)
 
     def _emit(event, payload, ws_id):
-        """Emit an event with workspaceId attached."""
+        """Emit an event with workspaceId attached, scoped to workspace room."""
         if isinstance(payload, dict):
             payload["workspaceId"] = ws_id
-        socketio.emit(event, payload)
+        socketio.emit(event, payload, to=ws_id)
 
     def with_lock(fn):
         """Execute fn under write lock, emit error on failure."""
@@ -52,7 +54,8 @@ def register_events(socketio, app):
                 except ValidationError as e:
                     emit("error", {"message": str(e)})
                 except Exception as e:
-                    emit("error", {"message": str(e)})
+                    logging.exception("Unhandled error in %s", fn.__name__)
+                    emit("error", {"message": "An internal error occurred"})
         wrapper.__name__ = fn.__name__
         return wrapper
 
@@ -120,11 +123,11 @@ def register_events(socketio, app):
     def on_worker_add(data):
         ws_id, bp_dir = _resolve(data)
         layout = _load_layout(bp_dir)
-        slot_index = data.get("slot")
+        slot_index = validate_slot(data, max_slots=200)
         profile_id = data.get("profile")
 
-        if slot_index is None or profile_id is None:
-            emit("error", {"message": "worker:add requires slot and profile"})
+        if profile_id is None:
+            emit("error", {"message": "worker:add requires profile"})
             return
 
         # Get profile data for defaults
@@ -199,13 +202,8 @@ def register_events(socketio, app):
     @with_lock
     def on_worker_move(data):
         ws_id, bp_dir = _resolve(data)
+        from_slot, to_slot = validate_worker_move(data)
         layout = _load_layout(bp_dir)
-        from_slot = data.get("from")
-        to_slot = data.get("to")
-
-        if from_slot is None or to_slot is None:
-            emit("error", {"message": "worker:move requires from and to"})
-            return
 
         # Ensure slots list is large enough
         max_slot = max(from_slot, to_slot)
@@ -329,10 +327,11 @@ def register_events(socketio, app):
     @with_lock
     def on_layout_update(data):
         ws_id, bp_dir = _resolve(data)
+        grid = validate_layout_update(data)
         config = read_json(os.path.join(bp_dir, "config.json"))
 
-        if "grid" in data:
-            config["grid"] = data["grid"]
+        if grid is not None:
+            config["grid"] = grid
             write_json(os.path.join(bp_dir, "config.json"), config)
 
         _emit("config:updated", config, ws_id)
@@ -341,11 +340,10 @@ def register_events(socketio, app):
     @with_lock
     def on_config_update(data):
         ws_id, bp_dir = _resolve(data)
+        sanitized = validate_config_update(data)
         config = read_json(os.path.join(bp_dir, "config.json"))
 
-        for k, v in data.items():
-            if k == "workspaceId":
-                continue
+        for k, v in sanitized.items():
             config[k] = v
 
         write_json(os.path.join(bp_dir, "config.json"), config)
@@ -380,10 +378,7 @@ def register_events(socketio, app):
     @with_lock
     def on_team_save(data):
         ws_id, bp_dir = _resolve(data)
-        name = data.get("name")
-        if not name:
-            emit("error", {"message": "team:save requires name"})
-            return
+        name = validate_team_name(data.get("name"))
         layout = _load_layout(bp_dir)
         save_team(bp_dir, name, layout)
         teams = list_teams(bp_dir)
@@ -393,10 +388,7 @@ def register_events(socketio, app):
     @with_lock
     def on_team_load(data):
         ws_id, bp_dir = _resolve(data)
-        name = data.get("name")
-        if not name:
-            emit("error", {"message": "team:load requires name"})
-            return
+        name = validate_team_name(data.get("name"))
         team_layout = load_team(bp_dir, name)
         if not team_layout:
             emit("error", {"message": f"Team not found: {name}"})

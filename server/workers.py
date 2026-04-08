@@ -15,16 +15,16 @@ from server import tasks as task_mod
 MAX_HANDOFF_DEPTH = 10
 
 
-# Active subprocesses keyed by slot index
+# Active subprocesses keyed by (workspace_id, slot_index)
 _processes = {}
 _process_lock = threading.Lock()
 
 
 def _ws_emit(socketio, event, payload, ws_id=None):
-    """Emit a socket event with workspaceId attached."""
+    """Emit a socket event with workspaceId attached, scoped to workspace room."""
     if ws_id and isinstance(payload, dict):
         payload["workspaceId"] = ws_id
-    socketio.emit(event, payload)
+    socketio.emit(event, payload, to=ws_id)
 
 
 def _now_iso():
@@ -155,7 +155,7 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
 def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Stop a working agent. Task goes back to Assigned."""
     with _process_lock:
-        proc = _processes.get(slot_index)
+        proc = _processes.get((ws_id, slot_index))
         if proc and proc.poll() is None:
             proc.terminate()
             try:
@@ -329,7 +329,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         )
 
         with _process_lock:
-            _processes[slot_index] = proc
+            _processes[(ws_id, slot_index)] = proc
 
         # Write prompt to stdin
         try:
@@ -355,7 +355,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         _on_agent_error(bp_dir, slot_index, task_id, str(e), socketio, ws_id=ws_id)
     finally:
         with _process_lock:
-            _processes.pop(slot_index, None)
+            _processes.pop((ws_id, slot_index), None)
 
 
 def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None):
@@ -482,7 +482,10 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="",
     should_advance = False
 
     with _write_lock:
-        layout = _load_layout(bp_dir)
+        try:
+            layout = _load_layout(bp_dir)
+        except FileNotFoundError:
+            return
         worker = layout["slots"][slot_index]
         if not worker:
             return
