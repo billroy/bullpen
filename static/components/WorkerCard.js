@@ -9,7 +9,7 @@ const WorkerCard = {
          @dragleave="onDragLeave"
          @drop="onDrop"
 >
-      <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)"
+      <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
