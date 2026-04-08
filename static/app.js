@@ -13,6 +13,10 @@ const app = createApp({
     ToastContainer,
   },
   setup() {
+    // Per-workspace backing store (not directly rendered)
+    const workspaces = reactive({});  // workspaceId -> { workspace, config, layout, tasks, profiles, teams, filesVersion, unseenActivity }
+
+    // Active view state — mirrors whichever workspace is active
     const state = reactive({
       workspace: '',
       config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [] },
@@ -22,6 +26,50 @@ const app = createApp({
       teams: [],
       filesVersion: 0,
     });
+
+    const activeWorkspaceId = ref(null);
+
+    function _defaultWsData() {
+      return {
+        workspace: '',
+        config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [] },
+        layout: { slots: [] },
+        tasks: [],
+        profiles: [],
+        teams: [],
+        filesVersion: 0,
+        unseenActivity: 0,
+      };
+    }
+
+    function _getWs(wsId) {
+      if (!workspaces[wsId]) workspaces[wsId] = _defaultWsData();
+      return workspaces[wsId];
+    }
+
+    function _syncToView(wsId) {
+      const ws = workspaces[wsId];
+      if (!ws) return;
+      state.workspace = ws.workspace;
+      state.config = ws.config;
+      state.layout = ws.layout;
+      state.tasks = ws.tasks;
+      state.profiles = ws.profiles;
+      state.teams = ws.teams;
+      state.filesVersion = ws.filesVersion;
+    }
+
+    function _isActive(wsId) {
+      return wsId === activeWorkspaceId.value;
+    }
+
+    function switchWorkspace(wsId) {
+      if (!workspaces[wsId]) return;
+      activeWorkspaceId.value = wsId;
+      workspaces[wsId].unseenActivity = 0;
+      _syncToView(wsId);
+      document.title = state.config.name || 'Bullpen';
+    }
 
     const connected = ref(false);
     const activeTab = ref('kanban');
@@ -49,70 +97,131 @@ const app = createApp({
     socket.on('disconnect', () => { connected.value = false; });
 
     socket.on('state:init', (data) => {
-      state.workspace = data.workspace;
-      state.config = data.config;
-      state.layout = data.layout;
-      state.tasks = data.tasks;
-      state.profiles = data.profiles || [];
-      state.teams = data.teams || [];
-      document.title = state.config.name || 'Bullpen';
+      const wsId = data.workspaceId;
+      const ws = _getWs(wsId);
+      ws.workspace = data.workspace;
+      ws.config = data.config;
+      ws.layout = data.layout;
+      ws.tasks = data.tasks;
+      ws.profiles = data.profiles || [];
+      ws.teams = data.teams || [];
+
+      // First workspace becomes active
+      if (!activeWorkspaceId.value) {
+        activeWorkspaceId.value = wsId;
+      }
+
+      if (_isActive(wsId)) {
+        _syncToView(wsId);
+        document.title = state.config.name || 'Bullpen';
+      }
     });
 
-    socket.on('task:created', (task) => { state.tasks.push(task); });
+    socket.on('task:created', (task) => {
+      const wsId = task.workspaceId || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.tasks.push(task);
+      if (!_isActive(wsId)) ws.unseenActivity++;
+    });
     socket.on('task:updated', (task) => {
-      const idx = state.tasks.findIndex(t => t.id === task.id);
-      if (idx >= 0) state.tasks[idx] = task;
-      else state.tasks.push(task);
+      const wsId = task.workspaceId || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      const idx = ws.tasks.findIndex(t => t.id === task.id);
+      if (idx >= 0) ws.tasks[idx] = task;
+      else ws.tasks.push(task);
+      if (_isActive(wsId)) {
+        // state.tasks is the same array ref, already updated
+      } else {
+        ws.unseenActivity++;
+      }
+      if (selectedTaskId.value === task.id) {
+        // Force reactivity on active view
+      }
     });
     socket.on('task:deleted', (data) => {
-      state.tasks = state.tasks.filter(t => t.id !== data.id);
+      const wsId = data.workspaceId || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.tasks = ws.tasks.filter(t => t.id !== data.id);
+      if (_isActive(wsId)) state.tasks = ws.tasks;
       if (selectedTaskId.value === data.id) selectedTaskId.value = null;
     });
 
-    socket.on('layout:updated', (layout) => { state.layout = layout; });
-    socket.on('config:updated', (config) => { state.config = config; });
-    socket.on('profiles:updated', (profiles) => { state.profiles = profiles; });
-    socket.on('teams:updated', (teams) => { state.teams = teams; });
+    socket.on('layout:updated', (layout) => {
+      const wsId = layout.workspaceId || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.layout = layout;
+      if (_isActive(wsId)) state.layout = layout;
+      else ws.unseenActivity++;
+    });
+    socket.on('config:updated', (config) => {
+      const wsId = config.workspaceId || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.config = config;
+      if (_isActive(wsId)) state.config = config;
+    });
+    socket.on('profiles:updated', (profiles) => {
+      // profiles is an array, workspaceId may be on any element or absent
+      const wsId = (Array.isArray(profiles) ? null : profiles?.workspaceId) || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.profiles = profiles;
+      if (_isActive(wsId)) state.profiles = profiles;
+    });
+    socket.on('teams:updated', (teams) => {
+      const wsId = (Array.isArray(teams) ? null : teams?.workspaceId) || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.teams = teams;
+      if (_isActive(wsId)) state.teams = teams;
+    });
     socket.on('error', (data) => { addToast(data.message, 'error'); });
-    socket.on('files:changed', () => { state.filesVersion++; });
+    socket.on('files:changed', (data) => {
+      const wsId = (data && data.workspaceId) || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.filesVersion++;
+      if (_isActive(wsId)) state.filesVersion = ws.filesVersion;
+    });
+
+    // Helper to attach workspaceId to outgoing events
+    function _wsData(data) {
+      return { ...data, workspaceId: activeWorkspaceId.value };
+    }
 
     // Task actions
-    function createTask(data) { socket.emit('task:create', data); }
-    function updateTask(data) { socket.emit('task:update', data); }
+    function createTask(data) { socket.emit('task:create', _wsData(data)); }
+    function updateTask(data) { socket.emit('task:update', _wsData(data)); }
     function deleteTask(id) {
       const task = state.tasks.find(t => t.id === id);
       if (task && (task.status === 'assigned' || task.status === 'in-progress')) {
         if (!confirm(`Task "${task.title}" is ${task.status}. Delete anyway?`)) return;
       }
-      socket.emit('task:delete', { id });
+      socket.emit('task:delete', _wsData({ id }));
     }
-    function clearTaskOutput(id) { socket.emit('task:clear_output', { id }); }
-    function moveTask({ id, status }) { socket.emit('task:update', { id, status }); }
+    function clearTaskOutput(id) { socket.emit('task:clear_output', _wsData({ id })); }
+    function moveTask({ id, status }) { socket.emit('task:update', _wsData({ id, status })); }
     function selectTask(id) { selectedTaskId.value = id; }
 
     // Worker actions
-    function addWorker({ slot, profile }) { socket.emit('worker:add', { slot, profile }); }
+    function addWorker({ slot, profile }) { socket.emit('worker:add', _wsData({ slot, profile })); }
     function removeWorker(slot) {
       const worker = state.layout?.slots?.[slot];
       if (worker?.task_queue?.length) {
         if (!confirm(`Worker "${worker.name}" has ${worker.task_queue.length} task(s) queued. Remove anyway?`)) return;
       }
-      socket.emit('worker:remove', { slot });
+      socket.emit('worker:remove', _wsData({ slot }));
     }
-    function moveWorker(from, to) { socket.emit('worker:move', { from, to }); }
-    function duplicateWorker(slot) { socket.emit('worker:duplicate', { slot }); }
-    function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', { slot, fields }); }
+    function moveWorker(from, to) { socket.emit('worker:move', _wsData({ from, to })); }
+    function duplicateWorker(slot) { socket.emit('worker:duplicate', _wsData({ slot })); }
+    function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', _wsData({ slot, fields })); }
 
     // Execution actions
-    function assignTask(taskId, slot) { socket.emit('task:assign', { task_id: taskId, slot }); }
-    function startWorkerSlot(slot) { socket.emit('worker:start', { slot }); }
-    function stopWorkerSlot(slot) { socket.emit('worker:stop', { slot }); }
+    function assignTask(taskId, slot) { socket.emit('task:assign', _wsData({ task_id: taskId, slot })); }
+    function startWorkerSlot(slot) { socket.emit('worker:start', _wsData({ slot })); }
+    function stopWorkerSlot(slot) { socket.emit('worker:stop', _wsData({ slot })); }
 
     // Config/team actions
-    function updateConfig(data) { socket.emit('config:update', data); }
-    function saveTeam(name) { socket.emit('team:save', { name }); }
-    function loadTeam(name) { socket.emit('team:load', { name }); }
-    function saveProfile(data) { socket.emit('profile:create', data); }
+    function updateConfig(data) { socket.emit('config:update', _wsData(data)); }
+    function saveTeam(name) { socket.emit('team:save', _wsData({ name })); }
+    function loadTeam(name) { socket.emit('team:load', _wsData({ name })); }
+    function saveProfile(data) { socket.emit('profile:create', _wsData(data)); }
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
 
@@ -181,7 +290,8 @@ const app = createApp({
     }
 
     return {
-      state, connected, activeTab, leftPaneVisible, toasts,
+      state, workspaces, activeWorkspaceId, switchWorkspace,
+      connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, toggleTheme, createTask, updateTask, deleteTask, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
