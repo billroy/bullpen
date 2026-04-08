@@ -575,9 +575,40 @@ body {
 .ticket-list-col-priority,
 .ticket-list-col-status,
 .ticket-list-col-type,
-.ticket-list-col-worker {
+.ticket-list-col-worker,
+.ticket-list-col-date {
   white-space: nowrap;
 }
+
+.ticket-list-th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.ticket-list-th-sortable:hover {
+  color: var(--text-secondary);
+}
+
+.sort-indicator {
+  display: inline-block;
+  width: 12px;
+  color: var(--accent);
+}
+
+.ticket-list-status-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.status-col-inbox     { background: rgba(107,114,128,0.2); color: var(--text-secondary); }
+.status-col-assigned  { background: rgba(139,92,246,0.2);  color: #a78bfa; }
+.status-col-in_progress { background: rgba(59,130,246,0.2); color: #60a5fa; }
+.status-col-review    { background: rgba(245,158,11,0.2);  color: #fbbf24; }
+.status-col-done      { background: rgba(16,185,129,0.2);  color: #34d399; }
+.status-col-blocked   { background: rgba(239,68,68,0.2);   color: #f87171; }
 
 .ticket-list-empty {
   text-align: center;

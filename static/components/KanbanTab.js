@@ -32,16 +32,29 @@ const KanbanTab = {
       <table class="ticket-list-table">
         <thead>
           <tr>
-            <th class="ticket-list-col-priority">Priority</th>
-            <th class="ticket-list-col-title">Title</th>
-            <th class="ticket-list-col-status">Status</th>
-            <th class="ticket-list-col-type">Type</th>
-            <th class="ticket-list-col-worker">Assigned</th>
+            <th class="ticket-list-col-priority ticket-list-th-sortable" @click="setSort('priority')">
+              Priority<span class="sort-indicator">{{ sortIndicator('priority') }}</span>
+            </th>
+            <th class="ticket-list-col-title ticket-list-th-sortable" @click="setSort('title')">
+              Title<span class="sort-indicator">{{ sortIndicator('title') }}</span>
+            </th>
+            <th class="ticket-list-col-status ticket-list-th-sortable" @click="setSort('status')">
+              Status<span class="sort-indicator">{{ sortIndicator('status') }}</span>
+            </th>
+            <th class="ticket-list-col-type ticket-list-th-sortable" @click="setSort('type')">
+              Type<span class="sort-indicator">{{ sortIndicator('type') }}</span>
+            </th>
+            <th class="ticket-list-col-worker ticket-list-th-sortable" @click="setSort('assigned')">
+              Assigned<span class="sort-indicator">{{ sortIndicator('assigned') }}</span>
+            </th>
+            <th class="ticket-list-col-date ticket-list-th-sortable" @click="setSort('created_at')">
+              Created<span class="sort-indicator">{{ sortIndicator('created_at') }}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="sortedTasks.length === 0">
-            <td colspan="5" class="ticket-list-empty">No tickets</td>
+            <td colspan="6" class="ticket-list-empty">No tickets</td>
           </tr>
           <tr
             v-for="task in sortedTasks"
@@ -53,29 +66,69 @@ const KanbanTab = {
               <span class="badge" :class="'priority-' + (task.priority || 'normal')">{{ task.priority || 'normal' }}</span>
             </td>
             <td class="ticket-list-col-title">{{ task.title }}</td>
-            <td class="ticket-list-col-status">{{ columnLabel(task.status) }}</td>
+            <td class="ticket-list-col-status">
+              <span class="ticket-list-status-pill" :class="'status-col-' + task.status">{{ columnLabel(task.status) }}</span>
+            </td>
             <td class="ticket-list-col-type">
               <span class="badge type-badge" :class="'type-' + (task.type || 'task')">{{ task.type || 'task' }}</span>
             </td>
             <td class="ticket-list-col-worker">{{ workerName(task) || '—' }}</td>
+            <td class="ticket-list-col-date">{{ formatDate(task.created_at) }}</td>
           </tr>
         </tbody>
       </table>
     </div>
   `,
+  data() {
+    return {
+      sortField: 'status',
+      sortDir: 'asc',
+    };
+  },
   computed: {
     sortedTasks() {
       const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       const colOrder = {};
       (this.columns || []).forEach((c, i) => { colOrder[c.key] = i; });
+      const dir = this.sortDir === 'asc' ? 1 : -1;
       return (this.tasks || []).slice().sort((a, b) => {
-        const ca = colOrder[a.status] ?? 99;
-        const cb = colOrder[b.status] ?? 99;
-        if (ca !== cb) return ca - cb;
-        const pa = weight[a.priority] ?? weight.normal;
-        const pb = weight[b.priority] ?? weight.normal;
-        if (pa !== pb) return pa - pb;
-        return (a.order || '').localeCompare(b.order || '');
+        let cmp = 0;
+        switch (this.sortField) {
+          case 'status': {
+            const ca = colOrder[a.status] ?? 99;
+            const cb = colOrder[b.status] ?? 99;
+            cmp = ca - cb;
+            if (cmp === 0) {
+              const pa = weight[a.priority] ?? weight.normal;
+              const pb = weight[b.priority] ?? weight.normal;
+              cmp = pa - pb;
+            }
+            break;
+          }
+          case 'priority': {
+            const pa = weight[a.priority] ?? weight.normal;
+            const pb = weight[b.priority] ?? weight.normal;
+            cmp = pa - pb;
+            break;
+          }
+          case 'title':
+            cmp = (a.title || '').localeCompare(b.title || '');
+            break;
+          case 'type':
+            cmp = (a.type || '').localeCompare(b.type || '');
+            break;
+          case 'assigned': {
+            const wa = this.workerName(a) || '';
+            const wb = this.workerName(b) || '';
+            cmp = wa.localeCompare(wb);
+            break;
+          }
+          case 'created_at':
+            cmp = (a.created_at || '').localeCompare(b.created_at || '');
+            break;
+        }
+        if (cmp === 0) cmp = (a.order || '').localeCompare(b.order || '');
+        return cmp * dir;
       });
     }
   },
@@ -90,6 +143,24 @@ const KanbanTab = {
           if (pa !== pb) return pa - pb;
           return (a.order || '').localeCompare(b.order || '');
         });
+    },
+    setSort(field) {
+      if (this.sortField === field) {
+        this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        this.sortField = field;
+        this.sortDir = field === 'created_at' ? 'desc' : 'asc';
+      }
+    },
+    sortIndicator(field) {
+      if (this.sortField !== field) return '';
+      return this.sortDir === 'asc' ? ' ↑' : ' ↓';
+    },
+    formatDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      if (isNaN(d)) return '—';
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     },
     columnLabel(key) {
       const col = (this.columns || []).find(c => c.key === key);
