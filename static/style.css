@@ -233,43 +233,28 @@ body {
 .roster-item {
   display: flex;
   align-items: center;
-  gap: 8px;
   padding: 4px 8px;
   font-size: 12px;
-  border-left: 3px solid transparent;
+  font-weight: 600;
+  color: white;
   border-radius: var(--radius);
-  transition: background 0.15s;
+  transition: opacity 0.15s, filter 0.15s;
   cursor: default;
 }
 
+.roster-item.roster-idle {
+  opacity: 0.5;
+}
+
 .roster-item.drag-over {
-  background: var(--bg-hover);
-  outline: 1px dashed var(--accent);
+  filter: brightness(1.2);
 }
-
-.roster-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.roster-dot.status-idle { background: var(--gray); }
-.roster-dot.status-working { background: var(--blue); }
-.roster-dot.status-queued { background: var(--purple); }
 
 .roster-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
-}
-
-.agent-badge {
-  font-size: 10px;
-  text-transform: uppercase;
-  opacity: 0.7;
-  flex-shrink: 0;
 }
 
 /* === Badges === */

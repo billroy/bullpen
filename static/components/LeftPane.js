@@ -28,14 +28,12 @@ const LeftPane = {
           <div v-if="!workerList.length" class="empty-state">No workers configured</div>
           <div v-for="w in workerList" :key="w.slot"
                class="roster-item"
-               :class="{ 'drag-over': rosterDragSlot === w.slot }"
-               :style="{ borderLeftColor: agentColor(w.agent) }"
+               :class="{ 'drag-over': rosterDragSlot === w.slot, 'roster-idle': (w.state || 'idle') === 'idle' }"
+               :style="{ background: agentColor(w.agent) }"
                @dragover.prevent="onRosterDragOver($event, w)"
                @dragleave="onRosterDragLeave"
                @drop="onRosterDrop($event, w.slot)">
-            <span class="roster-dot" :class="'status-' + (w.state || 'idle')"></span>
             <span class="roster-name">{{ w.name }}</span>
-            <span class="agent-badge" :style="{ color: agentColor(w.agent) }">{{ w.agent }}</span>
           </div>
         </div>
       </div>
@@ -69,7 +67,7 @@ const LeftPane = {
       e.dataTransfer.effectAllowed = 'move';
     },
     agentColor(agent) {
-      return { claude: '#da7756', codex: '#10a37f' }[agent] || '#6B7280';
+      return agentColor(agent);
     },
     onRosterDragOver(e, w) {
       if (e.dataTransfer.types.includes('text/plain')) {

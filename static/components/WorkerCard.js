@@ -71,7 +71,7 @@ const WorkerCard = {
       return this.worker.paused === true;
     },
     agentColor() {
-      return { claude: '#da7756', codex: '#10a37f' }[this.worker.agent] || '#6B7280';
+      return agentColor(this.worker.agent);
     },
     queuedTasks() {
       if (!this.worker.task_queue || !this.tasks) return [];
