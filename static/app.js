@@ -100,6 +100,7 @@ const app = createApp({
       socket.emit('worker:remove', { slot });
     }
     function moveWorker(from, to) { socket.emit('worker:move', { from, to }); }
+    function duplicateWorker(slot) { socket.emit('worker:duplicate', { slot }); }
     function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', { slot, fields }); }
 
     // Execution actions
@@ -186,7 +187,7 @@ const app = createApp({
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
-      gridOptions, onTabBarGridResize,
+      gridOptions, onTabBarGridResize, duplicateWorker,
     };
   },
   template: `

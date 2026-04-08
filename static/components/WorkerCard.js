@@ -8,15 +8,20 @@ const WorkerCard = {
          @dragover.prevent="onDragOver"
          @dragleave="onDragLeave"
          @drop="onDrop"
-         @dblclick="$emit('configure', slotIndex)"
+         @dblclick="$emit('configure', slotIndex)">
       <div class="worker-card-header" :style="{ background: agentColor }">
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
-          <button v-if="isScheduled && !isPaused" class="worker-action-btn pause-btn" @click.stop="pauseWorker" title="Pause">&#9208;</button>
-          <button v-if="isScheduled && isPaused" class="worker-action-btn start-btn" @click.stop="unpauseWorker" title="Resume">&#9654;</button>
-          <button v-if="canStart && !isPaused" class="worker-action-btn start-btn" @click.stop="startWorker" title="Start">&#9654;</button>
-          <button v-if="isWorking" class="worker-action-btn stop-btn" @click.stop="stopWorker" title="Stop">&#9632;</button>
-          <button class="worker-card-edit" @click.stop="$emit('configure', slotIndex)" title="Configure">&#9998;</button>
+          <button class="worker-menu-btn" @click.stop="showMenu = !showMenu" title="Actions">&hellip;</button>
+          <div v-if="showMenu" class="worker-menu" @click.stop>
+            <button class="worker-menu-item" @click="menuEdit">Edit</button>
+            <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun">Run</button>
+            <button v-if="isWorking" class="worker-menu-item" @click="menuStop">Stop</button>
+            <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause">Pause</button>
+            <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause">Unpause</button>
+            <button class="worker-menu-item" @click="menuDuplicate">Duplicate</button>
+            <button class="worker-menu-item worker-menu-danger" @click="menuDelete">Delete</button>
+          </div>
         </div>
       </div>
       <div class="worker-card-body">
@@ -40,7 +45,18 @@ const WorkerCard = {
     </div>
   `,
   data() {
-    return { dragOver: false };
+    return { dragOver: false, showMenu: false };
+  },
+  mounted() {
+    this._closeMenu = (e) => {
+      if (this.showMenu && !this.$el.contains(e.target)) {
+        this.showMenu = false;
+      }
+    };
+    document.addEventListener('click', this._closeMenu);
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this._closeMenu);
   },
   computed: {
     workerState() { return this.worker.state || 'idle'; },
@@ -65,7 +81,6 @@ const WorkerCard = {
       });
     },
     lastOutput() {
-      // Show last few lines of the first task's agent output if working
       if (!this.worker.task_queue?.length || !this.tasks) return '';
       const task = this.tasks.find(t => t.id === this.worker.task_queue[0]);
       if (!task?.body) return '';
@@ -91,29 +106,43 @@ const WorkerCard = {
     onDragLeave() { this.dragOver = false; },
     onDrop(e) {
       this.dragOver = false;
-      // Worker-to-worker swap
       const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
       if (fromSlot !== '' && Number(fromSlot) !== this.slotIndex) {
         this.$root.moveWorker(Number(fromSlot), this.slotIndex);
         return;
       }
-      // Task assignment
       const taskId = e.dataTransfer.getData('text/plain');
       if (taskId) {
         this.$root.assignTask(taskId, this.slotIndex);
       }
     },
-    startWorker() {
+    menuEdit() {
+      this.showMenu = false;
+      this.$emit('configure', this.slotIndex);
+    },
+    menuRun() {
+      this.showMenu = false;
       this.$root.startWorkerSlot(this.slotIndex);
     },
-    stopWorker() {
+    menuStop() {
+      this.showMenu = false;
       this.$root.stopWorkerSlot(this.slotIndex);
     },
-    pauseWorker() {
+    menuPause() {
+      this.showMenu = false;
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: true } });
     },
-    unpauseWorker() {
+    menuUnpause() {
+      this.showMenu = false;
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: false } });
+    },
+    menuDuplicate() {
+      this.showMenu = false;
+      this.$root.duplicateWorker(this.slotIndex);
+    },
+    menuDelete() {
+      this.showMenu = false;
+      this.$root.removeWorker(this.slotIndex);
     }
   }
 };

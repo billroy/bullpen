@@ -199,6 +199,79 @@ def register_events(socketio, app):
         _save_layout(bp_dir, layout)
         socketio.emit("layout:updated", layout)
 
+    @socketio.on("worker:duplicate")
+    @with_lock
+    def on_worker_duplicate(data):
+        bp_dir = app.config["bp_dir"]
+        layout = _load_layout(bp_dir)
+        slot_index = data.get("slot")
+
+        if slot_index is None or slot_index >= len(layout["slots"]):
+            emit("error", {"message": "worker:duplicate requires valid slot"})
+            return
+
+        source = layout["slots"][slot_index]
+        if not source:
+            emit("error", {"message": "No worker in slot"})
+            return
+
+        # Find first empty slot
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        rows = config.get("grid", {}).get("rows", 4)
+        cols = config.get("grid", {}).get("cols", 6)
+        total = rows * cols
+
+        while len(layout["slots"]) < total:
+            layout["slots"].append(None)
+
+        target = None
+        for i in range(total):
+            if layout["slots"][i] is None:
+                target = i
+                break
+
+        if target is None:
+            emit("error", {"message": "No empty slot available"})
+            return
+
+        # Generate unique name
+        base_name = source["name"]
+        existing_names = {s["name"] for s in layout["slots"] if s}
+        candidate = f"{base_name} copy"
+        suffix = 2
+        while candidate in existing_names:
+            candidate = f"{base_name} copy {suffix}"
+            suffix += 1
+
+        # Clone worker config, reset runtime state
+        clone = {
+            "row": target // cols,
+            "col": target % cols,
+            "profile": source.get("profile"),
+            "name": candidate,
+            "agent": source.get("agent", "claude"),
+            "model": source.get("model", "claude-sonnet-4-6"),
+            "activation": source.get("activation", "on_drop"),
+            "disposition": source.get("disposition", "review"),
+            "watch_column": source.get("watch_column"),
+            "expertise_prompt": source.get("expertise_prompt", ""),
+            "max_retries": source.get("max_retries", 1),
+            "use_worktree": source.get("use_worktree", False),
+            "auto_commit": source.get("auto_commit", False),
+            "auto_pr": source.get("auto_pr", False),
+            "trigger_time": source.get("trigger_time"),
+            "trigger_interval_minutes": source.get("trigger_interval_minutes"),
+            "trigger_every_day": source.get("trigger_every_day", False),
+            "last_trigger_time": None,
+            "paused": False,
+            "task_queue": [],
+            "state": "idle",
+        }
+
+        layout["slots"][target] = clone
+        _save_layout(bp_dir, layout)
+        socketio.emit("layout:updated", layout)
+
     @socketio.on("worker:configure")
     @with_lock
     def on_worker_configure(data):
