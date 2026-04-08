@@ -55,6 +55,9 @@ class ClaudeAdapter(AgentAdapter):
     def _mcp_config(self, bp_dir):
         """Generate a temporary MCP config file pointing to bullpen tools."""
         server_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mcp_tools.py")
+        # Project root is parent of server/ — needed on PYTHONPATH so
+        # mcp_tools.py can do `from server import tasks`
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         # Read server host/port from config
         from server.persistence import read_json
         bp_config = read_json(os.path.join(bp_dir, "config.json"))
@@ -65,6 +68,7 @@ class ClaudeAdapter(AgentAdapter):
                 "bullpen": {
                     "command": sys.executable,
                     "args": [server_script, "--bp-dir", bp_dir, "--host", host, "--port", port],
+                    "env": {"PYTHONPATH": project_root},
                 }
             }
         }
