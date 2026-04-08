@@ -89,6 +89,22 @@ def register_events(socketio, app):
         task_mod.delete_task(bp_dir, task_id)
         _emit("task:deleted", {"id": task_id}, ws_id)
 
+    @socketio.on("task:archive")
+    @with_lock
+    def on_task_archive(data):
+        ws_id, bp_dir = _resolve(data)
+        task_id = validate_id(data)
+        task_mod.archive_task(bp_dir, task_id)
+        _emit("task:deleted", {"id": task_id}, ws_id)
+
+    @socketio.on("task:archive-done")
+    @with_lock
+    def on_task_archive_done(data):
+        ws_id, bp_dir = _resolve(data)
+        archived = task_mod.archive_done_tasks(bp_dir)
+        for task_id in archived:
+            _emit("task:deleted", {"id": task_id}, ws_id)
+
     @socketio.on("task:clear_output")
     @with_lock
     def on_task_clear_output(data):

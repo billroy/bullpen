@@ -199,6 +199,29 @@ def delete_task(bp_dir, task_id):
         os.remove(path)
 
 
+def archive_task(bp_dir, task_id):
+    """Move a task to the archive subdirectory."""
+    tasks_dir = _tasks_dir(bp_dir)
+    archive_dir = os.path.join(tasks_dir, "archive")
+    os.makedirs(archive_dir, exist_ok=True)
+    src = os.path.join(tasks_dir, f"{task_id}.md")
+    ensure_within(src, tasks_dir)
+    dst = os.path.join(archive_dir, f"{task_id}.md")
+    if os.path.exists(src):
+        os.rename(src, dst)
+
+
+def archive_done_tasks(bp_dir):
+    """Archive all tasks with status 'done'. Returns list of archived IDs."""
+    tasks = list_tasks(bp_dir)
+    archived = []
+    for t in tasks:
+        if t.get("status") == "done":
+            archive_task(bp_dir, t["id"])
+            archived.append(t["id"])
+    return archived
+
+
 def clear_task_output(bp_dir, task_id):
     """Remove content under ## Agent Output heading."""
     path = os.path.join(_tasks_dir(bp_dir), f"{task_id}.md")

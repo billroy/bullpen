@@ -132,6 +132,43 @@ class TestTaskEvents:
         path = os.path.join(app.config["bp_dir"], "tasks", f"{task_id}.md")
         assert not os.path.exists(path)
 
+    def test_archive_task(self, client):
+        c, app = client
+        c.emit("task:create", {"title": "Archive Me"})
+        task = get_event(c, "task:created")
+
+        c.emit("task:archive", {"id": task["id"]})
+        deleted = get_event(c, "task:deleted")
+        assert deleted is not None
+        assert deleted["id"] == task["id"]
+
+        # Verify moved to archive
+        src = os.path.join(app.config["bp_dir"], "tasks", f"{task['id']}.md")
+        dst = os.path.join(app.config["bp_dir"], "tasks", "archive", f"{task['id']}.md")
+        assert not os.path.exists(src)
+        assert os.path.exists(dst)
+
+    def test_archive_done_tasks(self, client):
+        c, app = client
+        # Create a done task and an active task
+        c.emit("task:create", {"title": "Done Task"})
+        t1 = get_event(c, "task:created")
+        c.emit("task:update", {"id": t1["id"], "status": "done"})
+        c.get_received()
+
+        c.emit("task:create", {"title": "Active Task"})
+        t2 = get_event(c, "task:created")
+
+        c.emit("task:archive-done", {})
+        events = get_all_events(c, "task:deleted")
+        archived_ids = {e["id"] for e in events}
+        assert t1["id"] in archived_ids
+        assert t2["id"] not in archived_ids
+
+        # Active task still on disk
+        active_path = os.path.join(app.config["bp_dir"], "tasks", f"{t2['id']}.md")
+        assert os.path.exists(active_path)
+
 
 class TestWorkerEvents:
     def test_add_worker(self, client):
@@ -239,6 +276,18 @@ class TestWorkerEvents:
         err = get_event(c, "error")
         assert err is not None
         assert "not found" in err["message"]
+
+    def test_configure_worker_disposition(self, client):
+        """Worker disposition can be set to a worker: target."""
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:configure", {"slot": 0, "fields": {
+            "disposition": "worker:Code Reviewer",
+        }})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0]["disposition"] == "worker:Code Reviewer"
 
 
 class TestConfigEvents:

@@ -128,9 +128,12 @@ class TestWorkerConfigureValidation:
         with pytest.raises(ValidationError, match="Invalid agent"):
             validate_worker_configure({"slot": 0, "fields": {"agent": "gpt4"}})
 
-    def test_invalid_disposition(self):
-        with pytest.raises(ValidationError, match="Invalid disposition"):
-            validate_worker_configure({"slot": 0, "fields": {"disposition": "yolo"}})
+    def test_disposition_accepts_any_string(self):
+        """Disposition accepts any string (column key or worker: target)."""
+        _, fields = validate_worker_configure({"slot": 0, "fields": {"disposition": "review"}})
+        assert fields["disposition"] == "review"
+        _, fields = validate_worker_configure({"slot": 0, "fields": {"disposition": "worker:My Worker"}})
+        assert fields["disposition"] == "worker:My Worker"
 
     def test_expertise_prompt_too_long(self):
         with pytest.raises(ValidationError, match="expertise_prompt exceeds"):

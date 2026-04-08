@@ -12,6 +12,8 @@ from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
 from server import tasks as task_mod
 
+MAX_HANDOFF_DEPTH = 10
+
 
 # Active subprocesses keyed by slot index
 _processes = {}
@@ -386,19 +388,31 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
         if queue and queue[0] == task_id:
             queue.pop(0)
 
-        # Disposition: move task to target column
+        # Disposition: move task to target column or hand off to another worker
         disposition = worker.get("disposition", "review")
-        task_mod.update_task(bp_dir, task_id, {
-            "status": disposition,
-            "assigned_to": "",
-        })
+        handed_off = False
+        if disposition.startswith("worker:"):
+            target_name = disposition[len("worker:"):]
+            # Set worker idle BEFORE handoff (which saves its own layout)
+            worker["state"] = "idle"
+            _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id)
+            handed_off = True
+        else:
+            task_mod.update_task(bp_dir, task_id, {
+                "status": disposition,
+                "assigned_to": "",
+                "handoff_depth": 0,
+            })
 
-        # Set worker idle and check for next task
-        worker["state"] = "idle"
-        _save_layout(bp_dir, layout)
+        if not handed_off:
+            # Set worker idle and save (handoff path already did this)
+            worker["state"] = "idle"
+            _save_layout(bp_dir, layout)
 
         if socketio:
             task = task_mod.read_task(bp_dir, task_id)
+            # Reload layout after potential handoff to get current state
+            layout = _load_layout(bp_dir) if handed_off else layout
             _ws_emit(socketio, "task:updated", task, ws_id)
             _ws_emit(socketio, "layout:updated", layout, ws_id)
             _ws_emit(socketio, "files:changed", {}, ws_id)
@@ -408,6 +422,57 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
     # Auto-advance outside lock to avoid deadlock with start_worker
     if has_more:
         start_worker(bp_dir, slot_index, socketio, ws_id)
+
+
+def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
+    """Hand off a completed task to another worker by name (weak binding)."""
+    task = task_mod.read_task(bp_dir, task_id)
+    depth = task.get("handoff_depth", 0) if task else 0
+
+    if depth >= MAX_HANDOFF_DEPTH:
+        msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id)}\" blocked: handoff depth exceeded",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    # Find target worker by name
+    target_slot = None
+    for i, slot in enumerate(layout.get("slots", [])):
+        if slot and slot.get("name") == target_name:
+            target_slot = i
+            break
+
+    if target_slot is None:
+        msg = f"\n\n**Handoff target \"{target_name}\" not found.** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id)}\" blocked: worker \"{target_name}\" not found",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    # Increment depth and hand off
+    task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
+    # Save layout before assign_task (which reloads it)
+    _save_layout(bp_dir, layout)
+    assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
 
 
 def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="", ws_id=None):

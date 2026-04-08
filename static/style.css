@@ -447,6 +447,16 @@ body {
   border-radius: 10px;
 }
 
+.column-archive-btn {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-left: auto;
+}
+
+.column-archive-btn:hover {
+  opacity: 1;
+}
+
 .kanban-column-body {
   flex: 1;
   padding: 8px;
@@ -867,6 +877,9 @@ body {
   flex: 1;
   overflow: auto;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .files-viewer-empty {
@@ -1009,7 +1022,9 @@ body {
   flex: 1;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
   position: relative;
+  min-height: 0;
 }
 
 .file-editor-textarea {
@@ -1135,6 +1150,9 @@ body {
   gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--border);
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-secondary);
 }
 
 .modal-footer-right {

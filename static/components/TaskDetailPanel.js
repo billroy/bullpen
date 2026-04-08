@@ -1,6 +1,6 @@
 const TaskDetailPanel = {
   props: ['task', 'columns'],
-  emits: ['close', 'update', 'delete', 'clear-output'],
+  emits: ['close', 'update', 'delete', 'archive', 'clear-output'],
   data() {
     return {
       editing: false,
@@ -102,6 +102,7 @@ const TaskDetailPanel = {
 
       <div class="detail-footer">
         <button class="btn btn-danger btn-sm" @click="confirmDelete">Delete Task</button>
+        <button v-if="task.status === 'done'" class="btn btn-sm" @click="$emit('archive', task.id); $emit('close')">Archive</button>
       </div>
     </div>
   `,

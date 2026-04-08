@@ -168,7 +168,7 @@ def validate_worker_configure(data, max_slots=100):
     if "activation" in fields:
         sanitized["activation"] = _enum(fields["activation"], VALID_ACTIVATIONS, "activation")
     if "disposition" in fields:
-        sanitized["disposition"] = _enum(fields["disposition"], VALID_DISPOSITIONS, "disposition")
+        sanitized["disposition"] = _str(fields["disposition"], 200, "disposition")
     if "watch_column" in fields:
         sanitized["watch_column"] = fields["watch_column"]
     if "expertise_prompt" in fields:

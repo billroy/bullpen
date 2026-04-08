@@ -207,6 +207,13 @@ const app = createApp({
       }
       socket.emit('task:delete', _wsData({ id }));
     }
+    function archiveTask(id) { socket.emit('task:archive', _wsData({ id })); }
+    function archiveDone() {
+      const count = state.tasks.filter(t => t.status === 'done').length;
+      if (count && confirm(`Archive ${count} done task(s)?`)) {
+        socket.emit('task:archive-done', _wsData({}));
+      }
+    }
     function clearTaskOutput(id) { socket.emit('task:clear_output', _wsData({ id })); }
     function moveTask({ id, status }) { socket.emit('task:update', _wsData({ id, status })); }
     function selectTask(id) { selectedTaskId.value = id; }
@@ -310,7 +317,7 @@ const app = createApp({
       addProject, removeProject,
       connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
-      toggleLeftPane, toggleTheme, createTask, updateTask, deleteTask, clearTaskOutput,
+      toggleLeftPane, toggleTheme, createTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
@@ -366,6 +373,7 @@ const app = createApp({
               :layout="state.layout"
               @select-task="selectTask"
               @move-task="moveTask"
+              @archive-done="archiveDone"
             />
             <BullpenTab
               v-if="activeTab === 'bullpen'"
@@ -387,6 +395,7 @@ const app = createApp({
           @close="selectTask(null)"
           @update="updateTask"
           @delete="deleteTask"
+          @archive="archiveTask"
           @clear-output="clearTaskOutput"
         />
       </div>
@@ -399,6 +408,7 @@ const app = createApp({
         :worker="configureWorkerData"
         :slot-index="configureSlot"
         :columns="state.config.columns"
+        :workers="state.layout.slots"
         @close="configureSlot = null"
         @save="saveWorkerConfig"
         @remove="removeWorker"

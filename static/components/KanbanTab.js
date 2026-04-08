@@ -1,6 +1,6 @@
 const KanbanTab = {
   props: ['tasks', 'columns', 'layout'],
-  emits: ['select-task', 'move-task'],
+  emits: ['select-task', 'move-task', 'archive-done'],
   components: { TaskCard },
   template: `
     <div class="kanban-board">
@@ -11,6 +11,10 @@ const KanbanTab = {
         <div class="kanban-column-header" :style="{ borderTopColor: col.color }">
           <span class="column-label">{{ col.label }}</span>
           <span class="column-count">{{ columnTasks(col.key).length }}</span>
+          <button v-if="col.key === 'done' && columnTasks(col.key).length"
+                  class="btn btn-sm column-archive-btn"
+                  @click="$emit('archive-done')"
+                  title="Archive all done tasks">Archive</button>
         </div>
         <div class="kanban-column-body">
           <div v-if="columnTasks(col.key).length === 0" class="empty-state kanban-drop-zone">—</div>

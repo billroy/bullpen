@@ -1,9 +1,10 @@
 const WorkerConfigModal = {
-  props: ['worker', 'slotIndex', 'columns'],
+  props: ['worker', 'slotIndex', 'columns', 'workers'],
   emits: ['close', 'save', 'remove', 'save-profile'],
   data() {
     return {
-      form: {}
+      form: {},
+      overlayMouseDown: false
     };
   },
   watch: {
@@ -36,6 +37,12 @@ const WorkerConfigModal = {
     }
   },
   computed: {
+    otherWorkers() {
+      if (!this.workers) return [];
+      return this.workers
+        .map((w, i) => w && i !== this.slotIndex ? { name: w.name, slot: i } : null)
+        .filter(Boolean);
+    },
     modelOptions() {
       if (this.form.agent === 'claude') {
         return ['claude-opus-4-6', 'claude-opus-4-5-20250514', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250514', 'claude-haiku-4-6', 'claude-haiku-4-5-20250414'];
@@ -52,8 +59,8 @@ const WorkerConfigModal = {
     }
   },
   template: `
-    <div v-if="worker" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
-      <div class="modal modal-wide">
+    <div v-if="worker" class="modal-overlay" @mousedown.self="overlayMouseDown = true" @click.self="onOverlayClick" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
+      <div class="modal modal-wide" @mouseup="overlayMouseDown = false">
         <div class="modal-header">
           <h2>Configure: {{ form.name }}</h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
@@ -119,8 +126,12 @@ const WorkerConfigModal = {
             <label class="form-label">
               Disposition
               <select class="form-select" v-model="form.disposition">
-                <option value="review">Review</option>
-                <option value="done">Done</option>
+                <optgroup label="Columns">
+                  <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
+                </optgroup>
+                <optgroup label="Workers" v-if="otherWorkers.length">
+                  <option v-for="w in otherWorkers" :key="'worker:' + w.name" :value="'worker:' + w.name">\u2192 {{ w.name }}</option>
+                </optgroup>
               </select>
             </label>
             <label class="form-label">
@@ -152,7 +163,7 @@ const WorkerConfigModal = {
           </div>
           <label class="form-label">
             Expertise Prompt
-            <textarea class="form-textarea" v-model="form.expertise_prompt" rows="8"></textarea>
+            <textarea class="form-textarea" v-model="form.expertise_prompt" rows="5"></textarea>
           </label>
         </div>
         <div class="modal-footer">
@@ -176,6 +187,10 @@ const WorkerConfigModal = {
       } else {
         this.form.model = e.target.value;
       }
+    },
+    onOverlayClick() {
+      if (this.overlayMouseDown) this.$emit('close');
+      this.overlayMouseDown = false;
     },
     onSave() {
       this.$emit('save', { slot: this.slotIndex, fields: { ...this.form } });

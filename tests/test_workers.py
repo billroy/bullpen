@@ -334,6 +334,129 @@ class TestAutoPR:
         assert "Push failed" in result or "Error" in result
 
 
+class TestHandoff:
+    """Tests for worker-to-worker disposition handoff."""
+
+    @pytest.fixture
+    def two_workers(self, bp_dir):
+        """Create two workers: slot 0 hands off to slot 1."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Worker A", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "worker:Worker B",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Worker B", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+        return layout
+
+    def test_handoff_to_worker(self, bp_dir, two_workers):
+        """Worker A completes → task lands in Worker B's queue."""
+        task = create_task(bp_dir, "Handoff task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        layout = _load_layout(bp_dir)
+        # Task should be in Worker B's queue
+        assert task["id"] in layout["slots"][1]["task_queue"]
+        # Worker A should be idle with empty queue
+        assert layout["slots"][0]["state"] == "idle"
+        assert task["id"] not in layout["slots"][0]["task_queue"]
+
+    def test_handoff_target_not_found(self, bp_dir):
+        """Handoff to nonexistent worker → task moves to blocked."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "profile": "test",
+            "name": "Lonely Worker", "agent": "mock", "model": "mock-model",
+            "activation": "manual", "disposition": "worker:Ghost Worker",
+            "watch_column": None, "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Orphan task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+        assert "Ghost Worker" in updated["body"]
+
+    def test_handoff_depth_increments(self, bp_dir, two_workers):
+        """Handoff increments handoff_depth on the task."""
+        task = create_task(bp_dir, "Depth task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated.get("handoff_depth", 0) == 1
+
+    def test_handoff_depth_exceeded(self, bp_dir):
+        """Task with handoff_depth at max → moves to blocked."""
+        from server.workers import MAX_HANDOFF_DEPTH
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "profile": "test",
+            "name": "Looper", "agent": "mock", "model": "mock-model",
+            "activation": "manual", "disposition": "worker:Looper",
+            "watch_column": None, "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Loop task")
+        # Pre-set handoff_depth to max
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"handoff_depth": MAX_HANDOFF_DEPTH})
+
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+        assert "max depth" in updated["body"].lower()
+
+    def test_handoff_depth_resets_on_column(self, bp_dir, two_workers):
+        """When Worker B sends to a column, handoff_depth resets to 0."""
+        task = create_task(bp_dir, "Reset task")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"handoff_depth": 3})
+
+        # Worker B has disposition "review" (column), assign directly
+        assign_task(bp_dir, 1, task["id"])
+        start_worker(bp_dir, 1)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "review"
+        assert updated.get("handoff_depth", 0) == 0
+
+    def test_bare_disposition_unchanged(self, bp_dir, worker_slot):
+        """Bare disposition values (e.g., 'review') continue to work."""
+        task = create_task(bp_dir, "Normal task")
+        assign_task(bp_dir, worker_slot, task["id"])
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "review"
+
+
 class TestSharedLock:
     def test_events_and_workers_share_lock(self):
         """Events and workers modules use the same write lock instance."""

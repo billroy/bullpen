@@ -10,6 +10,8 @@ from server.tasks import (
     read_task,
     update_task,
     delete_task,
+    archive_task,
+    archive_done_tasks,
     clear_task_output,
     list_tasks,
     generate_slug,
@@ -167,3 +169,43 @@ class TestTaskCRUD:
         assert read_back["assigned_to"] == ""
         assert "created_at" in read_back
         assert "updated_at" in read_back
+
+
+class TestArchive:
+    def test_archive_task(self, bp_dir):
+        task = create_task(bp_dir, "Archive Me")
+        task_id = task["id"]
+        archive_task(bp_dir, task_id)
+        # No longer in active tasks
+        assert read_task(bp_dir, task_id) is None
+        assert task_id not in [t["id"] for t in list_tasks(bp_dir)]
+        # File exists in archive
+        archive_path = os.path.join(bp_dir, "tasks", "archive", f"{task_id}.md")
+        assert os.path.exists(archive_path)
+
+    def test_archive_nonexistent_task(self, bp_dir):
+        # Should not raise
+        archive_task(bp_dir, "nonexistent-1234")
+
+    def test_archive_done_tasks(self, bp_dir):
+        t1 = create_task(bp_dir, "Done Task")
+        update_task(bp_dir, t1["id"], {"status": "done"})
+        t2 = create_task(bp_dir, "Also Done")
+        update_task(bp_dir, t2["id"], {"status": "done"})
+        t3 = create_task(bp_dir, "Still Active")
+        update_task(bp_dir, t3["id"], {"status": "in_progress"})
+
+        archived = archive_done_tasks(bp_dir)
+        assert set(archived) == {t1["id"], t2["id"]}
+        # Active task remains
+        remaining = list_tasks(bp_dir)
+        assert len(remaining) == 1
+        assert remaining[0]["id"] == t3["id"]
+
+    def test_list_excludes_archived(self, bp_dir):
+        t1 = create_task(bp_dir, "Keep")
+        t2 = create_task(bp_dir, "Archive")
+        archive_task(bp_dir, t2["id"])
+        tasks = list_tasks(bp_dir)
+        assert len(tasks) == 1
+        assert tasks[0]["id"] == t1["id"]

@@ -8,8 +8,8 @@ const WorkerCard = {
          @dragover.prevent="onDragOver"
          @dragleave="onDragLeave"
          @drop="onDrop"
-         @dblclick="$emit('configure', slotIndex)">
-      <div class="worker-card-header" :style="{ background: agentColor }">
+>
+      <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)"
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
@@ -24,7 +24,7 @@ const WorkerCard = {
           </div>
         </div>
       </div>
-      <div class="worker-card-body">
+      <div class="worker-card-body" @dblclick.stop="onBodyDblClick">
         <div class="worker-card-status">
           <span class="status-pill" :class="'status-' + workerState">
             {{ isPaused ? 'PAUSED' : workerState.toUpperCase() }}
@@ -96,6 +96,10 @@ const WorkerCard = {
     }
   },
   methods: {
+    onBodyDblClick() {
+      const taskId = this.queuedTasks.length ? this.queuedTasks[0].id : null;
+      if (taskId) this.$emit('select-task', taskId);
+    },
     onDragStart(e) {
       e.dataTransfer.setData('application/x-worker-slot', String(this.slotIndex));
       e.dataTransfer.effectAllowed = 'move';
