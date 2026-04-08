@@ -9,8 +9,11 @@ const WorkerConfigModal = {
   watch: {
     worker: {
       immediate: true,
-      handler(w) {
+      handler(w, oldW) {
         if (w) {
+          if (!oldW) {
+            this.$nextTick(() => { if (this.$refs.overlay) this.$refs.overlay.focus(); });
+          }
           this.form = {
             name: w.name || '',
             agent: w.agent || 'claude',
@@ -163,11 +166,6 @@ const WorkerConfigModal = {
       </div>
     </div>
   `,
-  updated() {
-    if (this.worker && this.$refs.overlay) {
-      this.$nextTick(() => this.$refs.overlay.focus());
-    }
-  },
   methods: {
     onAgentChange() {
       this.form.model = this.modelOptions[0];
