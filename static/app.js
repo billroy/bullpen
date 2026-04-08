@@ -73,7 +73,7 @@ const app = createApp({
     }
 
     const connected = ref(false);
-    const activeTab = ref('kanban');
+    const activeTab = ref('tasks');
     const leftPaneVisible = ref(true);
     const toasts = reactive([]);
     const showCreateModal = ref(false);
@@ -351,14 +351,14 @@ const app = createApp({
           <div class="tab-bar">
             <div class="tab-bar-left">
               <button
-                v-for="tab in ['kanban', 'bullpen', 'files']"
+                v-for="tab in ['tasks', 'workers', 'files']"
                 :key="tab"
                 class="tab-btn"
                 :class="{ active: activeTab === tab }"
                 @click="activeTab = tab"
               >{{ tab.charAt(0).toUpperCase() + tab.slice(1) }}</button>
             </div>
-            <div v-if="activeTab === 'bullpen'" class="tab-bar-right">
+            <div v-if="activeTab === 'workers'" class="tab-bar-right">
               <span class="bullpen-path" :title="state.workspace">{{ state.workspace ? state.workspace.split('/').slice(-2).join('/') : '' }}</span>
               <select class="form-select" :value="(state.config.grid?.rows || 4) + 'x' + (state.config.grid?.cols || 6)" @change="onTabBarGridResize">
                 <option v-for="opt in gridOptions" :key="opt" :value="opt">{{ opt }}</option>
@@ -367,7 +367,7 @@ const app = createApp({
           </div>
           <div class="tab-content">
             <KanbanTab
-              v-if="activeTab === 'kanban'"
+              v-if="activeTab === 'tasks'"
               :tasks="state.tasks"
               :columns="state.config.columns"
               :layout="state.layout"
@@ -376,7 +376,7 @@ const app = createApp({
               @archive-done="archiveDone"
             />
             <BullpenTab
-              v-if="activeTab === 'bullpen'"
+              v-if="activeTab === 'workers'"
               :layout="state.layout"
               :config="state.config"
               :profiles="state.profiles"
