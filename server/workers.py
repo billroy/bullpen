@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from server.agents import get_adapter
+from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
 from server import tasks as task_mod
 
@@ -93,6 +94,15 @@ def start_worker(bp_dir, slot_index, socketio=None):
     prompt = _assemble_prompt(bp_dir, worker, task)
     workspace = os.path.dirname(bp_dir)  # workspace is parent of .bullpen
 
+    # Worktree setup
+    agent_cwd = workspace
+    if worker.get("use_worktree"):
+        try:
+            agent_cwd = _setup_worktree(workspace, bp_dir, task_id)
+        except Exception as e:
+            _on_agent_error(bp_dir, slot_index, task_id, f"Worktree setup failed: {e}", socketio)
+            return
+
     # Get adapter
     adapter = get_adapter(worker.get("agent", "claude"))
     if not adapter:
@@ -100,7 +110,7 @@ def start_worker(bp_dir, slot_index, socketio=None):
         return
 
     model = worker.get("model", "claude-sonnet-4-6")
-    argv = adapter.build_argv(prompt, model, workspace)
+    argv = adapter.build_argv(prompt, model, agent_cwd)
 
     # Launch subprocess in background thread
     config = read_json(os.path.join(bp_dir, "config.json"))
@@ -108,7 +118,7 @@ def start_worker(bp_dir, slot_index, socketio=None):
 
     thread = threading.Thread(
         target=_run_agent,
-        args=(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio),
+        args=(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, agent_cwd, socketio),
         daemon=True,
     )
     thread.start()
@@ -191,6 +201,31 @@ def _assemble_prompt(bp_dir, worker, task):
     return prompt
 
 
+def _setup_worktree(workspace, bp_dir, task_id):
+    """Create a git worktree for isolated agent execution. Returns worktree path."""
+    # Verify workspace is a git repo
+    result = subprocess.run(
+        ["git", "rev-parse", "--git-dir"],
+        cwd=workspace, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Workspace is not a git repository")
+
+    worktree_dir = os.path.join(bp_dir, "worktrees", task_id)
+    branch_name = f"bullpen/{task_id}"
+
+    os.makedirs(os.path.dirname(worktree_dir), exist_ok=True)
+
+    result = subprocess.run(
+        ["git", "worktree", "add", worktree_dir, "-b", branch_name],
+        cwd=workspace, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git worktree add failed: {result.stderr.strip()}")
+
+    return worktree_dir
+
+
 def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio):
     """Run agent subprocess and handle completion."""
     try:
@@ -235,88 +270,28 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 
 def _on_agent_success(bp_dir, slot_index, task_id, output, socketio):
     """Handle successful agent completion."""
-    layout = _load_layout(bp_dir)
-    worker = layout["slots"][slot_index]
-    if not worker:
-        return
+    with _write_lock:
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][slot_index]
+        if not worker:
+            return
 
-    # Append output to task
-    _append_output(bp_dir, task_id, worker, output)
+        # Append output to task
+        _append_output(bp_dir, task_id, worker, output)
 
-    # Remove from queue
-    queue = worker.get("task_queue", [])
-    if queue and queue[0] == task_id:
-        queue.pop(0)
-
-    # Disposition: move task to target column
-    disposition = worker.get("disposition", "review")
-    task_mod.update_task(bp_dir, task_id, {
-        "status": disposition,
-        "assigned_to": "",
-    })
-
-    # Set worker idle and check for next task
-    worker["state"] = "idle"
-    _save_layout(bp_dir, layout)
-
-    if socketio:
-        task = task_mod.read_task(bp_dir, task_id)
-        socketio.emit("task:updated", task)
-        socketio.emit("layout:updated", layout)
-        socketio.emit("files:changed")
-
-    # Auto-advance if more tasks in queue
-    if queue and worker.get("activation") in ("on_drop", "on_queue"):
-        start_worker(bp_dir, slot_index, socketio)
-
-
-def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output=""):
-    """Handle agent failure. Retry or block."""
-    layout = _load_layout(bp_dir)
-    worker = layout["slots"][slot_index]
-    if not worker:
-        return
-
-    max_retries = worker.get("max_retries", 1)
-    task = task_mod.read_task(bp_dir, task_id)
-    if not task:
-        return
-
-    # Count existing retries from history
-    history = task.get("history", [])
-    retry_count = sum(1 for h in history if h.get("event") == "retry")
-
-    if retry_count < max_retries:
-        # Retry with backoff
-        delay = 5 * (retry_count + 1)
-        history.append({"timestamp": _now_iso(), "event": "retry", "detail": error_msg})
-        task_mod.update_task(bp_dir, task_id, {"history": history})
-
-        if output:
-            _append_output(bp_dir, task_id, worker, f"[ERROR] {error_msg}\n\n{output}")
-
-        # Schedule retry
-        def do_retry():
-            time.sleep(delay)
-            start_worker(bp_dir, slot_index, socketio)
-
-        threading.Thread(target=do_retry, daemon=True).start()
-    else:
-        # Max retries exceeded — block task
+        # Remove from queue
         queue = worker.get("task_queue", [])
         if queue and queue[0] == task_id:
             queue.pop(0)
 
+        # Disposition: move task to target column
+        disposition = worker.get("disposition", "review")
         task_mod.update_task(bp_dir, task_id, {
-            "status": "blocked",
+            "status": disposition,
             "assigned_to": "",
         })
 
-        if output:
-            _append_output(bp_dir, task_id, worker, f"[BLOCKED] {error_msg}\n\n{output}")
-        else:
-            _append_output(bp_dir, task_id, worker, f"[BLOCKED] {error_msg}")
-
+        # Set worker idle and check for next task
         worker["state"] = "idle"
         _save_layout(bp_dir, layout)
 
@@ -324,10 +299,80 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="")
             task = task_mod.read_task(bp_dir, task_id)
             socketio.emit("task:updated", task)
             socketio.emit("layout:updated", layout)
+            socketio.emit("files:changed")
 
-        # Try next task in queue
-        if queue and worker.get("activation") in ("on_drop", "on_queue"):
+        has_more = queue and worker.get("activation") in ("on_drop", "on_queue")
+
+    # Auto-advance outside lock to avoid deadlock with start_worker
+    if has_more:
+        start_worker(bp_dir, slot_index, socketio)
+
+
+def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output=""):
+    """Handle agent failure. Retry or block."""
+    should_retry = False
+    retry_delay = 0
+    should_advance = False
+
+    with _write_lock:
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][slot_index]
+        if not worker:
+            return
+
+        max_retries = worker.get("max_retries", 1)
+        task = task_mod.read_task(bp_dir, task_id)
+        if not task:
+            return
+
+        # Count existing retries from history
+        history = task.get("history", [])
+        retry_count = sum(1 for h in history if h.get("event") == "retry")
+
+        if retry_count < max_retries:
+            # Retry with backoff
+            retry_delay = 5 * (retry_count + 1)
+            history.append({"timestamp": _now_iso(), "event": "retry", "detail": error_msg})
+            task_mod.update_task(bp_dir, task_id, {"history": history})
+
+            if output:
+                _append_output(bp_dir, task_id, worker, f"[ERROR] {error_msg}\n\n{output}")
+
+            should_retry = True
+        else:
+            # Max retries exceeded — block task
+            queue = worker.get("task_queue", [])
+            if queue and queue[0] == task_id:
+                queue.pop(0)
+
+            task_mod.update_task(bp_dir, task_id, {
+                "status": "blocked",
+                "assigned_to": "",
+            })
+
+            if output:
+                _append_output(bp_dir, task_id, worker, f"[BLOCKED] {error_msg}\n\n{output}")
+            else:
+                _append_output(bp_dir, task_id, worker, f"[BLOCKED] {error_msg}")
+
+            worker["state"] = "idle"
+            _save_layout(bp_dir, layout)
+
+            if socketio:
+                task = task_mod.read_task(bp_dir, task_id)
+                socketio.emit("task:updated", task)
+                socketio.emit("layout:updated", layout)
+
+            should_advance = queue and worker.get("activation") in ("on_drop", "on_queue")
+
+    # Schedule retry or advance outside lock
+    if should_retry:
+        def do_retry():
+            time.sleep(retry_delay)
             start_worker(bp_dir, slot_index, socketio)
+        threading.Thread(target=do_retry, daemon=True).start()
+    elif should_advance:
+        start_worker(bp_dir, slot_index, socketio)
 
 
 def _append_output(bp_dir, task_id, worker, output):

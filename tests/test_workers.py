@@ -1,6 +1,7 @@
 """Tests for server/workers.py."""
 
 import os
+import subprocess
 import time
 
 import pytest
@@ -14,6 +15,7 @@ from server.workers import (
     stop_worker,
     _assemble_prompt,
     _load_layout,
+    _setup_worktree,
 )
 from server.agents import register_adapter
 from tests.conftest import MockAdapter
@@ -186,3 +188,83 @@ class TestPromptAssembly:
 
         prompt = _assemble_prompt(bp_dir, worker, task_data)
         assert "This is a Flask project" in prompt
+
+
+class TestWorktree:
+    def test_worktree_created(self, tmp_workspace):
+        """Worktree is created when use_worktree is True."""
+        # Init a git repo in the workspace
+        subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
+
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+
+        worktree_path = _setup_worktree(tmp_workspace, bp_dir, "test-task-1")
+
+        assert os.path.isdir(worktree_path)
+        assert worktree_path == os.path.join(bp_dir, "worktrees", "test-task-1")
+
+        # Verify the branch was created
+        result = subprocess.run(
+            ["git", "branch", "--list", "bullpen/test-task-1"],
+            cwd=tmp_workspace, capture_output=True, text=True,
+        )
+        assert "bullpen/test-task-1" in result.stdout
+
+    def test_worktree_not_git_repo(self, tmp_workspace):
+        """Worktree setup fails gracefully when not a git repo."""
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+
+        with pytest.raises(RuntimeError, match="not a git repository"):
+            _setup_worktree(tmp_workspace, bp_dir, "test-task-2")
+
+    def test_worktree_path_passed_as_cwd(self, tmp_workspace):
+        """Worker with use_worktree passes worktree path as agent cwd."""
+        subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
+
+        bp_dir = init_workspace(tmp_workspace)
+        register_adapter("mock", MockAdapter(output="Worktree output"))
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0,
+            "profile": "test",
+            "name": "Worktree Worker",
+            "agent": "mock",
+            "model": "mock-model",
+            "activation": "manual",
+            "disposition": "review",
+            "watch_column": None,
+            "expertise_prompt": "",
+            "max_retries": 0,
+            "use_worktree": True,
+            "task_queue": [],
+            "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Worktree task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        # Verify worktree directory was created
+        worktree_path = os.path.join(bp_dir, "worktrees", task["id"])
+        assert os.path.isdir(worktree_path)
+
+
+class TestSharedLock:
+    def test_events_and_workers_share_lock(self):
+        """Events and workers modules use the same write lock instance."""
+        from server.locks import write_lock
+        from server import events
+        from server import workers
+
+        # events imports write_lock as _write_lock
+        # workers imports write_lock as _write_lock
+        # Both should be the same object
+        assert workers._write_lock is write_lock
+        assert events._write_lock is write_lock

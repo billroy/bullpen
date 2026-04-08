@@ -1,7 +1,6 @@
 """Socket event handlers."""
 
 import os
-import threading
 
 from flask import request
 from flask_socketio import emit
@@ -11,15 +10,12 @@ from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
 from server.teams import save_team, load_team, list_teams
 from server import workers as worker_mod
+from server.locks import write_lock as _write_lock
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_worker_configure,
     validate_payload_size,
 )
-
-
-# Single-writer queue to serialize mutations
-_write_lock = threading.Lock()
 
 
 def _load_layout(bp_dir):
@@ -134,6 +130,7 @@ def register_events(socketio, app):
             "watch_column": None,
             "expertise_prompt": profile.get("expertise_prompt", ""),
             "max_retries": 1,
+            "use_worktree": False,
             "task_queue": [],
             "state": "idle",
         }

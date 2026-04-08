@@ -175,6 +175,8 @@ def validate_worker_configure(data, max_slots=100):
         sanitized["expertise_prompt"] = _str(fields["expertise_prompt"], MAX_EXPERTISE_PROMPT, "expertise_prompt")
     if "max_retries" in fields:
         sanitized["max_retries"] = _int(fields["max_retries"], "max_retries", min_val=0, max_val=10)
+    if "use_worktree" in fields:
+        sanitized["use_worktree"] = bool(fields["use_worktree"])
 
     return slot, sanitized
 

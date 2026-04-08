@@ -20,6 +20,7 @@ const WorkerConfigModal = {
             watch_column: w.watch_column || '',
             expertise_prompt: w.expertise_prompt || '',
             max_retries: w.max_retries ?? 1,
+            use_worktree: w.use_worktree || false,
           };
         }
       }
@@ -96,6 +97,13 @@ const WorkerConfigModal = {
                 <option :value="2">2</option>
                 <option :value="3">3</option>
               </select>
+            </label>
+          </div>
+          <div class="form-row">
+            <label class="form-label form-label-inline">
+              <input type="checkbox" v-model="form.use_worktree">
+              Use Git Worktree
+              <span class="form-hint">(isolate agent work in a separate branch)</span>
             </label>
           </div>
           <label class="form-label">
