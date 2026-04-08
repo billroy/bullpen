@@ -7,6 +7,7 @@ const app = createApp({
     KanbanTab,
     BullpenTab,
     FilesTab,
+    WorkerFocusView,
     TaskCreateModal,
     TaskDetailPanel,
     WorkerConfigModal,
@@ -201,31 +202,26 @@ const app = createApp({
       if (!outputBuffers[slot]) outputBuffers[slot] = reactive([]);
     }
     socket.on('worker:output', (data) => {
-      console.log('[DEBUG worker:output]', 'slot=', data.slot, 'lines=', data.lines?.length, 'data=', data);
       const slot = data.slot;
       _ensureBuffer(slot);
       outputBuffers[slot].push(...data.lines);
-      console.log('[DEBUG worker:output] buffer now has', outputBuffers[slot].length, 'lines');
       // Cap at 5000 lines client-side
       if (outputBuffers[slot].length > 5000) {
         outputBuffers[slot].splice(0, outputBuffers[slot].length - 5000);
       }
     });
     socket.on('worker:output:catchup', (data) => {
-      console.log('[DEBUG worker:output:catchup]', 'slot=', data.slot, 'lines=', data.lines?.length);
       const slot = data.slot;
       _ensureBuffer(slot);
       outputBuffers[slot].length = 0;
       outputBuffers[slot].push(...(data.lines || []));
     });
     socket.on('worker:output:done', (data) => {
-      console.log('[DEBUG worker:output:done]', 'slot=', data.slot, 'lines=', data.lines?.length, 'data=', data);
       const slot = data.slot;
       _ensureBuffer(slot);
       // Replace buffer with complete final output
       outputBuffers[slot].length = 0;
       outputBuffers[slot].push(...(data.lines || []));
-      console.log('[DEBUG worker:output:done] buffer now has', outputBuffers[slot].length, 'lines');
     });
 
     // Helper to attach workspaceId to outgoing events

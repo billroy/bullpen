@@ -24,7 +24,6 @@ def _ws_emit(socketio, event, payload, ws_id=None):
     """Emit a socket event with workspaceId attached, scoped to workspace room."""
     if ws_id and isinstance(payload, dict):
         payload["workspaceId"] = ws_id
-    print(f"[DEBUG _ws_emit] event={event}, ws_id={ws_id}, socketio={socketio is not None}")
     socketio.emit(event, payload, to=ws_id)
 
 
@@ -347,7 +346,6 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         entry = {"proc": proc, "buffer": [], "task_id": task_id, "buffer_size": 0}
         with _process_lock:
             _processes[(ws_id, slot_index)] = entry
-        print(f"[DEBUG _run_agent] Started subprocess for slot={slot_index}, ws_id={ws_id}, pid={proc.pid}")
 
         # Write prompt to stdin, then close so agent can begin
         try:
@@ -371,7 +369,6 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         output_lines = []
         batch = []
         last_emit = time.time()
-        print(f"[DEBUG _run_agent] Entering readline loop for slot={slot_index}")
 
         try:
             while True:
@@ -397,18 +394,14 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 # Batch emit every 200ms
                 now = time.time()
                 if socketio and now - last_emit >= 0.2:
-                    print(f"[DEBUG _run_agent] Emitting worker:output slot={slot_index}, {len(batch)} lines, ws_id={ws_id}")
                     _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": batch}, ws_id)
                     last_emit = now
                     batch = []
         except (ValueError, OSError):
             pass  # stdout closed
 
-        print(f"[DEBUG _run_agent] Readline loop exited, total lines read: {len(output_lines)}, remaining batch: {len(batch)}")
-
         # Flush remaining batch
         if socketio and batch:
-            print(f"[DEBUG _run_agent] Flushing final batch slot={slot_index}, {len(batch)} lines")
             _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": batch}, ws_id)
 
         # Wait for process to finish and read stderr
@@ -439,7 +432,6 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         # Emit final output so focus view always has complete data
         if socketio:
             final_lines = [l.rstrip("\n") for l in output_lines]
-            print(f"[DEBUG _run_agent] Emitting worker:output:done slot={slot_index}, {len(final_lines)} total lines, ws_id={ws_id}")
             _ws_emit(socketio, "worker:output:done", {"slot": slot_index, "lines": final_lines}, ws_id)
 
         if result["success"]:

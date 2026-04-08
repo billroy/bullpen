@@ -435,9 +435,7 @@ def register_events(socketio, app):
     def on_worker_output_request(data):
         ws_id, bp_dir = _resolve(data)
         slot = data.get("slot")
-        print(f"[DEBUG worker:output:request] ws_id={ws_id}, slot={slot}")
         entry = worker_mod.get_output_buffer(ws_id, slot)
-        print(f"[DEBUG worker:output:request] entry={'found, buffer_len=' + str(len(entry['buffer'])) if entry else 'None'}")
         if entry:
             emit("worker:output:catchup", {
                 "slot": slot,
