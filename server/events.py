@@ -137,6 +137,7 @@ def register_events(socketio, app):
             "trigger_interval_minutes": None,
             "trigger_every_day": False,
             "last_trigger_time": None,
+            "paused": False,
             "task_queue": [],
             "state": "idle",
         }

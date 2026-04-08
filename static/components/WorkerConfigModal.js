@@ -26,6 +26,7 @@ const WorkerConfigModal = {
             trigger_time: w.trigger_time || '',
             trigger_interval_minutes: w.trigger_interval_minutes || 60,
             trigger_every_day: w.trigger_every_day || false,
+            paused: w.paused || false,
           };
         }
       }
@@ -98,6 +99,10 @@ const WorkerConfigModal = {
             <label class="form-label" v-if="form.activation === 'on_interval'">
               Interval (minutes)
               <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
+            </label>
+            <label class="form-label form-label-inline" v-if="form.activation === 'at_time' || form.activation === 'on_interval'">
+              <input type="checkbox" v-model="form.paused">
+              Paused
             </label>
           </div>
           <div class="form-row">

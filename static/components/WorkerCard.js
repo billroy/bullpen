@@ -12,7 +12,9 @@ const WorkerCard = {
       <div class="worker-card-header" :style="{ background: agentColor }">
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
-          <button v-if="canStart" class="worker-action-btn start-btn" @click.stop="startWorker" title="Start">&#9654;</button>
+          <button v-if="isScheduled && !isPaused" class="worker-action-btn pause-btn" @click.stop="pauseWorker" title="Pause">&#9208;</button>
+          <button v-if="isScheduled && isPaused" class="worker-action-btn start-btn" @click.stop="unpauseWorker" title="Resume">&#9654;</button>
+          <button v-if="canStart && !isPaused" class="worker-action-btn start-btn" @click.stop="startWorker" title="Start">&#9654;</button>
           <button v-if="isWorking" class="worker-action-btn stop-btn" @click.stop="stopWorker" title="Stop">&#9632;</button>
           <button class="worker-card-edit" @click.stop="$emit('configure', slotIndex)" title="Configure">&#9998;</button>
         </div>
@@ -20,7 +22,7 @@ const WorkerCard = {
       <div class="worker-card-body">
         <div class="worker-card-status">
           <span class="status-pill" :class="'status-' + workerState">
-            {{ workerState.toUpperCase() }}
+            {{ isPaused ? 'PAUSED' : workerState.toUpperCase() }}
           </span>
           <span class="worker-card-agent">{{ worker.agent }}/{{ worker.model }}</span>
         </div>
@@ -45,6 +47,12 @@ const WorkerCard = {
     isWorking() { return this.workerState === 'working'; },
     canStart() {
       return this.workerState === 'idle';
+    },
+    isScheduled() {
+      return this.worker.activation === 'at_time' || this.worker.activation === 'on_interval';
+    },
+    isPaused() {
+      return this.worker.paused === true;
     },
     agentColor() {
       return { claude: '#da7756', codex: '#10a37f' }[this.worker.agent] || '#6B7280';
@@ -100,6 +108,12 @@ const WorkerCard = {
     },
     stopWorker() {
       this.$root.stopWorkerSlot(this.slotIndex);
+    },
+    pauseWorker() {
+      this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: true } });
+    },
+    unpauseWorker() {
+      this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: false } });
     }
   }
 };

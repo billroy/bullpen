@@ -62,6 +62,8 @@ class Scheduler:
                     continue
                 if worker.get("state") != "idle":
                     continue
+                if worker.get("paused"):
+                    continue
 
                 activation = worker.get("activation")
 

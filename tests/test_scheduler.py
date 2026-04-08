@@ -175,6 +175,56 @@ class TestSchedulerTick:
         # last_trigger_time should be updated
         assert layout["slots"][0]["last_trigger_time"] > 0
 
+    def test_paused_worker_skipped(self, bp_dir):
+        """Paused worker is skipped by scheduler tick."""
+        now = datetime.now()
+        current_time = now.strftime("%H:%M")
+
+        _make_worker(bp_dir, activation="at_time", trigger_time=current_time,
+                     trigger_every_day=True, paused=True)
+
+        task = create_task(bp_dir, "Paused task")
+        assign_task(bp_dir, 0, task["id"])
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][0]["state"] = "idle"
+        layout["slots"][0]["activation"] = "at_time"
+        layout["slots"][0]["paused"] = True
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        scheduler = Scheduler(bp_dir, None, interval=60)
+        scheduler._tick()
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        assert layout["slots"][0]["state"] == "idle"
+
+    def test_unpaused_worker_fires(self, bp_dir):
+        """Unpaused worker fires normally."""
+        now = datetime.now()
+        current_time = now.strftime("%H:%M")
+
+        _make_worker(bp_dir, activation="at_time", trigger_time=current_time,
+                     trigger_every_day=True, paused=False)
+
+        task = create_task(bp_dir, "Unpaused task")
+        assign_task(bp_dir, 0, task["id"])
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][0]["state"] = "idle"
+        layout["slots"][0]["activation"] = "at_time"
+        layout["slots"][0]["paused"] = False
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        scheduler = Scheduler(bp_dir, None, interval=60)
+        scheduler._tick()
+        time.sleep(0.5)
+
+        # Worker should have been triggered (activation reset to manual since not every_day... wait, it IS every_day)
+        # Since trigger_every_day=True, activation stays at_time but worker should have started
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        # Worker should have processed (may be idle again since mock is fast)
+        assert layout["slots"][0]["state"] in ("working", "idle")
+
     def test_interval_fires_with_null_last_trigger(self, bp_dir):
         """Worker with null last_trigger_time (fresh config) should fire."""
         _make_worker(

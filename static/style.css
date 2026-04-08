@@ -541,6 +541,7 @@ body {
 
 .start-btn { color: #86efac; }
 .stop-btn { color: #fca5a5; }
+.pause-btn { color: #fde68a; }
 
 .worker-card-edit {
   background: none;

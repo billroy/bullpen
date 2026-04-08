@@ -192,6 +192,8 @@ def validate_worker_configure(data, max_slots=100):
         )
     if "trigger_every_day" in fields:
         sanitized["trigger_every_day"] = bool(fields["trigger_every_day"])
+    if "paused" in fields:
+        sanitized["paused"] = bool(fields["paused"])
 
     return slot, sanitized
 
