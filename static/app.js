@@ -143,7 +143,6 @@ const app = createApp({
   template: `
     <div class="app-container">
       <TopToolbar
-        :workspace="state.workspace"
         :name="state.config.name"
         :connected="connected"
         @toggle-left-pane="toggleLeftPane"
@@ -180,6 +179,7 @@ const app = createApp({
               :config="state.config"
               :profiles="state.profiles"
               :tasks="state.tasks"
+              :workspace="state.workspace"
               @add-worker="addWorker"
               @configure-worker="configureSlot = $event"
               @select-task="selectTask"

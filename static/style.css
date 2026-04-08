@@ -75,7 +75,7 @@ body {
   font-size: 14px;
 }
 
-.toolbar-workspace {
+.bullpen-path {
   color: var(--text-secondary);
   font-size: 12px;
   font-family: monospace;

@@ -1,5 +1,5 @@
 const BullpenTab = {
-  props: ['layout', 'config', 'profiles', 'tasks'],
+  props: ['layout', 'config', 'profiles', 'tasks', 'workspace'],
   emits: ['add-worker', 'configure-worker', 'select-task'],
   components: { WorkerCard },
   data() {
@@ -11,7 +11,7 @@ const BullpenTab = {
   template: `
     <div class="bullpen-grid-container">
       <div class="bullpen-header">
-        <span>Bullpen Grid ({{ rows }}&times;{{ cols }})</span>
+        <span class="bullpen-path" :title="workspace">{{ workspaceShort }}</span>
         <div class="bullpen-header-actions">
           <select class="form-select" :value="rows + 'x' + cols" @change="onGridResize">
             <option v-for="opt in gridOptions" :key="opt" :value="opt">{{ opt }}</option>
@@ -57,6 +57,11 @@ const BullpenTab = {
     </div>
   `,
   computed: {
+    workspaceShort() {
+      if (!this.workspace) return '';
+      const parts = this.workspace.split('/');
+      return parts.slice(-2).join('/');
+    },
     rows() { return this.config?.grid?.rows || 4; },
     cols() { return this.config?.grid?.cols || 6; },
     totalSlots() { return this.rows * this.cols; },
