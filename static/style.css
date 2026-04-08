@@ -299,10 +299,16 @@ body {
 }
 
 /* === Worker Roster === */
+.worker-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .roster-item {
   display: flex;
   align-items: center;
-  padding: 4px 8px;
+  padding: 5px 8px;
   font-size: 12px;
   font-weight: 600;
   color: white;
@@ -312,7 +318,7 @@ body {
 }
 
 .roster-item.roster-idle {
-  opacity: 0.5;
+  opacity: 0.75;
 }
 
 .roster-item.drag-over {
