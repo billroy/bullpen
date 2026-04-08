@@ -22,6 +22,32 @@
   --toolbar-height: 44px;
 }
 
+/* === Light Theme === */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f6f8;
+  --bg-tertiary: #ebedf0;
+  --bg-hover: #dfe1e6;
+  --border: #c9cdd5;
+  --text-primary: #1a1d27;
+  --text-secondary: #4a5068;
+  --text-muted: #8b90a0;
+  --accent: #5066cc;
+  --accent-hover: #3d50b0;
+}
+
+[data-theme="light"] .priority-low { background: #d1fae5; color: #065f46; }
+[data-theme="light"] .priority-normal { background: #dbeafe; color: #1e40af; }
+[data-theme="light"] .priority-high { background: #fef3c7; color: #92400e; }
+[data-theme="light"] .priority-urgent { background: #fee2e2; color: #991b1b; }
+[data-theme="light"] .status-pill.status-idle { background: #e5e7eb; color: #4b5563; }
+[data-theme="light"] .status-pill.status-working { background: #dbeafe; color: #1d4ed8; }
+[data-theme="light"] .status-pill.status-queued { background: #ede9fe; color: #5b21b6; }
+[data-theme="light"] .badge.type-task { background: #e5e7eb; color: #4b5563; }
+[data-theme="light"] .badge.type-bug { background: #fee2e2; color: #991b1b; }
+[data-theme="light"] .badge.type-feature { background: #dbeafe; color: #1e40af; }
+[data-theme="light"] .badge.type-chore { background: #fef3c7; color: #92400e; }
+
 /* === Reset === */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -79,6 +105,11 @@ body {
   color: var(--text-secondary);
   font-size: 12px;
   font-family: monospace;
+}
+
+.theme-toggle {
+  font-size: 16px;
+  margin-right: 8px;
 }
 
 .connection-dot {

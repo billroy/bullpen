@@ -113,6 +113,22 @@ const app = createApp({
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
 
+    // Theme
+    const PRISM_DARK = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css';
+    const PRISM_LIGHT = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css';
+    (function initTheme() {
+      const saved = localStorage.getItem('bullpen-theme');
+      if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+    function toggleTheme() {
+      const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+      const next = isLight ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('bullpen-theme', next);
+      const prismLink = document.getElementById('prism-theme');
+      if (prismLink) prismLink.href = next === 'light' ? PRISM_LIGHT : PRISM_DARK;
+    }
+
     function addToast(message, type = 'info') {
       const id = ++toastId;
       toasts.push({ id, message, type });
@@ -134,7 +150,7 @@ const app = createApp({
     return {
       state, connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
-      toggleLeftPane, createTask, updateTask, deleteTask, clearTaskOutput,
+      toggleLeftPane, toggleTheme, createTask, updateTask, deleteTask, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
@@ -146,6 +162,7 @@ const app = createApp({
         :name="state.config.name"
         :connected="connected"
         @toggle-left-pane="toggleLeftPane"
+        @toggle-theme="toggleTheme"
       />
       <div class="app-body">
         <LeftPane
