@@ -1,5 +1,5 @@
 const KanbanTab = {
-  props: ['tasks', 'columns'],
+  props: ['tasks', 'columns', 'layout'],
   emits: ['select-task', 'move-task'],
   components: { TaskCard },
   template: `
@@ -18,6 +18,7 @@ const KanbanTab = {
             v-for="task in columnTasks(col.key)"
             :key="task.id"
             :task="task"
+            :layout="layout"
             @select-task="$emit('select-task', $event)"
           />
         </div>

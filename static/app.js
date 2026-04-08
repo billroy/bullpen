@@ -149,6 +149,36 @@ const app = createApp({
       if (idx >= 0) toasts.splice(idx, 1);
     }
 
+    // Grid options for tab bar selector
+    const gridOptions = computed(() => {
+      const opts = [];
+      for (let r = 2; r <= 7; r++) {
+        for (let c = 2; c <= 10; c++) {
+          opts.push(`${r}x${c}`);
+        }
+      }
+      return opts;
+    });
+
+    function onTabBarGridResize(e) {
+      const [rows, cols] = e.target.value.split('x').map(Number);
+      const layout = state.layout;
+      const slots = layout?.slots || [];
+      let maxOccupied = -1;
+      for (let i = 0; i < slots.length; i++) {
+        if (slots[i]) maxOccupied = i;
+      }
+      const newTotal = rows * cols;
+      if (maxOccupied >= newTotal) {
+        alert(`Cannot resize: worker in slot ${maxOccupied + 1} would be displaced. Move or remove workers first.`);
+        const curRows = state.config.grid?.rows || 4;
+        const curCols = state.config.grid?.cols || 6;
+        e.target.value = curRows + 'x' + curCols;
+        return;
+      }
+      updateConfig({ grid: { rows, cols } });
+    }
+
     return {
       state, connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
@@ -156,6 +186,7 @@ const app = createApp({
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      gridOptions, onTabBarGridResize,
     };
   },
   template: `
@@ -176,19 +207,28 @@ const app = createApp({
         />
         <div class="main-pane">
           <div class="tab-bar">
-            <button
-              v-for="tab in ['kanban', 'bullpen', 'files']"
-              :key="tab"
-              class="tab-btn"
-              :class="{ active: activeTab === tab }"
-              @click="activeTab = tab"
-            >{{ tab.charAt(0).toUpperCase() + tab.slice(1) }}</button>
+            <div class="tab-bar-left">
+              <button
+                v-for="tab in ['kanban', 'bullpen', 'files']"
+                :key="tab"
+                class="tab-btn"
+                :class="{ active: activeTab === tab }"
+                @click="activeTab = tab"
+              >{{ tab.charAt(0).toUpperCase() + tab.slice(1) }}</button>
+            </div>
+            <div v-if="activeTab === 'bullpen'" class="tab-bar-right">
+              <span class="bullpen-path" :title="state.workspace">{{ state.workspace ? state.workspace.split('/').slice(-2).join('/') : '' }}</span>
+              <select class="form-select" :value="(state.config.grid?.rows || 4) + 'x' + (state.config.grid?.cols || 6)" @change="onTabBarGridResize">
+                <option v-for="opt in gridOptions" :key="opt" :value="opt">{{ opt }}</option>
+              </select>
+            </div>
           </div>
           <div class="tab-content">
             <KanbanTab
               v-if="activeTab === 'kanban'"
               :tasks="state.tasks"
               :columns="state.config.columns"
+              :layout="state.layout"
               @select-task="selectTask"
               @move-task="moveTask"
             />

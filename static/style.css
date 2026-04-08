@@ -300,11 +300,23 @@ body {
 /* === Tab Bar === */
 .tab-bar {
   display: flex;
-  gap: 0;
+  justify-content: space-between;
+  align-items: center;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   padding: 0 12px;
   flex-shrink: 0;
+}
+
+.tab-bar-left {
+  display: flex;
+  gap: 0;
+}
+
+.tab-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .tab-btn {
@@ -426,6 +438,13 @@ body {
   gap: 4px;
 }
 
+.task-card-worker {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 /* === Bullpen Grid === */
 .bullpen-grid-container {
   height: 100%;
@@ -442,7 +461,7 @@ body {
 .bullpen-grid {
   display: grid;
   gap: 12px;
-  height: calc(100% - 40px);
+  height: 100%;
 }
 
 .grid-slot {

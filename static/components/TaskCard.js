@@ -1,6 +1,15 @@
 const TaskCard = {
-  props: ['task'],
+  props: ['task', 'layout'],
   emits: ['select-task'],
+  computed: {
+    assignedWorkerName() {
+      if (!this.task.assigned_to && this.task.assigned_to !== 0) return null;
+      const slot = parseInt(this.task.assigned_to, 10);
+      if (isNaN(slot)) return null;
+      const worker = this.layout?.slots?.[slot];
+      return worker?.name || null;
+    }
+  },
   template: `
     <div class="task-card"
          draggable="true"
@@ -11,6 +20,7 @@ const TaskCard = {
         <span class="badge" :class="'priority-' + (task.priority || 'normal')">{{ task.priority || 'normal' }}</span>
         <span class="badge type-badge">{{ task.type || 'task' }}</span>
       </div>
+      <span v-if="assignedWorkerName" class="task-card-worker">{{ assignedWorkerName }}</span>
     </div>
   `,
   methods: {

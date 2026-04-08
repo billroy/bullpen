@@ -10,14 +10,6 @@ const BullpenTab = {
   },
   template: `
     <div class="bullpen-grid-container">
-      <div class="bullpen-header">
-        <span class="bullpen-path" :title="workspace">{{ workspaceShort }}</span>
-        <div class="bullpen-header-actions">
-          <select class="form-select" :value="rows + 'x' + cols" @change="onGridResize">
-            <option v-for="opt in gridOptions" :key="opt" :value="opt">{{ opt }}</option>
-          </select>
-        </div>
-      </div>
       <div class="bullpen-grid" :style="gridStyle">
         <template v-for="i in totalSlots" :key="i">
           <WorkerCard
