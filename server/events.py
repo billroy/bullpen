@@ -335,6 +335,16 @@ def register_events(socketio, app):
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
 
+        # If activation or watch_column changed, check for unclaimed tasks
+        if ("activation" in fields or "watch_column" in fields):
+            if (worker.get("activation") == "on_queue"
+                    and worker.get("watch_column")
+                    and worker.get("state") == "idle"
+                    and not worker.get("paused")):
+                worker_mod.check_watch_columns(
+                    bp_dir, worker["watch_column"], socketio, ws_id,
+                )
+
     @socketio.on("layout:update")
     @with_lock
     def on_layout_update(data):

@@ -235,6 +235,19 @@ def reconcile(bp_dir):
     if changed:
         write_json(layout_path, layout)
 
+    # Check watched columns for idle on_queue workers with unclaimed tasks
+    from server import workers as worker_mod
+    watched_columns = set()
+    for slot in layout.get("slots", []):
+        if (slot
+                and slot.get("activation") == "on_queue"
+                and slot.get("watch_column")
+                and slot.get("state") == "idle"
+                and not slot.get("paused")):
+            watched_columns.add(slot["watch_column"])
+    for col in watched_columns:
+        worker_mod.check_watch_columns(bp_dir, col)
+
 
 def load_state(bp_dir, workspace):
     """Load full app state from .bullpen/ files."""
