@@ -1,9 +1,11 @@
 """Socket event handlers."""
 
+import json
 import logging
 import os
 import subprocess
 import threading
+import time
 
 from flask import request
 from flask_socketio import emit
@@ -20,6 +22,55 @@ from server.validation import (
     validate_payload_size, validate_config_update, validate_worker_move,
     validate_layout_update, validate_team_name,
 )
+
+
+_CLAUDE_FS_FALLBACK_TOOLS = "Bash,Read,Glob,Grep,Edit,Write,NotebookEdit"
+_CLAUDE_MCP_READY_STATES = {"connected", "ready", "ok"}
+_CLAUDE_MCP_PENDING_STATES = {"pending", "connecting", "initializing", "starting"}
+_CLAUDE_MCP_STARTUP_RETRIES = 3
+_CLAUDE_MCP_STARTUP_RETRY_BASE_DELAY = 0.75
+
+
+def _harden_live_agent_argv(provider, argv):
+    """Apply Live Agent safety hardening for provider-specific runs."""
+    hardened = list(argv)
+    if provider != "claude":
+        return hardened
+    if "--strict-mcp-config" not in hardened:
+        hardened.append("--strict-mcp-config")
+    if "--disallowedTools" not in hardened and "--disallowed-tools" not in hardened:
+        hardened.extend(["--disallowedTools", _CLAUDE_FS_FALLBACK_TOOLS])
+    return hardened
+
+
+def _claude_mcp_startup_state(line):
+    """Return tuple (state, message) for bullpen MCP startup line, or None.
+
+    State values:
+      - "ready": Bullpen MCP is connected and usable.
+      - "pending": Bullpen MCP is still initializing and retry is appropriate.
+      - "error": Bullpen MCP is unavailable/missing and this run should fail.
+    """
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if obj.get("type") != "system" or obj.get("subtype") != "init":
+        return None
+
+    servers = obj.get("mcp_servers") or []
+    bullpen = next((s for s in servers if s.get("name") == "bullpen"), None)
+    if not bullpen:
+        return ("error", "Bullpen MCP server was not loaded for this session.")
+
+    status = str(bullpen.get("status", "")).lower()
+    if status in _CLAUDE_MCP_READY_STATES:
+        return ("ready", None)
+    if status in _CLAUDE_MCP_PENDING_STATES:
+        return ("pending", f"Bullpen MCP unavailable at startup (status: {status}). Please retry.")
+    if status:
+        return ("error", f"Bullpen MCP unavailable at startup (status: {status}). Please retry.")
+    return ("error", "Bullpen MCP unavailable at startup (missing status). Please retry.")
 
 
 def _load_layout(bp_dir):
@@ -535,7 +586,6 @@ def register_events(socketio, app):
 
     def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None):
         """Run chat agent subprocess, emit streaming lines, then emit done."""
-        collected = []
         # Extract temp MCP config path for cleanup (written by adapter.build_argv)
         mcp_config_path = None
         for i, arg in enumerate(argv):
@@ -543,76 +593,119 @@ def register_events(socketio, app):
                 mcp_config_path = argv[i + 1]
                 break
         try:
-            popen_kwargs = dict(
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
-            if workspace:
-                popen_kwargs["cwd"] = workspace
-            proc = subprocess.Popen(argv, **popen_kwargs)
-            prompt = response_collector["prompt"]
-            try:
-                proc.stdin.write(prompt)
-                proc.stdin.close()
-            except (BrokenPipeError, OSError):
-                pass
+            max_attempts = _CLAUDE_MCP_STARTUP_RETRIES if adapter.name == "claude" else 1
+            pending_message = "Bullpen MCP unavailable at startup (status: pending). Please retry."
 
-            batch = []
-            batch_lock = threading.Lock()
-            import time
-            last_emit = [time.time()]
+            for attempt in range(max_attempts):
+                collected = []
+                pending_startup = False
+                startup_error = None
+                saw_ready = adapter.name != "claude"
 
-            def _drain_stdout():
-                for line in proc.stdout:
-                    display = adapter.format_stream_line(line)
-                    if display is None:
-                        continue
-                    for dl in display.split("\n"):
-                        collected.append(dl)
-                        to_emit = None
-                        with batch_lock:
-                            batch.append(dl)
-                            now = time.time()
-                            if now - last_emit[0] >= 0.2:
-                                to_emit = list(batch)
-                                batch.clear()
-                                last_emit[0] = now
-                        if to_emit:
-                            socketio.emit("chat:output", {"sessionId": session_id, "lines": to_emit})
-
-            def _drain_stderr():
+                popen_kwargs = dict(
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+                if workspace:
+                    popen_kwargs["cwd"] = workspace
+                proc = subprocess.Popen(argv, **popen_kwargs)
+                prompt = response_collector["prompt"]
                 try:
-                    for line in proc.stderr:
-                        line = line.rstrip()
-                        if line:
-                            logging.warning("chat agent stderr [%s]: %s", session_id, line)
-                except Exception:
+                    proc.stdin.write(prompt)
+                    proc.stdin.close()
+                except (BrokenPipeError, OSError):
                     pass
 
-            t_err = threading.Thread(target=_drain_stderr, daemon=True)
-            t_err.start()
-            _drain_stdout()
-            proc.wait()
-            t_err.join(timeout=2)
+                batch = []
+                batch_lock = threading.Lock()
+                last_emit = [time.time()]
 
-            # Flush remaining batch
-            with batch_lock:
-                if batch:
-                    socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)})
-                    batch.clear()
+                def _drain_stdout():
+                    nonlocal pending_startup, startup_error, saw_ready, pending_message
+                    for line in proc.stdout:
+                        if adapter.name == "claude":
+                            startup = _claude_mcp_startup_state(line)
+                            if startup:
+                                state, msg = startup
+                                if state == "ready":
+                                    saw_ready = True
+                                elif state == "pending":
+                                    pending_startup = True
+                                    if msg:
+                                        pending_message = msg
+                                    try:
+                                        proc.terminate()
+                                    except OSError:
+                                        pass
+                                    return
+                                else:
+                                    startup_error = msg or "Bullpen MCP unavailable at startup."
+                                    try:
+                                        proc.terminate()
+                                    except OSError:
+                                        pass
+                                    return
+                        display = adapter.format_stream_line(line)
+                        if display is None:
+                            continue
+                        for dl in display.split("\n"):
+                            collected.append(dl)
+                            to_emit = None
+                            with batch_lock:
+                                batch.append(dl)
+                                now = time.time()
+                                if now - last_emit[0] >= 0.2:
+                                    to_emit = list(batch)
+                                    batch.clear()
+                                    last_emit[0] = now
+                            if to_emit:
+                                socketio.emit("chat:output", {"sessionId": session_id, "lines": to_emit})
 
-            full_response = "\n".join(collected).strip()
+                def _drain_stderr():
+                    try:
+                        for line in proc.stderr:
+                            line = line.rstrip()
+                            if line:
+                                logging.warning("chat agent stderr [%s]: %s", session_id, line)
+                    except Exception:
+                        pass
 
-            # Update session history
-            with _chat_lock:
-                if session_id in _chat_sessions:
-                    _chat_sessions[session_id].append({"role": "user", "content": message})
-                    _chat_sessions[session_id].append({"role": "assistant", "content": full_response})
+                t_err = threading.Thread(target=_drain_stderr, daemon=True)
+                t_err.start()
+                _drain_stdout()
+                proc.wait()
+                t_err.join(timeout=2)
 
-            socketio.emit("chat:done", {"sessionId": session_id})
+                if startup_error:
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": startup_error})
+                    return
+
+                if pending_startup and not saw_ready:
+                    if attempt + 1 < max_attempts:
+                        time.sleep(_CLAUDE_MCP_STARTUP_RETRY_BASE_DELAY * (attempt + 1))
+                        continue
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": pending_message})
+                    return
+
+                # Flush remaining batch
+                with batch_lock:
+                    if batch:
+                        socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)})
+                        batch.clear()
+
+                full_response = "\n".join(collected).strip()
+
+                # Update session history
+                with _chat_lock:
+                    if session_id in _chat_sessions:
+                        _chat_sessions[session_id].append({"role": "user", "content": message})
+                        _chat_sessions[session_id].append({"role": "assistant", "content": full_response})
+
+                socketio.emit("chat:done", {"sessionId": session_id})
+                return
 
         except Exception as e:
             logging.exception("Chat agent error for session %s", session_id)
@@ -675,6 +768,7 @@ def register_events(socketio, app):
 
         workspace = os.path.dirname(bp_dir)
         argv = adapter.build_argv(full_prompt, model, workspace, bp_dir=bp_dir)
+        argv = _harden_live_agent_argv(provider, argv)
 
         response_collector = {"prompt": full_prompt}
         thread = threading.Thread(
