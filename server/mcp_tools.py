@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Minimal MCP stdio server exposing bullpen ticket tools to agents.
 
-Speaks JSON-RPC 2.0 over stdin/stdout (newline-delimited JSON).
+Speaks JSON-RPC 2.0 over stdin/stdout using MCP stdio framing
+(`Content-Length` headers + JSON body).
 Connects to the bullpen socket.io server for create/update operations
 so the UI updates live. Uses direct file reads for list operations.
 
@@ -87,16 +88,61 @@ TOOLS = [
 
 # --- JSON-RPC helpers ---
 
-def _read():
-    line = sys.stdin.readline()
-    if not line:
-        return None
-    return json.loads(line)
+def _parse_content_length(header_line):
+    """Parse `Content-Length: N` header line."""
+    try:
+        _, value = header_line.split(b":", 1)
+    except ValueError as exc:
+        raise ValueError("Invalid Content-Length header") from exc
+    try:
+        return int(value.strip())
+    except ValueError as exc:
+        raise ValueError("Invalid Content-Length value") from exc
 
 
-def _write(msg):
-    sys.stdout.write(json.dumps(msg) + "\n")
-    sys.stdout.flush()
+def _read(in_stream=None):
+    """Read one JSON-RPC message.
+
+    Supports MCP framed stdio transport and a legacy JSON-line fallback.
+    """
+    if in_stream is None:
+        in_stream = sys.stdin.buffer
+
+    while True:
+        line = in_stream.readline()
+        if not line:
+            return None
+        if not line.strip():
+            continue
+
+        # MCP stdio framing: read headers then body bytes.
+        if line.lower().startswith(b"content-length:"):
+            content_length = _parse_content_length(line)
+            while True:
+                header = in_stream.readline()
+                if not header:
+                    return None
+                if not header.strip():
+                    break
+                if header.lower().startswith(b"content-length:"):
+                    content_length = _parse_content_length(header)
+
+            body = in_stream.read(content_length)
+            if not body or len(body) < content_length:
+                return None
+            return json.loads(body.decode("utf-8"))
+
+        # Legacy fallback for newline-delimited JSON.
+        return json.loads(line.decode("utf-8"))
+
+
+def _write(msg, out_stream=None):
+    if out_stream is None:
+        out_stream = sys.stdout.buffer
+    payload = json.dumps(msg, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    out_stream.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
+    out_stream.write(payload)
+    out_stream.flush()
 
 
 def _result(msg_id, result):

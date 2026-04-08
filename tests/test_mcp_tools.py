@@ -1,5 +1,6 @@
 """Tests for MCP tool server behaviors."""
 
+import io
 import json
 
 from server import mcp_tools
@@ -77,3 +78,27 @@ def test_bullpen_client_adds_loopback_candidates_for_wildcard_host(monkeypatch):
     assert "http://0.0.0.0:5050" in urls
     assert "http://127.0.0.1:5050" in urls
     assert "http://localhost:5050" in urls
+
+
+def test_read_parses_mcp_content_length_frame():
+    payload = b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+    framed = b"Content-Length: " + str(len(payload)).encode("ascii") + b"\r\n\r\n" + payload
+
+    msg = mcp_tools._read(io.BytesIO(framed))
+
+    assert msg["method"] == "initialize"
+    assert msg["id"] == 1
+
+
+def test_write_emits_mcp_content_length_frame():
+    out = io.BytesIO()
+    mcp_tools._write({"jsonrpc": "2.0", "id": 9, "result": {"ok": True}}, out_stream=out)
+    raw = out.getvalue()
+
+    header, body = raw.split(b"\r\n\r\n", 1)
+    assert header.startswith(b"Content-Length:")
+    declared_len = int(header.split(b":", 1)[1].strip())
+    assert declared_len == len(body)
+    parsed = json.loads(body.decode("utf-8"))
+    assert parsed["id"] == 9
+    assert parsed["result"]["ok"] is True
