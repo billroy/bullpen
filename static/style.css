@@ -525,9 +525,9 @@ body {
 }
 
 .worker-menu-btn {
-  background: rgba(255,255,255,0.2);
+  background: none;
   border: none;
-  color: white;
+  color: rgba(255,255,255,0.8);
   cursor: pointer;
   font-size: 14px;
   font-weight: 700;
@@ -538,7 +538,8 @@ body {
 }
 
 .worker-menu-btn:hover {
-  background: rgba(255,255,255,0.35);
+  color: white;
+  background: rgba(255,255,255,0.15);
 }
 
 .worker-card-actions {
@@ -546,15 +547,12 @@ body {
 }
 
 .worker-menu {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
+  position: fixed;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 100;
+  z-index: 500;
   min-width: 130px;
   padding: 4px 0;
 }
@@ -1034,6 +1032,7 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 900;
+  outline: none;
 }
 
 .modal {

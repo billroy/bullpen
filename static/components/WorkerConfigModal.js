@@ -43,7 +43,7 @@ const WorkerConfigModal = {
     }
   },
   template: `
-    <div v-if="worker" class="modal-overlay" @click.self="$emit('close')">
+    <div v-if="worker" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
       <div class="modal modal-wide">
         <div class="modal-header">
           <h2>Configure: {{ form.name }}</h2>
@@ -156,6 +156,11 @@ const WorkerConfigModal = {
       </div>
     </div>
   `,
+  updated() {
+    if (this.worker && this.$refs.overlay) {
+      this.$nextTick(() => this.$refs.overlay.focus());
+    }
+  },
   methods: {
     onAgentChange() {
       this.form.model = this.modelOptions[0];

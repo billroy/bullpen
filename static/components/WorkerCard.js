@@ -12,8 +12,8 @@ const WorkerCard = {
       <div class="worker-card-header" :style="{ background: agentColor }">
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
-          <button class="worker-menu-btn" @click.stop="showMenu = !showMenu" title="Actions">&hellip;</button>
-          <div v-if="showMenu" class="worker-menu" @click.stop>
+          <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
+          <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop>
             <button class="worker-menu-item" @click="menuEdit">Edit</button>
             <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun">Run</button>
             <button v-if="isWorking" class="worker-menu-item" @click="menuStop">Stop</button>
@@ -45,7 +45,7 @@ const WorkerCard = {
     </div>
   `,
   data() {
-    return { dragOver: false, showMenu: false };
+    return { dragOver: false, showMenu: false, menuPos: { top: 0, left: 0 } };
   },
   mounted() {
     this._closeMenu = (e) => {
@@ -79,6 +79,9 @@ const WorkerCard = {
         const t = this.tasks.find(task => task.id === id);
         return t || { id, title: id };
       });
+    },
+    menuStyle() {
+      return { top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
     },
     lastOutput() {
       if (!this.worker.task_queue?.length || !this.tasks) return '';
@@ -115,6 +118,21 @@ const WorkerCard = {
       if (taskId) {
         this.$root.assignTask(taskId, this.slotIndex);
       }
+    },
+    toggleMenu() {
+      if (this.showMenu) {
+        this.showMenu = false;
+        return;
+      }
+      const btn = this.$refs.menuBtn;
+      if (btn) {
+        const rect = btn.getBoundingClientRect();
+        const menuWidth = 130;
+        let left = rect.right - menuWidth;
+        if (left < 4) left = rect.left;
+        this.menuPos = { top: rect.bottom + 4, left };
+      }
+      this.showMenu = true;
     },
     menuEdit() {
       this.showMenu = false;
