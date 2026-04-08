@@ -10,7 +10,7 @@ import pytest
 from server.init import init_workspace
 from server.persistence import read_json, write_json
 from server.scheduler import Scheduler
-from server.tasks import create_task
+from server.tasks import create_task, list_tasks
 from server.workers import assign_task
 from server.agents import register_adapter
 from tests.conftest import MockAdapter
@@ -94,18 +94,60 @@ class TestSchedulerTick:
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         assert layout["slots"][0]["state"] == "idle"
 
-    def test_skips_idle_no_tasks(self, bp_dir):
-        """Worker with at_time but no queued tasks is skipped."""
+    def test_auto_creates_task_when_queue_empty(self, bp_dir):
+        """Worker with at_time and empty queue gets an auto-created task."""
         now = datetime.now()
         current_time = now.strftime("%H:%M")
 
-        _make_worker(bp_dir, activation="at_time", trigger_time=current_time)
+        _make_worker(bp_dir, activation="at_time", trigger_time=current_time, trigger_every_day=True)
+
+        # No tasks assigned — queue is empty
+        scheduler = Scheduler(bp_dir, None, interval=60)
+        scheduler._tick()
+        time.sleep(0.5)
+
+        # An auto task should have been created
+        tasks = list_tasks(bp_dir)
+        auto_tasks = [t for t in tasks if t["title"].startswith("[Auto]")]
+        assert len(auto_tasks) == 1
+        assert "Scheduler Worker" in auto_tasks[0]["title"]
+        assert auto_tasks[0]["type"] == "chore"
+
+    def test_auto_task_interval_empty_queue(self, bp_dir):
+        """Interval worker with empty queue auto-creates task and fires."""
+        _make_worker(
+            bp_dir,
+            activation="on_interval",
+            trigger_interval_minutes=1,
+            last_trigger_time=0,
+        )
+
+        scheduler = Scheduler(bp_dir, None, interval=60)
+        scheduler._tick()
+        time.sleep(0.5)
+
+        # Auto task should exist
+        tasks = list_tasks(bp_dir)
+        auto_tasks = [t for t in tasks if t["title"].startswith("[Auto]")]
+        assert len(auto_tasks) == 1
+
+        # last_trigger_time should be updated
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        assert layout["slots"][0]["last_trigger_time"] > 0
+
+    def test_skips_non_time_worker_no_tasks(self, bp_dir):
+        """Non-time-based worker with no tasks is not affected by scheduler."""
+        _make_worker(bp_dir, activation="manual")
 
         scheduler = Scheduler(bp_dir, None, interval=60)
         scheduler._tick()
 
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         assert layout["slots"][0]["state"] == "idle"
+        # No auto tasks created
+        tasks = list_tasks(bp_dir)
+        auto_tasks = [t for t in tasks if t["title"].startswith("[Auto]")]
+        assert len(auto_tasks) == 0
 
     def test_interval_fires(self, bp_dir):
         """Worker with on_interval activation fires after elapsed time."""

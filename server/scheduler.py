@@ -1,5 +1,6 @@
 """Time-based scheduler for worker activation."""
 
+import logging
 import os
 import threading
 import time
@@ -7,7 +8,10 @@ from datetime import datetime
 
 from server.locks import write_lock
 from server.persistence import read_json
+from server import tasks as task_mod
 from server import workers as worker_mod
+
+log = logging.getLogger(__name__)
 
 
 class Scheduler:
@@ -34,8 +38,7 @@ class Scheduler:
             try:
                 self._tick()
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("Scheduler tick error: %s", e)
+                log.warning("Scheduler tick error: %s", e)
             self._stop_event.wait(self.interval)
 
     def _tick(self):
@@ -48,15 +51,17 @@ class Scheduler:
         current_time = now.strftime("%H:%M")
         current_ts = time.time()
 
+        # Collect workers to fire (slot_index, needs_auto_task) outside the lock
+        to_fire = []
+
         with write_lock:
             layout = read_json(layout_path)
+            dirty = False
 
             for slot_index, worker in enumerate(layout.get("slots", [])):
                 if worker is None:
                     continue
                 if worker.get("state") != "idle":
-                    continue
-                if not worker.get("task_queue"):
                     continue
 
                 activation = worker.get("activation")
@@ -64,19 +69,36 @@ class Scheduler:
                 if activation == "at_time":
                     trigger_time = worker.get("trigger_time")
                     if trigger_time and trigger_time == current_time:
-                        # Fire the worker
-                        worker_mod.start_worker(self.bp_dir, slot_index, self.socketio)
-                        # If not recurring, reset to manual
                         if not worker.get("trigger_every_day"):
                             worker["activation"] = "manual"
-                            from server.persistence import write_json
-                            write_json(layout_path, layout)
+                            dirty = True
+                        to_fire.append((slot_index, worker))
 
                 elif activation == "on_interval":
                     interval_min = worker.get("trigger_interval_minutes")
                     last_trigger = worker.get("last_trigger_time") or 0
                     if interval_min and (current_ts - last_trigger) >= interval_min * 60:
                         worker["last_trigger_time"] = current_ts
-                        from server.persistence import write_json
-                        write_json(layout_path, layout)
-                        worker_mod.start_worker(self.bp_dir, slot_index, self.socketio)
+                        dirty = True
+                        to_fire.append((slot_index, worker))
+
+            if dirty:
+                from server.persistence import write_json
+                write_json(layout_path, layout)
+
+        # Fire workers outside the lock (start_worker acquires it internally via events)
+        for slot_index, worker in to_fire:
+            if not worker.get("task_queue"):
+                # Auto-create an ephemeral task for self-directed workers
+                self._create_auto_task(slot_index, worker)
+            worker_mod.start_worker(self.bp_dir, slot_index, self.socketio)
+
+    def _create_auto_task(self, slot_index, worker):
+        """Create a task automatically for a time-triggered worker with no queue."""
+        worker_name = worker.get("name", "Worker")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        title = f"[Auto] {worker_name} — {timestamp}"
+
+        task = task_mod.create_task(self.bp_dir, title, task_type="chore")
+        worker_mod.assign_task(self.bp_dir, slot_index, task["id"], self.socketio)
+        log.info("Auto-created task %s for worker %s (slot %d)", task["id"], worker_name, slot_index)
