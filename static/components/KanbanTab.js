@@ -14,7 +14,7 @@ const KanbanTab = {
           <button v-if="col.key === 'done' && columnTasks(col.key).length"
                   class="btn btn-sm column-archive-btn"
                   @click="$emit('archive-done')"
-                  title="Archive all done tasks">Archive</button>
+                  title="Archive all done tickets">Archive</button>
         </div>
         <div class="kanban-column-body">
           <div v-if="columnTasks(col.key).length === 0" class="empty-state kanban-drop-zone">—</div>

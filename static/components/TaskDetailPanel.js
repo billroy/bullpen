@@ -65,7 +65,7 @@ const TaskDetailPanel = {
           Type
           <select class="form-select" :value="task.type"
                   @change="$emit('update', { id: task.id, type: $event.target.value })">
-            <option value="task">Task</option>
+            <option value="task">Ticket</option>
             <option value="bug">Bug</option>
             <option value="feature">Feature</option>
             <option value="chore">Chore</option>
@@ -126,7 +126,7 @@ const TaskDetailPanel = {
       </div>
 
       <div class="detail-footer">
-        <button class="btn btn-danger btn-sm" @click="confirmDelete">Delete Task</button>
+        <button class="btn btn-danger btn-sm" @click="confirmDelete">Delete Ticket</button>
         <button v-if="task.status === 'done'" class="btn btn-sm" @click="$emit('archive', task.id); $emit('close')">Archive</button>
       </div>
     </div>

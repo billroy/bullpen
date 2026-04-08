@@ -26,10 +26,10 @@ const LeftPane = {
           <select class="column-select" v-model="selectedColumn">
             <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
           </select>
-          <button class="btn btn-sm" @click="$emit('new-task')">+ New Task</button>
+          <button class="btn btn-sm" @click="$emit('new-task')">+ New Ticket</button>
         </div>
         <div class="inbox-list">
-          <div v-if="filteredTasks.length === 0" class="empty-state">No tasks in {{ selectedColumnLabel }}</div>
+          <div v-if="filteredTasks.length === 0" class="empty-state">No tickets in {{ selectedColumnLabel }}</div>
           <div v-for="task in filteredTasks" :key="task.id"
                class="inbox-item"
                draggable="true"

@@ -14,20 +14,20 @@ const TaskCreateModal = {
     <div v-if="visible" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
       <div class="modal" @keydown.meta.enter="submit">
         <div class="modal-header">
-          <h2>New Task</h2>
+          <h2>New Ticket</h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
         </div>
         <div class="modal-body">
           <label class="form-label">
             Title
             <input class="form-input" v-model="title" ref="titleInput"
-                   @keydown.enter="submit" placeholder="Task title" autofocus>
+                   @keydown.enter="submit" placeholder="Ticket title" autofocus>
           </label>
           <div class="form-row">
             <label class="form-label">
               Type
               <select class="form-select" v-model="type">
-                <option value="task">Task</option>
+                <option value="task">Ticket</option>
                 <option value="bug">Bug</option>
                 <option value="feature">Feature</option>
                 <option value="chore">Chore</option>

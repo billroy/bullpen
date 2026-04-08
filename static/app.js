@@ -297,7 +297,7 @@ const app = createApp({
 
     const allTabs = computed(() => {
       const tabs = [
-        { id: 'tasks', label: 'Tasks' },
+        { id: 'tasks', label: 'Tickets' },
         { id: 'workers', label: 'Workers' },
         { id: 'files', label: 'Files' },
       ];
