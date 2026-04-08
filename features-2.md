@@ -1,0 +1,9 @@
+- [x] worker configure: Model dropdown only has one model per AI provider.  Ensure all the available models are in the dropdown and that the dropdown slugs are accurate matches to the API options available
+- [x] change the tag "Agent" to "AI Provider"
+- [x] Activation: at time: clarify that the trigger time is local?
+- [x] Configure a manually triggered worker.  There is no start button in the header
+- [x] Add a pause button to the header on workers with scheduled or periodic tasks - prevents execution at event time
+- [x] Add a way to unpause
+- [x] In the kanban card for a ticket, show the name of the worker handling active tickets in the second line
+- [x] In the Bullpen tab, move the name of the bullpen to the tab header that currently contains Kanban/Bullpen/Files.  Also put the layout selector up there.  This should leave the bullpen pane a grid with nothing else in it.
+- [x] double clicking a worker card should open the properties editor
