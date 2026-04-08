@@ -196,6 +196,19 @@ body {
   font-weight: 600;
 }
 
+.column-select {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+}
+
 .inbox-list {
   display: flex;
   flex-direction: column;

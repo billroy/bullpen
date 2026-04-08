@@ -202,6 +202,7 @@ const app = createApp({
         <LeftPane
           :tasks="state.tasks"
           :layout="state.layout"
+          :config="state.config"
           :visible="leftPaneVisible"
           @new-task="showCreateModal = true"
           @select-task="selectTask"

@@ -1,16 +1,18 @@
 const LeftPane = {
-  props: ['tasks', 'layout', 'visible'],
+  props: ['tasks', 'layout', 'visible', 'config'],
   emits: ['new-task', 'select-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
       <div class="left-pane-section">
         <div class="section-header">
-          <h3>Inbox</h3>
+          <select class="column-select" v-model="selectedColumn">
+            <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
+          </select>
           <button class="btn btn-sm" @click="$emit('new-task')">+ New Task</button>
         </div>
         <div class="inbox-list">
-          <div v-if="inboxTasks.length === 0" class="empty-state">No tasks in inbox</div>
-          <div v-for="task in inboxTasks" :key="task.id"
+          <div v-if="filteredTasks.length === 0" class="empty-state">No tasks in {{ selectedColumnLabel }}</div>
+          <div v-for="task in filteredTasks" :key="task.id"
                class="inbox-item"
                draggable="true"
                @dragstart="onDragStart($event, task.id)"
@@ -40,10 +42,17 @@ const LeftPane = {
     </div>
   `,
   computed: {
-    inboxTasks() {
+    columns() {
+      return this.config?.columns || [{ key: 'inbox', label: 'Inbox' }];
+    },
+    selectedColumnLabel() {
+      const col = this.columns.find(c => c.key === this.selectedColumn);
+      return col ? col.label : this.selectedColumn;
+    },
+    filteredTasks() {
       const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       return (this.tasks || [])
-        .filter(t => t.status === 'inbox')
+        .filter(t => t.status === this.selectedColumn)
         .sort((a, b) => {
           const pa = weight[a.priority] ?? weight.normal;
           const pb = weight[b.priority] ?? weight.normal;
@@ -58,8 +67,15 @@ const LeftPane = {
         .filter(Boolean);
     }
   },
+  watch: {
+    columns(cols) {
+      if (!cols.some(c => c.key === this.selectedColumn)) {
+        this.selectedColumn = 'inbox';
+      }
+    }
+  },
   data() {
-    return { rosterDragSlot: null };
+    return { rosterDragSlot: null, selectedColumn: 'inbox' };
   },
   methods: {
     onDragStart(e, taskId) {
