@@ -40,6 +40,12 @@ const WorkerConfigModal = {
         return ['o3', 'o3-mini', 'o4-mini', 'gpt-4.1', 'codex-1'];
       }
       return ['default'];
+    },
+    showCustomModel() {
+      return !this.modelOptions.includes(this.form.model);
+    },
+    modelSelectValue() {
+      return this.modelOptions.includes(this.form.model) ? this.form.model : '__custom__';
     }
   },
   template: `
@@ -64,10 +70,11 @@ const WorkerConfigModal = {
             </label>
             <label class="form-label">
               Model
-              <input class="form-input" v-model="form.model" list="model-options" placeholder="Type or select a model slug">
-              <datalist id="model-options">
+              <select class="form-select" :value="modelSelectValue" @change="onModelSelect">
                 <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
-              </datalist>
+                <option value="__custom__">Custom...</option>
+              </select>
+              <input v-if="showCustomModel" class="form-input" v-model="form.model" placeholder="Enter model slug" style="margin-top: 4px;">
             </label>
           </div>
           <div class="form-row">
@@ -164,6 +171,13 @@ const WorkerConfigModal = {
   methods: {
     onAgentChange() {
       this.form.model = this.modelOptions[0];
+    },
+    onModelSelect(e) {
+      if (e.target.value === '__custom__') {
+        this.form.model = '';
+      } else {
+        this.form.model = e.target.value;
+      }
     },
     onSave() {
       this.$emit('save', { slot: this.slotIndex, fields: { ...this.form } });
