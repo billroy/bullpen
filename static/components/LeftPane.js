@@ -1,8 +1,26 @@
 const LeftPane = {
-  props: ['tasks', 'layout', 'visible', 'config'],
-  emits: ['new-task', 'select-task'],
+  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces'],
+  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'remove-project'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
+      <div v-if="projects && projects.length > 1" class="left-pane-section">
+        <div class="section-header">
+          <h3>Projects</h3>
+          <button class="btn btn-sm" @click="promptAddProject">+</button>
+        </div>
+        <div class="project-list">
+          <div v-for="p in projects" :key="p.id"
+               class="project-item"
+               :class="{ active: p.id === activeWorkspaceId }"
+               @click="$emit('switch-workspace', p.id)">
+            <span class="project-name">{{ p.name }}</span>
+            <span v-if="unseenCount(p.id)" class="project-badge">{{ unseenCount(p.id) }}</span>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="projects && projects.length <= 1" class="left-pane-section project-add-only">
+        <button class="btn btn-sm" @click="promptAddProject">+ Add Project</button>
+      </div>
       <div class="left-pane-section">
         <div class="section-header">
           <select class="column-select" v-model="selectedColumn">
@@ -84,6 +102,16 @@ const LeftPane = {
     },
     agentColor(agent) {
       return agentColor(agent);
+    },
+    unseenCount(wsId) {
+      if (!this.workspaces || !this.workspaces[wsId]) return 0;
+      return this.workspaces[wsId].unseenActivity || 0;
+    },
+    promptAddProject() {
+      const path = prompt('Enter absolute path to project directory:');
+      if (path && path.trim()) {
+        this.$emit('add-project', path.trim());
+      }
     },
     onRosterDragOver(e, w) {
       if (e.dataTransfer.types.includes('text/plain')) {

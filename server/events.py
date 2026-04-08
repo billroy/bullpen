@@ -420,3 +420,63 @@ def register_events(socketio, app):
             emit("error", {"message": "worker:stop requires slot"})
             return
         worker_mod.stop_worker(bp_dir, slot, socketio, ws_id)
+
+    # --- Project events ---
+
+    @socketio.on("project:add")
+    @with_lock
+    def on_project_add(data):
+        manager = app.config["manager"]
+        path = data.get("path", "").strip()
+        if not path:
+            emit("error", {"message": "project:add requires path"})
+            return
+        try:
+            ws_id = manager.register_project(path)
+        except ValueError as e:
+            emit("error", {"message": str(e)})
+            return
+
+        ws = manager.get(ws_id)
+
+        # Start scheduler for new workspace
+        from server.scheduler import Scheduler
+        if not ws.scheduler:
+            scheduler = Scheduler(ws.bp_dir, socketio, ws_id=ws_id)
+            scheduler.start()
+            ws.scheduler = scheduler
+
+        # Reconcile new workspace
+        from server.app import reconcile, load_state
+        reconcile(ws.bp_dir)
+
+        # Send state for the new workspace to all clients
+        state = load_state(ws.bp_dir, ws.path)
+        state["workspaceId"] = ws_id
+        socketio.emit("state:init", state)
+
+        # Broadcast updated project list
+        socketio.emit("projects:updated", manager.list_projects())
+
+    @socketio.on("project:remove")
+    @with_lock
+    def on_project_remove(data):
+        manager = app.config["manager"]
+        ws_id = data.get("workspaceId")
+        if not ws_id:
+            emit("error", {"message": "project:remove requires workspaceId"})
+            return
+
+        # Don't allow removing the startup workspace
+        if ws_id == app.config["startup_workspace_id"]:
+            emit("error", {"message": "Cannot remove the startup project"})
+            return
+
+        manager.remove_project(ws_id)
+        socketio.emit("project:removed", {"workspaceId": ws_id})
+        socketio.emit("projects:updated", manager.list_projects())
+
+    @socketio.on("project:list")
+    def on_project_list(data=None):
+        manager = app.config["manager"]
+        emit("projects:updated", manager.list_projects())

@@ -119,6 +119,8 @@ def create_app(workspace, no_browser=False):
             state = load_state(ws.bp_dir, ws.path)
             state["workspaceId"] = ws.id
             socketio.emit("state:init", state)
+        # Send project list
+        socketio.emit("projects:updated", manager.list_projects())
 
     register_events(socketio, app)
 

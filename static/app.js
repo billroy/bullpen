@@ -28,6 +28,7 @@ const app = createApp({
     });
 
     const activeWorkspaceId = ref(null);
+    const projects = reactive([]);  // [{id, path, name}]
 
     function _defaultWsData() {
       return {
@@ -173,6 +174,17 @@ const app = createApp({
       if (_isActive(wsId)) state.teams = teams;
     });
     socket.on('error', (data) => { addToast(data.message, 'error'); });
+    socket.on('projects:updated', (list) => {
+      projects.splice(0, projects.length, ...list);
+    });
+    socket.on('project:removed', (data) => {
+      delete workspaces[data.workspaceId];
+      if (activeWorkspaceId.value === data.workspaceId) {
+        // Switch to first available
+        const firstId = projects[0]?.id;
+        if (firstId) switchWorkspace(firstId);
+      }
+    });
     socket.on('files:changed', (data) => {
       const wsId = (data && data.workspaceId) || activeWorkspaceId.value;
       const ws = _getWs(wsId);
@@ -222,6 +234,10 @@ const app = createApp({
     function saveTeam(name) { socket.emit('team:save', _wsData({ name })); }
     function loadTeam(name) { socket.emit('team:load', _wsData({ name })); }
     function saveProfile(data) { socket.emit('profile:create', _wsData(data)); }
+
+    // Project actions
+    function addProject(path) { socket.emit('project:add', { path }); }
+    function removeProject(wsId) { socket.emit('project:remove', { workspaceId: wsId }); }
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
 
@@ -290,7 +306,8 @@ const app = createApp({
     }
 
     return {
-      state, workspaces, activeWorkspaceId, switchWorkspace,
+      state, workspaces, activeWorkspaceId, switchWorkspace, projects,
+      addProject, removeProject,
       connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, toggleTheme, createTask, updateTask, deleteTask, clearTaskOutput,
@@ -314,8 +331,14 @@ const app = createApp({
           :layout="state.layout"
           :config="state.config"
           :visible="leftPaneVisible"
+          :projects="projects"
+          :active-workspace-id="activeWorkspaceId"
+          :workspaces="workspaces"
           @new-task="showCreateModal = true"
           @select-task="selectTask"
+          @switch-workspace="switchWorkspace"
+          @add-project="addProject"
+          @remove-project="removeProject"
         />
         <div class="main-pane">
           <div class="tab-bar">
