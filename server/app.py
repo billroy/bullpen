@@ -18,12 +18,12 @@ from server.workspace_manager import WorkspaceManager
 socketio = SocketIO()
 
 
-def create_app(workspace, no_browser=False):
+def create_app(workspace, no_browser=False, global_dir=None):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
 
     # Initialize workspace manager and register startup project
-    manager = WorkspaceManager()
+    manager = WorkspaceManager(global_dir=global_dir)
     startup_id = manager.register_project(workspace)
     bp_dir = manager.get_bp_dir(startup_id)
 

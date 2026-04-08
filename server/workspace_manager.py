@@ -30,21 +30,24 @@ class WorkspaceState:
 class WorkspaceManager:
     """Manages multiple concurrent workspace states."""
 
-    def __init__(self):
+    def __init__(self, global_dir=None):
         self._workspaces = {}  # id -> WorkspaceState
         self._lock = threading.Lock()
+        self._global_dir = global_dir or GLOBAL_DIR
+        self._registry_path = os.path.join(self._global_dir, "projects.json")
         self._ensure_global_dir()
         self._registry = self._load_registry()
+        self._prune_stale()
 
     # --- Registry I/O ---
 
     def _ensure_global_dir(self):
-        os.makedirs(GLOBAL_DIR, exist_ok=True)
+        os.makedirs(self._global_dir, exist_ok=True)
 
     def _load_registry(self):
-        if os.path.exists(REGISTRY_PATH):
+        if os.path.exists(self._registry_path):
             try:
-                with open(REGISTRY_PATH, "r") as f:
+                with open(self._registry_path, "r") as f:
                     return json.load(f)
             except (json.JSONDecodeError, OSError):
                 return []
@@ -52,8 +55,15 @@ class WorkspaceManager:
 
     def _save_registry(self):
         self._ensure_global_dir()
-        with open(REGISTRY_PATH, "w") as f:
+        with open(self._registry_path, "w") as f:
             json.dump(self._registry, f, indent=2)
+
+    def _prune_stale(self):
+        """Remove registry entries whose paths no longer exist on disk."""
+        before = len(self._registry)
+        self._registry = [e for e in self._registry if os.path.isdir(e.get("path", ""))]
+        if len(self._registry) < before:
+            self._save_registry()
 
     # --- Project management ---
 
