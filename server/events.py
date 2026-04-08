@@ -594,7 +594,6 @@ def register_events(socketio, app):
                 break
         try:
             max_attempts = _CLAUDE_MCP_STARTUP_RETRIES if adapter.name == "claude" else 1
-            pending_message = "Bullpen MCP unavailable at startup (status: pending). Please retry."
 
             for attempt in range(max_attempts):
                 collected = []
@@ -624,7 +623,7 @@ def register_events(socketio, app):
                 last_emit = [time.time()]
 
                 def _drain_stdout():
-                    nonlocal pending_startup, startup_error, saw_ready, pending_message
+                    nonlocal pending_startup, startup_error, saw_ready
                     for line in proc.stdout:
                         if adapter.name == "claude":
                             startup = _claude_mcp_startup_state(line)
@@ -634,8 +633,6 @@ def register_events(socketio, app):
                                     saw_ready = True
                                 elif state == "pending":
                                     pending_startup = True
-                                    if msg:
-                                        pending_message = msg
                                     # Pending can be transient while Claude finishes MCP setup.
                                     continue
                                 else:
@@ -681,11 +678,12 @@ def register_events(socketio, app):
                     return
 
                 if pending_startup and not saw_ready:
-                    if attempt + 1 < max_attempts:
-                        time.sleep(_CLAUDE_MCP_STARTUP_RETRY_BASE_DELAY * (attempt + 1))
-                        continue
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": pending_message})
-                    return
+                    # Claude can remain "pending" for MCP in init while still producing
+                    # useful output. Do not convert that transient state into a hard error.
+                    logging.info(
+                        "chat agent [%s] mcp still pending at init; not forcing chat:error",
+                        session_id,
+                    )
 
                 # Flush remaining batch
                 with batch_lock:
