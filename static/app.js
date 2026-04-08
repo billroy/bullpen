@@ -459,6 +459,7 @@ const app = createApp({
               @select-task="selectTask"
               @move-task="moveTask"
               @archive-done="archiveDone"
+              @new-task="showCreateModal = true"
             />
             <BullpenTab
               v-if="activeTab === 'workers'"
