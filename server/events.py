@@ -76,6 +76,12 @@ def register_events(socketio, app):
         )
         _emit("task:created", task, ws_id)
 
+        # Check if any on_queue workers are watching the new task's column
+        if task.get("status"):
+            worker_mod.check_watch_columns(
+                bp_dir, task["status"], socketio, ws_id,
+            )
+
     @socketio.on("task:update")
     @with_lock
     def on_task_update(data):
@@ -83,6 +89,12 @@ def register_events(socketio, app):
         task_id, fields = validate_task_update(data)
         task = task_mod.update_task(bp_dir, task_id, fields)
         _emit("task:updated", task, ws_id)
+
+        # If status changed, check if any on_queue workers are watching that column
+        if "status" in fields:
+            worker_mod.check_watch_columns(
+                bp_dir, fields["status"], socketio, ws_id,
+            )
 
     @socketio.on("task:delete")
     @with_lock

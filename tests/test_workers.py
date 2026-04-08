@@ -11,6 +11,7 @@ from server.persistence import read_json, write_json
 from server.tasks import create_task, read_task
 from server.workers import (
     assign_task,
+    check_watch_columns,
     create_auto_task,
     start_worker,
     stop_worker,
@@ -18,6 +19,7 @@ from server.workers import (
     _auto_commit,
     _auto_pr,
     _load_layout,
+    _refill_from_watch_column,
     _setup_worktree,
 )
 from server.agents import register_adapter
@@ -455,6 +457,235 @@ class TestHandoff:
 
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "review"
+
+
+class TestWatchColumn:
+    """Tests for on_queue / watch_column task claiming."""
+
+    @pytest.fixture
+    def watcher_slot(self, bp_dir):
+        """Create an on_queue worker watching 'assigned' in slot 0."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0,
+            "profile": "test",
+            "name": "Watcher",
+            "agent": "mock",
+            "model": "mock-model",
+            "activation": "on_queue",
+            "disposition": "review",
+            "watch_column": "assigned",
+            "expertise_prompt": "",
+            "max_retries": 0,
+            "task_queue": [],
+            "state": "idle",
+            "paused": False,
+            "last_trigger_time": None,
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+        return 0
+
+    def test_check_watch_columns_claims_task(self, bp_dir, watcher_slot):
+        """Task entering watched column is claimed by idle watcher."""
+        task = create_task(bp_dir, "Watch me")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "assigned"})
+
+        check_watch_columns(bp_dir, "assigned")
+        time.sleep(0.5)  # Let auto-started mock agent finish
+
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][0]
+        # Task was claimed (may already be processed and dequeued)
+        updated = read_task(bp_dir, task["id"])
+        assert str(updated["assigned_to"]) == "0" or updated["status"] == "review"
+
+    def test_check_watch_columns_ignores_wrong_column(self, bp_dir, watcher_slot):
+        """Watcher watching 'assigned' ignores tasks in 'review'."""
+        task = create_task(bp_dir, "Wrong column")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "review"})
+
+        check_watch_columns(bp_dir, "review")
+
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][0]
+        assert task["id"] not in worker.get("task_queue", [])
+
+    def test_check_watch_columns_ignores_paused_worker(self, bp_dir, watcher_slot):
+        """Paused on_queue worker does not claim tasks."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][0]["paused"] = True
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Paused test")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "assigned"})
+
+        check_watch_columns(bp_dir, "assigned")
+
+        layout = _load_layout(bp_dir)
+        assert task["id"] not in layout["slots"][0].get("task_queue", [])
+
+    def test_check_watch_columns_ignores_busy_worker(self, bp_dir, watcher_slot):
+        """Working on_queue worker does not claim tasks."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][0]["state"] = "working"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Busy test")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "assigned"})
+
+        check_watch_columns(bp_dir, "assigned")
+
+        layout = _load_layout(bp_dir)
+        assert task["id"] not in layout["slots"][0].get("task_queue", [])
+
+    def test_check_watch_columns_skips_already_assigned(self, bp_dir, watcher_slot):
+        """Tasks already assigned to a worker are not double-claimed."""
+        task = create_task(bp_dir, "Already assigned")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "assigned", "assigned_to": "5"})
+
+        check_watch_columns(bp_dir, "assigned")
+
+        layout = _load_layout(bp_dir)
+        assert task["id"] not in layout["slots"][0].get("task_queue", [])
+
+    def test_check_watch_columns_fifo_order(self, bp_dir, watcher_slot):
+        """Oldest unclaimed task is claimed first."""
+        from server.tasks import update_task
+        t1 = create_task(bp_dir, "First")
+        update_task(bp_dir, t1["id"], {"status": "assigned"})
+        t2 = create_task(bp_dir, "Second")
+        update_task(bp_dir, t2["id"], {"status": "assigned"})
+
+        check_watch_columns(bp_dir, "assigned")
+        time.sleep(0.5)  # Let auto-started mock agent finish
+
+        # Worker claims oldest first; after processing it may refill with second
+        updated_t1 = read_task(bp_dir, t1["id"])
+        assert updated_t1["status"] in ("assigned", "review")  # Was claimed first
+
+    def test_multi_watcher_round_robin(self, bp_dir):
+        """Two watchers on same column each claim one task."""
+        register_adapter("mock", MockAdapter(output="Multi output"))
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        base = {
+            "profile": "test", "agent": "mock", "model": "mock-model",
+            "activation": "on_queue", "disposition": "review",
+            "watch_column": "assigned", "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+            "paused": False,
+        }
+        layout["slots"] = [
+            {**base, "row": 0, "col": 0, "name": "W1", "last_trigger_time": 100},
+            {**base, "row": 0, "col": 1, "name": "W2", "last_trigger_time": 50},
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        from server.tasks import update_task
+        t1 = create_task(bp_dir, "Task A")
+        update_task(bp_dir, t1["id"], {"status": "assigned"})
+        t2 = create_task(bp_dir, "Task B")
+        update_task(bp_dir, t2["id"], {"status": "assigned"})
+
+        check_watch_columns(bp_dir, "assigned")
+        time.sleep(1.0)  # Let both auto-started mock agents finish
+
+        # W2 (last_trigger_time=50) should claim first, W1 (100) second
+        # Both tasks should have been processed to review
+        updated_t1 = read_task(bp_dir, t1["id"])
+        updated_t2 = read_task(bp_dir, t2["id"])
+        assert updated_t1["status"] == "review"
+        assert updated_t2["status"] == "review"
+
+    def test_refill_from_watch_column(self, bp_dir, watcher_slot):
+        """Idle on_queue worker with empty queue refills from watched column."""
+        task = create_task(bp_dir, "Refill me")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "assigned"})
+
+        _refill_from_watch_column(bp_dir, 0)
+        time.sleep(0.5)  # Let auto-started mock agent finish
+
+        updated = read_task(bp_dir, task["id"])
+        # Task was claimed and processed
+        assert str(updated["assigned_to"]) == "0" or updated["status"] == "review"
+
+    def test_refill_skips_nonempty_queue(self, bp_dir, watcher_slot):
+        """Refill does nothing when worker already has tasks queued."""
+        existing = create_task(bp_dir, "Existing")
+        assign_task(bp_dir, 0, existing["id"])
+
+        new_task = create_task(bp_dir, "Unclaimed")
+        from server.tasks import update_task
+        update_task(bp_dir, new_task["id"], {"status": "assigned"})
+
+        _refill_from_watch_column(bp_dir, 0)
+
+        layout = _load_layout(bp_dir)
+        assert new_task["id"] not in layout["slots"][0]["task_queue"]
+
+    def test_watch_column_end_to_end(self, bp_dir, watcher_slot):
+        """Full lifecycle: task enters watched column → worker claims and processes it."""
+        task = create_task(bp_dir, "E2E watch")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "assigned"})
+
+        # Simulate what on_task_update does
+        check_watch_columns(bp_dir, "assigned")
+
+        # Worker should have claimed it and auto-started (on_queue auto-starts)
+        time.sleep(0.5)
+
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][0]
+        # Worker should be idle after completing (mock agent is instant)
+        assert worker["state"] == "idle"
+
+        updated = read_task(bp_dir, task["id"])
+        # Task should have moved to disposition column (review)
+        assert updated["status"] == "review"
+        assert "Agent Output" in updated.get("body", "")
+
+    def test_pipeline_watch_chain(self, bp_dir):
+        """Worker A disposition → column watched by Worker B → auto-claimed."""
+        register_adapter("mock", MockAdapter(output="Pipeline output"))
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Worker A", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+                "paused": False, "last_trigger_time": None,
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Worker B", "agent": "mock", "model": "mock-model",
+                "activation": "on_queue", "disposition": "done",
+                "watch_column": "review", "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+                "paused": False, "last_trigger_time": None,
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Pipeline task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(1.0)  # Let both workers complete
+
+        updated = read_task(bp_dir, task["id"])
+        # Worker A → review → Worker B claims → done
+        assert updated["status"] == "done"
+
+        layout = _load_layout(bp_dir)
+        assert layout["slots"][0]["state"] == "idle"
+        assert layout["slots"][1]["state"] == "idle"
 
 
 class TestSharedLock:

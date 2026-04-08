@@ -39,6 +39,90 @@ def _save_layout(bp_dir, layout):
     write_json(os.path.join(bp_dir, "layout.json"), layout)
 
 
+def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_task_id=None):
+    """Check if any on_queue workers are watching the given column and claim tasks.
+
+    Called after any task status change. Scans for idle on_queue workers whose
+    watch_column matches task_status, then assigns the oldest unclaimed task
+    in that column to the least-recently-active matching worker.
+
+    Args:
+        bp_dir: Path to .bullpen directory.
+        task_status: The column/status that just received a task.
+        socketio: Socket.IO instance for emitting updates.
+        ws_id: Workspace ID for scoped emits.
+        exclude_task_id: Task ID to skip (e.g. when the task was just explicitly
+            assigned via another path and shouldn't be double-claimed).
+    """
+    layout = _load_layout(bp_dir)
+    slots = layout.get("slots", [])
+
+    # Find eligible watchers: on_queue, watching this column, idle, not paused
+    watchers = []
+    for i, slot in enumerate(slots):
+        if (slot
+                and slot.get("activation") == "on_queue"
+                and slot.get("watch_column") == task_status
+                and slot.get("state") == "idle"
+                and not slot.get("paused")):
+            watchers.append((i, slot))
+
+    if not watchers:
+        return
+
+    # Sort by least-recently-active (oldest last_trigger_time first, None = never)
+    def _lra_key(item):
+        t = item[1].get("last_trigger_time")
+        return t if t is not None else 0
+    watchers.sort(key=_lra_key)
+
+    # Find unclaimed tasks in the watched column
+    from server.tasks import list_tasks
+    all_tasks = list_tasks(bp_dir)
+    unclaimed = [
+        t for t in all_tasks
+        if t.get("status") == task_status
+        and not t.get("assigned_to")
+        and t["id"] != exclude_task_id
+    ]
+    if not unclaimed:
+        return
+
+    # Sort by creation time (oldest first) for FIFO
+    unclaimed.sort(key=lambda t: t.get("created_at", ""))
+
+    # Assign one task per idle watcher, round-robin
+    for (slot_idx, _watcher), task in zip(watchers, unclaimed):
+        assign_task(bp_dir, slot_idx, task["id"], socketio, ws_id)
+
+
+def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
+    """When an on_queue worker returns to idle with an empty queue, check its
+    watch_column for unclaimed tasks and claim the oldest one."""
+    layout = _load_layout(bp_dir)
+    worker = layout["slots"][slot_index]
+    if not worker:
+        return
+    if (worker.get("activation") != "on_queue"
+            or worker.get("watch_column") is None
+            or worker.get("paused")
+            or worker.get("task_queue")):
+        return
+
+    from server.tasks import list_tasks
+    all_tasks = list_tasks(bp_dir)
+    unclaimed = [
+        t for t in all_tasks
+        if t.get("status") == worker["watch_column"]
+        and not t.get("assigned_to")
+    ]
+    if not unclaimed:
+        return
+
+    unclaimed.sort(key=lambda t: t.get("created_at", ""))
+    assign_task(bp_dir, slot_index, unclaimed[0]["id"], socketio, ws_id)
+
+
 def create_auto_task(bp_dir, slot_index, worker, socketio=None):
     """Create an ephemeral task for a self-directed worker with no queue."""
     worker_name = worker.get("name", "Worker")
@@ -541,10 +625,19 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
             _ws_emit(socketio, "files:changed", {}, ws_id)
 
         has_more = queue and worker.get("activation") in ("on_drop", "on_queue")
+        disposition_status = None if handed_off else disposition
 
-    # Auto-advance outside lock to avoid deadlock with start_worker
+    # Outside lock to avoid deadlock with start_worker / assign_task
     if has_more:
         start_worker(bp_dir, slot_index, socketio, ws_id)
+    else:
+        # Idle refill: if this on_queue worker's queue is empty, look for more
+        _refill_from_watch_column(bp_dir, slot_index, socketio, ws_id)
+
+    # Notify watchers of the disposition column (e.g. worker A finishes → "review",
+    # worker B watches "review" → auto-claims)
+    if disposition_status:
+        check_watch_columns(bp_dir, disposition_status, socketio, ws_id)
 
 
 def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
@@ -666,6 +759,13 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="",
         threading.Thread(target=do_retry, daemon=True).start()
     elif should_advance:
         start_worker(bp_dir, slot_index, socketio, ws_id)
+    else:
+        # Idle refill for on_queue workers with empty queue
+        _refill_from_watch_column(bp_dir, slot_index, socketio, ws_id)
+
+    # Notify watchers of "blocked" column (unlikely but consistent)
+    if not should_retry:
+        check_watch_columns(bp_dir, "blocked", socketio, ws_id)
 
 
 def _append_output(bp_dir, task_id, worker, output):
