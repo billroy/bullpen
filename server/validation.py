@@ -15,8 +15,8 @@ MAX_PAYLOAD_SIZE = 1_000_000  # 1MB
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
 VALID_AGENTS = {"claude", "codex"}
-VALID_ACTIVATIONS = {"on_drop", "watch_column"}
-VALID_DISPOSITIONS = {"review", "done", "next_worker"}
+VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual"}
+VALID_DISPOSITIONS = {"review", "done"}
 
 ID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')
 SLUG_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')

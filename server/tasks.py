@@ -111,6 +111,28 @@ def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _next_order_key(bp_dir):
+    """Generate an order key that sorts after all existing inbox tasks."""
+    tasks_dir = _tasks_dir(bp_dir)
+    if not os.path.isdir(tasks_dir):
+        return generate_order_key()
+
+    # Find the highest order key among existing tasks
+    max_key = ""
+    for fname in os.listdir(tasks_dir):
+        if fname.endswith(".md"):
+            path = os.path.join(tasks_dir, fname)
+            meta, _, _ = read_frontmatter(path)
+            key = meta.get("order", "")
+            if key > max_key:
+                max_key = key
+
+    if not max_key:
+        return generate_order_key()
+
+    return midpoint_key(max_key, "")
+
+
 def create_task(bp_dir, title, description="", task_type="task", priority="normal", tags=None):
     """Create a new task ticket. Returns the task dict."""
     slug = generate_slug(title)
@@ -124,7 +146,7 @@ def create_task(bp_dir, title, description="", task_type="task", priority="norma
         "assigned_to": "",
         "created_at": now,
         "updated_at": now,
-        "order": generate_order_key(),
+        "order": _next_order_key(bp_dir),
         "tags": tags or [],
     }
 
@@ -208,5 +230,6 @@ def list_tasks(bp_dir):
             meta, body, slug = read_frontmatter(path)
             tasks.append({**meta, "id": slug or fname[:-3], "body": body})
 
-    tasks.sort(key=lambda t: t.get("order", ""))
+    priority_weight = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+    tasks.sort(key=lambda t: (priority_weight.get(t.get("priority", "normal"), 2), t.get("order", "")))
     return tasks

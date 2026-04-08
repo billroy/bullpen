@@ -113,11 +113,20 @@ def register_events(socketio, app):
         row = slot_index // cols
         col = slot_index % cols
 
+        # Suggest a unique display name
+        base_name = profile["name"]
+        existing_names = {s["name"] for s in layout["slots"] if s}
+        candidate = base_name
+        suffix = 2
+        while candidate in existing_names:
+            candidate = f"{base_name} {suffix}"
+            suffix += 1
+
         worker = {
             "row": row,
             "col": col,
             "profile": profile_id,
-            "name": profile["name"],
+            "name": candidate,
             "agent": profile.get("default_agent", "claude"),
             "model": profile.get("default_model", "claude-sonnet-4-6"),
             "activation": "on_drop",

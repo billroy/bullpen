@@ -54,6 +54,7 @@ const app = createApp({
       state.tasks = data.tasks;
       state.profiles = data.profiles || [];
       state.teams = data.teams || [];
+      document.title = state.config.name || 'Bullpen';
     });
 
     socket.on('task:created', (task) => { state.tasks.push(task); });
@@ -97,7 +98,6 @@ const app = createApp({
       socket.emit('worker:remove', { slot });
     }
     function moveWorker(from, to) { socket.emit('worker:move', { from, to }); }
-    function configureWorker(slot, fields) { socket.emit('worker:configure', { slot, fields }); }
     function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', { slot, fields }); }
 
     // Execution actions
@@ -136,7 +136,7 @@ const app = createApp({
       showCreateModal, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, createTask, updateTask, deleteTask, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
-      configureWorker, saveWorkerConfig, assignTask, startWorkerSlot,
+      saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
     };
   },

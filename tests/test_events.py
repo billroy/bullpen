@@ -180,13 +180,13 @@ class TestWorkerEvents:
         c.get_received()
 
         c.emit("worker:configure", {"slot": 0, "fields": {
-            "activation": "watch_column",
+            "activation": "on_queue",
             "watch_column": "inbox",
             "max_retries": 3,
         }})
         layout = get_event(c, "layout:updated")
         worker = layout["slots"][0]
-        assert worker["activation"] == "watch_column"
+        assert worker["activation"] == "on_queue"
         assert worker["watch_column"] == "inbox"
         assert worker["max_retries"] == 3
 
