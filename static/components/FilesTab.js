@@ -266,6 +266,7 @@ const FilesTab = {
         this.editing = false;
       }
       this.activeFile = f;
+      this.reloadActiveFile();
     },
     closeFile(path) {
       if (this.editing && this.activeFile?.path === path) {
