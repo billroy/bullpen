@@ -43,8 +43,13 @@ class TestCodexAdapter:
         adapter = CodexAdapter()
         argv = adapter.build_argv("test prompt", "o4-mini", "/workspace")
         assert any("codex" in arg for arg in argv)
+        assert "exec" in argv
         assert "--model" in argv
         assert "o4-mini" in argv
+        assert "--full-auto" in argv
+        assert "-" in argv
+        assert "--approval-mode" not in argv
+        assert "--quiet" not in argv
 
 
 class TestMockAdapter:

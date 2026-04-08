@@ -32,13 +32,14 @@ class CodexAdapter(AgentAdapter):
     def available(self):
         return _find_codex() is not None
 
-    def build_argv(self, prompt, model, workspace):
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
         codex_bin = _find_codex() or "codex"
         argv = [
             codex_bin,
+            "exec",
             "--model", model,
-            "--approval-mode", "full-auto",
-            "--quiet",
+            "--full-auto",
+            "-",  # Read prompt from stdin
         ]
         # Prompt is delivered via stdin
         return argv
