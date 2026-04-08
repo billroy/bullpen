@@ -33,8 +33,9 @@ class Scheduler:
         while not self._stop_event.is_set():
             try:
                 self._tick()
-            except Exception:
-                pass  # Don't let tick errors kill the scheduler
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Scheduler tick error: %s", e)
             self._stop_event.wait(self.interval)
 
     def _tick(self):
@@ -73,7 +74,7 @@ class Scheduler:
 
                 elif activation == "on_interval":
                     interval_min = worker.get("trigger_interval_minutes")
-                    last_trigger = worker.get("last_trigger_time", 0)
+                    last_trigger = worker.get("last_trigger_time") or 0
                     if interval_min and (current_ts - last_trigger) >= interval_min * 60:
                         worker["last_trigger_time"] = current_ts
                         from server.persistence import write_json

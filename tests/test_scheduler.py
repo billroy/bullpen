@@ -132,3 +132,28 @@ class TestSchedulerTick:
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         # last_trigger_time should be updated
         assert layout["slots"][0]["last_trigger_time"] > 0
+
+    def test_interval_fires_with_null_last_trigger(self, bp_dir):
+        """Worker with null last_trigger_time (fresh config) should fire."""
+        _make_worker(
+            bp_dir,
+            activation="on_interval",
+            trigger_interval_minutes=1,
+            last_trigger_time=None,  # null from fresh config
+        )
+
+        task = create_task(bp_dir, "Null trigger task")
+        assign_task(bp_dir, 0, task["id"])
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][0]["state"] = "idle"
+        layout["slots"][0]["activation"] = "on_interval"
+        layout["slots"][0]["last_trigger_time"] = None
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        scheduler = Scheduler(bp_dir, None, interval=60)
+        scheduler._tick()
+        time.sleep(0.5)
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        assert layout["slots"][0]["last_trigger_time"] > 0
