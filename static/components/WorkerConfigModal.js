@@ -47,7 +47,7 @@ const WorkerConfigModal = {
       if (this.form.agent === 'claude') {
         return ['claude-opus-4-6', 'claude-opus-4-5-20250514', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250514', 'claude-haiku-4-6', 'claude-haiku-4-5-20250414'];
       } else if (this.form.agent === 'codex') {
-        return ['o3', 'gpt-4.1', 'codex-1', 'o4-mini', 'o3-mini'];
+        return ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'];
       }
       return ['default'];
     },
