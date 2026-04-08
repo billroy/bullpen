@@ -420,7 +420,7 @@ def main(bp_dir: str, host: str, port: int) -> None:
                 continue
 
             if method == "tools/list":
-                _result(msg_id, {"tools": TOOLS, "nextCursor": None}, mode=io_mode)
+                _result(msg_id, {"tools": TOOLS}, mode=io_mode)
                 continue
 
             if method == "tools/call":
