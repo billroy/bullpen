@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import sys
 import threading
 
@@ -40,6 +41,20 @@ TOOLS = [
     {
         "name": "list_tickets",
         "description": "List all tickets, optionally filtered by status.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter by status (inbox, assigned, in_progress, review, done, blocked). Omit for all.",
+                },
+            },
+        },
+    },
+    {
+        # Compatibility alias.
+        "name": "list_tasks",
+        "description": "Alias for list_tickets.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -104,6 +119,9 @@ class BullpenClient:
     def __init__(self, host, port):
         self.sio = socketio.Client(logger=False, engineio_logger=False)
         self.ws_id = None
+        self.connected = False
+        self.host = host
+        self.port = port
         self._pending = {}  # msg_id -> threading.Event, result
         self._lock = threading.Lock()
 
@@ -123,7 +141,25 @@ class BullpenClient:
         def on_error(data):
             self._resolve_pending_error(data.get("message", "Unknown error"))
 
-        self.sio.connect(f"http://{host}:{port}")
+        self._connect_best_effort()
+
+    def _candidate_urls(self):
+        hosts = [self.host]
+        if self.host == "0.0.0.0":
+            hosts.extend(["127.0.0.1", "localhost"])
+        return [f"http://{h}:{self.port}" for h in hosts]
+
+    def _connect_best_effort(self):
+        if self.connected:
+            return True
+        for url in self._candidate_urls():
+            try:
+                self.sio.connect(url)
+                self.connected = True
+                return True
+            except Exception:
+                continue
+        return False
 
     def _resolve_pending(self, op, data):
         with self._lock:
@@ -149,6 +185,8 @@ class BullpenClient:
         return entry, event
 
     def create_ticket(self, args):
+        if not self._connect_best_effort():
+            return None, "Bullpen socket connection unavailable for create_ticket"
         entry, event = self._wait_for("create")
         self.sio.emit("task:create", {
             "workspaceId": self.ws_id,
@@ -164,6 +202,8 @@ class BullpenClient:
         return entry["result"], None
 
     def update_ticket(self, args):
+        if not self._connect_best_effort():
+            return None, "Bullpen socket connection unavailable for update_ticket"
         entry, event = self._wait_for("update")
         payload = {k: v for k, v in args.items()}
         payload["workspaceId"] = self.ws_id
@@ -175,7 +215,8 @@ class BullpenClient:
 
     def disconnect(self):
         try:
-            self.sio.disconnect()
+            if self.connected:
+                self.sio.disconnect()
         except Exception:
             pass
 
@@ -192,7 +233,7 @@ def handle_call(bp_dir, client, msg_id, name, args):
             return _tool_result(msg_id, f"Error: {err}", is_error=True)
         _tool_result(msg_id, json.dumps({"id": task["id"], "title": task["title"], "status": task["status"]}))
 
-    elif name == "list_tickets":
+    elif name in ("list_tickets", "list_tasks"):
         # Read-only: direct file access is fine
         tasks = task_mod.list_tasks(bp_dir)
         status_filter = args.get("status")
@@ -219,6 +260,12 @@ def handle_call(bp_dir, client, msg_id, name, args):
 
 def main(bp_dir, host, port):
     client = BullpenClient(host, port)
+    if not client.connected:
+        logging.warning(
+            "Bullpen MCP write channel unavailable at startup (%s:%s); read-only tools still active",
+            host,
+            port,
+        )
 
     try:
         while True:

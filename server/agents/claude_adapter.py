@@ -62,6 +62,9 @@ class ClaudeAdapter(AgentAdapter):
         from server.persistence import read_json
         bp_config = read_json(os.path.join(bp_dir, "config.json"))
         host = bp_config.get("server_host", "127.0.0.1")
+        if host == "0.0.0.0":
+            # MCP helper is a local client and should connect via loopback.
+            host = "127.0.0.1"
         port = str(bp_config.get("server_port", 5000))
         config = {
             "mcpServers": {

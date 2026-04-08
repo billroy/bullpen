@@ -1,6 +1,7 @@
 """Tests for agent adapters."""
 
 import json
+import os
 
 import pytest
 
@@ -23,6 +24,24 @@ class TestClaudeAdapter:
         assert "sonnet" in argv
         assert "--output-format" in argv
         assert "stream-json" in argv
+
+    def test_mcp_config_uses_loopback_for_wildcard_host(self, tmp_workspace):
+        adapter = ClaudeAdapter()
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+        with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"server_host": "0.0.0.0", "server_port": 5050}, f)
+
+        cfg_path = adapter._mcp_config(bp_dir)
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            args = cfg["mcpServers"]["bullpen"]["args"]
+            host = args[args.index("--host") + 1]
+            assert host == "127.0.0.1"
+        finally:
+            if os.path.exists(cfg_path):
+                os.unlink(cfg_path)
 
     def test_parse_success(self):
         adapter = ClaudeAdapter()
@@ -103,6 +122,25 @@ class TestCodexAdapter:
         assert result["success"] is True
         assert result["output"] == "assistant reply from stderr"
         assert result["error"] is None
+
+    def test_build_argv_with_bp_dir_includes_mcp_overrides(self, tmp_workspace):
+        adapter = CodexAdapter()
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+        with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"server_host": "0.0.0.0", "server_port": 5050}, f)
+
+        argv = adapter.build_argv("test prompt", "gpt-5.3-codex", "/workspace", bp_dir=bp_dir)
+        joined = " ".join(argv)
+        assert "mcp_servers.bullpen.command=" in joined
+        assert "mcp_servers.bullpen.args=" in joined
+        assert "mcp_servers.bullpen.env.PYTHONPATH=" in joined
+        assert "--host" in joined
+        assert "127.0.0.1" in joined
+
+    def test_format_stream_line_passthrough(self):
+        adapter = CodexAdapter()
+        assert adapter.format_stream_line("hello\n") == "hello"
 
 
 class TestMockAdapter:
