@@ -1,5 +1,4 @@
 const LeftPane = {
-  components: { DirectoryPicker },
   props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces'],
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'remove-project'],
   template: `
@@ -59,7 +58,6 @@ const LeftPane = {
           </div>
         </div>
       </div>
-      <DirectoryPicker :visible="showDirPicker" @select="onDirSelect" @close="showDirPicker = false" />
     </div>
   `,
   computed: {
@@ -96,7 +94,7 @@ const LeftPane = {
     }
   },
   data() {
-    return { rosterDragSlot: null, selectedColumn: 'inbox', showDirPicker: false };
+    return { rosterDragSlot: null, selectedColumn: 'inbox' };
   },
   methods: {
     onDragStart(e, taskId) {
@@ -111,9 +109,7 @@ const LeftPane = {
       return this.workspaces[wsId].unseenActivity || 0;
     },
     promptAddProject() {
-      this.showDirPicker = true;
-    },
-    onDirSelect(path) {
+      const path = prompt('Enter absolute path to project directory:');
       if (path && path.trim()) {
         this.$emit('add-project', path.trim());
       }
