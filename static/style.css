@@ -1142,6 +1142,77 @@ body {
   gap: 8px;
 }
 
+/* === Directory Picker === */
+.dir-picker-path {
+  display: flex;
+  gap: 6px;
+}
+
+.dir-picker-path .input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.dir-picker-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+
+.dir-picker-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dir-picker-item:last-child {
+  border-bottom: none;
+}
+
+.dir-picker-item:hover {
+  background: var(--bg-hover);
+}
+
+.dir-picker-parent {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.dir-picker-loading,
+.dir-picker-error,
+.dir-picker-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dir-picker-error {
+  color: var(--danger);
+}
+
+.dir-picker-current {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+
+.dir-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
 /* === Forms === */
 .form-label {
   display: flex;

@@ -49,6 +49,29 @@ def create_app(workspace, no_browser=False, global_dir=None):
     def index():
         return app.send_static_file("index.html")
 
+    @app.route("/api/browse")
+    def browse_dirs():
+        """List directories at a given path for the directory picker."""
+        path = request.args.get("path", os.path.expanduser("~"))
+        path = os.path.expanduser(path)
+        path = os.path.abspath(path)
+
+        if not os.path.isdir(path):
+            return jsonify({"error": "Not a directory"}), 400
+
+        dirs = []
+        try:
+            for name in sorted(os.listdir(path)):
+                if name.startswith("."):
+                    continue
+                full = os.path.join(path, name)
+                if os.path.isdir(full):
+                    dirs.append(name)
+        except PermissionError:
+            return jsonify({"error": "Permission denied"}), 403
+
+        return jsonify({"path": path, "dirs": dirs})
+
     @app.route("/api/files")
     def file_tree():
         """Return workspace file tree."""
