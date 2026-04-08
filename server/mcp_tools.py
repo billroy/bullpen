@@ -20,6 +20,8 @@ from server import tasks as task_store
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
 VALID_PRIORITIES = ("low", "normal", "high", "urgent")
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 1.0
+DEFAULT_OPERATION_TIMEOUT_SECONDS = 10.0
 
 TOOLS = [
     {
@@ -182,6 +184,8 @@ class BullpenClient:
         self.sio = socketio.Client(logger=False, engineio_logger=False)
         self.connected = False
         self.workspace_id: str | None = None
+        self.connect_timeout_seconds = DEFAULT_CONNECT_TIMEOUT_SECONDS
+        self.operation_timeout_seconds = DEFAULT_OPERATION_TIMEOUT_SECONDS
         self._lock = threading.Lock()
         self._pending: dict[str, _Pending] = {}
 
@@ -212,8 +216,6 @@ class BullpenClient:
                 message = str(data.get("message", message))
             self._resolve_any_error(message)
 
-        self._connect_best_effort()
-
     def _candidate_urls(self) -> list[str]:
         hosts = [self.host]
         if self.host == "0.0.0.0":
@@ -225,7 +227,11 @@ class BullpenClient:
             return True
         for url in self._candidate_urls():
             try:
-                self.sio.connect(url)
+                try:
+                    self.sio.connect(url, wait_timeout=self.connect_timeout_seconds)
+                except TypeError:
+                    # Compatibility for older socketio client signatures.
+                    self.sio.connect(url)
                 self.connected = True
                 return True
             except Exception:
@@ -269,9 +275,14 @@ class BullpenClient:
             "tags": args.get("tags", []),
         }
         self.sio.emit("task:create", payload)
-        pending.event.wait(timeout=10)
+        if not pending.event.wait(timeout=self.operation_timeout_seconds):
+            with self._lock:
+                self._pending.pop("create", None)
+            return None, "Timed out waiting for task:create response"
         if pending.error:
             return None, pending.error
+        if pending.result is None:
+            return None, "Missing task:create response payload"
         return pending.result, None
 
     def update_ticket(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
@@ -282,9 +293,14 @@ class BullpenClient:
         payload = dict(args)
         payload["workspaceId"] = self.workspace_id
         self.sio.emit("task:update", payload)
-        pending.event.wait(timeout=10)
+        if not pending.event.wait(timeout=self.operation_timeout_seconds):
+            with self._lock:
+                self._pending.pop("update", None)
+            return None, "Timed out waiting for task:update response"
         if pending.error:
             return None, pending.error
+        if pending.result is None:
+            return None, "Missing task:update response payload"
         return pending.result, None
 
     def disconnect(self) -> None:

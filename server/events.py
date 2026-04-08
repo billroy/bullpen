@@ -636,11 +636,8 @@ def register_events(socketio, app):
                                     pending_startup = True
                                     if msg:
                                         pending_message = msg
-                                    try:
-                                        proc.terminate()
-                                    except OSError:
-                                        pass
-                                    return
+                                    # Pending can be transient while Claude finishes MCP setup.
+                                    continue
                                 else:
                                     startup_error = msg or "Bullpen MCP unavailable at startup."
                                     try:

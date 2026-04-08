@@ -28,6 +28,44 @@ class _DummySio:
         raise AssertionError("emit should not be called when disconnected")
 
 
+class _NoConnectSio:
+    def __init__(self):
+        self.handlers = {}
+
+    def on(self, name):
+        def _register(fn):
+            self.handlers[name] = fn
+            return fn
+        return _register
+
+    def connect(self, *_args, **_kwargs):
+        raise AssertionError("connect must not run during MCP initialize/tools/list")
+
+    def disconnect(self):
+        return None
+
+
+class _NeverAckSio:
+    def __init__(self):
+        self.handlers = {}
+
+    def on(self, name):
+        def _register(fn):
+            self.handlers[name] = fn
+            return fn
+        return _register
+
+    def connect(self, *_args, **_kwargs):
+        return None
+
+    def disconnect(self):
+        return None
+
+    def emit(self, *_args, **_kwargs):
+        # Intentionally never publish task:* ack events.
+        return None
+
+
 class _ConnectedClient:
     def __init__(self, *_args, **_kwargs):
         self.connected = True
@@ -114,6 +152,21 @@ def test_bullpen_client_adds_loopback_candidates_for_wildcard_host(monkeypatch):
     assert "http://localhost:5050" in urls
 
 
+def test_bullpen_client_create_ticket_times_out_when_ack_missing(monkeypatch):
+    monkeypatch.setattr(
+        mcp_tools.socketio,
+        "Client",
+        lambda logger=False, engineio_logger=False: _NeverAckSio(),
+    )
+
+    client = mcp_tools.BullpenClient("127.0.0.1", 5050)
+    client.operation_timeout_seconds = 0.01
+    task, err = client.create_ticket({"title": "x"})
+
+    assert task is None
+    assert err == "Timed out waiting for task:create response"
+
+
 def test_read_parses_mcp_content_length_frame():
     payload = b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
     framed = b"Content-Length: " + str(len(payload)).encode("ascii") + b"\r\n\r\n" + payload
@@ -179,3 +232,28 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
     assert created["id"] in ids
+
+
+def test_main_initialize_and_tools_list_do_not_require_socket_connect(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    req = b"".join([
+        _frame({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        _frame({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+    ])
+
+    in_stream = io.BytesIO(req)
+    out_stream = io.BytesIO()
+    monkeypatch.setattr(
+        mcp_tools.socketio,
+        "Client",
+        lambda logger=False, engineio_logger=False: _NoConnectSio(),
+    )
+    monkeypatch.setattr(mcp_tools.sys, "stdin", io.TextIOWrapper(in_stream, encoding="utf-8"))
+    stdout = io.TextIOWrapper(out_stream, encoding="utf-8")
+    monkeypatch.setattr(mcp_tools.sys, "stdout", stdout)
+
+    mcp_tools.main(bp_dir, "127.0.0.1", 5050)
+    stdout.flush()
+    responses = _parse_framed_messages(out_stream.getvalue())
+
+    assert [r["id"] for r in responses] == [1, 2]
