@@ -533,18 +533,26 @@ def register_events(socketio, app):
     _chat_sessions = {}
     _chat_lock = threading.Lock()
 
-    def _run_chat(session_id, message, argv, adapter, response_collector):
+    def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None):
         """Run chat agent subprocess, emit streaming lines, then emit done."""
         collected = []
+        # Extract temp MCP config path for cleanup (written by adapter.build_argv)
+        mcp_config_path = None
+        for i, arg in enumerate(argv):
+            if arg == "--mcp-config" and i + 1 < len(argv):
+                mcp_config_path = argv[i + 1]
+                break
         try:
-            proc = subprocess.Popen(
-                argv,
+            popen_kwargs = dict(
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
             )
+            if workspace:
+                popen_kwargs["cwd"] = workspace
+            proc = subprocess.Popen(argv, **popen_kwargs)
             prompt = response_collector["prompt"]
             try:
                 proc.stdin.write(prompt)
@@ -577,7 +585,10 @@ def register_events(socketio, app):
 
             def _drain_stderr():
                 try:
-                    proc.stderr.read()
+                    for line in proc.stderr:
+                        line = line.rstrip()
+                        if line:
+                            logging.warning("chat agent stderr [%s]: %s", session_id, line)
                 except Exception:
                     pass
 
@@ -606,6 +617,12 @@ def register_events(socketio, app):
         except Exception as e:
             logging.exception("Chat agent error for session %s", session_id)
             socketio.emit("chat:error", {"sessionId": session_id, "message": str(e)})
+        finally:
+            if mcp_config_path:
+                try:
+                    os.unlink(mcp_config_path)
+                except OSError:
+                    pass
 
     @socketio.on("chat:send")
     def on_chat_send(data):
@@ -654,6 +671,7 @@ def register_events(socketio, app):
         thread = threading.Thread(
             target=_run_chat,
             args=(session_id, message, argv, adapter, response_collector),
+            kwargs={"workspace": workspace},
             daemon=True,
         )
         thread.start()
