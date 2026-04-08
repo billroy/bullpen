@@ -151,8 +151,8 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
 
 
 def build_file_tree(workspace):
-    """Build file tree excluding .bullpen, .git, node_modules, gitignored paths."""
-    excluded = {".bullpen", ".git", "node_modules", "__pycache__", ".pytest_cache", ".venv", "venv"}
+    """Build file tree excluding .git, node_modules, gitignored paths."""
+    excluded = {".git", "node_modules", "__pycache__", ".pytest_cache", ".venv", "venv"}
 
     # Try to get gitignored paths
     gitignored = set()
