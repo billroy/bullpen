@@ -133,6 +133,10 @@ def register_events(socketio, app):
             "use_worktree": False,
             "auto_commit": False,
             "auto_pr": False,
+            "trigger_time": None,
+            "trigger_interval_minutes": None,
+            "trigger_every_day": False,
+            "last_trigger_time": None,
             "task_queue": [],
             "state": "idle",
         }

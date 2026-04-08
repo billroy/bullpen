@@ -15,7 +15,7 @@ MAX_PAYLOAD_SIZE = 1_000_000  # 1MB
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
 VALID_AGENTS = {"claude", "codex"}
-VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual"}
+VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval"}
 VALID_DISPOSITIONS = {"review", "done"}
 
 ID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')
@@ -181,6 +181,17 @@ def validate_worker_configure(data, max_slots=100):
         sanitized["auto_commit"] = bool(fields["auto_commit"])
     if "auto_pr" in fields:
         sanitized["auto_pr"] = bool(fields["auto_pr"])
+    if "trigger_time" in fields:
+        val = str(fields["trigger_time"] or "")
+        if val and not re.match(r'^\d{2}:\d{2}$', val):
+            raise ValidationError("trigger_time must be HH:MM format")
+        sanitized["trigger_time"] = val or None
+    if "trigger_interval_minutes" in fields:
+        sanitized["trigger_interval_minutes"] = _int(
+            fields["trigger_interval_minutes"], "trigger_interval_minutes", min_val=1, max_val=1440
+        )
+    if "trigger_every_day" in fields:
+        sanitized["trigger_every_day"] = bool(fields["trigger_every_day"])
 
     return slot, sanitized
 

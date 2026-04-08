@@ -23,6 +23,9 @@ const WorkerConfigModal = {
             use_worktree: w.use_worktree || false,
             auto_commit: w.auto_commit || false,
             auto_pr: w.auto_pr || false,
+            trigger_time: w.trigger_time || '',
+            trigger_interval_minutes: w.trigger_interval_minutes || 60,
+            trigger_every_day: w.trigger_every_day || false,
           };
         }
       }
@@ -73,6 +76,8 @@ const WorkerConfigModal = {
                 <option value="on_drop">On Drop</option>
                 <option value="on_queue">On Queue (Watch Column)</option>
                 <option value="manual">Manual</option>
+                <option value="at_time">At Time</option>
+                <option value="on_interval">On Interval</option>
               </select>
             </label>
             <label class="form-label" v-if="form.activation === 'on_queue'">
@@ -81,6 +86,18 @@ const WorkerConfigModal = {
                 <option value="">None</option>
                 <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
               </select>
+            </label>
+            <label class="form-label" v-if="form.activation === 'at_time'">
+              Trigger Time (HH:MM)
+              <input class="form-input" v-model="form.trigger_time" placeholder="09:00" pattern="\\d{2}:\\d{2}">
+            </label>
+            <label class="form-label form-label-inline" v-if="form.activation === 'at_time'">
+              <input type="checkbox" v-model="form.trigger_every_day">
+              Repeat every day
+            </label>
+            <label class="form-label" v-if="form.activation === 'on_interval'">
+              Interval (minutes)
+              <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
             </label>
           </div>
           <div class="form-row">

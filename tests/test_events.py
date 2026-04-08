@@ -190,6 +190,49 @@ class TestWorkerEvents:
         assert worker["watch_column"] == "inbox"
         assert worker["max_retries"] == 3
 
+    def test_configure_at_time_activation(self, client):
+        c, app = client
+        # Add a worker first
+        c.emit("profile:create", {
+            "id": "timer-test", "name": "Timer Test",
+            "default_agent": "claude", "default_model": "sonnet",
+            "color_hint": "blue", "expertise_prompt": "Timer test.",
+        })
+        c.get_received()
+        c.emit("worker:add", {"slot": 0, "profile": "timer-test"})
+        c.get_received()
+
+        c.emit("worker:configure", {"slot": 0, "fields": {
+            "activation": "at_time",
+            "trigger_time": "09:30",
+            "trigger_every_day": True,
+        }})
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+        assert worker["activation"] == "at_time"
+        assert worker["trigger_time"] == "09:30"
+        assert worker["trigger_every_day"] is True
+
+    def test_configure_on_interval_activation(self, client):
+        c, app = client
+        c.emit("profile:create", {
+            "id": "interval-test", "name": "Interval Test",
+            "default_agent": "claude", "default_model": "sonnet",
+            "color_hint": "blue", "expertise_prompt": "Interval test.",
+        })
+        c.get_received()
+        c.emit("worker:add", {"slot": 0, "profile": "interval-test"})
+        c.get_received()
+
+        c.emit("worker:configure", {"slot": 0, "fields": {
+            "activation": "on_interval",
+            "trigger_interval_minutes": 30,
+        }})
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+        assert worker["activation"] == "on_interval"
+        assert worker["trigger_interval_minutes"] == 30
+
     def test_add_worker_invalid_profile(self, client):
         c, _ = client
         c.emit("worker:add", {"slot": 0, "profile": "nonexistent"})
