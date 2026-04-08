@@ -29,6 +29,8 @@ The `_processes` dict stores `{(ws_id, slot_index): Popen}`. No running output b
 
 Replace `proc.communicate()` with incremental line-by-line reading from stdout. Emit `worker:output` socket events as lines arrive, batched on a short interval to avoid flooding. Stderr is still collected in bulk (it's typically small -- just error messages).
 
+This change is in `_run_agent()`, which is the shared execution path for all agent types. Both Claude (`claude --print`) and Codex (`codex --approval-mode full-auto`) write their output to stdout and receive their prompt on stdin via the same `Popen` call. The adapter layer (`claude_adapter.py`, `codex_adapter.py`) only controls argv construction and output parsing -- neither needs modification for streaming. All agents get live output automatically.
+
 ### Changes Required
 
 **`server/workers.py` -- `_run_agent()`:**
@@ -78,7 +80,7 @@ Replace `proc.communicate()` with incremental line-by-line reading from stdout. 
 
 ### Current State
 
-Clicking a working worker's card body fires `onBodyDblClick` (`WorkerCard.js:99-101`) which emits `select-task`, opening the `TaskDetailPanel` in the right side of the Kanban tab. This panel shows the task description and a static dump of agent output (extracted from the task body's `## Agent Output` section). There is no streaming display and the panel is small.
+Clicking a working worker's card body fires `onBodyDblClick` (`WorkerCard.js:99-101`) which emits `select-task`, opening the `TaskDetailPanel` in the right side of the Tasks tab. This panel shows the task description and a static dump of agent output (extracted from the task body's `## Agent Output` section). There is no streaming display and the panel is small.
 
 ### Desired Behavior
 
@@ -86,7 +88,7 @@ Clicking a **working** worker (single click on the card body, not double-click) 
 
 ### UI Design
 
-**Tab bar**: `Kanban | Bullpen | Files | {WorkerName}` -- the worker's name appears as a fourth tab with a distinct style (e.g., pulsing dot indicator, or different text color) to signal it's a live session. Multiple focus tabs can be open simultaneously if the user clicks different workers.
+**Tab bar**: `Tasks | Workers | Files | {WorkerName}` -- the worker's name appears as a fourth tab with a distinct style (e.g., pulsing dot indicator, or different text color) to signal it's a live session. Multiple focus tabs can be open simultaneously if the user clicks different workers.
 
 **Focus view layout** (top to bottom):
 
@@ -125,7 +127,7 @@ Clicking a **working** worker (single click on the card body, not double-click) 
 
 ### Entry Points
 
-1. **Single-click on a working worker card body** in the Bullpen grid -- opens focus mode for that worker
+1. **Single-click on a working worker card body** in the Workers grid -- opens focus mode for that worker
 2. **Click "Watch" in the worker context menu** (the right-click `...` menu) -- same effect
 3. **Click a working worker's name in the left pane roster** -- opens focus mode
 
@@ -146,7 +148,7 @@ Non-working workers retain their current click behavior (configure modal, task s
 **`static/app.js`:**
 
 - New reactive state: `focusTabs: []` -- array of `{slotIndex, workspaceId, label}` for open focus tabs
-- New state: `activeTabId` -- currently can be `"kanban"`, `"bullpen"`, `"files"`, or `"focus-{slot}"` for focus tabs
+- New state: `activeTabId` -- currently can be `"tasks"`, `"workers"`, `"files"`, or `"focus-{slot}"` for focus tabs
 - Socket handler for `worker:output`: append lines to a per-slot reactive buffer `outputBuffers[slot]`
 - Socket handler for `worker:output:catchup`: replace buffer contents
 - When `layout:updated` arrives and a focused worker's state changes from "working" to "idle", update the focus tab's status but don't close it
@@ -164,7 +166,7 @@ Non-working workers retain their current click behavior (configure modal, task s
 
 **`static/components/TopToolbar.js` or tab bar area:**
 
-- Render focus tabs in the tab bar alongside Kanban/Bullpen/Files
+- Render focus tabs in the tab bar alongside Tasks/Workers/Files
 - Each focus tab shows worker name + activity dot
 - Close button on each focus tab
 
@@ -223,5 +225,5 @@ Phases A+B are the foundation. Phase C is the main UI deliverable. Phase D is a 
 5. Click Stop -- agent should terminate, output should show final lines, status should show "Stopped"
 6. Let an agent complete while watching -- status should change to "Done", output should be complete, tab should stay open
 7. Close the focus tab -- should return to previous tab, agent (if still running) should not be affected
-8. Click a working worker while on the Kanban tab -- should switch to focus view
+8. Click a working worker while on the Tasks tab -- should switch to focus view
 9. Refresh the page while an agent is working -- reopen focus should get catchup buffer
