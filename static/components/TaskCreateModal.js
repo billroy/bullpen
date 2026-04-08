@@ -11,7 +11,7 @@ const TaskCreateModal = {
     };
   },
   template: `
-    <div v-if="visible" class="modal-overlay" @click.self="$emit('close')">
+    <div v-if="visible" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
       <div class="modal" @keydown.meta.enter="submit">
         <div class="modal-header">
           <h2>New Task</h2>

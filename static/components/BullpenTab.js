@@ -32,11 +32,18 @@ const BullpenTab = {
       </div>
 
       <!-- Profile library popup -->
-      <div v-if="showLibrary" class="modal-overlay" @click.self="showLibrary = false">
+      <div
+        v-if="showLibrary"
+        class="modal-overlay"
+        @click.self="closeLibrary"
+        @keydown.escape="closeLibrary"
+        tabindex="0"
+        ref="libraryOverlay"
+      >
         <div class="modal">
           <div class="modal-header">
             <h2>Add Worker</h2>
-            <button class="btn btn-icon" @click="showLibrary = false">&times;</button>
+            <button class="btn btn-icon" @click="closeLibrary">&times;</button>
           </div>
           <div class="modal-body profile-library">
             <div v-for="p in sortedProfiles" :key="p.id"
@@ -93,10 +100,15 @@ const BullpenTab = {
     openLibrary(slotIndex) {
       this.selectedAddSlot = slotIndex;
       this.showLibrary = true;
+      this.$nextTick(() => this.$refs.libraryOverlay?.focus());
+    },
+    closeLibrary() {
+      this.showLibrary = false;
+      this.selectedAddSlot = null;
     },
     addFromLibrary(profileId) {
       this.$emit('add-worker', { slot: this.selectedAddSlot, profile: profileId });
-      this.showLibrary = false;
+      this.closeLibrary();
     },
     onGridResize(e) {
       const [rows, cols] = e.target.value.split('x').map(Number);
