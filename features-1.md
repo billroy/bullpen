@@ -2,6 +2,33 @@
 
 ---
 
+## Implementation Status
+
+All 14 features and 12 issues (A-L) have been implemented across tranches T1-T11.
+
+| Item | Description | Tranche | Commit |
+|------|-------------|---------|--------|
+| 1 | Click working task to show detail | T2 | de5dde3 |
+| 2 | Left pane roster drop targets | T2 | de5dde3 |
+| 3+4 | Agent badge + colored border on roster | T2 | de5dde3 |
+| 5 | Suggest unique worker names | T1 | 4e65888 |
+| 6 | Fix page title default | T1 | 4e65888 |
+| 7 | Light theme with toggle | T4 | bc1b3aa |
+| 8 | Worktree separation | T7 | f11bb2b |
+| 9 | Auto-commit | T8 | 2e0ea14 |
+| 10 | Auto-PR | T9 | 42fc897 |
+| 11 | Time-based activation (scheduler + UI) | T10+T11 | 3185daf, 430ab4a |
+| 12 | Fix manual activation | T1 | 4e65888 |
+| 13 | Replace grid label with workspace path | T3 | 9a01c67 |
+| 14 | File editor (edit/save + find/replace) | T5+T6 | 69ef91a, 3692998 |
+
+**Deferred work:**
+- Worktree auto-cleanup (UI button or GC pass)
+- Configurable timezone for scheduler (currently local time)
+- `pr_base_branch` config field for auto-PR
+
+---
+
 ## Feature Analysis (reviewed 2026-04-08, comments incorporated)
 
 ---
