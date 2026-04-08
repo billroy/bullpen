@@ -1,6 +1,6 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks'],
-  emits: ['configure', 'select-task'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines'],
+  emits: ['configure', 'select-task', 'open-focus'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver }"
          draggable="true"
@@ -16,6 +16,7 @@ const WorkerCard = {
           <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop>
             <button class="worker-menu-item" @click="menuEdit">Edit</button>
             <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun">Run</button>
+            <button v-if="isWorking" class="worker-menu-item" @click="menuWatch">Watch</button>
             <button v-if="isWorking" class="worker-menu-item" @click="menuStop">Stop</button>
             <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause">Pause</button>
             <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause">Unpause</button>
@@ -24,7 +25,7 @@ const WorkerCard = {
           </div>
         </div>
       </div>
-      <div class="worker-card-body" @dblclick.stop="onBodyDblClick">
+      <div class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
         <div class="worker-card-status">
           <span class="status-pill" :class="'status-' + workerState">
             {{ isPaused ? 'PAUSED' : workerState.toUpperCase() }}
@@ -84,6 +85,10 @@ const WorkerCard = {
       return { top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
     },
     lastOutput() {
+      // Prefer live output buffer when working
+      if (this.isWorking && this.outputLines?.length) {
+        return this.outputLines.slice(-3).join('\n');
+      }
       if (!this.worker.task_queue?.length || !this.tasks) return '';
       const task = this.tasks.find(t => t.id === this.worker.task_queue[0]);
       if (!task?.body) return '';
@@ -92,10 +97,15 @@ const WorkerCard = {
       if (idx < 0) return '';
       const output = task.body.substring(idx + marker.length).trim();
       const lines = output.split('\\n');
-      return lines.slice(-20).join('\\n');
+      return lines.slice(-3).join('\\n');
     }
   },
   methods: {
+    onBodyClick() {
+      if (this.isWorking) {
+        this.$emit('open-focus', this.slotIndex);
+      }
+    },
     onBodyDblClick() {
       const taskId = this.queuedTasks.length ? this.queuedTasks[0].id : null;
       if (taskId) this.$emit('select-task', taskId);
@@ -161,6 +171,10 @@ const WorkerCard = {
     menuDuplicate() {
       this.showMenu = false;
       this.$root.duplicateWorker(this.slotIndex);
+    },
+    menuWatch() {
+      this.showMenu = false;
+      this.$emit('open-focus', this.slotIndex);
     },
     menuDelete() {
       this.showMenu = false;

@@ -429,6 +429,20 @@ def register_events(socketio, app):
             return
         worker_mod.stop_worker(bp_dir, slot, socketio, ws_id)
 
+    # --- Output streaming events ---
+
+    @socketio.on("worker:output:request")
+    def on_worker_output_request(data):
+        ws_id, bp_dir = _resolve(data)
+        slot = data.get("slot")
+        entry = worker_mod.get_output_buffer(ws_id, slot)
+        if entry:
+            emit("worker:output:catchup", {
+                "slot": slot,
+                "lines": list(entry["buffer"]),
+                "workspaceId": ws_id,
+            })
+
     # --- Project events ---
 
     @socketio.on("project:add")

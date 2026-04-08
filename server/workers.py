@@ -110,6 +110,7 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
 
     # Update state
     worker["state"] = "working"
+    worker["started_at"] = _now_iso()
     task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
     _save_layout(bp_dir, layout)
 
@@ -155,7 +156,8 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
 def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Stop a working agent. Task goes back to Assigned."""
     with _process_lock:
-        proc = _processes.get((ws_id, slot_index))
+        entry = _processes.get((ws_id, slot_index))
+        proc = entry["proc"] if entry else None
         if proc and proc.poll() is None:
             proc.terminate()
             try:
@@ -316,8 +318,20 @@ def _setup_worktree(workspace, bp_dir, task_id):
     return worktree_dir
 
 
+MAX_OUTPUT_BUFFER = 100_000  # 100KB server-side buffer for live display
+MAX_LINE_LEN = 10_000  # 10KB per line cap
+
+
+def get_output_buffer(ws_id, slot_index):
+    """Return the output buffer entry for a running process, or None."""
+    with _process_lock:
+        return _processes.get((ws_id, slot_index))
+
+
 def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None):
-    """Run agent subprocess and handle completion."""
+    """Run agent subprocess with streaming stdout and handle completion."""
+    timed_out = False
+
     try:
         proc = subprocess.Popen(
             argv,
@@ -328,18 +342,83 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             text=True,
         )
 
+        entry = {"proc": proc, "buffer": [], "task_id": task_id, "buffer_size": 0}
         with _process_lock:
-            _processes[(ws_id, slot_index)] = proc
+            _processes[(ws_id, slot_index)] = entry
 
-        # Write prompt to stdin
+        # Write prompt to stdin, then close so agent can begin
         try:
-            stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
+            proc.stdin.write(prompt)
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass  # Agent may have exited immediately
+
+        # Watchdog timer to kill process on timeout
+        def _watchdog():
+            nonlocal timed_out
+            timed_out = True
+            if proc.poll() is None:
+                proc.kill()
+
+        timer = threading.Timer(timeout, _watchdog)
+        timer.daemon = True
+        timer.start()
+
+        # Stream stdout line by line
+        output_lines = []
+        batch = []
+        last_emit = time.time()
+
+        try:
+            for line in proc.stdout:
+                if len(line) > MAX_LINE_LEN:
+                    line = line[:MAX_LINE_LEN] + "[line truncated]\n"
+                output_lines.append(line)
+                stripped = line.rstrip("\n")
+                batch.append(stripped)
+
+                # Append to server-side buffer (cap at MAX_OUTPUT_BUFFER)
+                with _process_lock:
+                    e = _processes.get((ws_id, slot_index))
+                    if e:
+                        e["buffer"].append(stripped)
+                        e["buffer_size"] += len(stripped) + 1
+                        while e["buffer_size"] > MAX_OUTPUT_BUFFER and e["buffer"]:
+                            removed = e["buffer"].pop(0)
+                            e["buffer_size"] -= len(removed) + 1
+
+                # Batch emit every 200ms
+                now = time.time()
+                if socketio and now - last_emit >= 0.2:
+                    _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": batch}, ws_id)
+                    last_emit = now
+                    batch = []
+        except (ValueError, OSError):
+            pass  # stdout closed
+
+        # Flush remaining batch
+        if socketio and batch:
+            _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": batch}, ws_id)
+
+        # Wait for process to finish and read stderr
+        try:
+            proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+        timer.cancel()
+
+        stderr = ""
+        try:
+            stderr = proc.stderr.read()
+        except (ValueError, OSError):
+            pass
+
+        if timed_out:
             _on_agent_error(bp_dir, slot_index, task_id, "Agent timed out", socketio, ws_id=ws_id)
             return
 
+        stdout = "".join(output_lines)
         exit_code = proc.returncode
         result = adapter.parse_output(stdout, stderr, exit_code)
 

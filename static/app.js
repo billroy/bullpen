@@ -79,6 +79,10 @@ const app = createApp({
     const showCreateModal = ref(false);
     const selectedTaskId = ref(null);
     const configureSlot = ref(null);
+
+    // Worker Focus Mode state
+    const outputBuffers = reactive({});  // keyed by slot index
+    const focusTabs = reactive([]);      // [{slotIndex, workspaceId, label}]
     let toastId = 0;
 
     const selectedTask = computed(() => {
@@ -192,6 +196,21 @@ const app = createApp({
       if (_isActive(wsId)) state.filesVersion = ws.filesVersion;
     });
 
+    // Worker output streaming
+    socket.on('worker:output', (data) => {
+      const slot = data.slot;
+      if (!outputBuffers[slot]) outputBuffers[slot] = [];
+      outputBuffers[slot].push(...data.lines);
+      // Cap at 5000 lines client-side
+      if (outputBuffers[slot].length > 5000) {
+        outputBuffers[slot].splice(0, outputBuffers[slot].length - 5000);
+      }
+    });
+    socket.on('worker:output:catchup', (data) => {
+      const slot = data.slot;
+      outputBuffers[slot] = data.lines || [];
+    });
+
     // Helper to attach workspaceId to outgoing events
     function _wsData(data) {
       return { ...data, workspaceId: activeWorkspaceId.value };
@@ -235,6 +254,45 @@ const app = createApp({
     function assignTask(taskId, slot) { socket.emit('task:assign', _wsData({ task_id: taskId, slot })); }
     function startWorkerSlot(slot) { socket.emit('worker:start', _wsData({ slot })); }
     function stopWorkerSlot(slot) { socket.emit('worker:stop', _wsData({ slot })); }
+
+    // Focus tab management
+    function openFocusTab(slotIndex) {
+      const worker = state.layout?.slots?.[slotIndex];
+      if (!worker) return;
+      const existing = focusTabs.find(t => t.slotIndex === slotIndex);
+      if (!existing) {
+        focusTabs.push({ slotIndex, workspaceId: activeWorkspaceId.value, label: worker.name });
+      }
+      activeTab.value = 'focus-' + slotIndex;
+      // Clear stale buffer and request catchup
+      outputBuffers[slotIndex] = outputBuffers[slotIndex] || [];
+      socket.emit('worker:output:request', _wsData({ slot: slotIndex }));
+    }
+    function closeFocusTab(slotIndex) {
+      const idx = focusTabs.findIndex(t => t.slotIndex === slotIndex);
+      if (idx >= 0) focusTabs.splice(idx, 1);
+      if (activeTab.value === 'focus-' + slotIndex) {
+        activeTab.value = 'workers';
+      }
+      delete outputBuffers[slotIndex];
+    }
+    function focusTask(slotIndex) {
+      const worker = state.layout?.slots?.[slotIndex];
+      if (!worker?.task_queue?.length) return null;
+      return state.tasks.find(t => t.id === worker.task_queue[0]) || null;
+    }
+
+    const allTabs = computed(() => {
+      const tabs = [
+        { id: 'tasks', label: 'Tasks' },
+        { id: 'workers', label: 'Workers' },
+        { id: 'files', label: 'Files' },
+      ];
+      for (const ft of focusTabs) {
+        tabs.push({ id: 'focus-' + ft.slotIndex, label: ft.label, isFocus: true, slotIndex: ft.slotIndex });
+      }
+      return tabs;
+    });
 
     // Config/team actions
     function updateConfig(data) { socket.emit('config:update', _wsData(data)); }
@@ -322,6 +380,7 @@ const app = createApp({
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       gridOptions, onTabBarGridResize, duplicateWorker,
+      outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
     };
   },
   template: `
@@ -351,12 +410,16 @@ const app = createApp({
           <div class="tab-bar">
             <div class="tab-bar-left">
               <button
-                v-for="tab in ['tasks', 'workers', 'files']"
-                :key="tab"
+                v-for="tab in allTabs"
+                :key="tab.id"
                 class="tab-btn"
-                :class="{ active: activeTab === tab }"
-                @click="activeTab = tab"
-              >{{ tab.charAt(0).toUpperCase() + tab.slice(1) }}</button>
+                :class="{ active: activeTab === tab.id, 'focus-tab': tab.isFocus }"
+                @click="activeTab = tab.id"
+              >
+                <span v-if="tab.isFocus" class="focus-dot"></span>
+                {{ tab.label }}
+                <span v-if="tab.isFocus" class="tab-close" @click.stop="closeFocusTab(tab.slotIndex)">&times;</span>
+              </button>
             </div>
             <div v-if="activeTab === 'workers'" class="tab-bar-right">
               <span class="bullpen-path" :title="state.workspace">{{ state.workspace ? state.workspace.split('/').slice(-2).join('/') : '' }}</span>
@@ -385,8 +448,20 @@ const app = createApp({
               @add-worker="addWorker"
               @configure-worker="configureSlot = $event"
               @select-task="selectTask"
+              @open-focus="openFocusTab"
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
+            <WorkerFocusView
+              v-for="ft in focusTabs"
+              v-show="activeTab === 'focus-' + ft.slotIndex"
+              :key="'focus-' + ft.slotIndex"
+              :worker="state.layout?.slots?.[ft.slotIndex]"
+              :slot-index="ft.slotIndex"
+              :task="focusTask(ft.slotIndex)"
+              :output-lines="outputBuffers[ft.slotIndex] || []"
+              @stop="stopWorkerSlot(ft.slotIndex)"
+              @close="closeFocusTab(ft.slotIndex)"
+            />
           </div>
         </div>
         <TaskDetailPanel

@@ -1,6 +1,6 @@
 const BullpenTab = {
   props: ['layout', 'config', 'profiles', 'tasks', 'workspace'],
-  emits: ['add-worker', 'configure-worker', 'select-task'],
+  emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus'],
   components: { WorkerCard },
   data() {
     return {
@@ -17,8 +17,10 @@ const BullpenTab = {
             :worker="getSlot(i - 1)"
             :slot-index="i - 1"
             :tasks="tasks"
+            :output-lines="$root.outputBuffers?.[i - 1] || []"
             @configure="$emit('configure-worker', $event)"
             @select-task="$emit('select-task', $event)"
+            @open-focus="$emit('open-focus', $event)"
           />
           <div v-else class="grid-slot empty-slot"
                @click="openLibrary(i - 1)"

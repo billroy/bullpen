@@ -1434,3 +1434,181 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* === Worker Focus View === */
+.focus-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.focus-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.focus-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.focus-task-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.focus-worker-name {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+.focus-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+}
+.btn-danger:hover {
+  opacity: 0.85;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.85em;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.focus-toggle-desc {
+  padding: 4px 16px;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.focus-toggle-desc:hover {
+  color: var(--text-secondary);
+}
+
+.focus-description {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.focus-terminal {
+  flex: 1;
+  overflow-y: auto;
+  background: #0a0c10;
+  padding: 12px 16px;
+  min-height: 0;
+}
+
+[data-theme="light"] .focus-terminal {
+  background: #1a1d27;
+}
+
+.focus-output {
+  margin: 0;
+  padding: 0;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #c8ccd4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.focus-cursor {
+  animation: blink 1s step-end infinite;
+  color: var(--accent);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.focus-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.focus-status-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.focus-status-lines {
+  color: var(--text-muted);
+}
+
+/* Focus tab indicator */
+.tab-btn.focus-tab {
+  position: relative;
+}
+
+.focus-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-right: 4px;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.tab-close {
+  margin-left: 6px;
+  font-size: 1.1em;
+  line-height: 1;
+  opacity: 0.5;
+  cursor: pointer;
+}
+.tab-close:hover {
+  opacity: 1;
+}
+
+.priority-critical { background: var(--red); color: #fff; }
+.priority-high { background: var(--orange); color: #000; }
+.priority-medium { background: var(--blue); color: #fff; }
+.priority-low { background: var(--gray); color: #fff; }
