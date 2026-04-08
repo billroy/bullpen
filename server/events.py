@@ -651,17 +651,25 @@ def register_events(socketio, app):
                 _chat_sessions[session_id] = []
             history = list(_chat_sessions[session_id])
 
-        parts = []
+        parts = [
+            "You are a Bullpen project assistant. You have MCP tools for managing tickets:",
+            "- list_tickets: List tickets, optionally filtered by status.",
+            "- create_ticket: Create a new ticket.",
+            "- update_ticket: Update an existing ticket's fields.",
+            "",
+            "IMPORTANT: Always use these MCP tools for ticket operations. Do NOT read "
+            ".bullpen/tasks/ files directly — those are internal storage. The MCP tools "
+            "ensure the UI updates in real time.",
+            "",
+        ]
         if history:
-            parts.append("The following is a conversation history. Continue the conversation as the assistant.")
+            parts.append("Conversation history:")
             parts.append("")
             for turn in history:
                 role = "Human" if turn["role"] == "user" else "Assistant"
                 parts.append(f"{role}: {turn['content']}")
             parts.append("")
         parts.append(f"Human: {message}")
-        parts.append("")
-        parts.append("Reply as a helpful AI assistant. Do not prefix your reply with 'Assistant:'.")
         full_prompt = "\n".join(parts)
 
         workspace = os.path.dirname(bp_dir)

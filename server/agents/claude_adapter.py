@@ -57,7 +57,7 @@ class ClaudeAdapter(AgentAdapter):
         server_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mcp_tools.py")
         # Project root is parent of server/ — needed on PYTHONPATH so
         # mcp_tools.py can do `from server import tasks`
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         # Read server host/port from config
         from server.persistence import read_json
         bp_config = read_json(os.path.join(bp_dir, "config.json"))
