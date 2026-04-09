@@ -2,10 +2,21 @@
 
 import os
 import subprocess
+import sys
 
-from flask import Flask, jsonify, request, abort
+from flask import (
+    Flask,
+    abort,
+    jsonify,
+    redirect,
+    render_template_string,
+    request,
+    session,
+    url_for,
+)
 from flask_socketio import SocketIO, join_room
 
+from server import auth
 from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json, write_json, read_frontmatter, ensure_within, atomic_write
@@ -32,6 +43,34 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
         static_folder=os.path.join(os.path.dirname(os.path.dirname(__file__)), "static"),
         static_url_path="",
     )
+
+    # --- Authentication bootstrap ---------------------------------------
+    # Re-read the env file on every create_app so tests (which patch the
+    # global dir per-test) see a fresh state and do not leak credentials
+    # between unrelated test cases.
+    auth.reset_auth_cache()
+    auth.load_credentials(manager.global_dir)
+    app.config["SECRET_KEY"] = auth.load_or_create_secret_key(manager.global_dir)
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        # Left False so non-HTTPS localhost access still works; production
+        # deployments should terminate TLS at a reverse proxy. See docs/login.md.
+        SESSION_COOKIE_SECURE=False,
+    )
+    if auth.auth_enabled():
+        print(
+            f"Bullpen auth: ENABLED (user={auth.get_username()})",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "Bullpen auth: DISABLED (no credentials configured). "
+            "Run `bullpen --set-password` to enable login.",
+            file=sys.stderr,
+        )
+    # --------------------------------------------------------------------
+
     app.config["manager"] = manager
     app.config["startup_workspace_id"] = startup_id
     # Backward-compat: existing handlers still use these directly
@@ -58,11 +97,100 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
     for ws in manager.all_workspaces():
         reconcile(ws.bp_dir)
 
+    # --- Public (unauthenticated) assets allowlist ---------------------
+    # These paths must load without a session so the login page can be
+    # rendered and styled before the user authenticates.
+    PUBLIC_STATIC_FILES = {"login.html", "style.css", "favicon.ico"}
+
+    @app.before_request
+    def _gate_static_assets():
+        """Gate static asset requests (served by Flask's built-in static
+        handler since ``static_url_path=""``) on auth, except for the
+        explicit allowlist above. Non-static routes are gated by the
+        per-view ``@require_auth`` decorator instead."""
+        if not auth.auth_enabled():
+            return None
+        if session.get("authenticated"):
+            return None
+        ep = request.endpoint or ""
+        if ep != "static":
+            return None
+        filename = (request.view_args or {}).get("filename", "")
+        if filename in PUBLIC_STATIC_FILES:
+            return None
+        if auth.is_xhr_request(request):
+            return jsonify({"error": "authentication required"}), 401
+        return redirect(url_for("login"))
+
     @app.route("/")
+    @auth.require_auth
     def index():
         return app.send_static_file("index.html")
 
+    # --- Login / logout -------------------------------------------------
+
+    @app.route("/login", methods=["GET"])
+    def login():
+        # If auth is disabled, or the caller already has a session, send
+        # them straight to the app.
+        if not auth.auth_enabled() or session.get("authenticated"):
+            return redirect(url_for("index"))
+        # Seed a CSRF token into the session so the static page can fetch it.
+        auth.generate_csrf_token()
+        return app.send_static_file("login.html")
+
+    @app.route("/login/csrf", methods=["GET"])
+    def login_csrf():
+        """Return a fresh CSRF token for the login form.
+
+        Kept separate so ``login.html`` can stay static (no server-side
+        templating) and fetch its token over XHR.
+        """
+        if not auth.auth_enabled():
+            return jsonify({"csrf_token": "", "auth_enabled": False})
+        token = auth.generate_csrf_token()
+        return jsonify({"csrf_token": token, "auth_enabled": True})
+
+    @app.route("/login", methods=["POST"])
+    def login_submit():
+        if not auth.auth_enabled():
+            return redirect(url_for("index"))
+
+        submitted_token = request.form.get("csrf_token", "")
+        if not auth.validate_csrf_token(submitted_token):
+            return redirect(url_for("login") + "?error=csrf")
+
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        expected_user = auth.get_username()
+        _, expected_hash = auth.load_credentials(manager.global_dir)
+
+        # Always call check_password so timing is roughly constant regardless
+        # of whether the username matched.
+        password_ok = auth.check_password(password, expected_hash)
+        if not username or username != expected_user or not password_ok:
+            return redirect(url_for("login") + "?error=1")
+
+        session.clear()  # prevent session fixation
+        session["authenticated"] = True
+        session["username"] = expected_user
+        # Re-seed the CSRF token after login.
+        auth.generate_csrf_token()
+
+        next_url = request.form.get("next") or request.args.get("next") or ""
+        if _is_safe_next(next_url):
+            return redirect(next_url)
+        return redirect(url_for("index"))
+
+    @app.route("/logout", methods=["GET", "POST"])
+    def logout():
+        session.clear()
+        if auth.auth_enabled():
+            return redirect(url_for("login"))
+        return redirect(url_for("index"))
+
     @app.route("/api/files")
+    @auth.require_auth
     def file_tree():
         """Return workspace file tree."""
         ws_id = request.args.get("workspaceId", startup_id)
@@ -71,6 +199,7 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
         return jsonify(tree)
 
     @app.route("/api/files/<path:filepath>")
+    @auth.require_auth
     def file_content(filepath):
         """Return file content."""
         ws_id = request.args.get("workspaceId", startup_id)
@@ -99,6 +228,7 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
             abort(500)
 
     @app.route("/api/files/<path:filepath>", methods=["PUT"])
+    @auth.require_auth
     def file_write(filepath):
         """Write file content."""
         ws_id = request.args.get("workspaceId", startup_id)
@@ -127,6 +257,11 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
 
     @socketio.on("connect")
     def on_connect():
+        # Reject unauthenticated Socket.IO upgrades. Flask-SocketIO makes
+        # the HTTP session available here because the cookie is sent with
+        # the WebSocket handshake; returning False refuses the connection.
+        if auth.auth_enabled() and not session.get("authenticated"):
+            return False
         # Join rooms for all active workspaces
         for ws in manager.all_workspaces():
             join_room(ws.id)
@@ -148,6 +283,23 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
         ws.scheduler = scheduler
 
     return app
+
+
+def _is_safe_next(next_url):
+    """Return True if ``next_url`` is a safe in-app redirect target.
+
+    Accepts only paths that start with a single ``/`` and have no URL
+    scheme. Rejects ``//evil.com`` (protocol-relative) and ``https://x``.
+    """
+    if not next_url or not isinstance(next_url, str):
+        return False
+    if not next_url.startswith("/"):
+        return False
+    if next_url.startswith("//"):
+        return False
+    if "://" in next_url:
+        return False
+    return True
 
 
 def build_file_tree(workspace):

@@ -44,6 +44,11 @@ class WorkspaceManager:
     def _ensure_global_dir(self):
         os.makedirs(self._global_dir, exist_ok=True)
 
+    @property
+    def global_dir(self):
+        """Return the global Bullpen directory this manager is using."""
+        return self._global_dir
+
     def _load_registry(self):
         if os.path.exists(self._registry_path):
             try:

@@ -32,11 +32,70 @@ def parse_args(argv=None):
         action="store_true",
         help="Don't open a browser on startup",
     )
+    parser.add_argument(
+        "--set-password",
+        action="store_true",
+        help=(
+            "Interactively set the Bullpen login username and password. "
+            "Writes a hashed credential to the global .env file and exits "
+            "without starting the server."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def set_password_cli():
+    """Prompt for username and password, write hashed credential to the
+    global .env file. Never echoes the password. Never accepts the
+    password via a CLI flag (shell history leakage)."""
+    import getpass
+
+    from server import auth
+    from server.workspace_manager import GLOBAL_DIR
+
+    os.makedirs(GLOBAL_DIR, exist_ok=True)
+    path = auth.env_path(GLOBAL_DIR)
+
+    print(f"Setting Bullpen login credentials in {path}")
+    try:
+        username = input("Username: ").strip()
+    except EOFError:
+        print("Aborted.", file=sys.stderr)
+        return 1
+    if not username:
+        print("Error: username cannot be blank.", file=sys.stderr)
+        return 1
+
+    try:
+        password = getpass.getpass("Password: ")
+        confirm = getpass.getpass("Confirm password: ")
+    except EOFError:
+        print("Aborted.", file=sys.stderr)
+        return 1
+    if not password:
+        print("Error: password cannot be blank.", file=sys.stderr)
+        return 1
+    if password != confirm:
+        print("Error: passwords did not match.", file=sys.stderr)
+        return 1
+
+    # Preserve any existing entries (e.g. BULLPEN_SECRET_KEY) so we don't
+    # invalidate active sessions when rotating the password.
+    existing = auth.parse_env_file(path)
+    existing[auth.USERNAME_KEY] = username
+    existing[auth.PASSWORD_HASH_KEY] = auth.generate_password_hash(password)
+    auth.write_env_file(path, existing)
+    print(f"Credentials written to {path} (mode 600).")
+    print("Restart Bullpen to apply.")
+    return 0
 
 
 def main():
     args = parse_args()
+
+    if args.set_password:
+        sys.exit(set_password_cli())
+
     workspace = os.path.abspath(args.workspace)
 
     if not os.path.isdir(workspace):
