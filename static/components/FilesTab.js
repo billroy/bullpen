@@ -1,3 +1,15 @@
+// Shared fetch wrapper that redirects to /login on a 401. Returning null
+// lets callers bail out early without crashing on res.json().
+async function filesFetch(input, init) {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    window.location = '/login?next=' +
+      encodeURIComponent(window.location.pathname + window.location.search);
+    return null;
+  }
+  return res;
+}
+
 const FileTreeNode = {
   name: 'FileTreeNode',
   props: ['node', 'depth', 'activePath'],
@@ -226,7 +238,8 @@ const FilesTab = {
   methods: {
     async loadTree() {
       try {
-        const res = await fetch('/api/files');
+        const res = await filesFetch('/api/files');
+        if (!res) return;
         this.tree = await res.json();
       } catch (e) {
         console.error('Failed to load file tree', e);
@@ -250,7 +263,8 @@ const FilesTab = {
         return;
       }
       try {
-        const res = await fetch('/api/files/' + encodeURI(node.path));
+        const res = await filesFetch('/api/files/' + encodeURI(node.path));
+        if (!res) return;
         if (!res.ok) throw new Error('Failed to load');
         const data = await res.json();
         const file = { path: node.path, name: node.name, content: data.content };
@@ -286,11 +300,12 @@ const FilesTab = {
     },
     async saveEdit() {
       try {
-        const res = await fetch('/api/files/' + encodeURI(this.activeFile.path), {
+        const res = await filesFetch('/api/files/' + encodeURI(this.activeFile.path), {
           method: 'PUT',
           headers: { 'Content-Type': 'text/plain' },
           body: this.editContent,
         });
+        if (!res) return;
         if (!res.ok) {
           const data = await res.json();
           alert('Save failed: ' + (data.error || 'Unknown error'));
@@ -399,7 +414,8 @@ const FilesTab = {
     async reloadActiveFile() {
       if (!this.activeFile || this.isImage || this.isPdf) return;
       try {
-        const res = await fetch('/api/files/' + encodeURI(this.activeFile.path));
+        const res = await filesFetch('/api/files/' + encodeURI(this.activeFile.path));
+        if (!res) return;
         if (!res.ok) return;
         const data = await res.json();
         this.activeFile.content = data.content;

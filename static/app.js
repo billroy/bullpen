@@ -104,6 +104,22 @@ const app = createApp({
 
     socket.on('connect', () => { connected.value = true; });
     socket.on('disconnect', () => { connected.value = false; });
+    // If the server rejects the upgrade (e.g. unauthenticated session),
+    // Socket.IO emits connect_error. Bounce the user to the login page.
+    socket.on('connect_error', (err) => {
+      connected.value = false;
+      const msg = (err && err.message) || '';
+      // Only redirect on auth-style errors, not generic network blips.
+      if (/auth|forbidden|unauthor/i.test(msg) || err === false) {
+        window.location = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+        return;
+      }
+      // Unknown transport error: try the login page as a last resort if
+      // the server returned the default "unauthorized" rejection.
+      if (msg.toLowerCase().includes('reject')) {
+        window.location = '/login';
+      }
+    });
 
     socket.on('state:init', (data) => {
       const wsId = data.workspaceId;
