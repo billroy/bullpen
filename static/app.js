@@ -495,7 +495,7 @@ const app = createApp({
               @open-focus="openFocusTab"
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
-            <LiveAgentChatTab v-if="activeTab === 'chat'" />
+            <LiveAgentChatTab v-show="activeTab === 'chat'" />
             <WorkerFocusView
               v-for="ft in focusTabs"
               v-show="activeTab === 'focus-' + ft.slotIndex"
