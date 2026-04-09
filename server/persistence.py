@@ -3,6 +3,7 @@
 import json
 import os
 import tempfile
+from pathlib import Path
 
 
 def atomic_write(path, content):
@@ -13,7 +14,7 @@ def atomic_write(path, content):
     try:
         with os.fdopen(fd, "w") as f:
             f.write(content)
-        os.rename(tmp, path)
+        os.replace(tmp, path)
     except BaseException:
         try:
             os.unlink(tmp)
@@ -35,11 +36,11 @@ def write_json(path, data):
 
 def ensure_within(path, root):
     """Ensure resolved path is within root. Raises ValueError on traversal."""
-    real_path = os.path.realpath(path)
-    real_root = os.path.realpath(root)
-    if not real_path.startswith(real_root + os.sep) and real_path != real_root:
+    real_path = Path(os.path.realpath(path))
+    real_root = Path(os.path.realpath(root))
+    if real_path != real_root and not real_path.is_relative_to(real_root):
         raise ValueError(f"Path {path} escapes root {root}")
-    return real_path
+    return str(real_path)
 
 
 def _parse_value(raw):

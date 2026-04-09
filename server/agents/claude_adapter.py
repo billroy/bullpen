@@ -9,11 +9,26 @@ import tempfile
 from server.agents.base import AgentAdapter
 
 # Common install locations for claude CLI
-_CLAUDE_SEARCH_PATHS = [
-    os.path.expanduser("~/.local/bin/claude"),
-    "/usr/local/bin/claude",
-    "/opt/homebrew/bin/claude",
-]
+if sys.platform == "win32":
+    _CLAUDE_SEARCH_PATHS = [
+        os.path.expanduser(r"~\AppData\Local\Programs\claude\claude.cmd"),
+        os.path.expanduser(r"~\AppData\Roaming\npm\claude.cmd"),
+    ]
+else:
+    _CLAUDE_SEARCH_PATHS = [
+        os.path.expanduser("~/.local/bin/claude"),
+        "/usr/local/bin/claude",
+        "/opt/homebrew/bin/claude",
+    ]
+
+
+def _is_executable(path):
+    """Check if a file is executable (extension-based on Windows, X_OK elsewhere)."""
+    if not os.path.isfile(path):
+        return False
+    if sys.platform == "win32":
+        return os.path.splitext(path)[1].lower() in {".exe", ".cmd", ".bat", ".com"}
+    return os.access(path, os.X_OK)
 
 
 def _find_claude():
@@ -22,7 +37,7 @@ def _find_claude():
     if found:
         return found
     for path in _CLAUDE_SEARCH_PATHS:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
+        if _is_executable(path):
             return path
     return None
 

@@ -7,11 +7,26 @@ import sys
 
 from server.agents.base import AgentAdapter
 
-_CODEX_SEARCH_PATHS = [
-    os.path.expanduser("~/.local/bin/codex"),
-    "/usr/local/bin/codex",
-    "/opt/homebrew/bin/codex",
-]
+if sys.platform == "win32":
+    _CODEX_SEARCH_PATHS = [
+        os.path.expanduser(r"~\AppData\Local\Programs\codex\codex.cmd"),
+        os.path.expanduser(r"~\AppData\Roaming\npm\codex.cmd"),
+    ]
+else:
+    _CODEX_SEARCH_PATHS = [
+        os.path.expanduser("~/.local/bin/codex"),
+        "/usr/local/bin/codex",
+        "/opt/homebrew/bin/codex",
+    ]
+
+
+def _is_executable(path):
+    """Check if a file is executable (extension-based on Windows, X_OK elsewhere)."""
+    if not os.path.isfile(path):
+        return False
+    if sys.platform == "win32":
+        return os.path.splitext(path)[1].lower() in {".exe", ".cmd", ".bat", ".com"}
+    return os.access(path, os.X_OK)
 
 
 def _find_codex():
@@ -20,7 +35,7 @@ def _find_codex():
     if found:
         return found
     for path in _CODEX_SEARCH_PATHS:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
+        if _is_executable(path):
             return path
     return None
 

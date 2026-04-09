@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -13,6 +14,17 @@ from server.persistence import read_json, write_json, atomic_write
 from server import tasks as task_mod
 
 MAX_HANDOFF_DEPTH = 10
+
+
+def _terminate_proc(proc):
+    """Terminate a subprocess, killing the full process tree on Windows."""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+            capture_output=True,
+        )
+    else:
+        proc.terminate()
 
 
 # Active subprocesses keyed by (workspace_id, slot_index)
@@ -243,11 +255,11 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         entry = _processes.get((ws_id, slot_index))
         proc = entry["proc"] if entry else None
         if proc and proc.poll() is None:
-            proc.terminate()
+            _terminate_proc(proc)
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                _terminate_proc(proc)
                 proc.wait()
 
     layout = _load_layout(bp_dir)
@@ -443,7 +455,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             nonlocal timed_out
             timed_out = True
             if proc.poll() is None:
-                proc.kill()
+                _terminate_proc(proc)
 
         timer = threading.Timer(timeout, _watchdog)
         timer.daemon = True
@@ -521,7 +533,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         try:
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            _terminate_proc(proc)
             proc.wait()
         timer.cancel()
         stderr_thread.join(timeout=2)

@@ -2,6 +2,8 @@
 
 import json
 import os
+import sys
+import tempfile
 
 import pytest
 
@@ -69,10 +71,11 @@ class TestEnsureWithin:
         with pytest.raises(ValueError):
             ensure_within(path, tmp_workspace)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlinks require admin on Windows")
     def test_rejects_symlink_escape(self, tmp_workspace):
         # Create a symlink pointing outside
         link = os.path.join(tmp_workspace, "escape")
-        os.symlink("/tmp", link)
+        os.symlink(tempfile.gettempdir(), link)
         with pytest.raises(ValueError):
             ensure_within(os.path.join(link, "file"), tmp_workspace)
 

@@ -208,7 +208,7 @@ def archive_task(bp_dir, task_id):
     ensure_within(src, tasks_dir)
     dst = os.path.join(archive_dir, f"{task_id}.md")
     if os.path.exists(src):
-        os.rename(src, dst)
+        os.replace(src, dst)
 
 
 def archive_done_tasks(bp_dir):

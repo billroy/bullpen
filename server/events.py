@@ -15,6 +15,7 @@ from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
 from server.teams import save_team, load_team, list_teams
 from server import workers as worker_mod
+from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
@@ -638,7 +639,7 @@ def register_events(socketio, app):
                                 else:
                                     startup_error = msg or "Bullpen MCP unavailable at startup."
                                     try:
-                                        proc.terminate()
+                                        _terminate_proc(proc)
                                     except OSError:
                                         pass
                                     return
