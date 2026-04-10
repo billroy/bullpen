@@ -566,7 +566,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             _ws_emit(socketio, "worker:output:done", {"slot": slot_index, "lines": final_lines}, ws_id)
 
         if result["success"]:
-            _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace, ws_id)
+            _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace, ws_id, result.get("usage", {}))
         else:
             _on_agent_error(bp_dir, slot_index, task_id, result.get("error", "Unknown error"), socketio, result.get("output", ""), ws_id)
 
@@ -585,13 +585,22 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 break
 
 
-def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None):
+def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None, usage=None):
     """Handle successful agent completion."""
     with _write_lock:
         layout = _load_layout(bp_dir)
         worker = layout["slots"][slot_index]
         if not worker:
             return
+
+        # Accumulate token usage on the task
+        if usage:
+            task = task_mod.read_task(bp_dir, task_id)
+            if task:
+                prev = task.get("tokens", 0) or 0
+                new_tokens = (usage.get("input_tokens", 0) or 0) + (usage.get("output_tokens", 0) or 0)
+                if new_tokens:
+                    task_mod.update_task(bp_dir, task_id, {"tokens": prev + new_tokens})
 
         # Append output to task
         _append_output(bp_dir, task_id, worker, output)

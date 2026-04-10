@@ -1431,12 +1431,22 @@ body {
 
 .detail-id {
   padding: 4px 16px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .detail-id code {
   font-size: 10px;
   color: var(--text-muted);
   font-family: monospace;
+}
+
+.token-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: monospace;
+  opacity: 0.7;
 }
 
 .detail-body {

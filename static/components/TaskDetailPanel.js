@@ -100,6 +100,7 @@ const TaskDetailPanel = {
 
       <div class="detail-id">
         <code>{{ task.id }}</code>
+        <span v-if="task.tokens" class="token-count" title="Total tokens used by agents">{{ formatTokens(task.tokens) }}</span>
       </div>
 
       <div class="detail-body">
@@ -184,6 +185,11 @@ const TaskDetailPanel = {
         this.$emit('delete', this.task.id);
         this.$emit('close');
       }
+    },
+    formatTokens(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M tok';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'k tok';
+      return n + ' tok';
     }
   }
 };
