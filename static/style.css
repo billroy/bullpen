@@ -585,6 +585,33 @@ body {
   width: 100%;
 }
 
+.ticket-list-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.8fr) repeat(3, minmax(140px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ticket-list-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ticket-list-filter-label {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ticket-list-search-input,
+.ticket-list-filter-select {
+  font-size: 12px;
+  min-height: 30px;
+}
+
 .ticket-list-table {
   width: 100%;
   border-collapse: collapse;
@@ -670,6 +697,18 @@ body {
   text-align: center;
   padding: 32px;
   color: var(--text-muted);
+}
+
+@media (max-width: 980px) {
+  .ticket-list-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .ticket-list-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* === Bullpen Grid === */

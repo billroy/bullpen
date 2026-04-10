@@ -32,6 +32,36 @@ const KanbanTab = {
       </div>
     </div>
     <div v-else class="ticket-list">
+      <div class="ticket-list-filters">
+        <label class="ticket-list-filter ticket-list-filter-search">
+          <span class="ticket-list-filter-label">Search</span>
+          <input
+            v-model.trim="searchText"
+            class="form-input ticket-list-search-input"
+            type="search"
+            placeholder="Search title, description, tags, id..."
+            aria-label="Search tickets"
+          >
+        </label>
+        <label class="ticket-list-filter">
+          <span class="ticket-list-filter-label">Priority</span>
+          <select v-model="priorityFilter" class="form-select ticket-list-filter-select" aria-label="Filter by priority">
+            <option v-for="opt in priorityOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+        </label>
+        <label class="ticket-list-filter">
+          <span class="ticket-list-filter-label">Status</span>
+          <select v-model="statusFilter" class="form-select ticket-list-filter-select" aria-label="Filter by status">
+            <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+        </label>
+        <label class="ticket-list-filter">
+          <span class="ticket-list-filter-label">Type</span>
+          <select v-model="typeFilter" class="form-select ticket-list-filter-select" aria-label="Filter by type">
+            <option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+        </label>
+      </div>
       <table class="ticket-list-table">
         <thead>
           <tr>
@@ -90,6 +120,10 @@ const KanbanTab = {
     return {
       sortField: 'status',
       sortDir: 'asc',
+      searchText: '',
+      priorityFilter: 'all',
+      statusFilter: 'all',
+      typeFilter: 'all',
     };
   },
   mounted() {
@@ -99,12 +133,65 @@ const KanbanTab = {
     renderLucideIcons(this.$el);
   },
   computed: {
+    priorityOptions() {
+      return [
+        { value: 'all', label: 'All priorities' },
+        { value: 'urgent', label: 'Urgent' },
+        { value: 'high', label: 'High' },
+        { value: 'normal', label: 'Normal' },
+        { value: 'low', label: 'Low' },
+      ];
+    },
+    statusOptions() {
+      const options = [{ value: 'all', label: 'All statuses' }];
+      (this.columns || []).forEach(col => {
+        options.push({ value: col.key, label: col.label || col.key });
+      });
+      return options;
+    },
+    typeOptions() {
+      const known = ['task', 'bug', 'feature', 'chore'];
+      const seen = new Set(known);
+      (this.tasks || []).forEach(task => {
+        const type = task?.type;
+        if (type) seen.add(type);
+      });
+      return [{ value: 'all', label: 'All types' }].concat(
+        Array.from(seen).sort((a, b) => a.localeCompare(b)).map(value => ({
+          value,
+          label: value.charAt(0).toUpperCase() + value.slice(1),
+        }))
+      );
+    },
+    filteredTasks() {
+      const query = (this.searchText || '').trim().toLowerCase();
+      return (this.tasks || []).filter(task => {
+        if (this.priorityFilter !== 'all' && (task.priority || 'normal') !== this.priorityFilter) return false;
+        if (this.statusFilter !== 'all' && (task.status || '') !== this.statusFilter) return false;
+        if (this.typeFilter !== 'all' && (task.type || 'task') !== this.typeFilter) return false;
+        if (!query) return true;
+        const haystack = [
+          task.id,
+          task.title,
+          task.description,
+          task.status,
+          task.type,
+          task.priority,
+          this.workerName(task),
+          Array.isArray(task.tags) ? task.tags.join(' ') : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+    },
     sortedTasks() {
       const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       const colOrder = {};
       (this.columns || []).forEach((c, i) => { colOrder[c.key] = i; });
       const dir = this.sortDir === 'asc' ? 1 : -1;
-      return (this.tasks || []).slice().sort((a, b) => {
+      return this.filteredTasks.slice().sort((a, b) => {
         let cmp = 0;
         switch (this.sortField) {
           case 'status': {
