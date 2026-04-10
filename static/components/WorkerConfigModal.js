@@ -89,7 +89,7 @@ const WorkerConfigModal = {
           </div>
           <div class="form-row">
             <label class="form-label">
-              Activation
+              Input Trigger
               <select class="form-select" v-model="form.activation">
                 <option value="on_drop">On Drop</option>
                 <option value="on_queue">On Queue (Watch Column)</option>
@@ -124,7 +124,7 @@ const WorkerConfigModal = {
           </div>
           <div class="form-row">
             <label class="form-label">
-              Disposition
+              Output
               <select class="form-select" v-model="form.disposition">
                 <optgroup label="Columns">
                   <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
