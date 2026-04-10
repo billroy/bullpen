@@ -64,9 +64,13 @@ const ColumnManagerModal = {
         if (this.$refs.newLabelInput) this.$refs.newLabelInput.focus();
       });
     },
+    isWorkerColumn(key) {
+      return key === 'assigned' || key === 'in_progress';
+    },
     requestDelete(idx) {
       if (this.localColumns.length <= 1) return;
       const col = this.localColumns[idx];
+      if (this.isWorkerColumn(col.key)) return;
       const count = this.ticketsInColumn[col.key] || 0;
       if (count > 0) {
         const fallback = this.localColumns.find((_, i) => i !== idx);
@@ -162,8 +166,8 @@ const ColumnManagerModal = {
               <button
                 class="btn btn-icon col-delete-btn"
                 @click="requestDelete(idx)"
-                :disabled="localColumns.length <= 1"
-                title="Delete column"
+                :disabled="localColumns.length <= 1 || isWorkerColumn(col.key)"
+                :title="isWorkerColumn(col.key) ? 'Worker-managed column cannot be deleted' : 'Delete column'"
               >&times;</button>
             </div>
 
