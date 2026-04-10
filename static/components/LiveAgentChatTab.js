@@ -1,4 +1,10 @@
 const LiveAgentChatTab = {
+  props: {
+    sessionId: {
+      type: String,
+      default: null,
+    },
+  },
   data() {
     return {
       provider: 'claude',
@@ -6,7 +12,7 @@ const LiveAgentChatTab = {
       input: '',
       messages: [],       // {role: 'user'|'assistant', content: string, streaming?: bool}
       busy: false,
-      sessionId: _generateChatSessionId(),
+      activeSessionId: this.sessionId || _generateChatSessionId(),
       _streamingBuf: '',
     };
   },
@@ -40,7 +46,7 @@ const LiveAgentChatTab = {
       const s = window._bullpenSocket;
       if (!s) return;
       this._onOutput = (data) => {
-        if (data.sessionId !== this.sessionId) return;
+        if (data.sessionId !== this.activeSessionId) return;
         const last = this.messages[this.messages.length - 1];
         if (!last || last.role !== 'assistant' || !last.streaming) {
           this.messages.push({ role: 'assistant', content: '', streaming: true });
@@ -56,14 +62,14 @@ const LiveAgentChatTab = {
         this._scrollToBottom();
       };
       this._onDone = (data) => {
-        if (data.sessionId !== this.sessionId) return;
+        if (data.sessionId !== this.activeSessionId) return;
         const last = this.messages[this.messages.length - 1];
         if (last && last.streaming) last.streaming = false;
         this.busy = false;
         this._scrollToBottom();
       };
       this._onError = (data) => {
-        if (data.sessionId !== this.sessionId) return;
+        if (data.sessionId !== this.activeSessionId) return;
         this.messages.push({ role: 'system', content: 'Error: ' + (data.message || 'Unknown error') });
         this.busy = false;
         this._scrollToBottom();
@@ -89,7 +95,7 @@ const LiveAgentChatTab = {
       const s = window._bullpenSocket;
       if (s) {
         s.emit('chat:send', {
-          sessionId: this.sessionId,
+          sessionId: this.activeSessionId,
           provider: this.provider,
           model: this.model,
           message: text,
@@ -98,14 +104,14 @@ const LiveAgentChatTab = {
     },
     stopChat() {
       const s = window._bullpenSocket;
-      if (s) s.emit('chat:stop', { sessionId: this.sessionId });
+      if (s) s.emit('chat:stop', { sessionId: this.activeSessionId });
     },
     clearChat() {
       this.messages = [];
       this.busy = false;
       const s = window._bullpenSocket;
-      if (s) s.emit('chat:clear', { sessionId: this.sessionId });
-      this.sessionId = _generateChatSessionId();
+      if (s) s.emit('chat:clear', { sessionId: this.activeSessionId });
+      this.activeSessionId = _generateChatSessionId();
       this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
     },
     onKeydown(e) {

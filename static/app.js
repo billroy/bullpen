@@ -89,7 +89,38 @@ const app = createApp({
     // Worker Focus Mode state
     const outputBuffers = reactive({});  // keyed by slot index
     const focusTabs = reactive([]);      // [{slotIndex, workspaceId, label}]
+    const chatTabs = reactive([]);
+    let chatTabCounter = 0;
     let toastId = 0;
+
+    function _newChatSessionId() {
+      return 'chat-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
+    }
+
+    function addLiveAgentTab() {
+      chatTabCounter += 1;
+      const id = 'chat-' + chatTabCounter;
+      chatTabs.push({
+        id,
+        label: chatTabCounter === 1 ? 'Live Agent' : `Live Agent ${chatTabCounter}`,
+        sessionId: _newChatSessionId(),
+      });
+      activeTab.value = id;
+    }
+
+    function closeLiveAgentTab(tabId) {
+      if (chatTabs.length <= 1) return;
+      const idx = chatTabs.findIndex(t => t.id === tabId);
+      if (idx < 0) return;
+      chatTabs.splice(idx, 1);
+      if (activeTab.value === tabId) {
+        const fallback = chatTabs[idx] || chatTabs[idx - 1];
+        activeTab.value = fallback ? fallback.id : 'tasks';
+      }
+    }
+
+    // Seed the default chat tab.
+    addLiveAgentTab();
 
     const selectedTask = computed(() => {
       if (!selectedTaskId.value) return null;
@@ -326,8 +357,10 @@ const app = createApp({
         { id: 'workers', label: workersLabel },
         { id: 'files', label: 'Files' },
         { id: 'commits', label: 'Commits' },
-        { id: 'chat', label: 'Live Agent' },
       ];
+      for (const ct of chatTabs) {
+        tabs.push({ id: ct.id, label: ct.label, isChat: true, canClose: chatTabs.length > 1 });
+      }
       for (const ft of focusTabs) {
         tabs.push({ id: 'focus-' + ft.slotIndex, label: ft.label, isFocus: true, slotIndex: ft.slotIndex });
       }
@@ -431,7 +464,7 @@ const app = createApp({
       stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       gridOptions, onTabBarGridResize, duplicateWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
-      ticketsViewMode,
+      ticketsViewMode, chatTabs, addLiveAgentTab, closeLiveAgentTab,
     };
   },
   template: `
@@ -471,7 +504,9 @@ const app = createApp({
                 <span v-if="tab.isFocus" class="focus-dot"></span>
                 {{ tab.label }}
                 <span v-if="tab.isFocus" class="tab-close" @click.stop="closeFocusTab(tab.slotIndex)">&times;</span>
+                <span v-if="tab.isChat && tab.canClose" class="tab-close" @click.stop="closeLiveAgentTab(tab.id)">&times;</span>
               </button>
+              <button class="tab-btn tab-btn-add" @click="addLiveAgentTab" title="Add Live Agent tab">+</button>
             </div>
             <div v-if="activeTab === 'tasks'" class="tab-bar-right">
               <button class="btn btn-sm" @click="showColumnManager = true" title="Add, remove, or reorder columns">Columns</button>
@@ -513,7 +548,12 @@ const app = createApp({
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
             <CommitsTab v-if="activeTab === 'commits'" />
-            <LiveAgentChatTab v-show="activeTab === 'chat'" />
+            <LiveAgentChatTab
+              v-for="ct in chatTabs"
+              v-show="activeTab === ct.id"
+              :key="ct.id"
+              :session-id="ct.sessionId"
+            />
             <WorkerFocusView
               v-for="ft in focusTabs"
               v-show="activeTab === 'focus-' + ft.slotIndex"

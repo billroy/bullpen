@@ -426,6 +426,18 @@ body {
   border-bottom-color: var(--accent);
 }
 
+.tab-btn-add {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 12px;
+  color: var(--text-muted);
+}
+
+.tab-btn-add:hover {
+  color: var(--accent);
+}
+
 /* === Tab Content === */
 .tab-content {
   flex: 1;
