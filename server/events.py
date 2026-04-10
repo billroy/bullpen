@@ -121,14 +121,16 @@ def register_events(socketio, app):
     def on_task_create(data):
         ws_id, bp_dir = _resolve(data)
         clean = validate_task_create(data)
-        task = task_mod.create_task(
-            bp_dir,
-            title=clean["title"],
-            description=clean["description"],
-            task_type=clean["type"],
-            priority=clean["priority"],
-            tags=clean["tags"],
-        )
+        kwargs = {
+            "title": clean["title"],
+            "description": clean["description"],
+            "task_type": clean["type"],
+            "priority": clean["priority"],
+            "tags": clean["tags"],
+        }
+        if "status" in clean:
+            kwargs["status"] = clean["status"]
+        task = task_mod.create_task(bp_dir, **kwargs)
         _emit("task:created", task, ws_id)
 
         # Check if any on_queue workers are watching the new task's column
@@ -623,6 +625,7 @@ def register_events(socketio, app):
                 pending_startup = False
                 startup_error = None
                 saw_ready = adapter.name != "claude"
+                chat_usage = {}  # token usage from result line
 
                 popen_kwargs = dict(
                     stdin=subprocess.PIPE,
@@ -648,7 +651,7 @@ def register_events(socketio, app):
                 last_emit = [time.time()]
 
                 def _drain_stdout():
-                    nonlocal pending_startup, startup_error, saw_ready
+                    nonlocal pending_startup, startup_error, saw_ready, chat_usage
                     for line in proc.stdout:
                         if adapter.name == "claude":
                             startup = _claude_mcp_startup_state(line)
@@ -667,6 +670,13 @@ def register_events(socketio, app):
                                     except OSError:
                                         pass
                                     return
+                        # Capture token usage from the result line
+                        try:
+                            obj = json.loads(line.strip())
+                            if obj.get("type") == "result":
+                                chat_usage = obj.get("usage", {})
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
                         display = adapter.format_stream_line(line)
                         if display is None:
                             continue
@@ -733,6 +743,9 @@ def register_events(socketio, app):
                             f"\n**[{now}] User:** {message}\n\n"
                             f"**[{now}] Agent ({agent_label}):**\n\n{full_response}\n"
                         )
+                        # Calculate token count for this turn
+                        turn_tokens = (chat_usage.get("input_tokens", 0) or 0) + (chat_usage.get("output_tokens", 0) or 0)
+
                         with _chat_lock:
                             ticket_id = _chat_ticket_ids.get(session_id)
                         if not ticket_id:
@@ -743,17 +756,23 @@ def register_events(socketio, app):
                                 task_type="task",
                                 priority="normal",
                                 tags=["chat"],
+                                status="review",
                             )
-                            body = f"\n## Chat Transcript\n{turn_text}"
-                            task = task_mod.update_task(bp_dir, task["id"], {"body": body})
+                            updates = {"body": f"\n## Chat Transcript\n{turn_text}"}
+                            if turn_tokens:
+                                updates["tokens"] = turn_tokens
+                            task = task_mod.update_task(bp_dir, task["id"], updates)
                             with _chat_lock:
                                 _chat_ticket_ids[session_id] = task["id"]
                             _emit("task:created", task, ws_id)
                         else:
                             task = task_mod.read_task(bp_dir, ticket_id)
                             if task:
-                                body = (task.get("body") or "").rstrip() + "\n" + turn_text
-                                task = task_mod.update_task(bp_dir, ticket_id, {"body": body})
+                                updates = {"body": (task.get("body") or "").rstrip() + "\n" + turn_text}
+                                if turn_tokens:
+                                    prev = task.get("tokens", 0) or 0
+                                    updates["tokens"] = prev + turn_tokens
+                                task = task_mod.update_task(bp_dir, ticket_id, updates)
                                 _emit("task:updated", task, ws_id)
                     except Exception:
                         logging.exception("Failed to log chat to ticket for session %s", session_id)
