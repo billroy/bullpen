@@ -161,9 +161,58 @@ class TestCodexAdapter:
         assert "--host" in joined
         assert "127.0.0.1" in joined
 
-    def test_format_stream_line_passthrough(self):
+    def test_format_stream_line_passthrough_non_json(self):
         adapter = CodexAdapter()
         assert adapter.format_stream_line("hello\n") == "hello"
+
+    def test_format_stream_line_agent_message(self):
+        adapter = CodexAdapter()
+        line = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Done."}})
+        assert adapter.format_stream_line(line) == "Done."
+
+    def test_format_stream_line_command(self):
+        adapter = CodexAdapter()
+        line = json.dumps({"type": "item.started", "item": {"type": "command_execution", "command": "ls -la"}})
+        assert adapter.format_stream_line(line) == "$ ls -la"
+
+    def test_format_stream_line_skips_turn_events(self):
+        adapter = CodexAdapter()
+        line = json.dumps({"type": "turn.completed", "usage": {"input_tokens": 100}})
+        assert adapter.format_stream_line(line) is None
+
+    def test_parse_output_extracts_usage(self):
+        adapter = CodexAdapter()
+        lines = [
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "All done."}}),
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 500, "output_tokens": 120}}),
+        ]
+        result = adapter.parse_output("\n".join(lines), "", 0)
+        assert result["success"] is True
+        assert result["output"] == "All done."
+        assert result["usage"]["input_tokens"] == 500
+        assert result["usage"]["output_tokens"] == 120
+
+    def test_parse_output_accumulates_multi_turn_usage(self):
+        adapter = CodexAdapter()
+        lines = [
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 300, "output_tokens": 50}}),
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Step 2."}}),
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 400, "output_tokens": 80}}),
+        ]
+        result = adapter.parse_output("\n".join(lines), "", 0)
+        assert result["usage"]["input_tokens"] == 700
+        assert result["usage"]["output_tokens"] == 130
+
+    def test_parse_output_error_preserves_usage(self):
+        adapter = CodexAdapter()
+        lines = [
+            json.dumps({"type": "turn.completed", "usage": {"input_tokens": 200, "output_tokens": 30}}),
+            json.dumps({"type": "turn.failed", "error": {"message": "Rate limited"}}),
+        ]
+        result = adapter.parse_output("\n".join(lines), "", 1)
+        assert result["success"] is False
+        assert result["error"] == "Rate limited"
+        assert result["usage"]["input_tokens"] == 200
 
 
 class TestMockAdapter:

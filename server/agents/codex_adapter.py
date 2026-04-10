@@ -75,6 +75,7 @@ class CodexAdapter(AgentAdapter):
             "exec",
             "--model", model,
             "--full-auto",
+            "--json",
         ]
         if bp_dir:
             argv.extend(self._mcp_overrides(bp_dir))
@@ -102,22 +103,105 @@ class CodexAdapter(AgentAdapter):
         ]
 
     def format_stream_line(self, line):
-        """Pass through non-empty lines for Live Agent chat streaming."""
-        line = line.rstrip("\n")
-        return line if line else None
+        """Extract display text from a Codex --json JSONL line."""
+        line = line.strip()
+        if not line:
+            return None
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            return line  # Pass through non-JSON lines as-is
+
+        evt_type = obj.get("type", "")
+
+        if evt_type == "item.completed":
+            item = obj.get("item", {})
+            item_type = item.get("type", "")
+            if item_type == "agent_message":
+                return item.get("text")
+            if item_type == "command_execution":
+                cmd = item.get("command", "")
+                exit_code = item.get("exit_code")
+                parts = [f"$ {cmd}"]
+                output = item.get("output", "")
+                if output:
+                    if len(output) > 2000:
+                        output = output[:2000] + "\n[output truncated]"
+                    parts.append(output)
+                if exit_code and exit_code != 0:
+                    parts.append(f"[exit code {exit_code}]")
+                return "\n".join(parts)
+            if item_type == "file_change":
+                path = item.get("path", "")
+                action = item.get("action", "modified")
+                return f"[{action}] {path}"
+            if item_type == "mcp_tool_call":
+                tool = item.get("tool", "?")
+                return f"[MCP] {tool}"
+
+        if evt_type == "item.started":
+            item = obj.get("item", {})
+            if item.get("type") == "command_execution":
+                return f"$ {item.get('command', '')}"
+
+        # Skip turn.started, turn.completed, thread.started, etc.
+        return None
 
     def parse_output(self, stdout, stderr, exit_code):
-        if exit_code == 0:
-            output = stdout.strip()
-            if not output and stderr:
-                output = stderr.strip()
+        """Parse Codex --json JSONL output, extracting the final message and usage."""
+        last_message = ""
+        usage = {}
+        has_error = False
+        error_text = ""
+
+        for line in (stdout or "").strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            evt_type = obj.get("type", "")
+
+            if evt_type == "turn.completed":
+                turn_usage = obj.get("usage", {})
+                # Accumulate across turns
+                for key in ("input_tokens", "output_tokens", "cached_input_tokens"):
+                    if turn_usage.get(key):
+                        usage[key] = usage.get(key, 0) + turn_usage[key]
+
+            elif evt_type == "item.completed":
+                item = obj.get("item", {})
+                if item.get("type") == "agent_message":
+                    last_message = item.get("text", "")
+
+            elif evt_type == "turn.failed":
+                has_error = True
+                error_text = obj.get("error", {}).get("message", "Turn failed")
+
+            elif evt_type == "error":
+                has_error = True
+                error_text = obj.get("message", "Unknown error")
+
+        # Fallback: if no JSON parsed, use raw stdout/stderr
+        if not last_message and not has_error:
+            last_message = (stdout or "").strip()
+            if not last_message and stderr:
+                last_message = stderr.strip()
+
+        if exit_code != 0 or has_error:
             return {
-                "success": True,
-                "output": output,
-                "error": None,
+                "success": False,
+                "output": last_message,
+                "error": error_text or (stderr.strip() if stderr else "") or f"Exit code {exit_code}",
+                "usage": usage,
             }
+
         return {
-            "success": False,
-            "output": stdout.strip() if stdout else "",
-            "error": stderr.strip() if stderr else f"Exit code {exit_code}",
+            "success": True,
+            "output": last_message,
+            "error": None,
+            "usage": usage,
         }
