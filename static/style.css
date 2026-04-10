@@ -597,8 +597,15 @@ body {
 .ticket-list-col-status,
 .ticket-list-col-type,
 .ticket-list-col-worker,
-.ticket-list-col-date {
+.ticket-list-col-date,
+.ticket-list-col-tokens {
   white-space: nowrap;
+}
+
+.ticket-list-col-tokens {
+  text-align: right;
+  color: var(--text-muted, #888);
+  font-size: 0.85em;
 }
 
 .ticket-list-th-sortable {

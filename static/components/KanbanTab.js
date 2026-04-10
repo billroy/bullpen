@@ -54,11 +54,14 @@ const KanbanTab = {
             <th class="ticket-list-col-date ticket-list-th-sortable" @click="setSort('created_at')">
               Created<span class="sort-indicator">{{ sortIndicator('created_at') }}</span>
             </th>
+            <th class="ticket-list-col-tokens ticket-list-th-sortable" @click="setSort('tokens')">
+              Tokens<span class="sort-indicator">{{ sortIndicator('tokens') }}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="sortedTasks.length === 0">
-            <td colspan="6" class="ticket-list-empty">No tickets</td>
+            <td colspan="7" class="ticket-list-empty">No tickets</td>
           </tr>
           <tr
             v-for="task in sortedTasks"
@@ -78,6 +81,7 @@ const KanbanTab = {
             </td>
             <td class="ticket-list-col-worker">{{ workerName(task) || '—' }}</td>
             <td class="ticket-list-col-date">{{ formatDate(task.created_at) }}</td>
+            <td class="ticket-list-col-tokens">{{ task.tokens ? formatTokens(task.tokens) : '—' }}</td>
           </tr>
         </tbody>
       </table>
@@ -130,6 +134,9 @@ const KanbanTab = {
           case 'created_at':
             cmp = (a.created_at || '').localeCompare(b.created_at || '');
             break;
+          case 'tokens':
+            cmp = (a.tokens || 0) - (b.tokens || 0);
+            break;
         }
         if (cmp === 0) cmp = (a.order || '').localeCompare(b.order || '');
         return cmp * dir;
@@ -153,7 +160,7 @@ const KanbanTab = {
         this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
       } else {
         this.sortField = field;
-        this.sortDir = field === 'created_at' ? 'desc' : 'asc';
+        this.sortDir = (field === 'created_at' || field === 'tokens') ? 'desc' : 'asc';
       }
     },
     sortIndicator(field) {
@@ -169,6 +176,11 @@ const KanbanTab = {
     columnLabel(key) {
       const col = (this.columns || []).find(c => c.key === key);
       return col ? col.label : key;
+    },
+    formatTokens(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+      return String(n);
     },
     workerName(task) {
       if (task.assigned_to == null) return null;
