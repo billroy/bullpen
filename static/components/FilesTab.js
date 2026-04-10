@@ -136,7 +136,7 @@ const FilesTab = {
               <button class="btn btn-sm" :class="{ active: viewMode === 'source' }" @click="viewMode = 'source'">Source</button>
             </div>
             <div v-if="viewMode === 'preview'" class="markdown-body" v-html="renderedMarkdown"></div>
-            <pre v-else class="file-source"><code>{{ activeFile.content }}</code></pre>
+            <pre v-else class="file-source"><code v-html="highlightedCode"></code></pre>
           </div>
           <!-- Source code -->
           <div v-else class="file-view-source">
@@ -208,6 +208,7 @@ const FilesTab = {
         '.css': 'css', '.scss': 'css',
         '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
         '.html': 'markup', '.htm': 'markup', '.xml': 'markup', '.svg': 'markup',
+        '.md': 'markdown',
       };
       return map[this.ext] || null;
     },
