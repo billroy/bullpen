@@ -99,13 +99,16 @@ def _int(val, field_name, min_val=None, max_val=None):
 def validate_task_create(data):
     """Validate task:create payload. Returns sanitized data."""
     validate_payload_size(data)
-    return {
+    result = {
         "title": _str(data.get("title", "Untitled"), MAX_TITLE, "title"),
         "description": _str(data.get("description", ""), MAX_DESCRIPTION, "description"),
         "type": _enum(data.get("type"), VALID_TYPES, "type", default="task"),
         "priority": _enum(data.get("priority"), VALID_PRIORITIES, "priority", default="normal"),
         "tags": _tags(data.get("tags")),
     }
+    if "status" in data:
+        result["status"] = str(data["status"])
+    return result
 
 
 def validate_task_update(data):

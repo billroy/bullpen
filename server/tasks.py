@@ -133,14 +133,14 @@ def _next_order_key(bp_dir):
     return midpoint_key(max_key, "")
 
 
-def create_task(bp_dir, title, description="", task_type="task", priority="normal", tags=None):
+def create_task(bp_dir, title, description="", task_type="task", priority="normal", tags=None, status="inbox"):
     """Create a new task ticket. Returns the task dict."""
     slug = generate_slug(title)
     now = _now_iso()
 
     meta = {
         "title": title,
-        "status": "inbox",
+        "status": status,
         "type": task_type,
         "priority": priority,
         "assigned_to": "",
