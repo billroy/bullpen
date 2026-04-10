@@ -108,7 +108,7 @@ const TaskDetailPanel = {
           <button class="btn btn-sm" @click="toggleEdit">{{ editing ? 'Preview' : 'Edit' }}</button>
         </div>
         <div v-if="editing">
-          <textarea class="form-textarea detail-editor" v-model="editBody" rows="12"></textarea>
+          <textarea class="form-textarea detail-editor" v-model="editBody" rows="12" @keydown.meta.enter="saveEdit" @keydown.ctrl.enter="saveEdit"></textarea>
           <div class="detail-edit-actions">
             <button class="btn btn-sm" @click="cancelEdit">Cancel</button>
             <button class="btn btn-sm btn-primary" @click="saveEdit">Save</button>
