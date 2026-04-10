@@ -1,6 +1,6 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines'],
-  emits: ['configure', 'select-task', 'open-focus'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces'],
+  emits: ['configure', 'select-task', 'open-focus', 'transfer'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver }"
          draggable="true"
@@ -28,6 +28,8 @@ const WorkerCard = {
             <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause">Pause</button>
             <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause">Unpause</button>
             <button class="worker-menu-item" @click="menuDuplicate">Duplicate</button>
+            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo">Copy to workspace&hellip;</button>
+            <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo">Move to workspace&hellip;</button>
             <button class="worker-menu-item worker-menu-danger" @click="menuDelete">Delete</button>
           </div>
         </div>
@@ -85,6 +87,9 @@ const WorkerCard = {
     },
     isPaused() {
       return this.worker.paused === true;
+    },
+    canMove() {
+      return this.workerState === 'idle';
     },
     agentColor() {
       return agentColor(this.worker.agent);
@@ -196,6 +201,14 @@ const WorkerCard = {
     menuWatch() {
       this.showMenu = false;
       this.$emit('open-focus', this.slotIndex);
+    },
+    menuCopyTo() {
+      this.showMenu = false;
+      this.$emit('transfer', { slot: this.slotIndex, mode: 'copy' });
+    },
+    menuMoveTo() {
+      this.showMenu = false;
+      this.$emit('transfer', { slot: this.slotIndex, mode: 'move' });
     },
     menuDelete() {
       this.showMenu = false;

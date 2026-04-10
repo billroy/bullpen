@@ -20,6 +20,7 @@ from server import auth
 from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json, write_json, read_frontmatter, ensure_within, atomic_write
+from server.transfer import transfer_worker, TransferError
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
@@ -317,6 +318,44 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
             return jsonify({"ok": True})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/worker/transfer", methods=["POST"])
+    @auth.require_auth
+    def worker_transfer():
+        """Copy or move a worker between workspaces."""
+        data = request.get_json(silent=True)
+        if not data or not isinstance(data, dict):
+            return jsonify({"error": "invalid JSON body"}), 400
+
+        try:
+            result = transfer_worker(
+                manager,
+                source_workspace_id=data.get("source_workspace_id"),
+                source_slot=data.get("source_slot"),
+                dest_workspace_id=data.get("dest_workspace_id"),
+                dest_slot=data.get("dest_slot"),
+                mode=data.get("mode", "copy"),
+                copy_profile=bool(data.get("copy_profile", False)),
+            )
+        except TransferError as e:
+            return jsonify({"error": str(e)}), e.status
+
+        # Notify destination workspace clients
+        dst_ws = manager.get(data["dest_workspace_id"])
+        if dst_ws:
+            dst_layout = read_json(os.path.join(dst_ws.bp_dir, "layout.json"))
+            dst_layout["workspaceId"] = dst_ws.id
+            socketio.emit("layout:updated", dst_layout, to=dst_ws.id)
+
+        # On move, also notify source workspace clients
+        if data.get("mode") == "move":
+            src_ws = manager.get(data["source_workspace_id"])
+            if src_ws:
+                src_layout = read_json(os.path.join(src_ws.bp_dir, "layout.json"))
+                src_layout["workspaceId"] = src_ws.id
+                socketio.emit("layout:updated", src_layout, to=src_ws.id)
+
+        return jsonify(result)
 
     @socketio.on("connect")
     def on_connect(auth_data=None):

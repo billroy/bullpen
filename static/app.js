@@ -13,6 +13,7 @@ const app = createApp({
     TaskCreateModal,
     TaskDetailPanel,
     WorkerConfigModal,
+    WorkerTransferModal,
     ColumnManagerModal,
     ToastContainer,
   },
@@ -85,6 +86,8 @@ const app = createApp({
     const showColumnManager = ref(false);
     const selectedTaskId = ref(null);
     const configureSlot = ref(null);
+    const transferSlot = ref(null);
+    const transferMode = ref('copy');
 
     // Worker Focus Mode state
     const outputBuffers = reactive({});  // keyed by slot index
@@ -315,6 +318,32 @@ const app = createApp({
     }
     function moveWorker(from, to) { socket.emit('worker:move', _wsData({ from, to })); }
     function duplicateWorker(slot) { socket.emit('worker:duplicate', _wsData({ slot })); }
+    function openTransfer({ slot, mode }) {
+      transferSlot.value = slot;
+      transferMode.value = mode;
+    }
+    async function transferWorker(payload) {
+      try {
+        const resp = await fetch('/api/worker/transfer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          addToast(data.error || 'Transfer failed', 'error');
+          return;
+        }
+        const destName = projects.find(p => p.id === payload.dest_workspace_id)?.name || 'workspace';
+        addToast(`Worker ${payload.mode === 'move' ? 'moved' : 'copied'} to ${destName}`);
+        if (data.warnings?.length) {
+          for (const w of data.warnings) addToast(w, 'error');
+        }
+      } catch (e) {
+        addToast('Transfer failed: ' + e.message, 'error');
+      }
+      transferSlot.value = null;
+    }
     function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', _wsData({ slot, fields })); }
 
     // Execution actions
@@ -424,6 +453,8 @@ const app = createApp({
     }
 
     // Grid options for tab bar selector
+    const multipleWorkspaces = computed(() => projects.length >= 2);
+
     const gridOptions = computed(() => {
       const opts = [];
       for (let r = 2; r <= 7; r++) {
@@ -462,7 +493,8 @@ const app = createApp({
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
-      gridOptions, onTabBarGridResize, duplicateWorker,
+      gridOptions, onTabBarGridResize, duplicateWorker, multipleWorkspaces,
+      transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, chatTabs, addLiveAgentTab, closeLiveAgentTab,
     };
@@ -541,10 +573,12 @@ const app = createApp({
               :profiles="state.profiles"
               :tasks="state.tasks"
               :workspace="state.workspace"
+              :multiple-workspaces="multipleWorkspaces"
               @add-worker="addWorker"
               @configure-worker="configureSlot = $event"
               @select-task="selectTask"
               @open-focus="openFocusTab"
+              @transfer-worker="openTransfer"
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
             <CommitsTab v-if="activeTab === 'commits'" />
@@ -592,6 +626,16 @@ const app = createApp({
         @save="saveWorkerConfig"
         @remove="removeWorker"
         @save-profile="saveProfile"
+      />
+      <WorkerTransferModal
+        :visible="transferSlot !== null"
+        :worker="transferSlot !== null ? state.layout.slots?.[transferSlot] : null"
+        :slot-index="transferSlot"
+        :mode="transferMode"
+        :projects="projects"
+        :active-workspace-id="activeWorkspaceId"
+        @close="transferSlot = null"
+        @transfer="transferWorker"
       />
       <ColumnManagerModal
         :visible="showColumnManager"
