@@ -84,13 +84,18 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
         cors_origin = f"http://{host}:{port}"
     socketio.init_app(app, cors_allowed_origins=cors_origin, async_mode="threading")
 
-    # Store server address so MCP tools can connect back
+    # Store server address and a per-run MCP token so the stdio MCP server
+    # (which has no session cookie) can authenticate via Socket.IO ``auth``.
+    import secrets as _secrets
+    mcp_token = _secrets.token_urlsafe(32)
     app.config["host"] = host
     app.config["port"] = port
+    app.config["mcp_token"] = mcp_token
     for ws in manager.all_workspaces():
         config = read_json(os.path.join(ws.bp_dir, "config.json"))
         config["server_host"] = host
         config["server_port"] = port
+        config["mcp_token"] = mcp_token
         write_json(os.path.join(ws.bp_dir, "config.json"), config)
 
     # Startup reconciliation for all registered workspaces
@@ -314,12 +319,20 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
             return jsonify({"error": str(e)}), 500
 
     @socketio.on("connect")
-    def on_connect():
+    def on_connect(auth_data=None):
         # Reject unauthenticated Socket.IO upgrades. Flask-SocketIO makes
         # the HTTP session available here because the cookie is sent with
         # the WebSocket handshake; returning False refuses the connection.
+        #
+        # The MCP stdio server has no browser session, so it authenticates
+        # by passing {"mcp_token": "<token>"} via Socket.IO ``auth``.  The
+        # token is written to .bullpen/config.json on startup and is only
+        # readable by processes with local filesystem access.
         if auth.auth_enabled() and not session.get("authenticated"):
-            return False
+            expected = app.config.get("mcp_token")
+            token = (auth_data or {}).get("mcp_token") if isinstance(auth_data, dict) else None
+            if not expected or not token or token != expected:
+                return False
         # Join rooms for all active workspaces
         for ws in manager.all_workspaces():
             join_room(ws.id)

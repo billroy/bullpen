@@ -17,14 +17,27 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
+import io
+import os
+
 import socketio
 
 from server import tasks as task_store
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
 VALID_PRIORITIES = ("low", "normal", "high", "urgent")
-DEFAULT_CONNECT_TIMEOUT_SECONDS = 1.0
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
 DEFAULT_OPERATION_TIMEOUT_SECONDS = 10.0
+MAX_CONNECT_ATTEMPTS = 3
+
+# The MCP protocol uses stdout for framed JSON-RPC messages.  Any stray byte
+# on stdout (e.g. from the socketio library logging a connection error)
+# corrupts the stream and causes Claude Code to kill this process — which is
+# the root cause of the intermittent "MCP not found" failures.
+#
+# We capture the real stdout *once* at import time, then redirect sys.stdout
+# to stderr so that print() / logging from any library is harmless.
+_mcp_out: io.RawIOBase | None = None  # set in main()
 
 TOOLS = [
     {
@@ -38,6 +51,7 @@ TOOLS = [
                 "type": {"type": "string", "enum": list(VALID_TYPES), "default": "task"},
                 "priority": {"type": "string", "enum": list(VALID_PRIORITIES), "default": "normal"},
                 "tags": {"type": "array", "items": {"type": "string"}, "default": []},
+                "status": {"type": "string", "description": "Initial status (default: inbox)"},
             },
             "required": ["title"],
         },
@@ -156,9 +170,14 @@ def _read(in_stream: Any | None = None, return_mode: bool = False):
 
 
 def _write(msg: dict[str, Any], out_stream: Any | None = None, mode: str = "framed") -> None:
-    """Write one JSON-RPC message using the selected transport."""
+    """Write one JSON-RPC message using the selected transport.
+
+    Always writes to the saved ``_mcp_out`` stream (the *real* stdout captured
+    before we redirected sys.stdout to stderr).  This guarantees that library
+    code calling ``print()`` can never corrupt the MCP protocol stream.
+    """
     if out_stream is None:
-        out_stream = sys.stdout.buffer
+        out_stream = _mcp_out or sys.stdout.buffer
     payload = json.dumps(msg, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     if mode == "line":
         out_stream.write(payload + b"\n")
@@ -190,9 +209,10 @@ class _Pending:
 class BullpenClient:
     """Small socket.io helper for create/update operations."""
 
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, bp_dir: str = ".bullpen"):
         self.host = host
         self.port = port
+        self.bp_dir = bp_dir
         self.sio = socketio.Client(logger=False, engineio_logger=False)
         self.connected = False
         self.workspace_id: str | None = None
@@ -228,6 +248,16 @@ class BullpenClient:
                 message = str(data.get("message", message))
             self._resolve_any_error(message)
 
+    def _read_mcp_token(self) -> str | None:
+        """Read the per-run MCP token from .bullpen/config.json."""
+        try:
+            config_path = os.path.join(self.bp_dir, "config.json")
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            return config.get("mcp_token")
+        except Exception:
+            return None
+
     def _candidate_urls(self) -> list[str]:
         hosts = [self.host]
         if self.host == "0.0.0.0":
@@ -237,17 +267,29 @@ class BullpenClient:
     def _connect_best_effort(self) -> bool:
         if self.connected:
             return True
-        for url in self._candidate_urls():
-            try:
+        token = self._read_mcp_token()
+        auth_data = {"mcp_token": token} if token else None
+        for attempt in range(MAX_CONNECT_ATTEMPTS):
+            for url in self._candidate_urls():
                 try:
-                    self.sio.connect(url, wait_timeout=self.connect_timeout_seconds)
-                except TypeError:
-                    # Compatibility for older socketio client signatures.
-                    self.sio.connect(url)
-                self.connected = True
-                return True
-            except Exception:
-                continue
+                    try:
+                        self.sio.connect(
+                            url,
+                            wait_timeout=self.connect_timeout_seconds,
+                            auth=auth_data,
+                        )
+                    except TypeError:
+                        # Compatibility for older socketio client signatures.
+                        self.sio.connect(url)
+                    self.connected = True
+                    return True
+                except Exception:
+                    # Ensure clean state before next attempt.
+                    try:
+                        self.sio.disconnect()
+                    except Exception:
+                        pass
+                    continue
         self.connected = False
         return False
 
@@ -286,6 +328,8 @@ class BullpenClient:
             "priority": args.get("priority", "normal"),
             "tags": args.get("tags", []),
         }
+        if "status" in args:
+            payload["status"] = args["status"]
         self.sio.emit("task:create", payload)
         if not pending.event.wait(timeout=self.operation_timeout_seconds):
             with self._lock:
@@ -400,44 +444,63 @@ def _initialize_result() -> dict[str, Any]:
 
 
 def main(bp_dir: str, host: str, port: int) -> None:
-    client = BullpenClient(host, port)
+    global _mcp_out  # noqa: PLW0603
+
+    # ── Protect the MCP stdio stream ──────────────────────────────────
+    # Capture the *real* stdout for MCP I/O, then redirect sys.stdout to
+    # stderr.  After this point every print() / logging call from any
+    # library (socketio, engineio, etc.) goes to stderr instead of
+    # poisoning the MCP framing on stdout.
+    _mcp_out = sys.stdout.buffer
+    sys.stdout = open(os.devnull, "w") if sys.stderr is None else sys.stderr
+
+    client = BullpenClient(host, port, bp_dir=bp_dir)
     io_mode = "framed"
     try:
         while True:
-            read_result = _read(return_mode=True)
+            try:
+                read_result = _read(return_mode=True)
+            except Exception:
+                # Malformed input — skip, don't die.
+                continue
             if read_result is None:
                 break
             message, io_mode = read_result
 
-            method = message.get("method")
-            msg_id = message.get("id")
+            try:
+                method = message.get("method")
+                msg_id = message.get("id")
 
-            if method == "initialize":
-                _result(msg_id, _initialize_result(), mode=io_mode)
-                continue
-
-            if method == "notifications/initialized":
-                continue
-
-            if method == "tools/list":
-                _result(msg_id, {"tools": TOOLS}, mode=io_mode)
-                continue
-
-            if method == "tools/call":
-                params = message.get("params", {})
-                name = params.get("name")
-                args = params.get("arguments", {})
-                if not isinstance(name, str):
-                    _error(msg_id, -32602, "Invalid tools/call request: missing tool name", mode=io_mode)
+                if method == "initialize":
+                    _result(msg_id, _initialize_result(), mode=io_mode)
                     continue
-                if not isinstance(args, dict):
-                    _error(msg_id, -32602, "Invalid tools/call request: arguments must be an object", mode=io_mode)
-                    continue
-                handle_call(bp_dir, client, msg_id, name, args, io_mode=io_mode)
-                continue
 
-            if msg_id is not None:
-                _error(msg_id, -32601, f"Method not found: {method}", mode=io_mode)
+                if method == "notifications/initialized":
+                    continue
+
+                if method == "tools/list":
+                    _result(msg_id, {"tools": TOOLS}, mode=io_mode)
+                    continue
+
+                if method == "tools/call":
+                    params = message.get("params", {})
+                    name = params.get("name")
+                    args = params.get("arguments", {})
+                    if not isinstance(name, str):
+                        _error(msg_id, -32602, "Invalid tools/call request: missing tool name", mode=io_mode)
+                        continue
+                    if not isinstance(args, dict):
+                        _error(msg_id, -32602, "Invalid tools/call request: arguments must be an object", mode=io_mode)
+                        continue
+                    handle_call(bp_dir, client, msg_id, name, args, io_mode=io_mode)
+                    continue
+
+                if msg_id is not None:
+                    _error(msg_id, -32601, f"Method not found: {method}", mode=io_mode)
+            except Exception as exc:
+                # Return the error over the wire rather than crashing.
+                if msg_id is not None:
+                    _error(msg_id, -32603, f"Internal error: {exc}", mode=io_mode)
     finally:
         client.disconnect()
 
