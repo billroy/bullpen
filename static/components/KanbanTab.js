@@ -11,8 +11,7 @@ const KanbanTab = {
         <div class="kanban-column-header" :style="{ borderTopColor: col.color }">
           <span class="column-label">{{ col.label }}</span>
           <span class="column-count">{{ columnTasks(col.key).length }}</span>
-          <button v-if="colIdx === 0"
-                  class="btn btn-sm column-new-btn"
+          <button class="btn btn-sm column-new-btn"
                   @click="$emit('new-task')"
                   title="Create new ticket">+ New Ticket</button>
           <button v-if="col.key === 'done' && columnTasks(col.key).length"
