@@ -10,15 +10,11 @@ def _read(rel_path: str) -> str:
     return (ROOT / rel_path).read_text(encoding="utf-8")
 
 
-def test_column_icon_helper_has_default_status_mapping():
+def test_column_icon_helper_marks_worker_and_user_columns():
     text = _read("static/utils.js")
     assert "function getColumnIcon" in text
-    assert "inbox: 'inbox'" in text
-    assert "assigned: 'user-check'" in text
-    assert "in_progress: 'loader'" in text
-    assert "review: 'search-check'" in text
-    assert "done: 'check-circle'" in text
-    assert "blocked: 'octagon-alert'" in text
+    assert "new Set(['assigned', 'in_progress'])" in text
+    assert "? 'bot' : 'user'" in text
     assert "col?.icon" in text
 
 

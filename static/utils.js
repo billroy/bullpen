@@ -11,15 +11,8 @@ function getWorkerTypeIcon(worker) {
 }
 
 function getColumnIcon(col) {
-  const map = {
-    inbox: 'inbox',
-    assigned: 'user-check',
-    in_progress: 'loader',
-    review: 'search-check',
-    done: 'check-circle',
-    blocked: 'octagon-alert',
-  };
-  return col?.icon || map[col?.key] || 'columns-3';
+  const workerColumns = new Set(['assigned', 'in_progress']);
+  return col?.icon || (workerColumns.has(col?.key) ? 'bot' : 'user');
 }
 
 function renderLucideIcons(rootEl) {
