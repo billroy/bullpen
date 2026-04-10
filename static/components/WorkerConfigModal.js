@@ -132,6 +132,12 @@ const WorkerConfigModal = {
                 <optgroup label="Workers" v-if="otherWorkers.length">
                   <option v-for="w in otherWorkers" :key="'worker:' + w.name" :value="'worker:' + w.name">\u2192 {{ w.name }}</option>
                 </optgroup>
+                <optgroup label="Pass">
+                  <option value="pass:up">\u2191 Up</option>
+                  <option value="pass:down">\u2193 Down</option>
+                  <option value="pass:left">\u2190 Left</option>
+                  <option value="pass:right">\u2192 Right</option>
+                </optgroup>
               </select>
             </label>
             <label class="form-label">

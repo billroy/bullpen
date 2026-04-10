@@ -458,6 +458,82 @@ class TestHandoff:
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "review"
 
+    def test_pass_right_to_adjacent_worker(self, bp_dir):
+        """pass:right hands off to the worker in the next column."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Left Worker", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "pass:right",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Right Worker", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Pass right task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated_layout = _load_layout(bp_dir)
+        assert task["id"] in updated_layout["slots"][1]["task_queue"]
+        assert updated_layout["slots"][0]["state"] == "idle"
+        updated_task = read_task(bp_dir, task["id"])
+        assert updated_task.get("handoff_depth", 0) == 1
+
+    def test_pass_out_of_bounds_blocks(self, bp_dir):
+        """pass:left from col 0 has no left neighbor → task moves to blocked."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "profile": "test",
+            "name": "Edge Worker", "agent": "mock", "model": "mock-model",
+            "activation": "manual", "disposition": "pass:left",
+            "watch_column": None, "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Edge task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+
+    def test_pass_empty_slot_blocks(self, bp_dir):
+        """pass:right to an empty slot → task moves to blocked."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        # slot 1 is None (empty)
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "pass:right",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            None,
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Empty slot task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+
 
 class TestWatchColumn:
     """Tests for on_queue / watch_column task claiming."""

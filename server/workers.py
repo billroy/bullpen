@@ -585,6 +585,94 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 break
 
 
+def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id):
+    """Pass a task to the worker in the given direction (up/down/left/right).
+
+    If no worker occupies the target slot or the slot is out of bounds, the task
+    moves to Blocked.
+    """
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    grid = config.get("grid", {})
+    cols = grid.get("cols", 1)
+    rows = grid.get("rows", 1)
+
+    row = slot_index // cols
+    col = slot_index % cols
+
+    if direction == "up":
+        target_row, target_col = row - 1, col
+    elif direction == "down":
+        target_row, target_col = row + 1, col
+    elif direction == "left":
+        target_row, target_col = row, col - 1
+    elif direction == "right":
+        target_row, target_col = row, col + 1
+    else:
+        target_row, target_col = -1, -1
+
+    task = task_mod.read_task(bp_dir, task_id)
+
+    # Out of bounds → blocked
+    if not (0 <= target_row < rows and 0 <= target_col < cols):
+        msg = f"\n\n**Pass {direction}: no slot in that direction.** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: no worker {direction}",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    target_slot = target_row * cols + target_col
+    slots = layout.get("slots", [])
+    target_worker = slots[target_slot] if target_slot < len(slots) else None
+
+    # Empty slot → blocked
+    if not target_worker:
+        msg = f"\n\n**Pass {direction}: no worker at target slot.** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: no worker {direction}",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    # Hand off to the target worker
+    depth = task.get("handoff_depth", 0) if task else 0
+    if depth >= MAX_HANDOFF_DEPTH:
+        msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: handoff depth exceeded",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
+    _save_layout(bp_dir, layout)
+    assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
+
+
 def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None, usage=None):
     """Handle successful agent completion."""
     with _write_lock:
@@ -632,6 +720,11 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
             # Set worker idle BEFORE handoff (which saves its own layout)
             worker["state"] = "idle"
             _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id)
+            handed_off = True
+        elif disposition.startswith("pass:"):
+            direction = disposition[len("pass:"):]
+            worker["state"] = "idle"
+            _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id)
             handed_off = True
         else:
             task_mod.update_task(bp_dir, task_id, {
