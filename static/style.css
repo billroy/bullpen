@@ -457,6 +457,9 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 12px;
   border-top: 3px solid var(--gray);
   background: var(--bg-tertiary);
 }
@@ -470,15 +473,13 @@ body {
 }
 
 .column-icon {
-  width: 14px;
-  height: 14px;
-  color: var(--text-muted);
+  width: 16px;
+  height: 16px;
+  color: currentColor;
   flex-shrink: 0;
 }
 
 .column-label {
-  font-weight: 600;
-  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   overflow: hidden;

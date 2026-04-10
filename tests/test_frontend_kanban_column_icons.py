@@ -31,4 +31,7 @@ def test_kanban_column_icon_styles_exist():
     text = _read("static/style.css")
     assert ".column-title" in text
     assert ".column-icon" in text
+    assert "color: currentColor;" in text
+    assert "width: 16px;" in text
+    assert "height: 16px;" in text
     assert "text-overflow: ellipsis;" in text
