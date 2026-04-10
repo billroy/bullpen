@@ -96,6 +96,10 @@ const LiveAgentChatTab = {
         });
       }
     },
+    stopChat() {
+      const s = window._bullpenSocket;
+      if (s) s.emit('chat:stop', { sessionId: this.sessionId });
+    },
     clearChat() {
       this.messages = [];
       this.busy = false;
@@ -151,9 +155,8 @@ const LiveAgentChatTab = {
           rows="3"
           @keydown="onKeydown"
         ></textarea>
-        <button class="btn chat-send-btn" :disabled="busy || !input.trim()" @click="sendMessage">
-          {{ busy ? '…' : 'Send' }}
-        </button>
+        <button v-if="busy" class="btn btn-danger chat-stop-btn" @click="stopChat">Stop</button>
+        <button v-else class="btn chat-send-btn" :disabled="!input.trim()" @click="sendMessage">Send</button>
       </div>
     </div>
   `,

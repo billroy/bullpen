@@ -585,6 +585,10 @@ def register_events(socketio, app):
     _chat_sessions = {}
     _chat_lock = threading.Lock()
 
+    # Active chat subprocesses: sessionId -> proc
+    _chat_processes = {}
+    _chat_proc_lock = threading.Lock()
+
     def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None):
         """Run chat agent subprocess, emit streaming lines, then emit done."""
         # Extract temp MCP config path for cleanup (written by adapter.build_argv)
@@ -612,6 +616,8 @@ def register_events(socketio, app):
                 if workspace:
                     popen_kwargs["cwd"] = workspace
                 proc = subprocess.Popen(argv, **popen_kwargs)
+                with _chat_proc_lock:
+                    _chat_processes[session_id] = proc
                 prompt = response_collector["prompt"]
                 try:
                     proc.stdin.write(prompt)
@@ -707,6 +713,8 @@ def register_events(socketio, app):
             logging.exception("Chat agent error for session %s", session_id)
             socketio.emit("chat:error", {"sessionId": session_id, "message": str(e)})
         finally:
+            with _chat_proc_lock:
+                _chat_processes.pop(session_id, None)
             if mcp_config_path:
                 try:
                     os.unlink(mcp_config_path)
@@ -781,3 +789,14 @@ def register_events(socketio, app):
         with _chat_lock:
             _chat_sessions.pop(session_id, None)
         emit("chat:cleared", {"sessionId": session_id})
+
+    @socketio.on("chat:stop")
+    def on_chat_stop(data):
+        session_id = data.get("sessionId", "")
+        with _chat_proc_lock:
+            proc = _chat_processes.get(session_id)
+        if proc and proc.poll() is None:
+            try:
+                _terminate_proc(proc)
+            except OSError:
+                pass
