@@ -535,6 +535,7 @@ const app = createApp({
           @delete="deleteTask"
           @archive="archiveTask"
           @clear-output="clearTaskOutput"
+          @toast="addToast"
         />
       </div>
       <TaskCreateModal

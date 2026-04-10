@@ -1590,12 +1590,21 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .detail-id code {
   font-size: 10px;
   color: var(--text-muted);
   font-family: monospace;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.detail-copy-id {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  font-size: 10px;
 }
 
 .token-count {

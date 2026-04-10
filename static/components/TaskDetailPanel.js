@@ -1,6 +1,6 @@
 const TaskDetailPanel = {
   props: ['task', 'columns'],
-  emits: ['close', 'update', 'delete', 'archive', 'clear-output'],
+  emits: ['close', 'update', 'delete', 'archive', 'clear-output', 'toast'],
   data() {
     return {
       editing: false,
@@ -100,6 +100,7 @@ const TaskDetailPanel = {
 
       <div class="detail-id">
         <code>{{ task.id }}</code>
+        <button class="btn btn-sm detail-copy-id" @click="copyId" title="Copy ticket ID">Copy ID</button>
         <span v-if="task.tokens" class="token-count" title="Total tokens used by agents">{{ formatTokens(task.tokens) }}</span>
       </div>
 
@@ -185,6 +186,37 @@ const TaskDetailPanel = {
         this.$emit('delete', this.task.id);
         this.$emit('close');
       }
+    },
+    async copyId() {
+      const id = this.task?.id || '';
+      if (!id) return;
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(id);
+        } else {
+          this.copyIdFallback(id);
+        }
+        this.$emit('toast', 'Ticket ID copied', 'success');
+      } catch (e) {
+        try {
+          this.copyIdFallback(id);
+          this.$emit('toast', 'Ticket ID copied', 'success');
+        } catch (fallbackError) {
+          this.$emit('toast', 'Could not copy ticket ID', 'error');
+        }
+      }
+    },
+    copyIdFallback(id) {
+      const el = document.createElement('textarea');
+      el.value = id;
+      el.setAttribute('readonly', '');
+      el.style.position = 'fixed';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      el.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(el);
+      if (!ok) throw new Error('copy failed');
     },
     formatTokens(n) {
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M tok';
