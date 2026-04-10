@@ -2063,20 +2063,6 @@ body {
   flex-shrink: 0;
 }
 
-.commits-oneline-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.85em;
-  color: var(--text-secondary);
-  cursor: pointer;
-  user-select: none;
-}
-
-.commits-oneline-label input[type="checkbox"] {
-  cursor: pointer;
-}
-
 .commits-list {
   flex: 1;
   overflow-y: auto;
@@ -2099,10 +2085,6 @@ body {
   background: var(--bg-hover);
 }
 
-.commit-row-oneline {
-  align-items: center;
-}
-
 .commit-hash {
   font-family: monospace;
   color: var(--accent);
@@ -2115,10 +2097,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.commit-row-oneline .commit-subject {
-  flex: 1;
 }
 
 .commit-multiline {

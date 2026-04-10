@@ -2,7 +2,6 @@ const CommitsTab = {
   data() {
     return {
       commits: [],
-      oneline: true,
       offset: 0,
       hasMore: false,
       loading: false,
@@ -56,18 +55,14 @@ const CommitsTab = {
   template: `
     <div class="commits-container">
       <div class="commits-toolbar">
-        <label class="commits-oneline-label">
-          <input type="checkbox" v-model="oneline" /> oneline
-        </label>
         <button class="btn btn-sm" @click="refresh" :disabled="loading">Refresh</button>
       </div>
       <div class="commits-list">
         <div v-if="error" class="commits-error">{{ error }}</div>
         <div v-else-if="commits.length === 0 && !loading" class="empty-state">No commits found.</div>
-        <div v-for="commit in commits" :key="commit.hash" class="commit-row" :class="{ 'commit-row-oneline': oneline }">
+        <div v-for="commit in commits" :key="commit.hash" class="commit-row">
           <span class="commit-hash">{{ commit.short_hash }}</span>
-          <span v-if="oneline" class="commit-subject">{{ commit.subject }}</span>
-          <span v-else class="commit-multiline">
+          <span class="commit-multiline">
             <span class="commit-subject">{{ commit.subject }}</span>
             <span class="commit-meta">{{ commit.author }} &middot; {{ formatDate(commit.date) }}</span>
             <span v-if="commit.body" class="commit-body">{{ commit.body }}</span>
