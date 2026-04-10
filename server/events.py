@@ -141,6 +141,20 @@ def register_events(socketio, app):
     def on_task_update(data):
         ws_id, bp_dir = _resolve(data)
         task_id, fields = validate_task_update(data)
+
+        # If status is changing, check whether the task is owned by a worker
+        # and needs to be yanked out of its queue (+ process killed).
+        if "status" in fields:
+            old_task = task_mod.read_task(bp_dir, task_id)
+            old_status = old_task.get("status") if old_task else None
+            new_status = fields["status"]
+
+            if old_status in ("assigned", "in_progress") and new_status not in ("assigned", "in_progress"):
+                worker_mod.yank_from_worker(bp_dir, task_id, socketio, ws_id)
+                # Clear assignment since the task is leaving the worker system
+                fields["assigned_to"] = ""
+                fields["handoff_depth"] = 0
+
         task = task_mod.update_task(bp_dir, task_id, fields)
         _emit("task:updated", task, ws_id)
 

@@ -184,7 +184,18 @@ const KanbanTab = {
       if (isNaN(slot)) return null;
       return this.layout?.slots?.[slot]?.name || null;
     },
+    isWorkerColumn(colKey) {
+      return colKey === 'assigned' || colKey === 'in_progress';
+    },
+    taskStatus(taskId) {
+      const t = (this.tasks || []).find(t => t.id === taskId);
+      return t ? t.status : null;
+    },
     onDragOver(e, colKey) {
+      if (this.isWorkerColumn(colKey)) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
       e.dataTransfer.dropEffect = 'move';
       e.currentTarget.classList.add('drag-over');
     },
@@ -193,10 +204,14 @@ const KanbanTab = {
     },
     onDrop(e, colKey) {
       e.currentTarget.classList.remove('drag-over');
+      if (this.isWorkerColumn(colKey)) return;
       const taskId = e.dataTransfer.getData('text/plain');
-      if (taskId) {
-        this.$emit('move-task', { id: taskId, status: colKey });
+      if (!taskId) return;
+      const oldStatus = this.taskStatus(taskId);
+      if (oldStatus === 'in_progress') {
+        if (!confirm('This task has a running agent. Stop the agent and move the task?')) return;
       }
+      this.$emit('move-task', { id: taskId, status: colKey });
     }
   }
 };

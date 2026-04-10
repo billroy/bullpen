@@ -279,6 +279,56 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
             _ws_emit(socketio, "layout:updated", layout, ws_id)
 
 
+def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
+    """Remove a task from its owning worker's queue, killing the agent if running.
+
+    Called when a human drags a task out of assigned/in_progress to a human column.
+    Returns True if the task was found in a worker queue, False otherwise.
+    """
+    layout = _load_layout(bp_dir)
+    slot_index = None
+    for i, slot in enumerate(layout.get("slots", [])):
+        if slot and task_id in slot.get("task_queue", []):
+            slot_index = i
+            break
+
+    if slot_index is None:
+        return False
+
+    worker = layout["slots"][slot_index]
+    queue = worker.get("task_queue", [])
+    is_front = queue and queue[0] == task_id
+    is_running = worker.get("state") == "working" and is_front
+
+    # Kill the subprocess if this task is actively running
+    if is_running:
+        with _process_lock:
+            entry = _processes.get((ws_id, slot_index))
+            proc = entry["proc"] if entry else None
+            if proc and proc.poll() is None:
+                _terminate_proc(proc)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    _terminate_proc(proc)
+                    proc.wait()
+        worker["state"] = "idle"
+
+    # Remove from queue
+    queue.remove(task_id)
+
+    _save_layout(bp_dir, layout)
+
+    if socketio:
+        _ws_emit(socketio, "layout:updated", layout, ws_id)
+
+    # If worker was running this task and has more queued, advance
+    if is_running and queue and worker.get("activation") in ("on_drop", "on_queue"):
+        start_worker(bp_dir, slot_index, socketio, ws_id)
+
+    return True
+
+
 def _assemble_prompt(bp_dir, worker, task):
     """Build the full prompt for the agent."""
     parts = []
