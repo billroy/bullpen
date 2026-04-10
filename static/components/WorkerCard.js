@@ -9,6 +9,10 @@ const WorkerCard = {
          @dragleave="onDragLeave"
          @drop="onDrop"
 >
+      <span v-if="passDir === 'up'" class="pass-indicator pass-up" title="Pass up">&#x25B2;</span>
+      <span v-if="passDir === 'down'" class="pass-indicator pass-down" title="Pass down">&#x25BC;</span>
+      <span v-if="passDir === 'left'" class="pass-indicator pass-left" title="Pass left">&#x25C0;</span>
+      <span v-if="passDir === 'right'" class="pass-indicator pass-right" title="Pass right">&#x25B6;</span>
       <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
@@ -60,6 +64,10 @@ const WorkerCard = {
     document.removeEventListener('click', this._closeMenu);
   },
   computed: {
+    passDir() {
+      const d = this.worker.disposition || '';
+      return d.startsWith('pass:') ? d.slice(5) : null;
+    },
     workerState() { return this.worker.state || 'idle'; },
     isWorking() { return this.workerState === 'working'; },
     canStart() {
