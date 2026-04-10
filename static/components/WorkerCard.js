@@ -16,7 +16,7 @@ const WorkerCard = {
       <div class="worker-card-header" :style="{ background: agentColor }" :title="expertiseTooltip || null" @dblclick="$emit('configure', slotIndex)">
         <div class="worker-card-identity">
           <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
-          <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
+          <span class="worker-card-name">{{ worker.name }}</span>
         </div>
         <div class="worker-card-actions">
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>

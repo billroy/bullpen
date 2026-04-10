@@ -15,3 +15,4 @@ def test_worker_card_header_uses_expertise_prompt_tooltip():
     assert ':title="expertiseTooltip || null"' in text
     assert "expertiseTooltip()" in text
     assert "this.worker.expertise_prompt" in text
+    assert ':title="worker.name"' not in text
