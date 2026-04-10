@@ -1284,6 +1284,116 @@ body {
   gap: 8px;
 }
 
+/* === Column Manager Modal === */
+.column-manager-modal {
+  width: 500px;
+}
+
+.col-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.col-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  transition: border-color 0.1s;
+}
+
+.col-manager-row.col-drag-over {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.col-drag-handle {
+  cursor: grab;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.col-drag-handle:active {
+  cursor: grabbing;
+}
+
+.col-color-input {
+  width: 32px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: none;
+}
+
+.col-label-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.col-ticket-count {
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.col-delete-btn {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.col-delete-btn:hover:not(:disabled) {
+  color: #ef4444;
+}
+
+.col-delete-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.col-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.col-move-select {
+  flex: 1;
+  min-width: 100px;
+}
+
+.col-add-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.col-add-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
 /* === Forms === */
 .form-label {
   display: flex;

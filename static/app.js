@@ -12,6 +12,7 @@ const app = createApp({
     TaskCreateModal,
     TaskDetailPanel,
     WorkerConfigModal,
+    ColumnManagerModal,
     ToastContainer,
   },
   setup() {
@@ -80,6 +81,7 @@ const app = createApp({
     const leftPaneVisible = ref(true);
     const toasts = reactive([]);
     const showCreateModal = ref(false);
+    const showColumnManager = ref(false);
     const selectedTaskId = ref(null);
     const configureSlot = ref(null);
 
@@ -330,6 +332,16 @@ const app = createApp({
 
     // Config/team actions
     function updateConfig(data) { socket.emit('config:update', _wsData(data)); }
+    function saveColumns({ columns, ticketMigrations }) {
+      updateConfig({ columns });
+      for (const { fromKey, toKey } of (ticketMigrations || [])) {
+        const affected = state.tasks.filter(t => t.status === fromKey);
+        for (const task of affected) {
+          updateTask({ id: task.id, status: toKey });
+        }
+      }
+      showColumnManager.value = false;
+    }
     function saveTeam(name) { socket.emit('team:save', _wsData({ name })); }
     function loadTeam(name) { socket.emit('team:load', _wsData({ name })); }
     function saveProfile(data) { socket.emit('profile:create', _wsData(data)); }
@@ -408,11 +420,11 @@ const app = createApp({
       state, workspaces, activeWorkspaceId, switchWorkspace, projects,
       addProject, removeProject,
       connected, activeTab, leftPaneVisible, toasts,
-      showCreateModal, selectedTask, configureSlot, configureWorkerData,
+      showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, toggleTheme, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, updateConfig, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       gridOptions, onTabBarGridResize, duplicateWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode,
@@ -458,6 +470,7 @@ const app = createApp({
               </button>
             </div>
             <div v-if="activeTab === 'tasks'" class="tab-bar-right">
+              <button class="btn btn-sm" @click="showColumnManager = true" title="Add, remove, or reorder columns">Columns</button>
               <div class="view-mode-selector">
                 <button class="btn-icon view-mode-btn" :class="{ active: ticketsViewMode === 'kanban' }" @click="ticketsViewMode = 'kanban'" title="Kanban view">&#10697;</button>
                 <button class="btn-icon view-mode-btn" :class="{ active: ticketsViewMode === 'list' }" @click="ticketsViewMode = 'list'" title="List view">&#9776;</button>
@@ -533,6 +546,13 @@ const app = createApp({
         @save="saveWorkerConfig"
         @remove="removeWorker"
         @save-profile="saveProfile"
+      />
+      <ColumnManagerModal
+        :visible="showColumnManager"
+        :columns="state.config.columns"
+        :tasks="state.tasks"
+        @close="showColumnManager = false"
+        @save="saveColumns"
       />
       <ToastContainer :toasts="toasts" @dismiss="dismissToast" />
     </div>

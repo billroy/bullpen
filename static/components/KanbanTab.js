@@ -4,14 +4,14 @@ const KanbanTab = {
   components: { TaskCard },
   template: `
     <div v-if="viewMode !== 'list'" class="kanban-board">
-      <div v-for="col in columns" :key="col.key" class="kanban-column"
+      <div v-for="(col, colIdx) in columns" :key="col.key" class="kanban-column"
            @dragover.prevent="onDragOver($event, col.key)"
            @dragleave="onDragLeave($event)"
            @drop="onDrop($event, col.key)">
         <div class="kanban-column-header" :style="{ borderTopColor: col.color }">
           <span class="column-label">{{ col.label }}</span>
           <span class="column-count">{{ columnTasks(col.key).length }}</span>
-          <button v-if="col.key === 'inbox'"
+          <button v-if="colIdx === 0"
                   class="btn btn-sm column-new-btn"
                   @click="$emit('new-task')"
                   title="Create new ticket">+ New Ticket</button>
