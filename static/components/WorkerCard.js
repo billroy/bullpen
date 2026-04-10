@@ -13,7 +13,7 @@ const WorkerCard = {
       <span v-if="passDir === 'down'" class="pass-indicator pass-down" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
       <span v-if="passDir === 'left'" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
       <span v-if="passDir === 'right'" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
-      <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
+      <div class="worker-card-header" :style="{ background: agentColor }" :title="expertiseTooltip || null" @dblclick="$emit('configure', slotIndex)">
         <div class="worker-card-identity">
           <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
           <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
@@ -91,6 +91,9 @@ const WorkerCard = {
     },
     workerIcon() {
       return getWorkerTypeIcon(this.worker);
+    },
+    expertiseTooltip() {
+      return (this.worker.expertise_prompt || '').trim();
     },
     queuedTasks() {
       if (!this.worker.task_queue || !this.tasks) return [];
