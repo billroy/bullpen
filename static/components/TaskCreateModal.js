@@ -11,8 +11,8 @@ const TaskCreateModal = {
     };
   },
   template: `
-    <div v-if="visible" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
-      <div class="modal" @keydown.meta.enter="submit">
+    <div v-if="visible" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" @keydown.meta.enter="onPrimaryShortcut" tabindex="0" ref="overlay">
+      <div class="modal">
         <div class="modal-header">
           <h2>New Ticket</h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
@@ -73,6 +73,10 @@ const TaskCreateModal = {
     }
   },
   methods: {
+    onPrimaryShortcut(e) {
+      e.preventDefault();
+      this.submit();
+    },
     submit() {
       if (!this.title.trim()) return;
       const tags = this.tags

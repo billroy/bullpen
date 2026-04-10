@@ -54,7 +54,7 @@ const WorkerConfigModal = {
     }
   },
   template: `
-    <div v-if="worker" class="modal-overlay" @mousedown.self="overlayMouseDown = true" @click.self="onOverlayClick" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
+    <div v-if="worker" class="modal-overlay" @mousedown.self="overlayMouseDown = true" @click.self="onOverlayClick" @keydown.escape="$emit('close')" @keydown.meta.enter="onPrimaryShortcut" tabindex="0" ref="overlay">
       <div class="modal modal-wide" @mouseup="overlayMouseDown = false">
         <div class="modal-header">
           <h2>Configure: {{ form.name }}</h2>
@@ -179,6 +179,10 @@ const WorkerConfigModal = {
     </div>
   `,
   methods: {
+    onPrimaryShortcut(e) {
+      e.preventDefault();
+      this.onSave();
+    },
     onAgentChange() {
       this.form.model = this.modelOptions[0];
     },

@@ -31,6 +31,10 @@ const ColumnManagerModal = {
     },
   },
   methods: {
+    onPrimaryShortcut(e) {
+      e.preventDefault();
+      this.save();
+    },
     reset() {
       this.localColumns = (this.columns || []).map(c => ({ ...c }));
       this.newLabel = '';
@@ -139,7 +143,7 @@ const ColumnManagerModal = {
     },
   },
   template: `
-    <div v-if="visible" class="modal-overlay" @keydown.escape="$emit('close')" tabindex="0" @mousedown.self="$emit('close')">
+    <div v-if="visible" class="modal-overlay" @keydown.escape="$emit('close')" @keydown.meta.enter="onPrimaryShortcut" tabindex="0" @mousedown.self="$emit('close')">
       <div class="modal column-manager-modal">
         <div class="modal-header">
           <h2>Manage Columns</h2>
