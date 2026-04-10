@@ -6,6 +6,7 @@ import os
 import subprocess
 import threading
 import time
+from datetime import datetime, timezone
 
 from flask import request
 from flask_socketio import emit
@@ -599,11 +600,14 @@ def register_events(socketio, app):
     _chat_sessions = {}
     _chat_lock = threading.Lock()
 
+    # Chat session -> ticket ID (created lazily on first message)
+    _chat_ticket_ids = {}
+
     # Active chat subprocesses: sessionId -> proc
     _chat_processes = {}
     _chat_proc_lock = threading.Lock()
 
-    def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None):
+    def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None, ws_id=None, bp_dir=None, model=None):
         """Run chat agent subprocess, emit streaming lines, then emit done."""
         # Extract temp MCP config path for cleanup (written by adapter.build_argv)
         mcp_config_path = None
@@ -720,6 +724,40 @@ def register_events(socketio, app):
                         _chat_sessions[session_id].append({"role": "user", "content": message})
                         _chat_sessions[session_id].append({"role": "assistant", "content": full_response})
 
+                # Log chat exchange to a ticket
+                if ws_id and bp_dir:
+                    try:
+                        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                        agent_label = f"{adapter.name}/{model}" if model else adapter.name
+                        turn_text = (
+                            f"\n**[{now}] User:** {message}\n\n"
+                            f"**[{now}] Agent ({agent_label}):**\n\n{full_response}\n"
+                        )
+                        with _chat_lock:
+                            ticket_id = _chat_ticket_ids.get(session_id)
+                        if not ticket_id:
+                            short_title = message[:57] + "..." if len(message) > 57 else message
+                            task = task_mod.create_task(
+                                bp_dir,
+                                f"Chat: {short_title}",
+                                task_type="task",
+                                priority="normal",
+                                tags=["chat"],
+                            )
+                            body = f"\n## Chat Transcript\n{turn_text}"
+                            task = task_mod.update_task(bp_dir, task["id"], {"body": body})
+                            with _chat_lock:
+                                _chat_ticket_ids[session_id] = task["id"]
+                            _emit("task:created", task, ws_id)
+                        else:
+                            task = task_mod.read_task(bp_dir, ticket_id)
+                            if task:
+                                body = (task.get("body") or "").rstrip() + "\n" + turn_text
+                                task = task_mod.update_task(bp_dir, ticket_id, {"body": body})
+                                _emit("task:updated", task, ws_id)
+                    except Exception:
+                        logging.exception("Failed to log chat to ticket for session %s", session_id)
+
                 socketio.emit("chat:done", {"sessionId": session_id})
                 return
 
@@ -792,7 +830,7 @@ def register_events(socketio, app):
         thread = threading.Thread(
             target=_run_chat,
             args=(session_id, message, argv, adapter, response_collector),
-            kwargs={"workspace": workspace},
+            kwargs={"workspace": workspace, "ws_id": ws_id, "bp_dir": bp_dir, "model": model},
             daemon=True,
         )
         thread.start()
@@ -802,6 +840,7 @@ def register_events(socketio, app):
         session_id = data.get("sessionId", "")
         with _chat_lock:
             _chat_sessions.pop(session_id, None)
+            _chat_ticket_ids.pop(session_id, None)
         emit("chat:cleared", {"sessionId": session_id})
 
     @socketio.on("chat:stop")
