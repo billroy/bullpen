@@ -443,19 +443,22 @@ def reconcile(bp_dir):
     for slot in layout.get("slots", []):
         if slot is None:
             continue
-        # Reset working workers to idle
+        # Reset working workers to idle and release their tasks
         if slot.get("state") == "working":
             slot["state"] = "idle"
             changed = True
-            # Move in-progress tasks to blocked
             for task_id in slot.get("task_queue", []):
                 task_path = os.path.join(bp_dir, "tasks", f"{task_id}.md")
                 if os.path.exists(task_path):
                     from server.tasks import update_task
                     try:
-                        update_task(bp_dir, task_id, {"status": "blocked"})
+                        update_task(bp_dir, task_id, {
+                            "status": "blocked",
+                            "assigned_to": "",
+                        })
                     except Exception:
                         pass
+            slot["task_queue"] = []
 
     if changed:
         write_json(layout_path, layout)
