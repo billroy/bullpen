@@ -1691,7 +1691,7 @@ body {
   width: 380px;
   background: var(--bg-secondary);
   border-left: 1px solid var(--border);
-  overflow-y: auto;
+  overflow: hidden;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1703,10 +1703,14 @@ body {
   align-items: flex-start;
   padding: 16px;
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 2;
   background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .detail-title {
