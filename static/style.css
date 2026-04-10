@@ -28,6 +28,8 @@
   --bg-secondary: #f5f6f8;
   --bg-tertiary: #ebedf0;
   --bg-hover: #dfe1e6;
+  --ticket-bg: #fdf9ea;
+  --ticket-bg-hover: #f7efd1;
   --border: #c9cdd5;
   --text-primary: #1a1d27;
   --text-secondary: #4a5068;
@@ -535,7 +537,7 @@ body {
 
 /* === Task Card === */
 .task-card {
-  background: var(--bg-tertiary);
+  background: var(--ticket-bg, var(--bg-tertiary));
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px;
@@ -545,7 +547,7 @@ body {
 
 .task-card:hover {
   border-color: var(--accent);
-  background: var(--bg-hover);
+  background: var(--ticket-bg-hover, var(--bg-hover));
 }
 
 .task-card[draggable="true"] {
@@ -647,8 +649,12 @@ body {
   transition: background 0.1s;
 }
 
+[data-theme="light"] .ticket-list-row {
+  background: var(--ticket-bg);
+}
+
 .ticket-list-row:hover {
-  background: var(--bg-hover);
+  background: var(--ticket-bg-hover, var(--bg-hover));
 }
 
 .ticket-list-row td {
