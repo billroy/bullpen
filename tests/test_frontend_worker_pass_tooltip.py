@@ -21,3 +21,8 @@ def test_worker_card_pass_indicators_have_directional_tooltips():
 def test_pass_indicator_is_hoverable_for_native_tooltip():
     text = _read("static/style.css")
     assert "pointer-events: auto;" in text
+
+
+def test_pass_indicator_does_not_use_help_cursor():
+    text = _read("static/style.css")
+    assert "cursor: help;" not in text
