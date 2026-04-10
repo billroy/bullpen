@@ -4,7 +4,9 @@
 
 Bullpen currently treats an "agent" as a local CLI program that can be launched as a subprocess, receive a fully assembled prompt on stdin, stream stdout/stderr, and optionally use Bullpen's MCP ticket tools. Claude and Codex fit that shape because their CLIs are agentic execution environments. Ollama is different: it is primarily a local model server with an HTTP API. It can generate text, but it does not natively provide file-editing tools, shell access, MCP tool use, or agent planning loops.
 
-Adding Ollama as a backend is still valuable, but it should be framed as a local model provider, not an equivalent replacement for Claude/Codex agent CLIs. The right first version is an Ollama adapter for task analysis, chat, drafting, review, summarization, and constrained text output. Treat direct code editing, repository manipulation, and MCP ticket operations as later work that requires a Bullpen-owned tool loop.
+Adding Ollama as a backend is still valuable, but it should be framed as a local model provider, not an equivalent replacement for Claude/Codex agent CLIs. The right first version is an Ollama adapter for task analysis, chat, drafting, review, summarization, and constrained text output. Direct code editing, repository manipulation, and MCP ticket operations require an agent loop owned by Bullpen or by another coding-agent runtime.
+
+That agent path is real, not hypothetical. Ollama supports function/tool calling and documents single-shot calls, parallel calls, streaming tool calls, and a multi-turn "agent loop" where the host application executes approved tools and feeds results back into the model. The consequence for Bullpen is subtle but important: Ollama can be the reasoning/model component in a local agent, but Bullpen must still provide the loop, tool schemas, validation, permissions, cancellation, and audit trail.
 
 The recommended design is to evolve the adapter layer from "build argv and parse subprocess output" into an execution interface that supports both subprocess-backed agents and HTTP-streaming model providers. A compatibility wrapper process is possible, but it would preserve the current abstraction at the cost of hiding cancellation, streaming, configuration, and error handling behind an unnecessary subprocess.
 
@@ -45,6 +47,34 @@ Poor first-fit uses without a tool loop:
 - Reliable multi-step remediation on large codebases.
 
 This distinction matters because Bullpen's worker UX currently implies "agent execution" rather than "model response." An Ollama worker can be useful, but a local model that only writes text should not be presented as having the same powers as Claude/Codex.
+
+## Agent-Based Contexts For Local Models
+
+There are several legitimate agent contexts for local/Ollama-hosted models. They vary in how much of the agent loop they provide.
+
+| Context | What it provides | Bullpen relevance |
+| --- | --- | --- |
+| Native Ollama tool loop | Ollama's `/api/chat` can return tool calls. The host app executes tools, appends `tool` messages, and repeats until no tool calls remain. Ollama documents this as an agent loop, including streaming tool-call accumulation. | Best long-term fit if Bullpen wants tight control over ticket/file tools, permissions, and UI state. |
+| LangChain / LangGraph | `ChatOllama` supports streaming, tool calling, structured output, and can be embedded in framework-managed agent/graph workflows. | Useful if Bullpen wants a mature orchestration layer, but it adds a dependency and another abstraction around tools. |
+| LlamaIndex | Ollama integration supports chat/streaming/structured prediction patterns and can sit inside RAG/query-agent workflows. | Useful for retrieval-heavy local agents that need indexed workspace context before answering. |
+| CrewAI | Role/task-oriented multi-agent orchestration can use local Ollama models through LLM configuration. | Conceptually close to Bullpen's worker/team metaphor, but it may overlap with Bullpen's own scheduler and worker model. |
+| AutoGen-style multi-agent loops | Local models can be used through OpenAI-compatible bridges or custom model clients. | More relevant if Bullpen wants conversational multi-agent debate/coordination rather than direct ticket workers. |
+| Aider with Ollama | Aider is a coding-agent CLI that can use Ollama models and edit a repository. Its docs recommend `ollama_chat/<model>` and call out context-window pitfalls. | The closest off-the-shelf local coding-agent option. Bullpen could integrate Aider as another process-backed adapter instead of building a full code-editing loop itself. |
+
+Useful references:
+
+- Ollama tool calling and agent loop: <https://docs.ollama.com/capabilities/tool-calling>
+- LangChain ChatOllama: <https://docs.langchain.com/oss/python/integrations/chat/ollama/>
+- LangChain model capability table: <https://docs.langchain.com/oss/python/integrations/chat/>
+- LlamaIndex Ollama integration: <https://docs.llamaindex.ai/en/stable/api_reference/llms/ollama/>
+- Aider with Ollama: <https://aider.chat/docs/llms/ollama.html>
+
+The design lesson is that Bullpen has two plausible local-model tracks:
+
+- Native Bullpen tool loop: Ollama is the model; Bullpen owns tools, safety, state, and ticket updates.
+- External coding-agent adapter: Aider or a similar runtime is the agent; Bullpen launches it like Claude/Codex and treats it as a process-backed worker.
+
+The first track offers better product integration and safety control. The second track may reach practical code-editing sooner, but Bullpen must accept the external agent's behavior and output format.
 
 ## Recommended Architecture
 
@@ -148,17 +178,28 @@ That is acceptable for the first Ollama worker version. However, local models ha
 
 Without this, an Ollama worker may hallucinate completed work and Bullpen may move the ticket to review as if execution occurred.
 
-### Tool Use and MCP
+### Tool Use, MCP, and Agent Loops
 
-Ollama does not automatically use Bullpen MCP tools the way Claude/Codex CLIs do. There are three possible levels:
+Ollama does not automatically use Bullpen MCP tools the way Claude/Codex CLIs do, but it does support model-emitted tool calls. There are four possible levels:
 
 1. No tools: Ollama returns text only. This is the right first version.
-2. Bullpen-owned tool loop: the adapter asks the model for structured tool calls, validates them, executes approved Bullpen/file tools, feeds results back, and iterates.
-3. OpenAI-compatible tool calling bridge: use a local model/API mode that supports tool calling semantics, then map calls to Bullpen tools.
+2. Native Ollama tool loop: Bullpen sends JSON-schema tools to Ollama, validates returned tool calls, executes approved local functions, appends tool results, and iterates.
+3. Framework-owned loop: LangChain, LlamaIndex, CrewAI, or AutoGen owns part of the agent loop and calls Bullpen-provided tools.
+4. External coding-agent adapter: Bullpen launches a local coding agent such as Aider configured to use Ollama.
 
-Level 2 is the most controllable long-term design, but it is a separate feature. It requires schemas, validation, loop limits, prompt-injection safeguards, workspace path controls, and a clear UI story for what tools a local model can run.
+Level 2 is the most controllable long-term design. It maps directly to Ollama's documented agent-loop pattern, but it is still a separate feature from basic generation. It requires schemas, validation, loop limits, prompt-injection safeguards, workspace path controls, cancellation, output caps, and a clear UI story for what tools a local model can run.
 
 Until then, Ollama workers should not be able to use MCP tools directly and should not be advertised as autonomous coding workers.
+
+Recommended first Bullpen-owned tools, in order:
+
+- `list_tickets` / `read_ticket` / `update_ticket`, because these stay inside Bullpen's existing domain.
+- `read_file` with strict workspace path validation and size limits.
+- `search_files` backed by `rg`-style bounded search.
+- `propose_patch` that returns a patch for human or Bullpen validation, rather than directly writing files.
+- `apply_patch` only after the model can reliably produce bounded patch proposals and the UI can expose approvals/audit.
+
+Keep shell execution out of the first local-model tool loop. Running arbitrary commands is the major boundary between "local model assistant" and "autonomous coding agent."
 
 ## Required Code Changes
 
@@ -270,6 +311,8 @@ For a text-only Ollama backend:
 
 The existing code will attempt auto-commit after a successful worker run regardless of provider. That is safe if there are no changes, but it may be confusing. The UI should either disable these controls for text-only providers or show a capability warning.
 
+For an external coding-agent adapter such as Aider-with-Ollama, worktrees and auto-commit become useful again because the process can actually modify files. That should be represented as a different capability profile from raw Ollama chat/generate.
+
 ## Security and Safety Considerations
 
 Local models feel private, but adding them as workers still changes the risk profile.
@@ -278,6 +321,7 @@ Local models feel private, but adding them as workers still changes the risk pro
 - Network exposure: default Ollama URL should be loopback. Remote URLs should be opt-in and clearly visible.
 - Data leakage: if a user points Bullpen at a remote Ollama-compatible endpoint, workspace prompts and task bodies may leave the machine.
 - Tool execution: any future tool loop must whitelist tools, validate paths with `ensure_within()`, enforce payload limits, and avoid arbitrary shell execution by default.
+- Tool-call trust boundary: model-emitted tool calls are requests, not commands. Bullpen must validate every name and argument before execution, even when using native Ollama tool calling or a framework agent.
 - Resource exhaustion: local model calls can consume CPU/GPU/RAM for long periods. Timeouts, cancellation, and queue visibility are important.
 - Concurrent model runs: multiple Bullpen workers can start at once. Local hardware may not handle parallel generations well. Add a configurable Ollama concurrency limit, likely defaulting to 1.
 
@@ -294,6 +338,8 @@ Add tests at several layers:
 - Validation accepts `ollama` and rejects invalid provider names.
 - UI source tests include Ollama provider/model entries.
 - Live chat can send an Ollama request without Claude-specific MCP startup logic.
+- Native tool-loop tests cover invalid tool names, invalid arguments, loop limit exhaustion, tool output caps, and cancellation between tool calls.
+- External-agent adapter tests, if adding Aider or similar, treat it as a separate process-backed adapter rather than as the raw Ollama adapter.
 
 Use a fake local HTTP server or monkeypatched adapter transport for tests. Do not require a real Ollama installation in CI.
 
@@ -302,6 +348,7 @@ Use a fake local HTTP server or monkeypatched adapter transport for tests. Do no
 - Should Ollama be labeled as an "AI Provider" beside Claude/Codex, or as a separate "Local Model" mode with explicit reduced capabilities?
 - Should workers with text-only providers be allowed to route tickets to `done`, or should they default to `review` to avoid implying code was changed?
 - Should the first version support only chat/generate, or also a Bullpen-managed tool loop for file reads?
+- Should Bullpen build its own Ollama tool loop first, or add Aider/Ollama as a process-backed local coding-agent adapter first?
 - Should model discovery happen eagerly on app load, lazily when a provider dropdown opens, or through a manual refresh button?
 - Should Bullpen support any OpenAI-compatible local endpoint under the same adapter, or keep this specifically Ollama until the abstractions settle?
 - Should local model concurrency be global across workspaces or per workspace?
@@ -345,13 +392,21 @@ Use a fake local HTTP server or monkeypatched adapter transport for tests. Do no
 
 ### Tranche 6: Optional Tool Loop
 
-- Define a strict tool schema for file read/search, ticket update, and maybe patch proposal.
+- Define a strict native Ollama tool schema for ticket operations, file read/search, and maybe patch proposal.
 - Add loop limits, tool allowlists, path validation, output caps, and audit logging.
+- Support streaming tool calls by accumulating partial content/tool-call fields before executing a tool.
 - Keep shell execution out of scope initially.
 - Revisit whether Ollama workers can become autonomous coding workers after this is reliable.
+
+### Tranche 7: External Local Coding Agents
+
+- Evaluate Aider with Ollama as a separate process-backed adapter.
+- Decide whether Bullpen should support Aider's model naming/config conventions directly, such as `ollama_chat/<model>`.
+- Preserve Bullpen's existing worktree, stop, output, retry, auto-commit, and auto-PR flows around the external process.
+- Compare the result against the native Bullpen tool loop before making it the recommended local coding path.
 
 ## Recommended First Implementation Choice
 
 Implement Ollama first as a text-only local model provider with direct HTTP streaming, not as a fake Claude/Codex equivalent. Refactor the adapter layer just enough to support non-subprocess execution, add provider capability metadata, and keep the worker/chat socket payloads unchanged.
 
-That gives Bullpen a genuinely useful local/offline/private backend quickly while avoiding the trap of implying that a raw local model can safely edit a repository or use MCP tools. Once that baseline is stable, a Bullpen-owned tool loop can be designed deliberately rather than smuggled in through the adapter.
+That gives Bullpen a genuinely useful local/offline/private backend quickly while avoiding the trap of implying that a raw local model can safely edit a repository or use MCP tools. Once that baseline is stable, the next decision is between a native Bullpen-owned Ollama tool loop and an external coding-agent adapter such as Aider. Both are valid agent-based contexts; they should be modeled explicitly so users understand what each worker can actually do.

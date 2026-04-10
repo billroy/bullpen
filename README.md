@@ -1,11 +1,11 @@
 # Bullpen
 
-An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so Claude Code can manage tickets directly from the conversation.
+An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
 
 ## Quick Start
 
 ```bash
-pip install flask flask-socketio simple-websocket
+pip install -r requirements.txt
 python3 bullpen.py --workspace /path/to/your/project
 ```
 
@@ -30,7 +30,7 @@ By default the server only accepts connections from localhost. CORS is restricte
 - **Worker grid** -- configurable grid of AI agent slots; drag tickets onto workers to assign them
 - **Agent execution** -- workers invoke Claude or Codex CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (stream-json for Claude)
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
-- **Live Agent Chat** -- interactive chat tab that connects to Claude with provider/model selectors, streaming responses, conversation persistence across tab switches, stop button, and automatic chat logging to tickets
+- **Live Agent Chat** -- interactive chat tab for Claude and Codex with provider/model selectors, streaming responses, conversation persistence across tab switches, stop button, and automatic chat logging to tickets
 - **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, and an in-browser editor with find/replace
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
 - **Multi-project** -- register multiple project directories, switch between them, with per-workspace state and activity badges
@@ -48,7 +48,7 @@ By default the server only accepts connections from localhost. CORS is restricte
 - **Persistence** -- tickets stored as frontmatter markdown files in `.bullpen/tasks/`, layout and config as JSON
 - **Ticket archiving** -- archive completed tickets to keep the board clean
 - **Authentication** -- optional single-user login (see [Authentication](#authentication) below)
-- **MCP server** -- expose ticket management tools to Claude Code via JSON-RPC stdio (see [MCP Integration](#mcp-integration) below)
+- **MCP server** -- expose ticket management tools to supported agents via JSON-RPC stdio (see [MCP Integration](#mcp-integration) below)
 - **Cross-platform** -- runs on macOS, Linux, and Windows
 
 ## Architecture
@@ -57,7 +57,7 @@ By default the server only accepts connections from localhost. CORS is restricte
 - **Frontend**: Vue 3 via CDN (no build step, no npm)
 - **Transport**: Socket.IO for real-time events, REST for file serving
 - **Storage**: flat files in `.bullpen/` under the workspace
-- **MCP**: stdio JSON-RPC server for Claude Code integration
+- **MCP**: stdio JSON-RPC server for agent ticket-tool integration
 
 ```
 bullpen.py              # Entry point
@@ -95,7 +95,7 @@ tests/                  # 288 tests (pytest)
 6. **On completion**, the worker optionally auto-commits, opens a PR, and routes the ticket based on its disposition (Review, Done, or hand off to another worker)
 7. **On failure**, the worker retries with backoff, then moves the ticket to Blocked
 8. **Scheduled workers** can activate on a timer (specific time or interval) to process queued tickets or create their own ephemeral tickets
-9. **Chat directly** with Claude via the Live Agent Chat tab, with conversations logged to tickets
+9. **Chat directly** with Claude or Codex via the Live Agent Chat tab, with conversations logged to tickets
 
 ## Supported Agents
 
@@ -134,7 +134,7 @@ When exposing Bullpen outside localhost, put TLS in front (nginx, Caddy, Cloudfl
 
 ## MCP Integration
 
-Bullpen ships an MCP (Model Context Protocol) stdio server that lets Claude Code manage tickets directly from the conversation. The server exposes tools for creating, listing, and updating tickets.
+Bullpen ships an MCP (Model Context Protocol) stdio server that lets supported agent sessions manage tickets directly from the conversation. The server exposes tools for creating, listing, and updating tickets.
 
 ### Available MCP tools
 
@@ -147,7 +147,7 @@ Bullpen ships an MCP (Model Context Protocol) stdio server that lets Claude Code
 
 ### How it works
 
-Claude Code spawns `server/mcp_tools.py` as a child process and communicates via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.
+Claude and Codex adapters spawn `server/mcp_tools.py` as a child process and communicate via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.
 
 When auth is enabled, the MCP server authenticates using a shared token that Bullpen writes to each workspace's `.bullpen/config.json` on startup — no manual configuration needed.
 
@@ -158,6 +158,6 @@ The MCP server communicates exclusively over stdout. Any stray `print()` call or
 ## Running Tests
 
 ```bash
-pip install pytest
+pip install -r requirements.txt
 python3 -m pytest tests/
 ```
