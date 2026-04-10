@@ -179,7 +179,13 @@ const KanbanTab = {
       if (!iso) return '—';
       const d = new Date(iso);
       if (isNaN(d)) return '—';
-      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      return d.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
     },
     columnLabel(key) {
       const col = (this.columns || []).find(c => c.key === key);
