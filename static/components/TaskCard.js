@@ -15,7 +15,10 @@ const TaskCard = {
          draggable="true"
          @dragstart="onDragStart"
          @click="$emit('select-task', task.id)">
-      <div class="task-card-title">{{ task.title }}</div>
+      <div class="task-card-title">
+        <i class="ticket-type-icon ticket-type-icon--card" data-lucide="ticket" aria-hidden="true"></i>
+        <span class="task-card-title-text">{{ task.title }}</span>
+      </div>
       <div class="task-card-meta">
         <span class="badge" :class="'priority-' + (task.priority || 'normal')">{{ task.priority || 'normal' }}</span>
         <span class="badge type-badge">{{ task.type || 'task' }}</span>

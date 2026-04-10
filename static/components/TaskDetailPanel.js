@@ -49,7 +49,10 @@ const TaskDetailPanel = {
             <button class="btn btn-sm btn-primary" @click="saveTitle">Save</button>
           </div>
         </div>
-        <h2 v-else class="detail-title" @click="startEditTitle" title="Click to edit">{{ task.title }}</h2>
+        <div v-else class="detail-title-wrap">
+          <i class="ticket-type-icon ticket-type-icon--detail" data-lucide="ticket" aria-hidden="true"></i>
+          <h2 class="detail-title" @click="startEditTitle" title="Click to edit">{{ task.title }}</h2>
+        </div>
         <button class="btn btn-icon" @click="$emit('close')">&times;</button>
       </div>
 
@@ -133,6 +136,12 @@ const TaskDetailPanel = {
       </div>
     </div>
   `,
+  mounted() {
+    renderLucideIcons(this.$el);
+  },
+  updated() {
+    renderLucideIcons(this.$el);
+  },
   methods: {
     startEditTitle() {
       this.editTitle = this.task.title;

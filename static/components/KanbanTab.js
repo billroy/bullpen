@@ -101,7 +101,12 @@ const KanbanTab = {
             <td class="ticket-list-col-priority">
               <span class="badge" :class="'priority-' + (task.priority || 'normal')">{{ task.priority || 'normal' }}</span>
             </td>
-            <td class="ticket-list-col-title">{{ task.title }}</td>
+            <td class="ticket-list-col-title">
+              <div class="ticket-list-title-wrap">
+                <i class="ticket-type-icon ticket-type-icon--list" data-lucide="ticket" aria-hidden="true"></i>
+                <span class="ticket-list-title-text">{{ task.title }}</span>
+              </div>
+            </td>
             <td class="ticket-list-col-status">
               <span class="ticket-list-status-pill" :class="'status-col-' + task.status">{{ columnLabel(task.status) }}</span>
             </td>

@@ -559,9 +559,45 @@ body {
 }
 
 .task-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+
+.task-card-title-text {
   font-size: 13px;
   font-weight: 500;
-  margin-bottom: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ticket-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.ticket-type-icon--card {
+  width: 14px;
+  height: 14px;
+}
+
+.ticket-type-icon--list {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.ticket-type-icon--detail {
+  width: 18px;
+  height: 18px;
+  color: var(--text-secondary);
 }
 
 .task-card-meta {
@@ -664,6 +700,20 @@ body {
 
 .ticket-list-col-title {
   width: 100%;
+}
+
+.ticket-list-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ticket-list-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ticket-list-col-priority,
@@ -1666,6 +1716,14 @@ body {
   flex: 1;
   margin-right: 8px;
   cursor: pointer;
+}
+
+.detail-title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 
 .detail-title:hover {
