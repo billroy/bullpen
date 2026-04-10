@@ -17,6 +17,8 @@ else:
         os.path.expanduser("~/.local/bin/codex"),
         "/usr/local/bin/codex",
         "/opt/homebrew/bin/codex",
+        "/Applications/Codex.app/Contents/Resources/codex",
+        os.path.expanduser("~/Applications/Codex.app/Contents/Resources/codex"),
     ]
 
 
@@ -31,6 +33,10 @@ def _is_executable(path):
 
 def _find_codex():
     """Find the codex binary on PATH or common install locations."""
+    configured = os.environ.get("BULLPEN_CODEX_PATH")
+    if configured and _is_executable(os.path.expanduser(configured)):
+        return os.path.expanduser(configured)
+
     found = shutil.which("codex")
     if found:
         return found
@@ -48,6 +54,19 @@ class CodexAdapter(AgentAdapter):
 
     def available(self):
         return _find_codex() is not None
+
+    def unavailable_message(self):
+        configured = os.environ.get("BULLPEN_CODEX_PATH")
+        if configured:
+            return (
+                "Codex CLI is not available. BULLPEN_CODEX_PATH is set to "
+                f"{configured!r}, but that file was not found or is not executable."
+            )
+        return (
+            "Codex CLI is not available. Install the Codex CLI, set "
+            "BULLPEN_CODEX_PATH to the codex executable, or install the Codex "
+            "desktop app where Bullpen can discover it."
+        )
 
     def build_argv(self, prompt, model, workspace, bp_dir=None):
         codex_bin = _find_codex() or "codex"

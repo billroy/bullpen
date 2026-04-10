@@ -8,6 +8,7 @@ import pytest
 from server.agents import get_adapter, register_adapter, list_adapters
 from server.agents.claude_adapter import ClaudeAdapter
 from server.agents.codex_adapter import CodexAdapter
+import server.agents.codex_adapter as codex_mod
 from tests.conftest import MockAdapter
 
 
@@ -115,6 +116,28 @@ class TestCodexAdapter:
         assert "-" in argv
         assert "--approval-mode" not in argv
         assert "--quiet" not in argv
+
+    def test_find_codex_checks_app_bundle_when_not_on_path(self, monkeypatch):
+        app_bin = "/Applications/Codex.app/Contents/Resources/codex"
+        monkeypatch.delenv("BULLPEN_CODEX_PATH", raising=False)
+        monkeypatch.setattr(codex_mod.shutil, "which", lambda name: None)
+        monkeypatch.setattr(codex_mod, "_CODEX_SEARCH_PATHS", [app_bin])
+        monkeypatch.setattr(codex_mod, "_is_executable", lambda path: path == app_bin)
+
+        assert codex_mod._find_codex() == app_bin
+
+    def test_find_codex_honors_configured_path(self, monkeypatch):
+        configured = "/opt/bullpen/bin/codex"
+        monkeypatch.setenv("BULLPEN_CODEX_PATH", configured)
+        monkeypatch.setattr(codex_mod, "_is_executable", lambda path: path == configured)
+
+        assert codex_mod._find_codex() == configured
+
+    def test_unavailable_message_mentions_configured_bad_path(self, monkeypatch):
+        monkeypatch.setenv("BULLPEN_CODEX_PATH", "/missing/codex")
+        msg = CodexAdapter().unavailable_message()
+        assert "BULLPEN_CODEX_PATH" in msg
+        assert "/missing/codex" in msg
 
     def test_parse_success_falls_back_to_stderr_when_stdout_empty(self):
         adapter = CodexAdapter()

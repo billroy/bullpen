@@ -26,6 +26,21 @@ from server.agents import register_adapter
 from tests.conftest import MockAdapter
 
 
+class UnavailableAdapter(MockAdapter):
+    @property
+    def name(self):
+        return "unavailable"
+
+    def available(self):
+        return False
+
+    def unavailable_message(self):
+        return "Unavailable test agent. Install the test CLI."
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        raise AssertionError("build_argv should not be called when adapter is unavailable")
+
+
 @pytest.fixture
 def bp_dir(tmp_workspace):
     bp = init_workspace(tmp_workspace)
@@ -138,6 +153,24 @@ class TestStartWorker:
                                 _load_layout(bp_dir)["slots"][worker_slot])
         assert task["title"].startswith("[Auto] Test Worker")
         assert task["type"] == "chore"
+
+    def test_unavailable_agent_blocks_with_clear_message(self, bp_dir, worker_slot):
+        register_adapter("unavailable", UnavailableAdapter())
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "unavailable"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Needs missing CLI")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        start_worker(bp_dir, worker_slot)
+
+        updated = read_task(bp_dir, task["id"])
+        layout = _load_layout(bp_dir)
+        assert updated["status"] == "blocked"
+        assert updated["assigned_to"] == ""
+        assert "Unavailable test agent" in updated["body"]
+        assert task["id"] not in layout["slots"][worker_slot]["task_queue"]
 
 
 class TestStopWorker:

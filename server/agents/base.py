@@ -48,3 +48,7 @@ class AgentAdapter(ABC):
         Override in adapters that use structured output (e.g. stream-json).
         """
         return line.rstrip("\n")
+
+    def unavailable_message(self):
+        """Return a user-facing setup message when this adapter is unavailable."""
+        return f"{self.name} agent executable was not found. Install it or add it to PATH."

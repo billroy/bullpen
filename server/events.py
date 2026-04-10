@@ -812,6 +812,9 @@ def register_events(socketio, app):
         if not adapter:
             emit("chat:error", {"sessionId": session_id, "message": f"Unknown provider: {provider}"})
             return
+        if not adapter.available():
+            emit("chat:error", {"sessionId": session_id, "message": adapter.unavailable_message()})
+            return
 
         # Build prompt with conversation history
         with _chat_lock:

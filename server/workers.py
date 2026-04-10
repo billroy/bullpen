@@ -204,6 +204,21 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
             start_worker(bp_dir, slot_index, socketio, ws_id)
         return
 
+    # Get adapter before changing task/worker state so missing local CLIs fail
+    # with a clear setup message instead of a raw subprocess FileNotFoundError.
+    agent_name = worker.get("agent", "claude")
+    adapter = get_adapter(agent_name)
+    if not adapter:
+        _block_agent_start_failure(
+            bp_dir, slot_index, task_id, f"Unknown agent: {agent_name}", socketio, ws_id,
+        )
+        return
+    if not adapter.available():
+        _block_agent_start_failure(
+            bp_dir, slot_index, task_id, adapter.unavailable_message(), socketio, ws_id,
+        )
+        return
+
     # Update state
     worker["state"] = "working"
     worker["started_at"] = _now_iso()
@@ -228,12 +243,6 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
             _on_agent_error(bp_dir, slot_index, task_id, f"Worktree setup failed: {e}", socketio, ws_id=ws_id)
             return
 
-    # Get adapter
-    adapter = get_adapter(worker.get("agent", "claude"))
-    if not adapter:
-        _on_agent_error(bp_dir, slot_index, task_id, f"Unknown agent: {worker.get('agent')}", socketio, ws_id=ws_id)
-        return
-
     model = worker.get("model", "claude-sonnet-4-6")
     argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
 
@@ -247,6 +256,37 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         daemon=True,
     )
     thread.start()
+
+
+def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=None, ws_id=None):
+    """Block a task when its agent cannot be launched at all.
+
+    This is intentionally not routed through _on_agent_error: missing binaries
+    and unknown adapters are setup problems, so retrying just burns time and
+    leaves users with a cryptic failure.
+    """
+    layout = _load_layout(bp_dir)
+    worker = None
+    if slot_index < len(layout.get("slots", [])):
+        worker = layout["slots"][slot_index]
+
+    if worker:
+        queue = worker.get("task_queue", [])
+        if task_id in queue:
+            queue.remove(task_id)
+        worker["state"] = "idle"
+        _save_layout(bp_dir, layout)
+
+    task_mod.update_task(bp_dir, task_id, {
+        "status": "blocked",
+        "assigned_to": "",
+    })
+    _append_output(bp_dir, task_id, worker or {"name": "Agent"}, f"[BLOCKED] {error_msg}")
+
+    if socketio:
+        task = task_mod.read_task(bp_dir, task_id)
+        _ws_emit(socketio, "task:updated", task, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id)
 
 
 def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
@@ -479,15 +519,21 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
     timed_out = False
 
     try:
-        proc = subprocess.Popen(
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=workspace,
-            text=True,
-            bufsize=1,  # Line-buffered for streaming
-        )
+        try:
+            proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=workspace,
+                text=True,
+                bufsize=1,  # Line-buffered for streaming
+            )
+        except FileNotFoundError:
+            _block_agent_start_failure(
+                bp_dir, slot_index, task_id, adapter.unavailable_message(), socketio, ws_id,
+            )
+            return
 
         entry = {"proc": proc, "buffer": [], "task_id": task_id, "buffer_size": 0}
         with _process_lock:
