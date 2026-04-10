@@ -471,12 +471,17 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         last_emit = [time.time()]
 
         def _append_stream_line(line, sink):
-            if len(line) > MAX_LINE_LEN:
-                line = line[:MAX_LINE_LEN] + "[line truncated]\n"
+            # Always store the full line for parse_output (e.g. the result
+            # JSON can be very large and truncating it would break parsing
+            # of the usage/token fields).
             sink.append(line)
 
+            display_line = line
+            if len(display_line) > MAX_LINE_LEN:
+                display_line = display_line[:MAX_LINE_LEN] + "[line truncated]\n"
+
             # Format for display (adapter may extract text from JSON, etc.)
-            display = adapter.format_stream_line(line)
+            display = adapter.format_stream_line(display_line)
             if display is None:
                 return  # Adapter says skip this line
 
