@@ -9,10 +9,10 @@ const WorkerCard = {
          @dragleave="onDragLeave"
          @drop="onDrop"
 >
-      <span v-if="passDir === 'up'" class="pass-indicator pass-up" title="Pass up">&#x25B2;</span>
-      <span v-if="passDir === 'down'" class="pass-indicator pass-down" title="Pass down">&#x25BC;</span>
-      <span v-if="passDir === 'left'" class="pass-indicator pass-left" title="Pass left">&#x25C0;</span>
-      <span v-if="passDir === 'right'" class="pass-indicator pass-right" title="Pass right">&#x25B6;</span>
+      <span v-if="passDir === 'up'" class="pass-indicator pass-up" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
+      <span v-if="passDir === 'down'" class="pass-indicator pass-down" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
+      <span v-if="passDir === 'left'" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
+      <span v-if="passDir === 'right'" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
       <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
         <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
         <div class="worker-card-actions">
