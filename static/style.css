@@ -456,8 +456,24 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   border-top: 3px solid var(--gray);
   background: var(--bg-tertiary);
+}
+
+.column-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.column-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .column-label {
@@ -465,6 +481,9 @@ body {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .column-count {
@@ -473,6 +492,7 @@ body {
   background: var(--bg-primary);
   padding: 0 6px;
   border-radius: 10px;
+  flex-shrink: 0;
 }
 
 .column-archive-btn {

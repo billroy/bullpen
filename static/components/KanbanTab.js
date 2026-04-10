@@ -9,7 +9,10 @@ const KanbanTab = {
            @dragleave="onDragLeave($event)"
            @drop="onDrop($event, col.key)">
         <div class="kanban-column-header" :style="{ borderTopColor: col.color }">
-          <span class="column-label">{{ col.label }}</span>
+          <div class="column-title">
+            <i class="column-icon" :data-lucide="columnIcon(col)" aria-hidden="true"></i>
+            <span class="column-label">{{ col.label }}</span>
+          </div>
           <span class="column-count">{{ columnTasks(col.key).length }}</span>
           <button v-if="col.key === 'done' && columnTasks(col.key).length"
                   class="btn btn-sm column-archive-btn"
@@ -89,6 +92,12 @@ const KanbanTab = {
       sortDir: 'asc',
     };
   },
+  mounted() {
+    renderLucideIcons(this.$el);
+  },
+  updated() {
+    renderLucideIcons(this.$el);
+  },
   computed: {
     sortedTasks() {
       const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
@@ -150,6 +159,9 @@ const KanbanTab = {
           if (pa !== pb) return pa - pb;
           return (a.order || '').localeCompare(b.order || '');
         });
+    },
+    columnIcon(col) {
+      return getColumnIcon(col);
     },
     setSort(field) {
       if (this.sortField === field) {
