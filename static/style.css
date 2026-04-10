@@ -345,10 +345,17 @@ body {
 }
 
 .roster-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.roster-label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
 }
 
 /* === Badges === */
@@ -754,6 +761,40 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+}
+
+.worker-card-identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.worker-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.worker-type-icon svg,
+[data-lucide] {
+  display: block;
+  stroke: currentColor;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.worker-type-icon--card {
+  width: 16px;
+  height: 16px;
+}
+
+.worker-type-icon--roster {
+  width: 14px;
+  height: 14px;
 }
 
 .worker-card-actions {

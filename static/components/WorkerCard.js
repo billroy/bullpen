@@ -14,7 +14,10 @@ const WorkerCard = {
       <span v-if="passDir === 'left'" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
       <span v-if="passDir === 'right'" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
       <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
-        <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
+        <div class="worker-card-identity">
+          <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
+          <span class="worker-card-name" :title="worker.name">{{ worker.name }}</span>
+        </div>
         <div class="worker-card-actions">
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
           <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop>
@@ -53,12 +56,16 @@ const WorkerCard = {
     return { dragOver: false, showMenu: false, menuPos: { top: 0, left: 0 } };
   },
   mounted() {
+    renderLucideIcons(this.$el);
     this._closeMenu = (e) => {
       if (this.showMenu && !this.$el.contains(e.target)) {
         this.showMenu = false;
       }
     };
     document.addEventListener('click', this._closeMenu);
+  },
+  updated() {
+    renderLucideIcons(this.$el);
   },
   beforeUnmount() {
     document.removeEventListener('click', this._closeMenu);
@@ -81,6 +88,9 @@ const WorkerCard = {
     },
     agentColor() {
       return agentColor(this.worker.agent);
+    },
+    workerIcon() {
+      return getWorkerTypeIcon(this.worker);
     },
     queuedTasks() {
       if (!this.worker.task_queue || !this.tasks) return [];

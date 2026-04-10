@@ -59,7 +59,10 @@ const LeftPane = {
                @dragover.prevent="onRosterDragOver($event, w)"
                @dragleave="onRosterDragLeave"
                @drop="onRosterDrop($event, w.slot)">
-            <span class="roster-name">{{ w.name }}</span>
+            <span class="roster-name">
+              <i class="worker-type-icon worker-type-icon--roster" :data-lucide="workerTypeIcon(w)" aria-hidden="true"></i>
+              <span class="roster-label">{{ w.name }}</span>
+            </span>
             <span class="status-pill" :class="'status-' + (w.state || 'idle')">{{ (w.state || 'idle').toUpperCase() }}</span>
           </div>
         </div>
@@ -102,6 +105,12 @@ const LeftPane = {
   data() {
     return { rosterDragSlot: null, selectedColumn: 'inbox', quickCreateText: '' };
   },
+  mounted() {
+    renderLucideIcons(this.$el);
+  },
+  updated() {
+    renderLucideIcons(this.$el);
+  },
   methods: {
     submitQuickCreate() {
       const title = this.quickCreateText.trim();
@@ -115,6 +124,9 @@ const LeftPane = {
     },
     agentColor(agent) {
       return agentColor(agent);
+    },
+    workerTypeIcon(worker) {
+      return getWorkerTypeIcon(worker);
     },
     unseenCount(wsId) {
       if (!this.workspaces || !this.workspaces[wsId]) return 0;
