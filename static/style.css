@@ -24,31 +24,31 @@
 
 /* === Light Theme === */
 [data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f6f8;
-  --bg-tertiary: #ebedf0;
-  --bg-hover: #dfe1e6;
-  --ticket-bg: #fdf9ea;
-  --ticket-bg-hover: #f7efd1;
-  --border: #c9cdd5;
-  --text-primary: #1a1d27;
-  --text-secondary: #4a5068;
-  --text-muted: #8b90a0;
-  --accent: #5066cc;
-  --accent-hover: #3d50b0;
+  --bg-primary: #f6f2e8;
+  --bg-secondary: #eee5d6;
+  --bg-tertiary: #e5d8c1;
+  --bg-hover: #dcccae;
+  --ticket-bg: #fff8e7;
+  --ticket-bg-hover: #f5ebd1;
+  --border: #c7b79a;
+  --text-primary: #2f2a22;
+  --text-secondary: #605644;
+  --text-muted: #8a7f6b;
+  --accent: #8a5a2b;
+  --accent-hover: #6e4722;
 }
 
-[data-theme="light"] .priority-low { background: #d1fae5; color: #065f46; }
-[data-theme="light"] .priority-normal { background: #dbeafe; color: #1e40af; }
-[data-theme="light"] .priority-high { background: #fef3c7; color: #92400e; }
-[data-theme="light"] .priority-urgent { background: #fee2e2; color: #991b1b; }
-[data-theme="light"] .status-pill.status-idle { background: #e5e7eb; color: #4b5563; }
-[data-theme="light"] .status-pill.status-working { background: #dbeafe; color: #1d4ed8; }
-[data-theme="light"] .status-pill.status-queued { background: #ede9fe; color: #5b21b6; }
-[data-theme="light"] .badge.type-task { background: #e5e7eb; color: #4b5563; }
-[data-theme="light"] .badge.type-bug { background: #fee2e2; color: #991b1b; }
-[data-theme="light"] .badge.type-feature { background: #dbeafe; color: #1e40af; }
-[data-theme="light"] .badge.type-chore { background: #fef3c7; color: #92400e; }
+[data-theme="light"] .priority-low { background: #d8efdc; color: #1e5f33; }
+[data-theme="light"] .priority-normal { background: #efe4c8; color: #6b5526; }
+[data-theme="light"] .priority-high { background: #f6ddbf; color: #8f4e18; }
+[data-theme="light"] .priority-urgent { background: #f3d2ce; color: #8f2f2d; }
+[data-theme="light"] .status-pill.status-idle { background: #e8ddca; color: #665b48; }
+[data-theme="light"] .status-pill.status-working { background: #d7ead9; color: #2d6140; }
+[data-theme="light"] .status-pill.status-queued { background: #e8ddf2; color: #5f3d83; }
+[data-theme="light"] .badge.type-task { background: #e8ddca; color: #665b48; }
+[data-theme="light"] .badge.type-bug { background: #f3d2ce; color: #8f2f2d; }
+[data-theme="light"] .badge.type-feature { background: #d7e8e0; color: #1f5b4d; }
+[data-theme="light"] .badge.type-chore { background: #f6ddbf; color: #8f4e18; }
 
 /* === Reset === */
 *, *::before, *::after {
