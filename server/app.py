@@ -189,6 +189,64 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
             return redirect(url_for("login"))
         return redirect(url_for("index"))
 
+    @app.route("/api/commits")
+    @auth.require_auth
+    def get_commits():
+        """Return git log entries for the active workspace."""
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws_path = manager.get_workspace_path(ws_id)
+        try:
+            count = min(max(int(request.args.get("count", 10)), 1), 50)
+        except (ValueError, TypeError):
+            count = 10
+        try:
+            offset = max(int(request.args.get("offset", 0)), 0)
+        except (ValueError, TypeError):
+            offset = 0
+
+        # Field separator (\x1f = ASCII unit separator) and record separator (\x1e = record separator)
+        fmt = "%H\x1f%h\x1f%s\x1f%an\x1f%ai\x1f%b\x1e"
+        try:
+            result = subprocess.run(
+                ["git", "log", f"-n{count}", f"--skip={offset}", f"--format={fmt}"],
+                capture_output=True, text=True, cwd=ws_path, timeout=10,
+            )
+        except Exception as e:
+            return jsonify({"commits": [], "has_more": False, "error": str(e)}), 500
+
+        if result.returncode != 0:
+            return jsonify({"commits": [], "has_more": False, "error": "Not a git repository"})
+
+        commits = []
+        for record in result.stdout.split("\x1e"):
+            record = record.strip()
+            if not record:
+                continue
+            parts = record.split("\x1f", 5)
+            if len(parts) < 5:
+                continue
+            commits.append({
+                "hash": parts[0].strip(),
+                "short_hash": parts[1].strip(),
+                "subject": parts[2].strip(),
+                "author": parts[3].strip(),
+                "date": parts[4].strip(),
+                "body": parts[5].strip() if len(parts) > 5 else "",
+            })
+
+        # Check if more commits exist beyond this page
+        try:
+            count_result = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD"],
+                capture_output=True, text=True, cwd=ws_path, timeout=5,
+            )
+            total = int(count_result.stdout.strip()) if count_result.returncode == 0 else 0
+        except Exception:
+            total = 0
+        has_more = (offset + len(commits)) < total
+
+        return jsonify({"commits": commits, "has_more": has_more, "total": total})
+
     @app.route("/api/files")
     @auth.require_auth
     def file_tree():

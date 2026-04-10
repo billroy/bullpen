@@ -7,6 +7,7 @@ const app = createApp({
     KanbanTab,
     BullpenTab,
     FilesTab,
+    CommitsTab,
     LiveAgentChatTab,
     WorkerFocusView,
     TaskCreateModal,
@@ -322,6 +323,7 @@ const app = createApp({
         { id: 'tasks', label: 'Tickets' },
         { id: 'workers', label: 'Workers' },
         { id: 'files', label: 'Files' },
+        { id: 'commits', label: 'Commits' },
         { id: 'chat', label: 'Live Agent' },
       ];
       for (const ft of focusTabs) {
@@ -508,6 +510,7 @@ const app = createApp({
               @open-focus="openFocusTab"
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
+            <CommitsTab v-if="activeTab === 'commits'" />
             <LiveAgentChatTab v-show="activeTab === 'chat'" />
             <WorkerFocusView
               v-for="ft in focusTabs"
