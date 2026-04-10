@@ -1,3 +1,12 @@
+const MODEL_OPTIONS = {
+  claude: [
+    'claude-opus-4-6', 'claude-opus-4-5-20250514',
+    'claude-sonnet-4-6', 'claude-sonnet-4-5-20250514',
+    'claude-haiku-4-6', 'claude-haiku-4-5-20250414',
+  ],
+  codex: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'],
+};
+
 function agentColor(agent) {
   return { claude: '#da7756', codex: '#5b6fd6' }[agent] || '#6B7280';
 }

@@ -21,11 +21,7 @@ const LiveAgentChatTab = {
       return ['claude', 'codex'];
     },
     modelOptions() {
-      const map = {
-        claude: ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5-20251001'],
-        codex: ['codex-mini-latest', 'o4-mini'],
-      };
-      return map[this.provider] || [];
+      return MODEL_OPTIONS[this.provider] || [];
     },
   },
   watch: {

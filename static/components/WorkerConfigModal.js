@@ -44,12 +44,7 @@ const WorkerConfigModal = {
         .filter(Boolean);
     },
     modelOptions() {
-      if (this.form.agent === 'claude') {
-        return ['claude-opus-4-6', 'claude-opus-4-5-20250514', 'claude-sonnet-4-6', 'claude-sonnet-4-5-20250514', 'claude-haiku-4-6', 'claude-haiku-4-5-20250414'];
-      } else if (this.form.agent === 'codex') {
-        return ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'];
-      }
-      return ['default'];
+      return MODEL_OPTIONS[this.form.agent] || ['default'];
     },
     showCustomModel() {
       return !this.modelOptions.includes(this.form.model);
