@@ -19,23 +19,25 @@ This opens a browser at `http://localhost:5000`. The workspace directory is wher
 | `--port` | 5000 | Server port |
 | `--host` | 127.0.0.1 | Bind address (network-exposed binds require auth to be enabled) |
 | `--no-browser` | off | Don't auto-open the browser |
-| `--set-password [USERNAME]` | — | Interactively set/update a user's password (repeatable) and exit |
-| `--delete-user USERNAME` | — | Remove a configured login user (repeatable) and exit |
+| `--set-password [USERNAME]` | — | Interactively set/update user passwords (repeatable for multiple users); can be combined with `--delete-user`; exits after applying changes |
+| `--delete-user USERNAME` | — | Remove configured login users (repeatable); can be combined with `--set-password`; exits after applying changes |
 
-By default the server only accepts connections from localhost. CORS is restricted to the same origin.
+By default the server only accepts connections from localhost. Socket.IO allows cross-origin connections (`cors_allowed_origins="*"`) so reverse proxies and tunneled dev URLs work; authentication remains the primary access control.
 If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires authentication credentials to be configured first.
 
 ## Features
 
 - **Kanban board** -- drag-and-drop ticket management with user-configurable columns (add, remove, rename, reorder); drag tickets between columns or onto workers
-- **List view** -- switchable list view for the Tickets tab with sortable columns and token-consumption display
+- **List view** -- switchable list view for the Tickets tab with sortable columns, full-text search, priority/status/type filters, timestamped Created column, and token-consumption display
 - **Worker grid** -- configurable grid of AI agent slots; drag tickets onto workers to assign them
 - **Agent execution** -- workers invoke Claude or Codex CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (stream-json for Claude)
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
-- **Live Agent Chat** -- interactive chat tab for Claude and Codex with provider/model selectors, streaming responses, conversation persistence across tab switches, stop button, and automatic chat logging to tickets
+- **Live Agent Chat** -- interactive chat tabs for Claude and Codex with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
 - **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, and an in-browser editor with find/replace
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
+- **Commit diff viewer** -- click a commit row to open its full patch in a modal
 - **Multi-project** -- register multiple project directories, switch between them, with per-workspace state and activity badges
+- **Inter-project worker transfer** -- copy or move workers (optionally with profile copy) between registered workspaces
 - **Scheduling** -- workers can activate on a time schedule (at a specific time, or on an interval) or on queue events; pause/unpause individual workers
 - **Auto-commit & auto-PR** -- optionally commit agent output on success and open a pull request automatically
 - **Worktrees** -- agents can work in isolated git worktrees per task to avoid conflicts
@@ -43,10 +45,11 @@ If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires aut
 - **Profiles** -- 24 built-in worker profiles (feature-architect, code-reviewer, test-writer, etc.) with customizable expertise prompts; create custom profiles
 - **Teams** -- save and restore grid configurations
 - **Ticket editing** -- edit ticket title, tags, and description inline; Cmd+Enter to save
-- **Token tracking** -- per-ticket token consumption tracking displayed in list view and ticket details
+- **Token tracking** -- per-ticket token consumption tracking plus provider/model usage metadata, displayed in list view and ticket details
+- **Worker roster queue count** -- left-pane worker roster shows queued workload while workers are in `WORKING` state
 - **Light/dark theme** -- toggle between dark and light themes
 - **Context menu** -- right-click worker cards for actions (configure, start, stop, duplicate, remove)
-- **Real-time sync** -- Socket.IO keeps all connected clients in sync, scoped per workspace
+- **Real-time sync** -- Socket.IO keeps all connected clients in sync, scoped per workspace (CORS `*` for reverse-proxy compatibility)
 - **Persistence** -- tickets stored as frontmatter markdown files in `.bullpen/tasks/`, layout and config as JSON
 - **Ticket archiving** -- archive completed tickets to keep the board clean
 - **Authentication** -- optional local username/password login (supports multiple users; see [Authentication](#authentication) below)
@@ -65,7 +68,7 @@ If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires aut
 bullpen.py              # Entry point
 server/
   app.py                # Flask app factory, routes, startup reconciliation
-  auth.py               # Optional single-user authentication
+  auth.py               # Optional multi-user authentication
   events.py             # Socket.IO event handlers (write-locked)
   tasks.py              # Task CRUD, slug generation, fractional indexing
   workers.py            # Worker state machine, subprocess execution, auto-commit/PR
@@ -84,7 +87,7 @@ static/
   style.css             # Light/dark theme
   components/           # Vue components (KanbanTab, WorkerCard, FilesTab, LiveAgentChatTab, etc.)
 profiles/               # 24 built-in worker profile JSON files
-tests/                  # 288 tests (pytest)
+tests/                  # 365 tests passing (pytest)
 ```
 
 ## How It Works
@@ -98,6 +101,7 @@ tests/                  # 288 tests (pytest)
 7. **On failure**, the worker retries with backoff, then moves the ticket to Blocked
 8. **Scheduled workers** can activate on a timer (specific time or interval) to process queued tickets or create their own ephemeral tickets
 9. **Chat directly** with Claude or Codex via the Live Agent Chat tab, with conversations logged to tickets
+10. **Open additional chat tabs** as needed to run parallel conversations with separate session histories
 
 ## Supported Agents
 
@@ -132,6 +136,7 @@ To delete users:
 ```bash
 python3 bullpen.py --delete-user alice
 python3 bullpen.py --delete-user alice --delete-user bob
+python3 bullpen.py --set-password admin --delete-user old-admin
 ```
 
 When auth is enabled, unauthenticated browser requests are redirected to `/login`, XHR requests receive a 401, and Socket.IO connections without a valid session are rejected. Static assets needed by the login page (`login.html`, `style.css`, `favicon.ico`) remain public.
