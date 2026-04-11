@@ -63,7 +63,7 @@ const LeftPane = {
               <i class="worker-type-icon worker-type-icon--roster" :data-lucide="workerTypeIcon(w)" aria-hidden="true"></i>
               <span class="roster-label">{{ w.name }}</span>
             </span>
-            <span class="status-pill" :class="'status-' + (w.state || 'idle')">{{ (w.state || 'idle').toUpperCase() }}</span>
+            <span class="status-pill" :class="'status-' + (w.state || 'idle')">{{ workerStatusLabel(w) }}</span>
           </div>
         </div>
       </div>
@@ -91,7 +91,13 @@ const LeftPane = {
     workerList() {
       if (!this.layout?.slots) return [];
       return this.layout.slots
-        .map((s, i) => s ? { slot: i, name: s.name, state: s.state || 'idle', agent: s.agent } : null)
+        .map((s, i) => s ? {
+          slot: i,
+          name: s.name,
+          state: s.state || 'idle',
+          agent: s.agent,
+          taskQueueLength: Array.isArray(s.task_queue) ? s.task_queue.length : 0,
+        } : null)
         .filter(Boolean);
     }
   },
@@ -127,6 +133,12 @@ const LeftPane = {
     },
     workerTypeIcon(worker) {
       return getWorkerTypeIcon(worker);
+    },
+    workerStatusLabel(worker) {
+      const state = (worker?.state || 'idle').toUpperCase();
+      if (state !== 'WORKING') return state;
+      const queueCount = Math.max(1, Number(worker?.taskQueueLength || 0));
+      return `${state} (${queueCount})`;
     },
     unseenCount(wsId) {
       if (!this.workspaces || !this.workspaces[wsId]) return 0;
