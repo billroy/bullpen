@@ -71,8 +71,11 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
         SESSION_COOKIE_SECURE=False,
     )
     if auth.auth_enabled():
+        users = auth.get_users()
+        user_count = len(users)
+        primary = auth.get_username() or "unknown"
         print(
-            f"Bullpen auth: ENABLED (user={auth.get_username()})",
+            f"Bullpen auth: ENABLED ({user_count} user(s), primary={primary})",
             file=sys.stderr,
         )
     else:
@@ -175,18 +178,17 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
 
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
-        expected_user = auth.get_username()
-        _, expected_hash = auth.load_credentials(manager.global_dir)
+        auth.load_credentials(manager.global_dir)
+        expected_hash = auth.get_password_hash(username)
 
-        # Always call check_password so timing is roughly constant regardless
-        # of whether the username matched.
+        # If the username does not exist expected_hash will be None.
         password_ok = auth.check_password(password, expected_hash)
-        if not username or username != expected_user or not password_ok:
+        if not username or not password_ok:
             return redirect(url_for("login") + "?error=1")
 
         session.clear()  # prevent session fixation
         session["authenticated"] = True
-        session["username"] = expected_user
+        session["username"] = username
         # Re-seed the CSRF token after login.
         auth.generate_csrf_token()
 

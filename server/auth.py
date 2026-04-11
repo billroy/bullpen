@@ -1,4 +1,4 @@
-"""Minimal single-user authentication for Bullpen.
+"""Minimal local authentication for Bullpen.
 
 Credentials live in ``GLOBAL_DIR/.env`` as an INI-like key=value file that
 we parse manually (no third-party dotenv/YAML libs, per project convention).
@@ -8,6 +8,7 @@ server behaves exactly as before.
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 from functools import wraps
@@ -22,11 +23,13 @@ ENV_FILENAME = ".env"
 
 USERNAME_KEY = "BULLPEN_USERNAME"
 PASSWORD_HASH_KEY = "BULLPEN_PASSWORD_HASH"
+USERS_JSON_KEY = "BULLPEN_USERS_JSON"
 SECRET_KEY_KEY = "BULLPEN_SECRET_KEY"
 
 
 # Module-level cache populated by load_credentials().
 _state: Dict[str, Optional[str]] = {
+    "users": {},
     "username": None,
     "password_hash": None,
     "loaded": False,
@@ -113,24 +116,92 @@ def write_env_file(path: str, mapping: Dict[str, str]) -> None:
 def reset_auth_cache() -> None:
     """Clear cached credential state. Call at the top of ``create_app`` so
     each test (or re-initialization) re-reads its own isolated global dir."""
+    _state["users"] = {}
     _state["username"] = None
     _state["password_hash"] = None
     _state["loaded"] = False
 
 
-def load_credentials(global_dir: str) -> Tuple[Optional[str], Optional[str]]:
-    """Load ``(username, password_hash)`` from ``global_dir/.env``.
+def _extract_users(data: Dict[str, str]) -> Dict[str, str]:
+    users: Dict[str, str] = {}
+    raw_users = data.get(USERS_JSON_KEY)
+    if raw_users:
+        try:
+            parsed = json.loads(raw_users)
+        except (TypeError, ValueError):
+            parsed = {}
+        if isinstance(parsed, dict):
+            for raw_name, raw_hash in parsed.items():
+                if not isinstance(raw_name, str):
+                    continue
+                username = raw_name.strip()
+                if not username:
+                    continue
+                if isinstance(raw_hash, str) and raw_hash:
+                    users[username] = raw_hash
 
-    Returns ``(None, None)`` and disables auth if the file is missing or
-    either key is absent/blank. Never raises for parse errors.
+    # Backward-compat: if a legacy single-user entry exists, include it.
+    legacy_user = (data.get(USERNAME_KEY) or "").strip()
+    legacy_hash = (data.get(PASSWORD_HASH_KEY) or "").strip()
+    if legacy_user and legacy_hash and legacy_user not in users:
+        users[legacy_user] = legacy_hash
+    return users
+
+
+def parse_credentials_mapping(data: Dict[str, str]) -> Dict[str, str]:
+    """Return normalized username->password-hash mapping from env data."""
+    return _extract_users(data)
+
+
+def apply_credentials_mapping(env_data: Dict[str, str], users: Dict[str, str]) -> Dict[str, str]:
+    """Merge users into ``env_data``, keeping unrelated keys untouched.
+
+    Stores users in ``BULLPEN_USERS_JSON`` and keeps legacy
+    ``BULLPEN_USERNAME``/``BULLPEN_PASSWORD_HASH`` in sync to preserve
+    compatibility with older builds.
+    """
+    updated = dict(env_data)
+    # Normalize + drop invalid entries.
+    cleaned: Dict[str, str] = {}
+    for raw_name, raw_hash in users.items():
+        if not isinstance(raw_name, str):
+            continue
+        username = raw_name.strip()
+        if not username:
+            continue
+        if isinstance(raw_hash, str) and raw_hash:
+            cleaned[username] = raw_hash
+
+    if not cleaned:
+        updated.pop(USERS_JSON_KEY, None)
+        updated.pop(USERNAME_KEY, None)
+        updated.pop(PASSWORD_HASH_KEY, None)
+        return updated
+
+    updated[USERS_JSON_KEY] = json.dumps(cleaned, separators=(",", ":"), sort_keys=True)
+    primary = sorted(cleaned.keys())[0]
+    updated[USERNAME_KEY] = primary
+    updated[PASSWORD_HASH_KEY] = cleaned[primary]
+    return updated
+
+
+def load_credentials(global_dir: str) -> Tuple[Optional[str], Optional[str]]:
+    """Load credentials from ``global_dir/.env``.
+
+    Returns a backward-compatible primary ``(username, password_hash)``
+    tuple for callers that still expect a single-user shape. Auth is
+    disabled when no usable credentials are found. Never raises for parse
+    errors.
     """
     data = parse_env_file(env_path(global_dir))
-    username = data.get(USERNAME_KEY) or None
-    password_hash = data.get(PASSWORD_HASH_KEY) or None
-    if not username or not password_hash:
+    users = _extract_users(data)
+    _state["users"] = users
+    if not users:
         _state["username"] = None
         _state["password_hash"] = None
     else:
+        username = sorted(users.keys())[0]
+        password_hash = users[username]
         _state["username"] = username
         _state["password_hash"] = password_hash
     _state["loaded"] = True
@@ -139,11 +210,21 @@ def load_credentials(global_dir: str) -> Tuple[Optional[str], Optional[str]]:
 
 def auth_enabled() -> bool:
     """True iff credentials were successfully loaded."""
-    return bool(_state["username"] and _state["password_hash"])
+    return bool(_state["users"])
 
 
 def get_username() -> Optional[str]:
     return _state["username"]
+
+
+def get_users() -> Dict[str, str]:
+    return dict(_state["users"])
+
+
+def get_password_hash(username: str) -> Optional[str]:
+    if not username:
+        return None
+    return _state["users"].get(username)
 
 
 # ---------------------------------------------------------------------------

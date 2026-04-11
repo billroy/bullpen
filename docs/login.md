@@ -1,6 +1,6 @@
 # Login
 
-Bullpen supports optional single-user username/password authentication.
+Bullpen supports optional local username/password authentication.
 Credentials protect both the HTTP API and Socket.IO connections; all
 unauthenticated requests to protected routes are rejected at the server.
 
@@ -13,11 +13,13 @@ Socket.IO gate. This keeps the localhost developer experience zero-config.
 Run the interactive password setter from the Bullpen project root:
 
 ```
-python bullpen.py --set-password
+python bullpen.py --set-password admin
+python bullpen.py --set-password alice --set-password bob
 ```
 
-You will be prompted for a username and password (typed twice, never
-echoed). The hashed password is written to the global Bullpen env file:
+You will be prompted for passwords (typed twice, never echoed). If you
+omit the username (`--set-password` with no value), Bullpen prompts for
+it interactively. Password hashes are written to the global Bullpen env file:
 
 ```
 ~/.bullpen/.env      (macOS / Linux)
@@ -33,7 +35,7 @@ python bullpen.py
 On startup Bullpen prints the auth status to stderr:
 
 ```
-Bullpen auth: ENABLED (user=admin)
+Bullpen auth: ENABLED (2 user(s), primary=admin)
 ```
 
 or
@@ -50,10 +52,15 @@ blank lines are ignored. Values may optionally be single- or
 double-quoted; no escaping or interpolation is performed.
 
 ```
+BULLPEN_USERS_JSON={"admin":"scrypt:32768:8:1$...","alice":"scrypt:32768:8:1$..."}
 BULLPEN_USERNAME=admin
-BULLPEN_PASSWORD_HASH=scrypt:32768:8:1$abcd...$...
+BULLPEN_PASSWORD_HASH=scrypt:32768:8:1$...
 BULLPEN_SECRET_KEY=<random 64-char hex>
 ```
+
+`BULLPEN_USERS_JSON` is the canonical username->password-hash map.
+`BULLPEN_USERNAME` and `BULLPEN_PASSWORD_HASH` are maintained as a
+backward-compatible primary-user pair.
 
 `BULLPEN_PASSWORD_HASH` is a Werkzeug password hash — the same format
 produced by `werkzeug.security.generate_password_hash`. Werkzeug is
@@ -64,12 +71,14 @@ required.
 absent and written back to the env file. It signs Flask session
 cookies, so persisting it means sessions survive restarts.
 
-## Changing the password
+## Changing passwords and deleting users
 
-Re-run `bullpen --set-password` and enter the new credentials. The
-command preserves `BULLPEN_SECRET_KEY`, so active sessions remain valid
-across a rotation. To force all clients to sign in again, delete the
-env file and run `--set-password` again.
+Re-run `bullpen --set-password <username>` to update that user.
+Use `bullpen --delete-user <username>` to remove one or more users.
+Both flags can be combined in one command. These operations preserve
+`BULLPEN_SECRET_KEY`, so active sessions remain valid across a password
+rotation. To force all clients to sign in again, delete the env file
+and run `--set-password` again.
 
 ## Disabling auth
 
@@ -123,7 +132,7 @@ replay it. Treat HTTPS as a requirement for any non-local deployment.
 The following are intentionally not supported by the minimal auth
 feature:
 
-- Multiple users or per-user permissions
+- Per-user permissions/roles
 - OAuth, OIDC, API tokens
 - Password reset flow
 - Rate limiting on the login endpoint (future hardening)

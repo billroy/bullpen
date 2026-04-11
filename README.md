@@ -19,7 +19,8 @@ This opens a browser at `http://localhost:5000`. The workspace directory is wher
 | `--port` | 5000 | Server port |
 | `--host` | 127.0.0.1 | Bind address (network-exposed binds require auth to be enabled) |
 | `--no-browser` | off | Don't auto-open the browser |
-| `--set-password` | — | Interactively set login credentials and exit |
+| `--set-password [USERNAME]` | — | Interactively set/update a user's password (repeatable) and exit |
+| `--delete-user USERNAME` | — | Remove a configured login user (repeatable) and exit |
 
 By default the server only accepts connections from localhost. CORS is restricted to the same origin.
 If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires authentication credentials to be configured first.
@@ -48,7 +49,7 @@ If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires aut
 - **Real-time sync** -- Socket.IO keeps all connected clients in sync, scoped per workspace
 - **Persistence** -- tickets stored as frontmatter markdown files in `.bullpen/tasks/`, layout and config as JSON
 - **Ticket archiving** -- archive completed tickets to keep the board clean
-- **Authentication** -- optional single-user login (see [Authentication](#authentication) below)
+- **Authentication** -- optional local username/password login (supports multiple users; see [Authentication](#authentication) below)
 - **MCP server** -- expose ticket management tools to supported agents via JSON-RPC stdio (see [MCP Integration](#mcp-integration) below)
 - **Cross-platform** -- runs on macOS, Linux, and Windows
 
@@ -109,20 +110,28 @@ The agent must be installed and available on your PATH.
 
 ## Authentication
 
-Bullpen supports optional single-user username/password authentication. When no credentials are configured, Bullpen runs wide-open with no login screen — ideal for localhost development.
+Bullpen supports optional local username/password authentication. Multiple users can be configured in the global `.env` file. When no credentials are configured, Bullpen runs wide-open with no login screen — ideal for localhost development.
 
 ### Enabling auth
 
 ```bash
-python3 bullpen.py --set-password
+python3 bullpen.py --set-password admin
+python3 bullpen.py --set-password alice --set-password bob
 ```
 
-You will be prompted for a username and password. The hashed credential is written to `~/.bullpen/.env` (mode 600). Restart the server to apply. On startup Bullpen prints:
+You will be prompted for a password (and username if omitted). Credentials are written as password hashes to `~/.bullpen/.env` (mode 600). Restart the server to apply. On startup Bullpen prints:
 
 ```
-Bullpen auth: ENABLED (user=admin)
+Bullpen auth: ENABLED (2 user(s), primary=admin)
 
 Network-exposed binds (for example `--host 0.0.0.0`) are only allowed when auth is enabled.
+```
+
+To delete users:
+
+```bash
+python3 bullpen.py --delete-user alice
+python3 bullpen.py --delete-user alice --delete-user bob
 ```
 
 When auth is enabled, unauthenticated browser requests are redirected to `/login`, XHR requests receive a 401, and Socket.IO connections without a valid session are rejected. Static assets needed by the login page (`login.html`, `style.css`, `favicon.ico`) remain public.

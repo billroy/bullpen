@@ -44,6 +44,7 @@ def test_load_credentials_valid(tmp_path):
     assert got_hash == hashed
     assert auth.auth_enabled() is True
     assert auth.get_username() == "alice"
+    assert auth.get_users() == {"alice": hashed}
 
 
 def test_load_credentials_malformed_missing_hash(tmp_path):
@@ -87,6 +88,63 @@ def test_load_credentials_ignores_garbage_lines(tmp_path):
     user, got_hash = auth.load_credentials(str(tmp_path))
     assert user == "bob"
     assert got_hash == hashed
+
+
+def test_load_credentials_supports_users_json(tmp_path):
+    alice_hash = auth.generate_password_hash("alicepw")
+    bob_hash = auth.generate_password_hash("bobpw")
+    auth.write_env_file(
+        auth.env_path(str(tmp_path)),
+        {
+            auth.USERS_JSON_KEY: '{"alice":"%s","bob":"%s"}' % (alice_hash, bob_hash),
+        },
+    )
+    user, got_hash = auth.load_credentials(str(tmp_path))
+    assert user == "alice"
+    assert got_hash == alice_hash
+    assert auth.get_users() == {"alice": alice_hash, "bob": bob_hash}
+    assert auth.get_password_hash("bob") == bob_hash
+
+
+def test_load_credentials_merges_legacy_with_users_json(tmp_path):
+    bob_hash = auth.generate_password_hash("bobpw")
+    legacy_hash = auth.generate_password_hash("legacy")
+    auth.write_env_file(
+        auth.env_path(str(tmp_path)),
+        {
+            auth.USERS_JSON_KEY: '{"bob":"%s"}' % bob_hash,
+            auth.USERNAME_KEY: "legacy",
+            auth.PASSWORD_HASH_KEY: legacy_hash,
+        },
+    )
+    auth.load_credentials(str(tmp_path))
+    assert auth.get_users() == {"bob": bob_hash, "legacy": legacy_hash}
+
+
+def test_apply_credentials_mapping_round_trip(tmp_path):
+    existing = {auth.SECRET_KEY_KEY: "secret"}
+    users = {
+        "alice": auth.generate_password_hash("a"),
+        "bob": auth.generate_password_hash("b"),
+    }
+    updated = auth.apply_credentials_mapping(existing, users)
+    assert updated[auth.SECRET_KEY_KEY] == "secret"
+    assert auth.USERS_JSON_KEY in updated
+    assert updated[auth.USERNAME_KEY] == "alice"
+    assert updated[auth.PASSWORD_HASH_KEY] == users["alice"]
+    parsed_users = auth.parse_credentials_mapping(updated)
+    assert parsed_users == users
+
+
+def test_apply_credentials_mapping_empty_removes_auth_keys():
+    existing = {
+        auth.SECRET_KEY_KEY: "secret",
+        auth.USERNAME_KEY: "alice",
+        auth.PASSWORD_HASH_KEY: "hash",
+        auth.USERS_JSON_KEY: '{"alice":"hash"}',
+    }
+    updated = auth.apply_credentials_mapping(existing, {})
+    assert updated == {auth.SECRET_KEY_KEY: "secret"}
 
 
 def test_parse_env_file_missing_returns_empty(tmp_path):

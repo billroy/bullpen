@@ -19,17 +19,23 @@ from server.app import create_app, socketio
 
 USERNAME = "admin"
 PASSWORD = "correct horse"
+SECOND_USERNAME = "alice"
+SECOND_PASSWORD = "wonderland"
 
 
-def _seed_credentials(global_dir, username=USERNAME, password=PASSWORD):
+def _seed_credentials(global_dir, users=None):
     """Write credentials into the isolated global dir."""
+    if users is None:
+        users = {
+            USERNAME: auth.generate_password_hash(PASSWORD),
+            SECOND_USERNAME: auth.generate_password_hash(SECOND_PASSWORD),
+        }
     os.makedirs(global_dir, exist_ok=True)
+    existing = auth.parse_env_file(auth.env_path(global_dir))
+    updated = auth.apply_credentials_mapping(existing, users)
     auth.write_env_file(
         auth.env_path(global_dir),
-        {
-            auth.USERNAME_KEY: username,
-            auth.PASSWORD_HASH_KEY: auth.generate_password_hash(password),
-        },
+        updated,
     )
 
 
@@ -138,6 +144,14 @@ class TestHttpAuthEnabled:
         r = _login(auth_client, username="eve")
         assert r.status_code == 302
         assert "error=1" in r.headers["Location"]
+
+    def test_login_success_second_user(self, auth_client):
+        r = _login(auth_client, username=SECOND_USERNAME, password=SECOND_PASSWORD)
+        assert r.status_code == 302
+        assert r.headers["Location"].endswith("/")
+        with auth_client.session_transaction() as sess:
+            assert sess.get("authenticated") is True
+            assert sess.get("username") == SECOND_USERNAME
 
     def test_login_csrf_invalid(self, auth_client):
         # Submit without a valid CSRF token.

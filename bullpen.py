@@ -37,18 +37,34 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--set-password",
-        action="store_true",
+        nargs="?",
+        action="append",
+        metavar="USERNAME",
+        const="",
         help=(
-            "Interactively set the Bullpen login username and password. "
-            "Writes a hashed credential to the global .env file and exits "
+            "Interactively set/update login password(s). "
+            "Repeat to set multiple users, e.g. "
+            "`--set-password admin --set-password alice`. "
+            "If passed without a value, prompts for username. "
+            "Writes hashed credentials to the global .env file and exits "
             "without starting the server."
+        ),
+    )
+    parser.add_argument(
+        "--delete-user",
+        action="append",
+        metavar="USERNAME",
+        help=(
+            "Delete a user from configured login credentials. "
+            "Repeat to delete multiple users. "
+            "Can be combined with --set-password."
         ),
     )
     return parser.parse_args(argv)
 
 
-def set_password_cli():
-    """Prompt for username and password, write hashed credential to the
+def set_password_cli(set_usernames=None, delete_usernames=None):
+    """Prompt for username/password updates, write hashed credentials to the
     global .env file. Never echoes the password. Never accepts the
     password via a CLI flag (shell history leakage)."""
     import getpass
@@ -59,36 +75,58 @@ def set_password_cli():
     os.makedirs(GLOBAL_DIR, exist_ok=True)
     path = auth.env_path(GLOBAL_DIR)
 
-    print(f"Setting Bullpen login credentials in {path}")
-    try:
-        username = input("Username: ").strip()
-    except EOFError:
-        print("Aborted.", file=sys.stderr)
-        return 1
-    if not username:
-        print("Error: username cannot be blank.", file=sys.stderr)
-        return 1
-
-    try:
-        password = getpass.getpass("Password: ")
-        confirm = getpass.getpass("Confirm password: ")
-    except EOFError:
-        print("Aborted.", file=sys.stderr)
-        return 1
-    if not password:
-        print("Error: password cannot be blank.", file=sys.stderr)
-        return 1
-    if password != confirm:
-        print("Error: passwords did not match.", file=sys.stderr)
-        return 1
-
-    # Preserve any existing entries (e.g. BULLPEN_SECRET_KEY) so we don't
-    # invalidate active sessions when rotating the password.
     existing = auth.parse_env_file(path)
-    existing[auth.USERNAME_KEY] = username
-    existing[auth.PASSWORD_HASH_KEY] = auth.generate_password_hash(password)
-    auth.write_env_file(path, existing)
-    print(f"Credentials written to {path} (mode 600).")
+    users = auth.parse_credentials_mapping(existing)
+    set_usernames = list(set_usernames or [])
+    delete_usernames = list(delete_usernames or [])
+
+    print(f"Updating Bullpen login credentials in {path}")
+
+    for requested_username in set_usernames:
+        username = (requested_username or "").strip()
+        if not username:
+            try:
+                username = input("Username: ").strip()
+            except EOFError:
+                print("Aborted.", file=sys.stderr)
+                return 1
+        if not username:
+            print("Error: username cannot be blank.", file=sys.stderr)
+            return 1
+
+        try:
+            password = getpass.getpass(f"Password for {username}: ")
+            confirm = getpass.getpass(f"Confirm password for {username}: ")
+        except EOFError:
+            print("Aborted.", file=sys.stderr)
+            return 1
+        if not password:
+            print("Error: password cannot be blank.", file=sys.stderr)
+            return 1
+        if password != confirm:
+            print("Error: passwords did not match.", file=sys.stderr)
+            return 1
+
+        users[username] = auth.generate_password_hash(password)
+        print(f"Updated password for user '{username}'.")
+
+    for raw_username in delete_usernames:
+        username = (raw_username or "").strip()
+        if not username:
+            print("Error: --delete-user requires a username.", file=sys.stderr)
+            return 1
+        if username in users:
+            users.pop(username, None)
+            print(f"Deleted user '{username}'.")
+        else:
+            print(f"User '{username}' not found; no change.", file=sys.stderr)
+
+    updated = auth.apply_credentials_mapping(existing, users)
+    auth.write_env_file(path, updated)
+    if users:
+        print(f"Credentials written to {path} (mode 600). {len(users)} user(s) configured.")
+    else:
+        print(f"Credentials written to {path} (mode 600). No users configured.")
     print("Restart Bullpen to apply.")
     return 0
 
@@ -114,8 +152,8 @@ def require_auth_for_network_bind(host):
 def main():
     args = parse_args()
 
-    if args.set_password:
-        sys.exit(set_password_cli())
+    if args.set_password is not None or args.delete_user:
+        sys.exit(set_password_cli(args.set_password or [], args.delete_user or []))
 
     workspace = os.path.abspath(args.workspace)
 
