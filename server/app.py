@@ -90,11 +90,7 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
     app.config["bp_dir"] = bp_dir
     app.config["no_browser"] = no_browser
 
-    if host == "0.0.0.0":
-        cors_origin = "*"
-    else:
-        cors_origin = f"http://{host}:{port}"
-    socketio.init_app(app, cors_allowed_origins=cors_origin, async_mode="threading")
+    socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
 
     # Store server address and a per-run MCP token so the stdio MCP server
     # (which has no session cookie) can authenticate via Socket.IO ``auth``.
