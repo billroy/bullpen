@@ -16,3 +16,4 @@ def test_frontend_forces_websocket_transport():
 def test_requirements_include_threading_websocket_dependency():
     requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     assert "simple-websocket" in requirements
+    assert "websocket-client" in requirements

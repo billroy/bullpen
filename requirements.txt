@@ -1,5 +1,6 @@
 flask
 flask-socketio>=5.3.6
 simple-websocket
+websocket-client
 eventlet
 pytest

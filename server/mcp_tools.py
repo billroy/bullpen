@@ -213,7 +213,7 @@ class BullpenClient:
         self.host = host
         self.port = port
         self.bp_dir = bp_dir
-        self.sio = socketio.Client(logger=False, engineio_logger=False)
+        self.sio = socketio.Client(logger=False, engineio_logger=False, reconnection=False)
         self.connected = False
         self.workspace_id: str | None = None
         self.connect_timeout_seconds = DEFAULT_CONNECT_TIMEOUT_SECONDS
@@ -272,15 +272,12 @@ class BullpenClient:
         for attempt in range(MAX_CONNECT_ATTEMPTS):
             for url in self._candidate_urls():
                 try:
-                    try:
-                        self.sio.connect(
-                            url,
-                            wait_timeout=self.connect_timeout_seconds,
-                            auth=auth_data,
-                        )
-                    except TypeError:
-                        # Compatibility for older socketio client signatures.
-                        self.sio.connect(url)
+                    self.sio.connect(
+                        url,
+                        wait_timeout=self.connect_timeout_seconds,
+                        auth=auth_data,
+                        transports=["websocket"],
+                    )
                     self.connected = True
                     return True
                 except Exception:

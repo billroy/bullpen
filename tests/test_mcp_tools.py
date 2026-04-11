@@ -18,7 +18,7 @@ class _DummySio:
             return fn
         return _register
 
-    def connect(self, url):
+    def connect(self, url, **_kwargs):
         raise RuntimeError(f"connect failed: {url}")
 
     def disconnect(self):
@@ -71,6 +71,31 @@ class _ConnectedClient:
         self.connected = True
 
     def disconnect(self):
+        return None
+
+
+class _RecordingSio:
+    def __init__(self):
+        self.handlers = {}
+        self.connect_calls = []
+
+    def on(self, name):
+        def _register(fn):
+            self.handlers[name] = fn
+            return fn
+        return _register
+
+    def connect(self, *args, **kwargs):
+        self.connect_calls.append((args, kwargs))
+        if "connect" in self.handlers:
+            self.handlers["connect"]()
+        if "state:init" in self.handlers:
+            self.handlers["state:init"]({"workspaceId": "ws-1"})
+
+    def disconnect(self):
+        return None
+
+    def emit(self, *_args, **_kwargs):
         return None
 
 
@@ -136,7 +161,7 @@ def test_bullpen_client_degrades_when_socket_unavailable(monkeypatch):
     monkeypatch.setattr(
         mcp_tools.socketio,
         "Client",
-        lambda logger=False, engineio_logger=False: _DummySio(),
+        lambda **_kwargs: _DummySio(),
     )
 
     client = mcp_tools.BullpenClient("127.0.0.1", 5050)
@@ -151,7 +176,7 @@ def test_bullpen_client_adds_loopback_candidates_for_wildcard_host(monkeypatch):
     monkeypatch.setattr(
         mcp_tools.socketio,
         "Client",
-        lambda logger=False, engineio_logger=False: _DummySio(),
+        lambda **_kwargs: _DummySio(),
     )
 
     client = mcp_tools.BullpenClient("0.0.0.0", 5050)
@@ -166,7 +191,7 @@ def test_bullpen_client_create_ticket_times_out_when_ack_missing(monkeypatch):
     monkeypatch.setattr(
         mcp_tools.socketio,
         "Client",
-        lambda logger=False, engineio_logger=False: _NeverAckSio(),
+        lambda **_kwargs: _NeverAckSio(),
     )
 
     client = mcp_tools.BullpenClient("127.0.0.1", 5050)
@@ -175,6 +200,41 @@ def test_bullpen_client_create_ticket_times_out_when_ack_missing(monkeypatch):
 
     assert task is None
     assert err == "Timed out waiting for task:create response"
+
+
+def test_bullpen_client_disables_reconnect_and_forces_websocket(monkeypatch, tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config_path = bp_dir + "/config.json"
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    config["mcp_token"] = "token-1"
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f)
+
+    created_clients = []
+
+    def fake_client(**kwargs):
+        created_clients.append(kwargs)
+        return _RecordingSio()
+
+    monkeypatch.setattr(mcp_tools.socketio, "Client", fake_client)
+
+    client = mcp_tools.BullpenClient("127.0.0.1", 5050, bp_dir=bp_dir)
+
+    assert created_clients == [{
+        "logger": False,
+        "engineio_logger": False,
+        "reconnection": False,
+    }]
+    assert client._connect_best_effort() is True
+    assert client.sio.connect_calls == [(
+        ("http://127.0.0.1:5050",),
+        {
+            "wait_timeout": client.connect_timeout_seconds,
+            "auth": {"mcp_token": "token-1"},
+            "transports": ["websocket"],
+        },
+    )]
 
 
 def test_read_parses_mcp_content_length_frame():
@@ -275,7 +335,7 @@ def test_main_initialize_and_tools_list_do_not_require_socket_connect(tmp_worksp
     monkeypatch.setattr(
         mcp_tools.socketio,
         "Client",
-        lambda logger=False, engineio_logger=False: _NoConnectSio(),
+        lambda **_kwargs: _NoConnectSio(),
     )
     monkeypatch.setattr(mcp_tools.sys, "stdin", io.TextIOWrapper(in_stream, encoding="utf-8"))
     stdout = io.TextIOWrapper(out_stream, encoding="utf-8")
