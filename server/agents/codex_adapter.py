@@ -6,6 +6,7 @@ import shutil
 import sys
 
 from server.agents.base import AgentAdapter
+from server.usage import extract_codex_usage_event, merge_usage_dicts
 
 if sys.platform == "win32":
     _CODEX_SEARCH_PATHS = [
@@ -165,14 +166,9 @@ class CodexAdapter(AgentAdapter):
 
             evt_type = obj.get("type", "")
 
-            if evt_type == "turn.completed":
-                turn_usage = obj.get("usage", {})
-                # Accumulate across turns
-                for key in ("input_tokens", "output_tokens", "cached_input_tokens"):
-                    if turn_usage.get(key):
-                        usage[key] = usage.get(key, 0) + turn_usage[key]
+            usage = merge_usage_dicts(usage, extract_codex_usage_event(obj))
 
-            elif evt_type == "item.completed":
+            if evt_type == "item.completed":
                 item = obj.get("item", {})
                 if item.get("type") == "agent_message":
                     last_message = item.get("text", "")

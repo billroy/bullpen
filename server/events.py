@@ -15,6 +15,12 @@ from server import tasks as task_mod
 from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
 from server.teams import save_team, load_team, list_teams
+from server.usage import (
+    build_usage_entry,
+    build_usage_update,
+    extract_stream_usage_event,
+    merge_usage_dicts,
+)
 from server import workers as worker_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
@@ -625,7 +631,7 @@ def register_events(socketio, app):
                 pending_startup = False
                 startup_error = None
                 saw_ready = adapter.name != "claude"
-                chat_usage = {}  # token usage from result line
+                chat_usage = {}  # normalized token usage across stream events
 
                 popen_kwargs = dict(
                     stdin=subprocess.PIPE,
@@ -670,11 +676,12 @@ def register_events(socketio, app):
                                     except OSError:
                                         pass
                                     return
-                        # Capture token usage from the result line
+                        # Capture token usage from known provider stream events.
                         try:
                             obj = json.loads(line.strip())
-                            if obj.get("type") == "result":
-                                chat_usage = obj.get("usage", {})
+                            chat_usage = merge_usage_dicts(
+                                chat_usage, extract_stream_usage_event(adapter.name, obj)
+                            )
                         except (json.JSONDecodeError, AttributeError):
                             pass
                         display = adapter.format_stream_line(line)
@@ -743,8 +750,13 @@ def register_events(socketio, app):
                             f"\n**[{now}] User:** {message}\n\n"
                             f"**[{now}] Agent ({agent_label}):**\n\n{full_response}\n"
                         )
-                        # Calculate token count for this turn
-                        turn_tokens = (chat_usage.get("input_tokens", 0) or 0) + (chat_usage.get("output_tokens", 0) or 0)
+                        usage_entry = build_usage_entry(
+                            source="chat",
+                            provider=adapter.name,
+                            model=model,
+                            usage=chat_usage,
+                            occurred_at=now,
+                        )
 
                         with _chat_lock:
                             ticket_id = _chat_ticket_ids.get(session_id)
@@ -759,8 +771,8 @@ def register_events(socketio, app):
                                 status="review",
                             )
                             updates = {"body": f"\n## Chat Transcript\n{turn_text}"}
-                            if turn_tokens:
-                                updates["tokens"] = turn_tokens
+                            if usage_entry:
+                                updates.update(build_usage_update(task, usage_entry))
                             task = task_mod.update_task(bp_dir, task["id"], updates)
                             with _chat_lock:
                                 _chat_ticket_ids[session_id] = task["id"]
@@ -769,9 +781,8 @@ def register_events(socketio, app):
                             task = task_mod.read_task(bp_dir, ticket_id)
                             if task:
                                 updates = {"body": (task.get("body") or "").rstrip() + "\n" + turn_text}
-                                if turn_tokens:
-                                    prev = task.get("tokens", 0) or 0
-                                    updates["tokens"] = prev + turn_tokens
+                                if usage_entry:
+                                    updates.update(build_usage_update(task, usage_entry))
                                 task = task_mod.update_task(bp_dir, ticket_id, updates)
                                 _emit("task:updated", task, ws_id)
                     except Exception:

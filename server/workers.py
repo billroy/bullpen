@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from server.agents import get_adapter
 from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
+from server.usage import build_usage_entry, build_usage_update
 from server import tasks as task_mod
 
 MAX_HANDOFF_DEPTH = 10
@@ -782,14 +783,21 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
         if not worker:
             return
 
-        # Accumulate token usage on the task
+        # Accumulate structured model usage and backward-compatible token totals.
         if usage:
             task = task_mod.read_task(bp_dir, task_id)
             if task:
-                prev = task.get("tokens", 0) or 0
-                new_tokens = (usage.get("input_tokens", 0) or 0) + (usage.get("output_tokens", 0) or 0)
-                if new_tokens:
-                    task_mod.update_task(bp_dir, task_id, {"tokens": prev + new_tokens})
+                usage_entry = build_usage_entry(
+                    source="worker",
+                    provider=worker.get("agent", ""),
+                    model=worker.get("model"),
+                    slot=slot_index,
+                    usage=usage,
+                )
+                if usage_entry:
+                    usage_update = build_usage_update(task, usage_entry)
+                    if usage_update:
+                        task_mod.update_task(bp_dir, task_id, usage_update)
 
         # Append output to task
         _append_output(bp_dir, task_id, worker, output)

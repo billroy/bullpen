@@ -214,6 +214,28 @@ class TestCodexAdapter:
         assert result["error"] == "Rate limited"
         assert result["usage"]["input_tokens"] == 200
 
+    def test_parse_output_extracts_token_count_event(self):
+        adapter = CodexAdapter()
+        lines = [
+            json.dumps({
+                "type": "token_count",
+                "input_tokens": 120,
+                "cached_input_tokens": 30,
+                "output_tokens": 45,
+                "reasoning_output_tokens": 10,
+                "total_tokens": 205,
+            }),
+            json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "Done."}}),
+        ]
+        result = adapter.parse_output("\n".join(lines), "", 0)
+        assert result["success"] is True
+        assert result["output"] == "Done."
+        assert result["usage"]["input_tokens"] == 120
+        assert result["usage"]["cached_input_tokens"] == 30
+        assert result["usage"]["output_tokens"] == 45
+        assert result["usage"]["reasoning_output_tokens"] == 10
+        assert result["usage"]["total_tokens"] == 205
+
 
 class TestMockAdapter:
     def test_basic(self):

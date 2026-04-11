@@ -41,6 +41,25 @@ class UnavailableAdapter(MockAdapter):
         raise AssertionError("build_argv should not be called when adapter is unavailable")
 
 
+class UsageAdapter(MockAdapter):
+    @property
+    def name(self):
+        return "usage-mock"
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {
+            "success": True,
+            "output": stdout.strip() or self._output,
+            "error": None,
+            "usage": {
+                "input_tokens": 100,
+                "cached_input_tokens": 25,
+                "output_tokens": 40,
+                "reasoning_output_tokens": 10,
+            },
+        }
+
+
 @pytest.fixture
 def bp_dir(tmp_workspace):
     bp = init_workspace(tmp_workspace)
@@ -171,6 +190,33 @@ class TestStartWorker:
         assert updated["assigned_to"] == ""
         assert "Unavailable test agent" in updated["body"]
         assert task["id"] not in layout["slots"][worker_slot]["task_queue"]
+
+    def test_worker_success_appends_structured_usage_and_keeps_tokens_compatible(self, bp_dir, worker_slot):
+        register_adapter("usage-mock", UsageAdapter(output="Usage output"))
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "usage-mock"
+        layout["slots"][worker_slot]["model"] = "claude-sonnet-4-6"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Track usage")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["tokens"] == 140
+        assert isinstance(updated.get("usage"), list)
+        assert len(updated["usage"]) == 1
+        usage = updated["usage"][0]
+        assert usage["source"] == "worker"
+        assert usage["provider"] == "usage-mock"
+        assert usage["model"] == "claude-sonnet-4-6"
+        assert usage["slot"] == 0
+        assert usage["input_tokens"] == 100
+        assert usage["cached_input_tokens"] == 25
+        assert usage["output_tokens"] == 40
+        assert usage["reasoning_output_tokens"] == 10
 
 
 class TestStopWorker:

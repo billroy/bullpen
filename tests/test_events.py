@@ -2,9 +2,12 @@
 
 import os
 import tempfile
+import time
 
 import pytest
 
+from server.agents import register_adapter
+from server.agents.base import AgentAdapter
 from server.app import create_app, socketio
 
 
@@ -31,6 +34,30 @@ def get_event(client, name):
 def get_all_events(client, name):
     """Get all events with given name."""
     return [evt["args"][0] for evt in client.get_received() if evt["name"] == name]
+
+
+class ChatUsageAdapter(AgentAdapter):
+    @property
+    def name(self):
+        return "chat-usage-mock"
+
+    def available(self):
+        return True
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        import sys
+        script = (
+            "import json; "
+            "print(json.dumps({'type':'result','is_error':False,'result':'ok',"
+            "'usage':{'input_tokens':11,'output_tokens':7,'cached_input_tokens':3}}))"
+        )
+        return [sys.executable, "-c", script]
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {"success": True, "output": stdout.strip(), "error": None, "usage": {}}
+
+    def format_stream_line(self, line):
+        return None
 
 
 class TestTaskEvents:
@@ -288,6 +315,48 @@ class TestWorkerEvents:
         }})
         layout = get_event(c, "layout:updated")
         assert layout["slots"][0]["disposition"] == "worker:Code Reviewer"
+
+
+class TestChatEvents:
+    def test_chat_logs_structured_usage_and_tokens(self, client):
+        c, app = client
+        register_adapter("chat-usage-mock", ChatUsageAdapter())
+
+        c.emit("chat:send", {
+            "sessionId": "session-usage-1",
+            "provider": "chat-usage-mock",
+            "model": "mock-model",
+            "message": "hello",
+        })
+
+        deadline = time.time() + 3.0
+        done = False
+        while time.time() < deadline and not done:
+            for evt in c.get_received():
+                if evt["name"] == "chat:done":
+                    done = True
+                    break
+            if not done:
+                time.sleep(0.05)
+
+        assert done, "chat:done not received"
+
+        from server.tasks import list_tasks
+
+        tasks = list_tasks(app.config["bp_dir"])
+        chat_tasks = [t for t in tasks if "chat" in (t.get("tags") or [])]
+        assert chat_tasks
+        task = chat_tasks[0]
+        assert task.get("tokens") == 18
+        assert isinstance(task.get("usage"), list)
+        assert len(task["usage"]) == 1
+        usage = task["usage"][0]
+        assert usage["source"] == "chat"
+        assert usage["provider"] == "chat-usage-mock"
+        assert usage["model"] == "mock-model"
+        assert usage["input_tokens"] == 11
+        assert usage["output_tokens"] == 7
+        assert usage["cached_input_tokens"] == 3
 
 
 class TestConfigEvents:
