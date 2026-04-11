@@ -14,7 +14,7 @@ def test_kanban_ticket_card_title_renders_ticket_icon():
     text = _read("static/components/TaskCard.js")
     assert "class=\"task-card-title\"" in text
     assert "class=\"ticket-type-icon ticket-type-icon--card\"" in text
-    assert "data-lucide=\"ticket\"" in text
+    assert "data-lucide=\"clipboard-list\"" in text
     assert "class=\"task-card-title-text\"" in text
 
 
@@ -22,7 +22,7 @@ def test_ticket_list_title_renders_ticket_icon():
     text = _read("static/components/KanbanTab.js")
     assert "class=\"ticket-list-title-wrap\"" in text
     assert "class=\"ticket-type-icon ticket-type-icon--list\"" in text
-    assert "data-lucide=\"ticket\"" in text
+    assert "data-lucide=\"clipboard-list\"" in text
     assert "class=\"ticket-list-title-text\"" in text
 
 
@@ -30,7 +30,7 @@ def test_ticket_detail_header_renders_ticket_icon():
     text = _read("static/components/TaskDetailPanel.js")
     assert "class=\"detail-title-wrap\"" in text
     assert "class=\"ticket-type-icon ticket-type-icon--detail\"" in text
-    assert "data-lucide=\"ticket\"" in text
+    assert "data-lucide=\"clipboard-list\"" in text
     assert "renderLucideIcons(this.$el);" in text
 
 

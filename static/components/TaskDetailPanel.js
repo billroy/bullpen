@@ -50,7 +50,7 @@ const TaskDetailPanel = {
           </div>
         </div>
         <div v-else class="detail-title-wrap">
-          <i class="ticket-type-icon ticket-type-icon--detail" data-lucide="ticket" aria-hidden="true"></i>
+          <i class="ticket-type-icon ticket-type-icon--detail" data-lucide="clipboard-list" aria-hidden="true"></i>
           <h2 class="detail-title" @click="startEditTitle" title="Click to edit">{{ task.title }}</h2>
         </div>
         <button class="btn btn-icon" @click="$emit('close')">&times;</button>
