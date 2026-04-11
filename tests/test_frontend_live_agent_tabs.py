@@ -13,11 +13,17 @@ def _read(rel_path: str) -> str:
 def test_live_agent_tabs_are_dynamic_in_app_shell():
     text = _read("static/app.js")
     assert "const chatTabs = reactive([]);" in text
-    assert "function addLiveAgentTab()" in text
+    assert "function addLiveAgentTab({ activate = true } = {})" in text
     assert "function closeLiveAgentTab(tabId)" in text
     assert "class=\"tab-btn tab-btn-add\"" in text
     assert "v-for=\"ct in chatTabs\"" in text
     assert ":session-id=\"ct.sessionId\"" in text
+
+
+def test_live_agent_seed_does_not_override_default_tickets_tab():
+    text = _read("static/app.js")
+    assert "const activeTab = ref('tasks');" in text
+    assert "addLiveAgentTab({ activate: false });" in text
 
 
 def test_live_agent_component_uses_injected_session_id():

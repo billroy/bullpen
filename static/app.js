@@ -100,7 +100,7 @@ const app = createApp({
       return 'chat-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
     }
 
-    function addLiveAgentTab() {
+    function addLiveAgentTab({ activate = true } = {}) {
       chatTabCounter += 1;
       const id = 'chat-' + chatTabCounter;
       chatTabs.push({
@@ -108,7 +108,7 @@ const app = createApp({
         label: chatTabCounter === 1 ? 'Live Agent' : `Live Agent ${chatTabCounter}`,
         sessionId: _newChatSessionId(),
       });
-      activeTab.value = id;
+      if (activate) activeTab.value = id;
     }
 
     function closeLiveAgentTab(tabId) {
@@ -122,8 +122,8 @@ const app = createApp({
       }
     }
 
-    // Seed the default chat tab.
-    addLiveAgentTab();
+    // Seed the default chat tab without switching away from Tickets.
+    addLiveAgentTab({ activate: false });
 
     const selectedTask = computed(() => {
       if (!selectedTaskId.value) return null;
