@@ -136,7 +136,9 @@ const app = createApp({
     });
 
     // Socket.io
-    const socket = io();
+    const socket = io({
+      transports: ['websocket'],
+    });
     window._bullpenSocket = socket;
 
     socket.on('connect', () => { connected.value = true; });
