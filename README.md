@@ -17,11 +17,12 @@ This opens a browser at `http://localhost:5000`. The workspace directory is wher
 |------|---------|-------------|
 | `--workspace` | current directory | Project directory for agents to work in |
 | `--port` | 5000 | Server port |
-| `--host` | 127.0.0.1 | Bind address (use `0.0.0.0` to expose on LAN) |
+| `--host` | 127.0.0.1 | Bind address (network-exposed binds require auth to be enabled) |
 | `--no-browser` | off | Don't auto-open the browser |
 | `--set-password` | — | Interactively set login credentials and exit |
 
 By default the server only accepts connections from localhost. CORS is restricted to the same origin.
+If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires authentication credentials to be configured first.
 
 ## Features
 
@@ -120,6 +121,8 @@ You will be prompted for a username and password. The hashed credential is writt
 
 ```
 Bullpen auth: ENABLED (user=admin)
+
+Network-exposed binds (for example `--host 0.0.0.0`) are only allowed when auth is enabled.
 ```
 
 When auth is enabled, unauthenticated browser requests are redirected to `/login`, XHR requests receive a 401, and Socket.IO connections without a valid session are rejected. Static assets needed by the login page (`login.html`, `style.css`, `favicon.ico`) remain public.

@@ -6,6 +6,9 @@ import os
 import sys
 
 
+LOCALHOST_BINDS = {"127.0.0.1", "localhost", "::1"}
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="bullpen",
@@ -90,6 +93,24 @@ def set_password_cli():
     return 0
 
 
+def require_auth_for_network_bind(host):
+    """Require auth when binding beyond localhost."""
+    if host in LOCALHOST_BINDS:
+        return
+
+    from server import auth
+    from server.workspace_manager import GLOBAL_DIR
+
+    auth.load_credentials(GLOBAL_DIR)
+    if auth.auth_enabled():
+        return
+
+    raise RuntimeError(
+        f"refusing to bind to '{host}' without authentication enabled; "
+        "run `python3 bullpen.py --set-password` first"
+    )
+
+
 def main():
     args = parse_args()
 
@@ -100,6 +121,12 @@ def main():
 
     if not os.path.isdir(workspace):
         print(f"Error: workspace directory does not exist: {workspace}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        require_auth_for_network_bind(args.host)
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     print(f"Bullpen starting — workspace: {workspace}, host: {args.host}, port: {args.port}")
