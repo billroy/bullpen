@@ -4,6 +4,7 @@ import os
 import tempfile
 import time
 import threading
+import json
 
 import pytest
 
@@ -210,6 +211,49 @@ class TestDualClient:
 
             c1.disconnect()
             c2.disconnect()
+
+
+class TestMultiProjectStartup:
+    """Server startup should hydrate all projects in the registry."""
+
+    def test_connect_receives_state_for_all_registered_projects(self, tmp_path):
+        global_dir = str(tmp_path / "global")
+        os.makedirs(global_dir, exist_ok=True)
+
+        ws_a = str(tmp_path / "workspace_a")
+        ws_b = str(tmp_path / "workspace_b")
+        os.makedirs(ws_a, exist_ok=True)
+        os.makedirs(ws_b, exist_ok=True)
+
+        app = create_app(ws_a, no_browser=True, global_dir=global_dir)
+
+        # Seed another persisted project as if it was added in a previous run.
+        projects_path = os.path.join(global_dir, "projects.json")
+        with open(projects_path, "r") as f:
+            projects = json.load(f)
+        projects.append({
+            "id": "ws-b",
+            "path": os.path.realpath(ws_b),
+            "name": "workspace_b",
+        })
+        with open(projects_path, "w") as f:
+            json.dump(projects, f, indent=2)
+
+        # Restart app; both projects should be activated and sent on connect.
+        app = create_app(ws_a, no_browser=True, global_dir=global_dir)
+        c = socketio.test_client(app)
+        received = c.get_received()
+        c.disconnect()
+
+        init_events = [evt for evt in received if evt["name"] == "state:init"]
+        projects_events = [evt for evt in received if evt["name"] == "projects:updated"]
+
+        assert len(init_events) == 2
+        assert projects_events
+        listed = projects_events[-1]["args"][0]
+        listed_paths = {os.path.realpath(p["path"]) for p in listed}
+        assert os.path.realpath(ws_a) in listed_paths
+        assert os.path.realpath(ws_b) in listed_paths
 
 
 class TestWorkerManagement:

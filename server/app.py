@@ -37,6 +37,16 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
     # Initialize workspace manager and register startup project
     manager = WorkspaceManager(global_dir=global_dir)
     startup_id = manager.register_project(workspace)
+    # Activate all persisted projects so the UI can switch between them immediately.
+    # The registry can contain projects from prior runs that need in-memory state.
+    for entry in manager.list_projects():
+        if entry["id"] == startup_id:
+            continue
+        try:
+            manager.register_project(entry["path"], name=entry.get("name"))
+        except ValueError:
+            # Ignore invalid/unavailable paths; stale entries are pruned on manager init.
+            continue
     bp_dir = manager.get_bp_dir(startup_id)
 
     app = Flask(
