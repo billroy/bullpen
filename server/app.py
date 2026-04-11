@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+from urllib.parse import urlparse
 
 from flask import (
     Flask,
@@ -29,6 +30,47 @@ from server.workspace_manager import WorkspaceManager
 
 
 socketio = SocketIO()
+
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_TRUSTED_TUNNEL_SUFFIXES = (".ngrok-free.app", ".ngrok.app", ".ngrok.io")
+
+
+def _origin_host(origin):
+    if not origin:
+        return ""
+    parsed = urlparse(origin)
+    return (parsed.hostname or "").lower()
+
+
+def _request_origin(environ, *, forwarded=False):
+    if not environ:
+        return ""
+    if forwarded:
+        scheme = environ.get("HTTP_X_FORWARDED_PROTO", environ.get("wsgi.url_scheme", "http"))
+        host = environ.get("HTTP_X_FORWARDED_HOST", environ.get("HTTP_HOST", ""))
+    else:
+        scheme = environ.get("wsgi.url_scheme", "http")
+        host = environ.get("HTTP_HOST", "")
+    scheme = scheme.split(",")[0].strip()
+    host = host.split(",")[0].strip()
+    return f"{scheme}://{host}" if scheme and host else ""
+
+
+def _socketio_origin_allowed(origin, environ=None):
+    """Allow local Bullpen clients and trusted tunnel hosts without wildcard CORS."""
+    if not origin:
+        return True
+
+    origin_host = _origin_host(origin)
+    if origin_host in _LOOPBACK_HOSTS:
+        return True
+
+    same_origin = _request_origin(environ)
+    forwarded_origin = _request_origin(environ, forwarded=True)
+    if origin in {same_origin, forwarded_origin}:
+        return True
+
+    return any(origin_host.endswith(suffix) for suffix in _TRUSTED_TUNNEL_SUFFIXES)
 
 
 def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", port=5000):
@@ -93,7 +135,7 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
     app.config["bp_dir"] = bp_dir
     app.config["no_browser"] = no_browser
 
-    socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
+    socketio.init_app(app, cors_allowed_origins=_socketio_origin_allowed, async_mode="threading")
 
     # Store server address and a per-run MCP token so the stdio MCP server
     # (which has no session cookie) can authenticate via Socket.IO ``auth``.
