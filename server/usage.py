@@ -92,6 +92,43 @@ def usage_to_legacy_tokens(usage):
     return 0
 
 
+def _bucket_provider_model(provider, model):
+    """Return normalized provider/model bucket key."""
+    p = provider.strip() if isinstance(provider, str) else ""
+    m = model.strip() if isinstance(model, str) else ""
+    return (p or "unknown", m)
+
+
+def aggregate_tokens_by_provider_model(usage_entries):
+    """Aggregate usage entries into provider/model token totals."""
+    if not isinstance(usage_entries, list):
+        return []
+
+    buckets = {}
+    for item in usage_entries:
+        if not isinstance(item, dict):
+            continue
+
+        provider, model = _bucket_provider_model(item.get("provider"), item.get("model"))
+        key = (provider, model)
+        bucket = buckets.get(key)
+        if bucket is None:
+            bucket = {"provider": provider}
+            if model:
+                bucket["model"] = model
+
+        merged = merge_usage_dicts(bucket, normalize_usage(item))
+        for field, value in merged.items():
+            bucket[field] = value
+        bucket["tokens"] = usage_to_legacy_tokens(bucket)
+        buckets[key] = bucket
+
+    ordered = []
+    for provider, model in sorted(buckets.keys()):
+        ordered.append(buckets[(provider, model)])
+    return ordered
+
+
 def extract_codex_usage_event(event_obj):
     """Extract normalized usage from a Codex JSON event object."""
     if not isinstance(event_obj, dict):
@@ -159,9 +196,11 @@ def build_usage_update(task, entry):
     else:
         usage_entries = []
     usage_entries.append(entry)
+    tokens_by_provider_model = aggregate_tokens_by_provider_model(usage_entries)
 
     prev_tokens = _coerce_non_negative_int(task.get("tokens")) or 0
     return {
         "usage": usage_entries,
+        "tokens_by_provider_model": tokens_by_provider_model,
         "tokens": prev_tokens + usage_to_legacy_tokens(entry),
     }

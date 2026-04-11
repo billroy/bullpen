@@ -64,3 +64,48 @@ def test_build_usage_update_appends_entry_and_increments_tokens():
     assert update["usage"][1]["input_tokens"] == 20
     assert update["usage"][1]["output_tokens"] == 5
     assert update["usage"][1]["cached_input_tokens"] == 4
+    assert len(update["tokens_by_provider_model"]) == 2
+    claude = update["tokens_by_provider_model"][0]
+    codex = update["tokens_by_provider_model"][1]
+    assert claude["provider"] == "claude"
+    assert claude["tokens"] == 13
+    assert codex["provider"] == "codex"
+    assert codex["model"] == "gpt-5.4"
+    assert codex["input_tokens"] == 20
+    assert codex["output_tokens"] == 5
+    assert codex["cached_input_tokens"] == 4
+    assert codex["tokens"] == 25
+
+
+def test_build_usage_update_separates_provider_and_model_totals():
+    task = {
+        "tokens": 0,
+        "usage": [
+            {"source": "worker", "provider": "codex", "model": "gpt-5.4", "input_tokens": 40, "output_tokens": 10},
+            {"source": "worker", "provider": "codex", "model": "gpt-5.4-mini", "input_tokens": 20, "output_tokens": 5},
+            {"source": "chat", "provider": "claude", "model": "claude-sonnet-4-6", "total_tokens": 70},
+        ],
+    }
+    entry = build_usage_entry(
+        source="worker",
+        provider="codex",
+        model="gpt-5.4",
+        usage={"input_tokens": 15, "output_tokens": 5},
+    )
+    update = build_usage_update(task, entry)
+
+    assert len(update["tokens_by_provider_model"]) == 3
+    assert update["tokens_by_provider_model"][0]["provider"] == "claude"
+    assert update["tokens_by_provider_model"][0]["model"] == "claude-sonnet-4-6"
+    assert update["tokens_by_provider_model"][0]["total_tokens"] == 70
+    assert update["tokens_by_provider_model"][0]["tokens"] == 70
+    assert update["tokens_by_provider_model"][1]["provider"] == "codex"
+    assert update["tokens_by_provider_model"][1]["model"] == "gpt-5.4"
+    assert update["tokens_by_provider_model"][1]["input_tokens"] == 55
+    assert update["tokens_by_provider_model"][1]["output_tokens"] == 15
+    assert update["tokens_by_provider_model"][1]["tokens"] == 70
+    assert update["tokens_by_provider_model"][2]["provider"] == "codex"
+    assert update["tokens_by_provider_model"][2]["model"] == "gpt-5.4-mini"
+    assert update["tokens_by_provider_model"][2]["input_tokens"] == 20
+    assert update["tokens_by_provider_model"][2]["output_tokens"] == 5
+    assert update["tokens_by_provider_model"][2]["tokens"] == 25

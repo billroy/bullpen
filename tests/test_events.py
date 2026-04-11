@@ -357,6 +357,15 @@ class TestChatEvents:
         assert usage["input_tokens"] == 11
         assert usage["output_tokens"] == 7
         assert usage["cached_input_tokens"] == 3
+        assert isinstance(task.get("tokens_by_provider_model"), list)
+        assert len(task["tokens_by_provider_model"]) == 1
+        breakdown = task["tokens_by_provider_model"][0]
+        assert breakdown["provider"] == "chat-usage-mock"
+        assert breakdown["model"] == "mock-model"
+        assert breakdown["input_tokens"] == 11
+        assert breakdown["output_tokens"] == 7
+        assert breakdown["cached_input_tokens"] == 3
+        assert breakdown["tokens"] == 18
 
 
 class TestConfigEvents:

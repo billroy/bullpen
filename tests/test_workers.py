@@ -217,6 +217,16 @@ class TestStartWorker:
         assert usage["cached_input_tokens"] == 25
         assert usage["output_tokens"] == 40
         assert usage["reasoning_output_tokens"] == 10
+        assert isinstance(updated.get("tokens_by_provider_model"), list)
+        assert len(updated["tokens_by_provider_model"]) == 1
+        breakdown = updated["tokens_by_provider_model"][0]
+        assert breakdown["provider"] == "usage-mock"
+        assert breakdown["model"] == "claude-sonnet-4-6"
+        assert breakdown["input_tokens"] == 100
+        assert breakdown["cached_input_tokens"] == 25
+        assert breakdown["output_tokens"] == 40
+        assert breakdown["reasoning_output_tokens"] == 10
+        assert breakdown["tokens"] == 140
 
 
 class TestStopWorker:
