@@ -103,7 +103,7 @@ const KanbanTab = {
             </td>
             <td class="ticket-list-col-title">
               <div class="ticket-list-title-wrap">
-                <i class="ticket-type-icon ticket-type-icon--list" data-lucide="clipboard-list" aria-hidden="true"></i>
+                <i class="ticket-type-icon ticket-type-icon--list" data-lucide="tag" aria-hidden="true"></i>
                 <span class="ticket-list-title-text">{{ task.title }}</span>
               </div>
             </td>

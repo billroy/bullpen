@@ -16,7 +16,7 @@ const TaskCard = {
          @dragstart="onDragStart"
          @click="$emit('select-task', task.id)">
       <div class="task-card-title">
-        <i class="ticket-type-icon ticket-type-icon--card" data-lucide="clipboard-list" aria-hidden="true"></i>
+        <i class="ticket-type-icon ticket-type-icon--card" data-lucide="tag" aria-hidden="true"></i>
         <span class="task-card-title-text">{{ task.title }}</span>
       </div>
       <div class="task-card-meta">
