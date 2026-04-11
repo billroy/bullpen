@@ -1,3 +1,5 @@
+const TASK_DND_MIME = 'application/x-bullpen-task-id';
+
 const KanbanTab = {
   props: ['tasks', 'columns', 'layout', 'viewMode'],
   emits: ['select-task', 'move-task', 'archive-done', 'new-task'],
@@ -7,7 +9,7 @@ const KanbanTab = {
       <div v-for="(col, colIdx) in columns" :key="col.key" class="kanban-column"
            @dragover.prevent="onDragOver($event, col.key)"
            @dragleave="onDragLeave($event)"
-           @drop="onDrop($event, col.key)">
+           @drop.prevent="onDrop($event, col.key)">
         <div class="kanban-column-header" :style="{ borderTopColor: col.color }">
           <div class="column-title">
             <i class="column-icon" :data-lucide="columnIcon(col)" aria-hidden="true"></i>
@@ -313,9 +315,10 @@ const KanbanTab = {
       e.currentTarget.classList.remove('drag-over');
     },
     onDrop(e, colKey) {
+      e.preventDefault();
       e.currentTarget.classList.remove('drag-over');
       if (this.isWorkerColumn(colKey)) return;
-      const taskId = e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
       if (!taskId) return;
       const oldStatus = this.taskStatus(taskId);
       if (oldStatus === 'in_progress') {

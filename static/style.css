@@ -310,6 +310,9 @@ body {
 
 .inbox-item[draggable="true"] {
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .inbox-title {
@@ -552,6 +555,9 @@ body {
 
 .task-card[draggable="true"] {
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .task-card[draggable="true"]:active {

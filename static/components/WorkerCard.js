@@ -1,3 +1,5 @@
+const TASK_DND_MIME = 'application/x-bullpen-task-id';
+
 const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer'],
@@ -7,7 +9,7 @@ const WorkerCard = {
          @dragstart="onDragStart"
          @dragover.prevent="onDragOver"
          @dragleave="onDragLeave"
-         @drop="onDrop"
+         @drop.prevent="onDrop"
 >
       <span v-if="passDir === 'up'" class="pass-indicator pass-up" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
       <span v-if="passDir === 'down'" class="pass-indicator pass-down" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
@@ -141,20 +143,25 @@ const WorkerCard = {
       e.dataTransfer.effectAllowed = 'move';
     },
     onDragOver(e) {
-      if (e.dataTransfer.types.includes('text/plain') || e.dataTransfer.types.includes('application/x-worker-slot')) {
+      if (
+        e.dataTransfer.types.includes(TASK_DND_MIME) ||
+        e.dataTransfer.types.includes('text/plain') ||
+        e.dataTransfer.types.includes('application/x-worker-slot')
+      ) {
         e.dataTransfer.dropEffect = 'move';
         this.dragOver = true;
       }
     },
     onDragLeave() { this.dragOver = false; },
     onDrop(e) {
+      e.preventDefault();
       this.dragOver = false;
       const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
       if (fromSlot !== '' && Number(fromSlot) !== this.slotIndex) {
         this.$root.moveWorker(Number(fromSlot), this.slotIndex);
         return;
       }
-      const taskId = e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
       if (taskId) {
         this.$root.assignTask(taskId, this.slotIndex);
       }

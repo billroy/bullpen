@@ -27,7 +27,7 @@ const BullpenTab = {
           <div v-else class="grid-slot empty-slot"
                @click="openLibrary(i - 1)"
                @dragover.prevent
-               @drop="onDropOnEmpty($event, i - 1)">
+               @drop.prevent="onDropOnEmpty($event, i - 1)">
             <span class="slot-placeholder">+</span>
           </div>
         </template>
@@ -123,6 +123,7 @@ const BullpenTab = {
       this.$root.updateConfig({ grid: { rows, cols } });
     },
     onDropOnEmpty(e, slotIndex) {
+      e.preventDefault();
       const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
       if (fromSlot !== '') {
         this.$root.moveWorker(Number(fromSlot), slotIndex);

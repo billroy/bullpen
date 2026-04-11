@@ -1,3 +1,5 @@
+const TASK_DND_MIME = 'application/x-bullpen-task-id';
+
 const TaskCard = {
   props: ['task', 'layout'],
   emits: ['select-task'],
@@ -28,6 +30,7 @@ const TaskCard = {
   `,
   methods: {
     onDragStart(e) {
+      e.dataTransfer.setData(TASK_DND_MIME, this.task.id);
       e.dataTransfer.setData('text/plain', this.task.id);
       e.dataTransfer.effectAllowed = 'move';
     }
