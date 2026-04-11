@@ -1,5 +1,3 @@
-const TASK_DND_MIME = 'application/x-bullpen-task-id';
-
 const KanbanTab = {
   props: ['tasks', 'columns', 'layout', 'viewMode'],
   emits: ['select-task', 'move-task', 'archive-done', 'new-task'],
@@ -318,7 +316,7 @@ const KanbanTab = {
       e.preventDefault();
       e.currentTarget.classList.remove('drag-over');
       if (this.isWorkerColumn(colKey)) return;
-      const taskId = e.dataTransfer.getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
       if (!taskId) return;
       const oldStatus = this.taskStatus(taskId);
       if (oldStatus === 'in_progress') {

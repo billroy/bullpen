@@ -1,5 +1,3 @@
-const TASK_DND_MIME = 'application/x-bullpen-task-id';
-
 const LeftPane = {
   props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces'],
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'remove-project', 'quick-create-task'],
@@ -135,7 +133,7 @@ const LeftPane = {
       this.quickCreateText = '';
     },
     onDragStart(e, taskId) {
-      e.dataTransfer.setData(TASK_DND_MIME, taskId);
+      e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, taskId);
       e.dataTransfer.setData('text/plain', taskId);
       e.dataTransfer.effectAllowed = 'move';
     },
@@ -173,7 +171,7 @@ const LeftPane = {
     onRosterDrop(e, slot) {
       e.preventDefault();
       this.rosterDragSlot = null;
-      const taskId = e.dataTransfer.getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
       if (taskId) {
         this.$root.assignTask(taskId, slot);
       }

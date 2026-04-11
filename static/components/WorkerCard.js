@@ -1,5 +1,3 @@
-const TASK_DND_MIME = 'application/x-bullpen-task-id';
-
 const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer'],
@@ -144,7 +142,7 @@ const WorkerCard = {
     },
     onDragOver(e) {
       if (
-        e.dataTransfer.types.includes(TASK_DND_MIME) ||
+        e.dataTransfer.types.includes(window.BULLPEN_TASK_DND_MIME) ||
         e.dataTransfer.types.includes('text/plain') ||
         e.dataTransfer.types.includes('application/x-worker-slot')
       ) {
@@ -161,7 +159,7 @@ const WorkerCard = {
         this.$root.moveWorker(Number(fromSlot), this.slotIndex);
         return;
       }
-      const taskId = e.dataTransfer.getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
       if (taskId) {
         this.$root.assignTask(taskId, this.slotIndex);
       }

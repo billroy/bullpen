@@ -12,12 +12,12 @@ def _read(rel_path: str) -> str:
 
 
 def test_task_drag_uses_custom_mime_and_plaintext_fallback():
+    utils = _read("static/utils.js")
     task_card = _read("static/components/TaskCard.js")
     left_pane = _read("static/components/LeftPane.js")
-    assert TASK_DND_MIME in task_card
-    assert "setData(TASK_DND_MIME, this.task.id)" in task_card
-    assert TASK_DND_MIME in left_pane
-    assert "setData(TASK_DND_MIME, taskId)" in left_pane
+    assert f"window.BULLPEN_TASK_DND_MIME = '{TASK_DND_MIME}';" in utils
+    assert "setData(window.BULLPEN_TASK_DND_MIME, this.task.id)" in task_card
+    assert "setData(window.BULLPEN_TASK_DND_MIME, taskId)" in left_pane
 
 
 def test_drop_targets_prevent_default_and_read_custom_mime():
@@ -27,13 +27,23 @@ def test_drop_targets_prevent_default_and_read_custom_mime():
 
     assert "@drop.prevent=\"onDrop($event, col.key)\"" in kanban
     assert "e.preventDefault();" in kanban
-    assert "getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in kanban
+    assert "getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in kanban
 
     assert "@drop.prevent=\"onDrop\"" in worker
-    assert "getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in worker
+    assert "getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in worker
 
     assert "e.preventDefault();" in left_pane
-    assert "getData(TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in left_pane
+    assert "getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in left_pane
+
+
+def test_task_dnd_mime_is_not_redeclared_in_global_component_scripts():
+    for rel_path in [
+        "static/components/LeftPane.js",
+        "static/components/TaskCard.js",
+        "static/components/WorkerCard.js",
+        "static/components/KanbanTab.js",
+    ]:
+        assert "const TASK_DND_MIME" not in _read(rel_path)
 
 
 def test_draggable_ticket_styles_disable_text_selection():
