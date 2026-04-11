@@ -121,9 +121,17 @@ const LeftPane = {
   },
   methods: {
     submitQuickCreate() {
-      const title = this.quickCreateText.trim();
-      if (!title) return;
-      this.$emit('quick-create-task', title);
+      const text = this.quickCreateText.trim();
+      if (!text) return;
+      const slashIdx = text.indexOf('/');
+      const payload = slashIdx >= 0
+        ? {
+            title: text.slice(0, slashIdx).trim(),
+            description: text.slice(slashIdx + 1).trim(),
+          }
+        : { title: text, description: '' };
+      if (!payload.title) return;
+      this.$emit('quick-create-task', payload);
       this.quickCreateText = '';
     },
     onDragStart(e, taskId) {

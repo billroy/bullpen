@@ -287,7 +287,12 @@ const app = createApp({
 
     // Task actions
     function createTask(data) { socket.emit('task:create', _wsData(data)); }
-    function quickCreateTask(title) { socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description: '' })); }
+    function quickCreateTask(payload) {
+      const title = typeof payload === 'string' ? payload.trim() : (payload?.title || '').trim();
+      const description = typeof payload === 'string' ? '' : (payload?.description || '').trim();
+      if (!title) return;
+      socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));
+    }
     function updateTask(data) { socket.emit('task:update', _wsData(data)); }
     function deleteTask(id) {
       const task = state.tasks.find(t => t.id === id);
