@@ -2326,6 +2326,15 @@ body {
   background: var(--bg-hover);
 }
 
+.commit-row-clickable {
+  cursor: pointer;
+}
+
+.commit-row-clickable:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .commit-hash {
   font-family: monospace;
   color: var(--accent);
@@ -2383,4 +2392,26 @@ body {
   font-size: 0.875em;
   background: rgba(239, 68, 68, 0.08);
   border-radius: var(--radius);
+}
+
+.commits-diff-modal {
+  width: min(1000px, 94vw);
+}
+
+.commits-diff-body {
+  min-height: 320px;
+}
+
+.commit-diff {
+  font-family: monospace;
+  font-size: 0.82em;
+  line-height: 1.45;
+  white-space: pre;
+  overflow: auto;
+  max-height: 58vh;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
 }

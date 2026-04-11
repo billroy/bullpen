@@ -6,6 +6,10 @@ const CommitsTab = {
       hasMore: false,
       loading: false,
       error: null,
+      selectedCommit: null,
+      commitDiff: '',
+      diffLoading: false,
+      diffError: null,
     };
   },
   mounted() {
@@ -51,6 +55,36 @@ const CommitsTab = {
         return dateStr;
       }
     },
+    async openDiff(commit) {
+      this.selectedCommit = commit;
+      this.commitDiff = '';
+      this.diffError = null;
+      this.diffLoading = true;
+      this.$nextTick(() => this.$refs.diffOverlay?.focus());
+      try {
+        const res = await fetch(`/api/commits/${encodeURIComponent(commit.hash)}/diff`);
+        if (res.status === 401) {
+          window.location = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+          return;
+        }
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          this.diffError = data.error || `Failed to load diff (${res.status})`;
+          return;
+        }
+        this.commitDiff = data.diff || '';
+      } catch (e) {
+        this.diffError = e.message;
+      } finally {
+        this.diffLoading = false;
+      }
+    },
+    closeDiff() {
+      this.selectedCommit = null;
+      this.commitDiff = '';
+      this.diffError = null;
+      this.diffLoading = false;
+    },
   },
   template: `
     <div class="commits-container">
@@ -60,7 +94,16 @@ const CommitsTab = {
       <div class="commits-list">
         <div v-if="error" class="commits-error">{{ error }}</div>
         <div v-else-if="commits.length === 0 && !loading" class="empty-state">No commits found.</div>
-        <div v-for="commit in commits" :key="commit.hash" class="commit-row">
+        <div
+          v-for="commit in commits"
+          :key="commit.hash"
+          class="commit-row commit-row-clickable"
+          @click="openDiff(commit)"
+          @keydown.enter.prevent="openDiff(commit)"
+          tabindex="0"
+          role="button"
+          :title="'View diff for ' + commit.short_hash"
+        >
           <span class="commit-hash">{{ commit.short_hash }}</span>
           <span class="commit-multiline">
             <span class="commit-subject">{{ commit.subject }}</span>
@@ -74,6 +117,31 @@ const CommitsTab = {
           {{ loading ? 'Loading...' : 'More' }}
         </button>
         <span v-if="loading" class="commits-loading">Loading...</span>
+      </div>
+      <div
+        v-if="selectedCommit"
+        class="modal-overlay commits-diff-overlay"
+        @click.self="closeDiff"
+        @keydown.escape="closeDiff"
+        tabindex="0"
+        ref="diffOverlay"
+      >
+        <div class="modal commits-diff-modal">
+          <div class="modal-header">
+            <h2>{{ selectedCommit.short_hash }}: {{ selectedCommit.subject }}</h2>
+            <button class="btn btn-icon" @click="closeDiff">&times;</button>
+          </div>
+          <div class="modal-body commits-diff-body">
+            <div class="commit-meta">{{ selectedCommit.author }} &middot; {{ formatDate(selectedCommit.date) }}</div>
+            <div v-if="diffLoading" class="commits-loading">Loading diff...</div>
+            <div v-else-if="diffError" class="commits-error">{{ diffError }}</div>
+            <pre v-else class="commit-diff">{{ commitDiff || 'No diff output.' }}</pre>
+          </div>
+          <div class="modal-footer">
+            <div></div>
+            <button class="btn btn-primary" @click="closeDiff">Close</button>
+          </div>
+        </div>
       </div>
     </div>
   `,

@@ -1,6 +1,7 @@
 """Flask + socket.io app factory."""
 
 import os
+import re
 import subprocess
 import sys
 
@@ -262,6 +263,26 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
         has_more = (offset + len(commits)) < total
 
         return jsonify({"commits": commits, "has_more": has_more, "total": total})
+
+    @app.route("/api/commits/<commit_hash>/diff")
+    @auth.require_auth
+    def get_commit_diff(commit_hash):
+        """Return the patch for a specific commit in the active workspace."""
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws_path = manager.get_workspace_path(ws_id)
+        if not re.fullmatch(r"[0-9a-fA-F]{7,40}", commit_hash or ""):
+            return jsonify({"error": "Invalid commit hash"}), 400
+        try:
+            result = subprocess.run(
+                ["git", "show", "--format=", "--patch", "--no-color", commit_hash],
+                capture_output=True, text=True, cwd=ws_path, timeout=10,
+            )
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+        if result.returncode != 0:
+            return jsonify({"error": "Commit not found"}), 404
+        return jsonify({"hash": commit_hash, "diff": result.stdout})
 
     @app.route("/api/files")
     @auth.require_auth
