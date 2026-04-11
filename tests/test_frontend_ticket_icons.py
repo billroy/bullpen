@@ -34,6 +34,12 @@ def test_ticket_detail_header_renders_ticket_icon():
     assert "renderLucideIcons(this.$el);" in text
 
 
+def test_lucide_render_helper_tolerates_vue_comment_roots():
+    text = _read("static/utils.js")
+    assert "const root = rootEl?.querySelectorAll ? rootEl : document;" in text
+    assert "window.lucide.createIcons({ attrs: { 'stroke-width': 2 }, root });" in text
+
+
 def test_ticket_icon_styles_exist():
     text = _read("static/style.css")
     assert ".ticket-type-icon" in text

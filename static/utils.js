@@ -28,5 +28,6 @@ function getColumnIcon(col) {
 
 function renderLucideIcons(rootEl) {
   if (!window.lucide?.createIcons) return;
-  window.lucide.createIcons({ attrs: { 'stroke-width': 2 }, root: rootEl || document });
+  const root = rootEl?.querySelectorAll ? rootEl : document;
+  window.lucide.createIcons({ attrs: { 'stroke-width': 2 }, root });
 }
