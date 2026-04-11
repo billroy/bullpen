@@ -37,12 +37,12 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
     if mode not in ("copy", "move"):
         raise TransferError("mode must be 'copy' or 'move'", 400)
 
-    # Resolve workspaces — must be active (loaded) workspaces
-    src_ws = manager.get(source_workspace_id)
+    # Resolve workspaces — activate from registry if not already loaded
+    src_ws = manager.get_or_activate(source_workspace_id)
     if src_ws is None:
         raise TransferError("source workspace not found", 404)
 
-    dst_ws = manager.get(dest_workspace_id)
+    dst_ws = manager.get_or_activate(dest_workspace_id)
     if dst_ws is None:
         raise TransferError("destination workspace not found", 404)
 

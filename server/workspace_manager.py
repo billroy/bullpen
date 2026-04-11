@@ -143,6 +143,24 @@ class WorkspaceManager:
         """Get a WorkspaceState by ID. Returns None if not found."""
         return self._workspaces.get(workspace_id)
 
+    def get_or_activate(self, workspace_id):
+        """Get a WorkspaceState by ID, activating it from the registry if needed.
+
+        Returns None only if the ID is not in the registry at all.
+        """
+        ws = self._workspaces.get(workspace_id)
+        if ws is not None:
+            return ws
+        # Look up in registry and activate
+        for entry in self._registry:
+            if entry["id"] == workspace_id:
+                path = entry["path"]
+                if not os.path.isdir(path):
+                    return None
+                self.register_project(path, name=entry.get("name"))
+                return self._workspaces.get(workspace_id)
+        return None
+
     def get_bp_dir(self, workspace_id):
         """Get the .bullpen directory path for a workspace."""
         ws = self._workspaces.get(workspace_id)
