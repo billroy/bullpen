@@ -69,6 +69,15 @@ def parse_args(argv=None):
             "Can be combined with --set-password."
         ),
     )
+    parser.add_argument(
+        "--bootstrap-credentials",
+        action="store_true",
+        help=(
+            "Create login credentials from BULLPEN_BOOTSTRAP_USER (default: "
+            "'admin') and BULLPEN_BOOTSTRAP_PASSWORD env vars, then exit. "
+            "No-op if credentials already exist. For headless/scripted deploys."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -140,6 +149,41 @@ def set_password_cli(set_usernames=None, delete_usernames=None):
     return 0
 
 
+def bootstrap_credentials():
+    """Create credentials from env vars for headless deploys.
+
+    Reads BULLPEN_BOOTSTRAP_USER (default: 'admin') and
+    BULLPEN_BOOTSTRAP_PASSWORD.  Writes hashed credentials and exits.
+    No-op if credentials already exist (idempotent restarts).
+    """
+    from server import auth
+    from server.workspace_manager import GLOBAL_DIR
+
+    os.makedirs(GLOBAL_DIR, exist_ok=True)
+    path = auth.env_path(GLOBAL_DIR)
+
+    existing = auth.parse_env_file(path)
+    users = auth.parse_credentials_mapping(existing)
+    if users:
+        print(f"Credentials already exist ({len(users)} user(s)); skipping bootstrap.")
+        return 0
+
+    password = os.environ.get("BULLPEN_BOOTSTRAP_PASSWORD", "")
+    if not password:
+        print("Error: BULLPEN_BOOTSTRAP_PASSWORD not set.", file=sys.stderr)
+        return 1
+
+    username = os.environ.get("BULLPEN_BOOTSTRAP_USER", "admin").strip()
+    if not username:
+        username = "admin"
+
+    users[username] = auth.generate_password_hash(password)
+    updated = auth.apply_credentials_mapping(existing, users)
+    auth.write_env_file(path, updated)
+    print(f"Bootstrapped credentials for '{username}' in {path}")
+    return 0
+
+
 def require_auth_for_network_bind(host):
     """Require auth when binding beyond localhost."""
     if host in LOCALHOST_BINDS:
@@ -160,6 +204,9 @@ def require_auth_for_network_bind(host):
 
 def main():
     args = parse_args()
+
+    if args.bootstrap_credentials:
+        sys.exit(bootstrap_credentials())
 
     if args.set_password is not None or args.delete_user:
         sys.exit(set_password_cli(args.set_password or [], args.delete_user or []))
