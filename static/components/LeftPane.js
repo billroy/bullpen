@@ -13,7 +13,10 @@ const LeftPane = {
                class="project-item"
                :class="{ active: p.id === activeWorkspaceId }"
                @click="$emit('switch-workspace', p.id)">
-            <span class="project-name">{{ p.name }}</span>
+            <span class="project-name">
+              <i class="project-label-icon" data-lucide="folder" aria-hidden="true"></i>
+              <span class="project-label-text">{{ p.name }}</span>
+            </span>
             <span v-if="unseenCount(p.id)" class="project-badge">{{ unseenCount(p.id) }}</span>
           </div>
         </div>
