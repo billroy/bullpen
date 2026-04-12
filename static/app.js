@@ -797,7 +797,7 @@ const app = createApp({
               @open-focus="openFocusTab"
               @transfer-worker="openTransfer"
             />
-            <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
+            <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" :workspace-id="activeWorkspaceId" :key="'files-' + (activeWorkspaceId || 'none')" />
             <CommitsTab
               v-if="activeTab === 'commits'"
               :workspace-id="activeWorkspaceId"

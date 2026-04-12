@@ -55,7 +55,7 @@ const FileTreeNode = {
 };
 
 const FilesTab = {
-  props: ['filesVersion'],
+  props: ['filesVersion', 'workspaceId'],
   template: `
     <div class="files-container">
       <div class="files-tree-pane">
@@ -231,15 +231,26 @@ const FilesTab = {
       if (this.activeFile && !this.editing) {
         this.reloadActiveFile();
       }
-    }
+    },
+    workspaceId(newId, oldId) {
+      if (newId === oldId) return;
+      this.openFiles = [];
+      this.activeFile = null;
+      this.editing = false;
+      this.loadTree();
+    },
   },
   mounted() {
     this.loadTree();
   },
   methods: {
+    _filesUrl(path) {
+      const base = path ? '/api/files/' + encodeURI(path) : '/api/files';
+      return this.workspaceId ? base + '?workspaceId=' + encodeURIComponent(this.workspaceId) : base;
+    },
     async loadTree() {
       try {
-        const res = await filesFetch('/api/files');
+        const res = await filesFetch(this._filesUrl());
         if (!res) return;
         this.tree = await res.json();
       } catch (e) {
@@ -264,7 +275,7 @@ const FilesTab = {
         return;
       }
       try {
-        const res = await filesFetch('/api/files/' + encodeURI(node.path));
+        const res = await filesFetch(this._filesUrl(node.path));
         if (!res) return;
         if (!res.ok) throw new Error('Failed to load');
         const data = await res.json();
@@ -301,7 +312,7 @@ const FilesTab = {
     },
     async saveEdit() {
       try {
-        const res = await filesFetch('/api/files/' + encodeURI(this.activeFile.path), {
+        const res = await filesFetch(this._filesUrl(this.activeFile.path), {
           method: 'PUT',
           headers: { 'Content-Type': 'text/plain' },
           body: this.editContent,
@@ -415,7 +426,7 @@ const FilesTab = {
     async reloadActiveFile() {
       if (!this.activeFile || this.isImage || this.isPdf) return;
       try {
-        const res = await filesFetch('/api/files/' + encodeURI(this.activeFile.path));
+        const res = await filesFetch(this._filesUrl(this.activeFile.path));
         if (!res) return;
         if (!res.ok) return;
         const data = await res.json();
