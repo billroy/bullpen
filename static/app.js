@@ -428,20 +428,31 @@ const app = createApp({
       return state.tasks.find(t => t.id === worker.task_queue[0]) || null;
     }
 
+    function tabIcon(tab) {
+      if (tab.isFocus) return 'terminal';
+      if (tab.isChat) return 'message-square';
+      return ({
+        tasks: 'tag',
+        workers: 'bot',
+        files: 'folder',
+        commits: 'git-commit',
+      })[tab.id] || 'circle';
+    }
+
     const allTabs = computed(() => {
       const activeWorkerCount = (state.layout?.slots || []).filter(s => s?.state === 'working').length;
       const workersLabel = activeWorkerCount > 0 ? `Workers (${activeWorkerCount})` : 'Workers';
       const tabs = [
-        { id: 'tasks', label: 'Tickets' },
-        { id: 'workers', label: workersLabel },
-        { id: 'files', label: 'Files' },
-        { id: 'commits', label: 'Commits' },
+        { id: 'tasks', label: 'Tickets', icon: 'tag' },
+        { id: 'workers', label: workersLabel, icon: 'bot' },
+        { id: 'files', label: 'Files', icon: 'folder' },
+        { id: 'commits', label: 'Commits', icon: 'git-commit' },
       ];
       for (const ct of chatTabs) {
-        tabs.push({ id: ct.id, label: ct.label, isChat: true, canClose: chatTabs.length > 1 });
+        tabs.push({ id: ct.id, label: ct.label, isChat: true, canClose: chatTabs.length > 1, icon: 'message-square' });
       }
       for (const ft of focusTabs) {
-        tabs.push({ id: 'focus-' + ft.slotIndex, label: ft.label, isFocus: true, slotIndex: ft.slotIndex });
+        tabs.push({ id: 'focus-' + ft.slotIndex, label: ft.label, isFocus: true, slotIndex: ft.slotIndex, icon: 'terminal' });
       }
       return tabs;
     });
@@ -545,7 +556,14 @@ const app = createApp({
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, chatTabs, addLiveAgentTab, closeLiveAgentTab,
+      tabIcon,
     };
+  },
+  mounted() {
+    renderLucideIcons(this.$el);
+  },
+  updated() {
+    renderLucideIcons(this.$el);
   },
   template: `
     <div class="app-container">
@@ -583,8 +601,11 @@ const app = createApp({
                 :class="{ active: activeTab === tab.id, 'focus-tab': tab.isFocus }"
                 @click="activeTab = tab.id"
               >
-                <span v-if="tab.isFocus" class="focus-dot"></span>
-                {{ tab.label }}
+                <span class="tab-btn-label">
+                  <i class="tab-label-icon" :data-lucide="tab.icon || tabIcon(tab)" aria-hidden="true"></i>
+                  <span v-if="tab.isFocus" class="focus-dot"></span>
+                  <span class="tab-label-text">{{ tab.label }}</span>
+                </span>
                 <span v-if="tab.isFocus" class="tab-close" @click.stop="closeFocusTab(tab.slotIndex)">&times;</span>
                 <span v-if="tab.isChat && tab.canClose" class="tab-close" @click.stop="closeLiveAgentTab(tab.id)">&times;</span>
               </button>

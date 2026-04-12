@@ -576,11 +576,34 @@ body {
   border: none;
   color: var(--text-secondary);
   padding: 10px 16px;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
   border-bottom: 2px solid transparent;
   transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tab-label-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+  flex-shrink: 0;
+}
+
+.tab-label-text {
+  min-width: 0;
 }
 
 .tab-btn:hover {
@@ -2278,7 +2301,6 @@ body {
   height: 6px;
   border-radius: 50%;
   background: var(--green);
-  margin-right: 4px;
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
