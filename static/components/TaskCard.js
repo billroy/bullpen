@@ -1,11 +1,6 @@
 const TaskCard = {
   props: ['task', 'layout'],
   emits: ['select-task'],
-  data() {
-    return {
-      isDraggable: true,
-    };
-  },
   computed: {
     assignedWorkerName() {
       if (!this.task.assigned_to && this.task.assigned_to !== 0) return null;
@@ -15,18 +10,9 @@ const TaskCard = {
       return worker?.name || null;
     }
   },
-  mounted() {
-    const hasCoarsePointer = typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(pointer: coarse)').matches;
-    const hasTouch = typeof navigator !== 'undefined' &&
-      typeof navigator.maxTouchPoints === 'number' &&
-      navigator.maxTouchPoints > 0;
-    this.isDraggable = !(hasCoarsePointer || hasTouch);
-  },
   template: `
     <div class="task-card"
-         :draggable="isDraggable"
+         draggable="true"
          @dragstart="onDragStart"
          @click="$emit('select-task', task.id)">
       <div class="task-card-title">
@@ -42,10 +28,6 @@ const TaskCard = {
   `,
   methods: {
     onDragStart(e) {
-      if (!this.isDraggable) {
-        e.preventDefault();
-        return;
-      }
       e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, this.task.id);
       e.dataTransfer.setData('text/plain', this.task.id);
       e.dataTransfer.effectAllowed = 'move';

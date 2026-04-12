@@ -737,6 +737,9 @@ body {
   padding: 10px;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .task-card:hover {

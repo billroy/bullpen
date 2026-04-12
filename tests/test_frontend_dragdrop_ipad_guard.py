@@ -48,6 +48,14 @@ def test_task_dnd_mime_is_not_redeclared_in_global_component_scripts():
 
 def test_draggable_ticket_styles_disable_text_selection():
     css = _read("static/style.css")
+    assert ".task-card {" in css
     assert ".task-card[draggable=\"true\"]" in css
     assert ".inbox-item[draggable=\"true\"]" in css
     assert "-webkit-touch-callout: none;" in css
+
+
+def test_task_card_dnd_not_disabled_for_touch_devices():
+    task_card = _read("static/components/TaskCard.js")
+    assert "draggable=\"true\"" in task_card
+    assert "window.matchMedia('(pointer: coarse)')" not in task_card
+    assert "navigator.maxTouchPoints" not in task_card
