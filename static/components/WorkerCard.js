@@ -86,7 +86,7 @@ const WorkerCard = {
     isWorking() { return this.workerState === 'working'; },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
-      if (this.isWorking) return `Working ${this.elapsed}`;
+      if (this.isWorking) return `WORKING ${this.elapsed}`;
       return this.workerState.toUpperCase();
     },
     canStart() {

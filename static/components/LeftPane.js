@@ -1,5 +1,5 @@
 const LeftPane = {
-  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces'],
+  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces', 'quickCreateClearToken'],
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'remove-project', 'quick-create-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
@@ -124,6 +124,9 @@ const LeftPane = {
       if (!cols.some(c => c.key === this.selectedColumn)) {
         this.selectedColumn = 'inbox';
       }
+    },
+    quickCreateClearToken() {
+      this.quickCreateText = '';
     }
   },
   data() {
@@ -158,7 +161,6 @@ const LeftPane = {
         : { title: text, description: '' };
       if (!payload.title) return;
       this.$emit('quick-create-task', payload);
-      this.quickCreateText = '';
     },
     onDragStart(e, taskId) {
       e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, taskId);

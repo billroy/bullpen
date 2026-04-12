@@ -1232,6 +1232,7 @@ body {
   display: grid;
   gap: 12px;
   height: 100%;
+  min-height: 0;
 }
 
 .grid-slot {
@@ -1259,6 +1260,7 @@ body {
   transition: border-color 0.15s;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .worker-card:hover {
@@ -1431,6 +1433,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-height: 0;
 }
 
 .worker-card-status {
@@ -1515,6 +1518,9 @@ body {
 
 .worker-card-output {
   margin-top: 1px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
 }
 
 .worker-card-output pre {
@@ -1525,7 +1531,9 @@ body {
   font-size: 9px;
   font-family: monospace;
   white-space: pre-wrap;
-  max-height: 96px;
+  width: 100%;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   color: var(--text-secondary);
   line-height: 1.25;

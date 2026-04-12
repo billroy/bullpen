@@ -151,6 +151,8 @@ const app = createApp({
     const configureSlot = ref(null);
     const transferSlot = ref(null);
     const transferMode = ref('copy');
+    const quickCreateClearToken = ref(0);
+    const pendingQuickCreates = reactive([]);
 
     // Worker Focus Mode state
     const outputBuffers = reactive({});  // keyed by slot index
@@ -250,6 +252,13 @@ const app = createApp({
       const ws = _getWs(wsId);
       ws.tasks.push(task);
       if (!_isActive(wsId)) ws.unseenActivity++;
+      if (_isActive(wsId)) {
+        const idx = pendingQuickCreates.findIndex(p => p.title === task.title);
+        if (idx >= 0) {
+          pendingQuickCreates.splice(idx, 1);
+          quickCreateClearToken.value++;
+        }
+      }
     });
     socket.on('task:updated', (task) => {
       const wsId = task.workspaceId || activeWorkspaceId.value;
@@ -368,6 +377,7 @@ const app = createApp({
       const title = typeof payload === 'string' ? payload.trim() : (payload?.title || '').trim();
       const description = typeof payload === 'string' ? '' : (payload?.description || '').trim();
       if (!title) return;
+      pendingQuickCreates.push({ title, description });
       socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));
     }
     function updateTask(data) { socket.emit('task:update', _wsData(data)); }
@@ -597,7 +607,7 @@ const app = createApp({
     return {
       state, workspaces, activeWorkspaceId, switchWorkspace, projects,
       addProject, newProject, removeProject,
-      connected, activeTab, leftPaneVisible, toasts,
+      connected, activeTab, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, themeOptions, currentTheme, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
@@ -635,6 +645,7 @@ const app = createApp({
           :projects="projects"
           :active-workspace-id="activeWorkspaceId"
           :workspaces="workspaces"
+          :quick-create-clear-token="quickCreateClearToken"
           @new-task="showCreateModal = true"
           @quick-create-task="quickCreateTask"
           @select-task="selectTask"

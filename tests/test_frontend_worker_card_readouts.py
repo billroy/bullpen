@@ -13,7 +13,7 @@ def _read(rel_path: str) -> str:
 def test_worker_card_shows_elapsed_and_tokens_for_current_task():
     text = _read("static/components/WorkerCard.js")
     assert 'statusLabel()' in text
-    assert 'return `Working ${this.elapsed}`' in text
+    assert 'return `WORKING ${this.elapsed}`' in text
     assert 'class="worker-card-token-meta"' in text
     assert '<span class="worker-card-agent">{{ worker.model }}</span>' in text
     assert '{{ worker.agent }}/{{ worker.model }}' not in text
@@ -29,4 +29,6 @@ def test_worker_card_readouts_have_styles():
     assert '.worker-card-token-meta {' in text
     assert 'margin-left: auto;' in text
     assert 'text-overflow: ellipsis;' in text
-    assert 'max-height: 96px;' in text
+    assert '.worker-card-output {' in text
+    assert 'flex: 1 1 auto;' in text
+    assert 'max-height: none;' in text
