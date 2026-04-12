@@ -34,6 +34,7 @@ const LeftPane = {
           <div v-if="showProjectMenu" class="project-menu">
             <button class="project-menu-item" @click="promptAddProject">Add Project</button>
             <button class="project-menu-item" @click="promptNewProject">New Project</button>
+            <button class="project-menu-item" @click="promptCloneProject">Clone from Git</button>
           </div>
         </div>
       </div>
