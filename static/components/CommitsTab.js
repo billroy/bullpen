@@ -1,4 +1,5 @@
 const CommitsTab = {
+  props: ['workspaceId'],
   computed: {
     highlightedDiffHtml() {
       return this.renderDiffHtml(this.commitDiff || 'No diff output.');
@@ -19,6 +20,13 @@ const CommitsTab = {
   },
   mounted() {
     this.refresh();
+  },
+  watch: {
+    workspaceId(newId, oldId) {
+      if (newId === oldId) return;
+      this.closeDiff();
+      this.refresh();
+    },
   },
   methods: {
     escapeHtml(text) {
@@ -60,7 +68,12 @@ const CommitsTab = {
       this.loading = true;
       this.error = null;
       try {
-        const res = await fetch(`/api/commits?offset=${this.offset}&count=10`);
+        const params = new URLSearchParams({
+          offset: String(this.offset),
+          count: '10',
+        });
+        if (this.workspaceId) params.set('workspaceId', this.workspaceId);
+        const res = await fetch(`/api/commits?${params.toString()}`);
         if (res.status === 401) {
           window.location = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
           return;
@@ -94,7 +107,11 @@ const CommitsTab = {
       this.diffLoading = true;
       this.$nextTick(() => this.$refs.diffOverlay?.focus());
       try {
-        const res = await fetch(`/api/commits/${encodeURIComponent(commit.hash)}/diff`);
+        const params = new URLSearchParams();
+        if (this.workspaceId) params.set('workspaceId', this.workspaceId);
+        const query = params.toString();
+        const diffUrl = `/api/commits/${encodeURIComponent(commit.hash)}/diff${query ? `?${query}` : ''}`;
+        const res = await fetch(diffUrl);
         if (res.status === 401) {
           window.location = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
           return;

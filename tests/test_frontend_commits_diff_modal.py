@@ -15,7 +15,22 @@ def test_commits_tab_rows_open_diff_modal():
     assert "@click=\"openDiff(commit)\"" in text
     assert "class=\"modal-overlay commits-diff-overlay\"" in text
     assert "@keydown.escape=\"closeDiff\"" in text
-    assert "fetch(`/api/commits/${encodeURIComponent(commit.hash)}/diff`)" in text
+    assert "const diffUrl = `/api/commits/${encodeURIComponent(commit.hash)}/diff${query ? `?${query}` : ''}`;" in text
+    assert "const res = await fetch(diffUrl);" in text
+
+
+def test_commits_tab_requests_are_workspace_scoped():
+    text = _read("static/components/CommitsTab.js")
+    assert "props: ['workspaceId']" in text
+    assert "params.set('workspaceId', this.workspaceId);" in text
+    assert "fetch(`/api/commits?${params.toString()}`)" in text
+    assert "workspaceId(newId, oldId)" in text
+
+
+def test_commits_tab_receives_active_workspace_id():
+    text = _read("static/app.js")
+    assert ":workspace-id=\"activeWorkspaceId\"" in text
+    assert ":key=\"'commits-' + (activeWorkspaceId || 'none')\"" in text
 
 
 def test_commits_diff_is_colorized_with_line_classes():

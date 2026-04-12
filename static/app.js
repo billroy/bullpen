@@ -674,7 +674,11 @@ const app = createApp({
               @transfer-worker="openTransfer"
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" />
-            <CommitsTab v-if="activeTab === 'commits'" />
+            <CommitsTab
+              v-if="activeTab === 'commits'"
+              :workspace-id="activeWorkspaceId"
+              :key="'commits-' + (activeWorkspaceId || 'none')"
+            />
             <LiveAgentChatTab
               v-for="ct in chatTabs"
               v-show="activeTab === ct.id"
