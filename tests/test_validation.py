@@ -182,6 +182,18 @@ class TestConfigUpdate:
         with pytest.raises(ValidationError, match="Invalid theme"):
             validate_config_update({"theme": "mystery"})
 
+    def test_ambient_fields_accepted(self):
+        result = validate_config_update({"ambient_preset": "forest_rain", "ambient_volume": 55})
+        assert result == {"ambient_preset": "forest_rain", "ambient_volume": 55}
+
+    def test_ambient_preset_can_be_cleared(self):
+        result = validate_config_update({"ambient_preset": ""})
+        assert result == {"ambient_preset": None}
+
+    def test_ambient_volume_bounds(self):
+        with pytest.raises(ValidationError, match="ambient_volume must be <="):
+            validate_config_update({"ambient_volume": 999})
+
     @pytest.mark.parametrize("theme", [
         "shades-of-purple", "solarized", "panda", "cobalt-2", "one-dark-pro",
         "light-ethereal", "light-stone-teal", "light-ivory-olive",

@@ -7,6 +7,18 @@ user asks you to create tickets, list tickets, or update tickets, **use these
 tools directly** — do not claim they are unavailable. They may appear in the
 deferred tools list rather than the primary tool list; they are still usable.
 
+### Ticket writes must go through MCP
+
+When creating or updating Bullpen tickets during an interactive session, use the
+Bullpen MCP tools rather than writing files under `.bullpen/tasks` directly.
+Direct filesystem writes bypass the running Flask/Socket.IO server, so the
+browser will not receive `task:created` or `task:updated` events and the user
+will not see the ticket until they refresh the page.
+
+Only fall back to direct `.bullpen/tasks` writes if MCP is genuinely unavailable
+and the user has agreed to that tradeoff. If you must fall back, explicitly warn
+that the page may need to be refreshed.
+
 ## MCP Stdio Server (`server/mcp_tools.py`)
 
 The Bullpen MCP is a **stdio** server — Claude Code spawns it as a child process

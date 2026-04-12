@@ -398,9 +398,70 @@ body {
   gap: 10px;
 }
 
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .toolbar-name {
   font-weight: 600;
   font-size: 14px;
+}
+
+.toolbar-audio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-audio-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.toolbar-audio-select {
+  min-width: 120px;
+  max-width: 170px;
+}
+
+.toolbar-audio-volume {
+  width: 90px;
+}
+
+.toolbar-audio-value {
+  min-width: 36px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1200px) {
+  .toolbar-audio-label {
+    display: none;
+  }
+
+  .toolbar-audio-select {
+    min-width: 104px;
+    max-width: 130px;
+  }
+
+  .toolbar-audio-volume {
+    width: 72px;
+  }
+}
+
+@media (max-width: 900px) {
+  .toolbar-audio-value {
+    display: none;
+  }
+
+  .theme-select {
+    min-width: 120px;
+  }
 }
 
 .bullpen-path {
@@ -415,8 +476,7 @@ body {
 }
 
 .theme-select {
-  min-width: 150px;
-  margin-right: 8px;
+  min-width: 140px;
 }
 
 .connection-dot {

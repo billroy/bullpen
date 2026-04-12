@@ -605,6 +605,15 @@ def load_state(bp_dir, workspace):
     config = read_json(os.path.join(bp_dir, "config.json"))
     if not isinstance(config.get("theme"), str):
         config["theme"] = "dark"
+    if config.get("ambient_preset") in ("", False):
+        config["ambient_preset"] = None
+    elif config.get("ambient_preset") is not None and not isinstance(config.get("ambient_preset"), str):
+        config["ambient_preset"] = None
+    try:
+        ambient_volume = int(config.get("ambient_volume", 40))
+    except (TypeError, ValueError):
+        ambient_volume = 40
+    config["ambient_volume"] = max(0, min(100, ambient_volume))
     layout = read_json(os.path.join(bp_dir, "layout.json"))
 
     # Load all tasks

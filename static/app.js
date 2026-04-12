@@ -43,6 +43,20 @@ const app = createApp({
       { id: 'cobalt-2', label: 'Cobalt 2', mode: 'dark' },
     ];
     const THEME_IDS = new Set(THEME_CATALOG.map(t => t.id));
+    const AMBIENT_PRESETS = Array.isArray(window.AMBIENT_PRESET_LIST) ? window.AMBIENT_PRESET_LIST : [];
+    const AMBIENT_PRESET_KEYS = new Set(AMBIENT_PRESETS.map(p => p.key));
+
+    function _normalizeAmbientPreset(value) {
+      if (!value) return null;
+      const preset = String(value);
+      return AMBIENT_PRESET_KEYS.has(preset) ? preset : null;
+    }
+
+    function _normalizeAmbientVolume(value) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return 40;
+      return Math.max(0, Math.min(100, Math.round(num)));
+    }
 
     // Per-workspace backing store (not directly rendered)
     const workspaces = reactive({});  // workspaceId -> { workspace, config, layout, tasks, profiles, teams, filesVersion, unseenActivity }
@@ -50,7 +64,7 @@ const app = createApp({
     // Active view state — mirrors whichever workspace is active
     const state = reactive({
       workspace: '',
-      config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [] },
+      config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [], ambient_preset: null, ambient_volume: 40 },
       layout: { slots: [] },
       tasks: [],
       profiles: [],
@@ -64,7 +78,7 @@ const app = createApp({
     function _defaultWsData() {
       return {
         workspace: '',
-        config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [] },
+        config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [], ambient_preset: null, ambient_volume: 40 },
         layout: { slots: [] },
         tasks: [],
         archivedTasks: [],
@@ -90,6 +104,29 @@ const app = createApp({
       state.profiles = ws.profiles;
       state.teams = ws.teams;
       state.filesVersion = ws.filesVersion;
+    }
+
+    function _normalizeConfig(config) {
+      const safe = { ...(config || {}) };
+      safe.theme = _normalizeTheme(safe.theme || 'dark');
+      safe.ambient_preset = _normalizeAmbientPreset(safe.ambient_preset);
+      safe.ambient_volume = _normalizeAmbientVolume(safe.ambient_volume);
+      return safe;
+    }
+
+    function _applyWorkspaceAmbient(wsId) {
+      const ws = workspaces[wsId];
+      if (!ws || !window.ambientAudio) return;
+      const volume = _normalizeAmbientVolume(ws.config?.ambient_volume);
+      const preset = _normalizeAmbientPreset(ws.config?.ambient_preset);
+      window.ambientAudio.setVolume(volume / 100);
+      if (preset) {
+        if (!(window.ambientAudio._ambientActive && window.ambientAudio._ambientPreset === preset)) {
+          window.ambientAudio.startAmbient(preset, 10);
+        }
+      } else {
+        window.ambientAudio.stopAmbient();
+      }
     }
 
     function _isActive(wsId) {
@@ -136,6 +173,7 @@ const app = createApp({
       ticketListScope.value = 'live';
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
+      _applyWorkspaceAmbient(wsId);
       _updateDocumentTitle();
     }
 
@@ -229,7 +267,7 @@ const app = createApp({
       const wsId = data.workspaceId;
       const ws = _getWs(wsId);
       ws.workspace = data.workspace;
-      ws.config = { ...data.config, theme: _normalizeTheme(data.config?.theme || 'dark') };
+      ws.config = _normalizeConfig(data.config);
       ws.layout = data.layout;
       ws.tasks = data.tasks;
       ws.profiles = data.profiles || [];
@@ -243,6 +281,7 @@ const app = createApp({
       if (_isActive(wsId)) {
         _syncToView(wsId);
         _applyWorkspaceTheme(wsId);
+        _applyWorkspaceAmbient(wsId);
         _updateDocumentTitle();
       }
     });
@@ -301,10 +340,11 @@ const app = createApp({
     socket.on('config:updated', (config) => {
       const wsId = config.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
-      ws.config = { ...config, theme: _normalizeTheme(config?.theme || 'dark') };
+      ws.config = _normalizeConfig(config);
       if (_isActive(wsId)) {
         state.config = ws.config;
         _applyWorkspaceTheme(wsId);
+        _applyWorkspaceAmbient(wsId);
       }
     });
     socket.on('profiles:updated', (profiles) => {
@@ -543,8 +583,33 @@ const app = createApp({
         updateConfig({ theme: next });
       }
     }
+    function setAmbientPreset(preset) {
+      const next = _normalizeAmbientPreset(preset);
+      if (!activeWorkspaceId.value) return;
+      const ws = _getWs(activeWorkspaceId.value);
+      ws.config = { ...(ws.config || {}), ambient_preset: next };
+      if (_isActive(activeWorkspaceId.value)) {
+        state.config = ws.config;
+        _applyWorkspaceAmbient(activeWorkspaceId.value);
+      }
+      updateConfig({ ambient_preset: next });
+    }
+    function setAmbientVolume(volume) {
+      const next = _normalizeAmbientVolume(volume);
+      if (!activeWorkspaceId.value) return;
+      const ws = _getWs(activeWorkspaceId.value);
+      ws.config = { ...(ws.config || {}), ambient_volume: next };
+      if (_isActive(activeWorkspaceId.value)) {
+        state.config = ws.config;
+        _applyWorkspaceAmbient(activeWorkspaceId.value);
+      }
+      updateConfig({ ambient_volume: next });
+    }
     const themeOptions = computed(() => THEME_CATALOG.map(t => ({ id: t.id, label: t.label })));
     const currentTheme = computed(() => _normalizeTheme(state.config?.theme || 'dark'));
+    const ambientPresets = computed(() => AMBIENT_PRESETS);
+    const currentAmbientPreset = computed(() => _normalizeAmbientPreset(state.config?.ambient_preset) || '');
+    const currentAmbientVolume = computed(() => _normalizeAmbientVolume(state.config?.ambient_volume));
     const activeProjectName = computed(() => _workspaceBaseName(state.workspace));
     const visibleTicketTasks = computed(() => {
       if (ticketsViewMode.value === 'list' && ticketListScope.value === 'archived') {
@@ -609,7 +674,7 @@ const app = createApp({
       addProject, newProject, removeProject,
       connected, activeTab, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
-      toggleLeftPane, setTheme, themeOptions, currentTheme, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
+      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
@@ -621,6 +686,16 @@ const app = createApp({
     };
   },
   mounted() {
+    const unlockAudio = () => {
+      if (window.ambientAudio) window.ambientAudio.unlock();
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+
     renderLucideIcons(this.$el);
   },
   updated() {
@@ -633,8 +708,13 @@ const app = createApp({
         :connected="connected"
         :themes="themeOptions"
         :active-theme="currentTheme"
+        :ambient-presets="ambientPresets"
+        :ambient-preset="currentAmbientPreset"
+        :ambient-volume="currentAmbientVolume"
         @toggle-left-pane="toggleLeftPane"
         @set-theme="setTheme"
+        @set-ambient-preset="setAmbientPreset"
+        @set-ambient-volume="setAmbientVolume"
       />
       <div class="app-body">
         <LeftPane
