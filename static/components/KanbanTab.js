@@ -120,7 +120,11 @@ const KanbanTab = {
               </div>
             </td>
             <td class="ticket-list-col-status">
-              <span class="ticket-list-status-pill" :class="'status-col-' + task.status">{{ columnLabel(task.status) }}</span>
+              <span
+                class="ticket-list-status-pill"
+                :class="statusPillClass(task.status)"
+                :style="statusPillStyle(task.status)"
+              >{{ columnLabel(task.status) }}</span>
             </td>
             <td class="ticket-list-col-type">
               <span class="badge type-badge" :class="'type-' + (task.type || 'task')">{{ task.type || 'task' }}</span>
@@ -253,6 +257,39 @@ const KanbanTab = {
     }
   },
   methods: {
+    isBuiltInStatus(key) {
+      return ['inbox', 'assigned', 'in_progress', 'review', 'done', 'blocked'].includes(key);
+    },
+    statusPillClass(key) {
+      return this.isBuiltInStatus(key) ? ('status-col-' + key) : '';
+    },
+    parseHexColor(color) {
+      if (!color || typeof color !== 'string') return null;
+      const raw = color.trim();
+      if (!raw.startsWith('#')) return null;
+      let hex = raw.slice(1);
+      if (hex.length === 3) {
+        hex = hex.split('').map(ch => ch + ch).join('');
+      }
+      if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+      return {
+        r: parseInt(hex.slice(0, 2), 16),
+        g: parseInt(hex.slice(2, 4), 16),
+        b: parseInt(hex.slice(4, 6), 16),
+      };
+    },
+    statusPillStyle(key) {
+      if (this.isBuiltInStatus(key)) return null;
+      const col = (this.columns || []).find(c => c.key === key);
+      const color = col?.color;
+      if (!color) return null;
+      const rgb = this.parseHexColor(color);
+      if (!rgb) return { color };
+      return {
+        backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`,
+        color,
+      };
+    },
     columnTasks(key) {
       const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       return (this.tasks || [])
