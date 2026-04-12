@@ -15,9 +15,12 @@ def test_worker_card_shows_elapsed_and_tokens_for_current_task():
     assert 'statusLabel()' in text
     assert 'return `Working ${this.elapsed}`' in text
     assert 'class="worker-card-token-meta"' in text
+    assert '<span class="worker-card-agent">{{ worker.model }}</span>' in text
+    assert '{{ worker.agent }}/{{ worker.model }}' not in text
     assert 'title="Total tokens so far for current task"' in text
     assert 'currentTaskTokens' in text
     assert 'formatTokens(currentTaskTokens)' in text
+    assert 'this.outputLines.slice(-5)' in text
     assert 'updateElapsed()' in text
 
 
@@ -25,3 +28,5 @@ def test_worker_card_readouts_have_styles():
     text = _read("static/style.css")
     assert '.worker-card-token-meta {' in text
     assert 'margin-left: auto;' in text
+    assert 'text-overflow: ellipsis;' in text
+    assert 'max-height: 96px;' in text

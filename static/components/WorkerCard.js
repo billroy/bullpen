@@ -40,7 +40,7 @@ const WorkerCard = {
             {{ statusLabel }}
           </span>
           <span v-if="isWorking && currentTaskTokens !== null" class="worker-card-token-meta" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
-          <span class="worker-card-agent">{{ worker.agent }}/{{ worker.model }}</span>
+          <span class="worker-card-agent">{{ worker.model }}</span>
         </div>
         <div class="worker-card-queue" v-if="queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
@@ -134,7 +134,7 @@ const WorkerCard = {
     lastOutput() {
       // Prefer live output buffer when working
       if (this.isWorking && this.outputLines?.length) {
-        return this.outputLines.slice(-3).join('\n');
+        return this.outputLines.slice(-5).join('\n');
       }
       if (!this.worker.task_queue?.length || !this.tasks) return '';
       const task = this.tasks.find(t => t.id === this.worker.task_queue[0]);
@@ -144,7 +144,7 @@ const WorkerCard = {
       if (idx < 0) return '';
       const output = task.body.substring(idx + marker.length).trim();
       const lines = output.split('\\n');
-      return lines.slice(-3).join('\\n');
+      return lines.slice(-5).join('\\n');
     }
   },
   methods: {
