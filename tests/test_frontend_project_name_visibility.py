@@ -14,7 +14,7 @@ def test_app_title_uses_workspace_base_name():
     text = _read("static/app.js")
     assert "function _workspaceBaseName(workspacePath)" in text
     assert "trimmed.split(/[\\\\/]+/).filter(Boolean);" in text
-    assert "document.title = _workspaceBaseName(state.workspace) || 'Bullpen';" in text
+    assert "document.title = project ? `Bullpen : ${project}` : 'Bullpen';" in text
 
 
 def test_top_toolbar_renders_bullpen_with_project_suffix():

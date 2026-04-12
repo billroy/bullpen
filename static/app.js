@@ -124,7 +124,8 @@ const app = createApp({
     }
 
     function _updateDocumentTitle() {
-      document.title = _workspaceBaseName(state.workspace) || 'Bullpen';
+      const project = _workspaceBaseName(state.workspace);
+      document.title = project ? `Bullpen : ${project}` : 'Bullpen';
     }
 
     function switchWorkspace(wsId) {
