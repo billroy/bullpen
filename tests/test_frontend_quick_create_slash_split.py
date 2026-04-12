@@ -38,6 +38,6 @@ def test_quick_create_input_clears_only_after_create_ack():
     assert "this.quickCreateText = '';" in left
 
 
-def test_leftpane_quick_create_placeholder_uses_compact_prompt_text():
+def test_leftpane_quick_create_placeholder_uses_ticket_template_prompt_text():
     text = _read("static/components/LeftPane.js")
-    assert 'placeholder="enter title/description"' in text
+    assert 'placeholder="Enter ticket title\\n\\n\\nType: task\\n\\nPriority: normal\\n\\n\\n\\n## Description\\n\\ndescription"' in text
