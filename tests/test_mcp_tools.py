@@ -99,6 +99,41 @@ class _RecordingSio:
         return None
 
 
+class _FallbackRecordingSio(_RecordingSio):
+    def connect(self, *args, **kwargs):
+        self.connect_calls.append((args, kwargs))
+        if kwargs.get("transports") == ["websocket"]:
+            raise RuntimeError("websocket transport unavailable")
+        if "connect" in self.handlers:
+            self.handlers["connect"]()
+        if "state:init" in self.handlers:
+            self.handlers["state:init"]({"workspaceId": "ws-1"})
+
+
+class _MultiWorkspaceSio(_RecordingSio):
+    def __init__(self, target_workspace):
+        super().__init__()
+        self.target_workspace = target_workspace
+
+    def connect(self, *args, **kwargs):
+        self.connect_calls.append((args, kwargs))
+        if "connect" in self.handlers:
+            self.handlers["connect"]()
+        if "state:init" in self.handlers:
+            self.handlers["state:init"]({
+                "workspaceId": "other-ws",
+                "workspace": "/tmp/other-project",
+            })
+            self.handlers["state:init"]({
+                "workspaceId": "target-ws",
+                "workspace": self.target_workspace,
+            })
+            self.handlers["state:init"]({
+                "workspaceId": "late-other-ws",
+                "workspace": "/tmp/late-other-project",
+            })
+
+
 def _frame(msg, content_type_first=False):
     payload = json.dumps(msg, separators=(",", ":")).encode("utf-8")
     headers = []
@@ -202,7 +237,7 @@ def test_bullpen_client_create_ticket_times_out_when_ack_missing(monkeypatch):
     assert err == "Timed out waiting for task:create response"
 
 
-def test_bullpen_client_disables_reconnect_and_forces_websocket(monkeypatch, tmp_workspace):
+def test_bullpen_client_disables_reconnect_and_prefers_websocket(monkeypatch, tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     config_path = bp_dir + "/config.json"
     with open(config_path, "r", encoding="utf-8") as f:
@@ -235,6 +270,53 @@ def test_bullpen_client_disables_reconnect_and_forces_websocket(monkeypatch, tmp
             "transports": ["websocket"],
         },
     )]
+
+
+def test_bullpen_client_falls_back_to_polling_when_websocket_unavailable(monkeypatch, tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+
+    monkeypatch.setattr(
+        mcp_tools.socketio,
+        "Client",
+        lambda **_kwargs: _FallbackRecordingSio(),
+    )
+
+    client = mcp_tools.BullpenClient("127.0.0.1", 5050, bp_dir=bp_dir)
+
+    assert client._connect_best_effort() is True
+    assert client.sio.connect_calls == [
+        (
+            ("http://127.0.0.1:5050",),
+            {
+                "wait_timeout": client.connect_timeout_seconds,
+                "auth": None,
+                "transports": ["websocket"],
+            },
+        ),
+        (
+            ("http://127.0.0.1:5050",),
+            {
+                "wait_timeout": client.connect_timeout_seconds,
+                "auth": None,
+                "transports": ["polling"],
+            },
+        ),
+    ]
+
+
+def test_bullpen_client_selects_workspace_matching_bp_dir(monkeypatch, tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+
+    monkeypatch.setattr(
+        mcp_tools.socketio,
+        "Client",
+        lambda **_kwargs: _MultiWorkspaceSio(tmp_workspace),
+    )
+
+    client = mcp_tools.BullpenClient("127.0.0.1", 5050, bp_dir=bp_dir)
+
+    assert client._connect_best_effort() is True
+    assert client.workspace_id == "target-ws"
 
 
 def test_read_parses_mcp_content_length_frame():

@@ -213,6 +213,7 @@ class BullpenClient:
         self.host = host
         self.port = port
         self.bp_dir = bp_dir
+        self.workspace_path = os.path.realpath(os.path.dirname(os.path.abspath(bp_dir)))
         self.sio = socketio.Client(logger=False, engineio_logger=False, reconnection=False)
         self.connected = False
         self.workspace_id: str | None = None
@@ -231,7 +232,16 @@ class BullpenClient:
 
         @self.sio.on("state:init")
         def _on_state_init(data: dict[str, Any]) -> None:
-            self.workspace_id = data.get("workspaceId")
+            workspace_id = data.get("workspaceId")
+            if not workspace_id:
+                return
+            workspace = data.get("workspace")
+            if isinstance(workspace, str) and workspace:
+                if os.path.realpath(workspace) == self.workspace_path:
+                    self.workspace_id = workspace_id
+                return
+            if self.workspace_id is None:
+                self.workspace_id = workspace_id
 
         @self.sio.on("task:created")
         def _on_task_created(data: dict[str, Any]) -> None:
@@ -264,6 +274,10 @@ class BullpenClient:
             hosts.extend(["127.0.0.1", "localhost"])
         return [f"http://{candidate}:{self.port}" for candidate in hosts]
 
+    def _transport_attempts(self) -> list[list[str]]:
+        """Return Socket.IO transports to try, in preference order."""
+        return [["websocket"], ["polling"]]
+
     def _connect_best_effort(self) -> bool:
         if self.connected:
             return True
@@ -271,16 +285,26 @@ class BullpenClient:
         auth_data = {"mcp_token": token} if token else None
         for attempt in range(MAX_CONNECT_ATTEMPTS):
             for url in self._candidate_urls():
-                try:
-                    self.sio.connect(
-                        url,
-                        wait_timeout=self.connect_timeout_seconds,
-                        auth=auth_data,
-                        transports=["websocket"],
-                    )
-                    self.connected = True
-                    return True
-                except Exception:
+                for transports in self._transport_attempts():
+                    try:
+                        self.sio.connect(
+                            url,
+                            wait_timeout=self.connect_timeout_seconds,
+                            auth=auth_data,
+                            transports=transports,
+                        )
+                        self.connected = True
+                        return True
+                    except TypeError:
+                        # Compatibility for older socketio client signatures.
+                        try:
+                            self.sio.connect(url)
+                            self.connected = True
+                            return True
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
                     # Ensure clean state before next attempt.
                     try:
                         self.sio.disconnect()
