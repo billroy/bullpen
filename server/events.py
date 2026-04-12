@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timezone
 
 from flask import request
-from flask_socketio import emit
+from flask_socketio import emit, join_room
 
 from server import tasks as task_mod
 from server.persistence import read_json, write_json, atomic_write
@@ -601,6 +601,10 @@ def register_events(socketio, app):
     def _activate_and_broadcast_project(manager, ws_id):
         ws = manager.get(ws_id)
 
+        # The connection that added the project should immediately receive
+        # future room-scoped events for it. Other clients join when selected.
+        join_room(ws_id)
+
         # Start scheduler for new workspace
         from server.scheduler import Scheduler
         if not ws.scheduler:
@@ -619,6 +623,21 @@ def register_events(socketio, app):
 
         # Broadcast updated project list
         socketio.emit("projects:updated", manager.list_projects())
+
+    @socketio.on("project:join")
+    def on_project_join(data):
+        manager = app.config["manager"]
+        ws_id = data.get("workspaceId") if isinstance(data, dict) else None
+        ws = manager.get_or_activate(ws_id) if ws_id else None
+        if not ws:
+            emit("error", {"message": "Unknown project"})
+            return
+        join_room(ws_id)
+
+        from server.app import load_state
+        state = load_state(ws.bp_dir, ws.path)
+        state["workspaceId"] = ws_id
+        emit("state:init", state)
 
     @socketio.on("project:add")
     @with_lock

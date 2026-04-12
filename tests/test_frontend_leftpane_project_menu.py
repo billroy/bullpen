@@ -24,6 +24,12 @@ def test_leftpane_emits_new_project_and_registers_menu_dismiss_listener():
     assert "this.$emit('new-project', path.trim());" in text
 
 
+def test_switching_projects_joins_project_socket_room():
+    text = _read("static/app.js")
+    assert "function switchWorkspace(wsId)" in text
+    assert "socket.emit('project:join', { workspaceId: wsId });" in text
+
+
 def test_project_menu_styles_exist():
     text = _read("static/style.css")
     assert ".project-menu {" in text

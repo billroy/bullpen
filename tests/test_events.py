@@ -511,3 +511,26 @@ class TestProjectEvents:
             listed = project_updates[-1]["args"][0]
             expected = os.path.realpath(path)
             assert any(p["path"] == expected for p in listed)
+
+    def test_new_project_client_receives_task_created_without_refresh(self, client):
+        c, _ = client
+        with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
+            path = os.path.join(parent, "new-empty-project")
+            c.emit("project:new", {"path": path})
+            events = c.get_received()
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            listed = project_updates[-1]["args"][0]
+            ws_id = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+
+            c.emit("task:create", {
+                "workspaceId": ws_id,
+                "title": "Appears without refresh",
+                "type": "task",
+                "priority": "normal",
+                "tags": [],
+            })
+            created = get_event(c, "task:created")
+
+            assert created is not None
+            assert created["title"] == "Appears without refresh"
+            assert created["workspaceId"] == ws_id

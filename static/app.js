@@ -175,6 +175,7 @@ const app = createApp({
       _applyWorkspaceTheme(wsId);
       _applyWorkspaceAmbient(wsId);
       _updateDocumentTitle();
+      if (socket?.connected) socket.emit('project:join', { workspaceId: wsId });
     }
 
     const connected = ref(false);
