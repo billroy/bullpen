@@ -152,10 +152,82 @@ def extract_codex_usage_event(event_obj):
     return {}
 
 
+def extract_gemini_usage_event(event_obj):
+    """Extract normalized usage from Gemini stream/result payloads."""
+    if not isinstance(event_obj, dict):
+        return {}
+
+    usage = {}
+
+    # JSONL result-style events.
+    if event_obj.get("type") == "result":
+        usage = merge_usage_dicts(usage, normalize_usage(event_obj.get("usage", {})))
+
+    # Newer Gemini payloads include nested stats by model.
+    stats = event_obj.get("stats")
+    if isinstance(stats, dict):
+        models = stats.get("models")
+        if isinstance(models, dict):
+            for model_bucket in models.values():
+                if not isinstance(model_bucket, dict):
+                    continue
+                tokens = model_bucket.get("tokens")
+                usage = merge_usage_dicts(usage, _normalize_gemini_tokens(tokens))
+        # Some payload variants may provide top-level stats.tokens directly.
+        usage = merge_usage_dicts(usage, _normalize_gemini_tokens(stats.get("tokens")))
+
+    return usage
+
+
+def _normalize_gemini_tokens(raw_tokens):
+    """Normalize Gemini token stats object into canonical fields."""
+    if not isinstance(raw_tokens, dict):
+        return {}
+
+    # Gemini often reports both "input" and "prompt"; prefer prompt when present.
+    input_tokens = _coerce_non_negative_int(raw_tokens.get("prompt"))
+    if input_tokens is None:
+        input_tokens = _coerce_non_negative_int(raw_tokens.get("input"))
+
+    total_tokens = _coerce_non_negative_int(raw_tokens.get("total"))
+    cached_input_tokens = _coerce_non_negative_int(raw_tokens.get("cached"))
+    reasoning_output_tokens = _coerce_non_negative_int(raw_tokens.get("thoughts"))
+    candidate_tokens = _coerce_non_negative_int(raw_tokens.get("candidates"))
+    tool_tokens = _coerce_non_negative_int(raw_tokens.get("tool"))
+
+    output_tokens = None
+    if total_tokens is not None and input_tokens is not None:
+        output_tokens = max(total_tokens - input_tokens, 0)
+    else:
+        parts = [
+            candidate_tokens or 0,
+            reasoning_output_tokens or 0,
+            tool_tokens or 0,
+        ]
+        summed = sum(parts)
+        if summed:
+            output_tokens = summed
+
+    out = {}
+    if input_tokens is not None:
+        out["input_tokens"] = input_tokens
+    if cached_input_tokens is not None:
+        out["cached_input_tokens"] = cached_input_tokens
+    if output_tokens is not None:
+        out["output_tokens"] = output_tokens
+    if reasoning_output_tokens is not None:
+        out["reasoning_output_tokens"] = reasoning_output_tokens
+    if total_tokens is not None:
+        out["total_tokens"] = total_tokens
+    return out
+
+
 def extract_stream_usage_event(provider, event_obj):
     """Extract normalized usage from a live stream event for any provider."""
     if provider == "codex":
         return extract_codex_usage_event(event_obj)
+    if provider == "gemini":
+        return extract_gemini_usage_event(event_obj)
 
     if isinstance(event_obj, dict) and event_obj.get("type") == "result":
         return normalize_usage(event_obj.get("usage", {}))

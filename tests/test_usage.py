@@ -4,6 +4,7 @@ from server.usage import (
     build_usage_entry,
     build_usage_update,
     extract_codex_usage_event,
+    extract_gemini_usage_event,
     normalize_usage,
     usage_to_legacy_tokens,
 )
@@ -41,6 +42,36 @@ def test_extract_codex_token_count_event():
     assert normalized["reasoning_output_tokens"] == 15
     assert normalized["total_tokens"] == 220
     assert usage_to_legacy_tokens(normalized) == 220
+
+
+def test_extract_gemini_stats_models_usage_event():
+    event = {
+        "session_id": "s1",
+        "response": "Aloha. How can I help you today?",
+        "stats": {
+            "models": {
+                "gemini-2.5-flash": {
+                    "tokens": {
+                        "input": 9058,
+                        "prompt": 9058,
+                        "candidates": 10,
+                        "total": 9111,
+                        "cached": 0,
+                        "thoughts": 43,
+                        "tool": 0,
+                    }
+                }
+            }
+        },
+    }
+
+    normalized = extract_gemini_usage_event(event)
+    assert normalized["input_tokens"] == 9058
+    assert normalized["output_tokens"] == 53
+    assert normalized["reasoning_output_tokens"] == 43
+    assert normalized["total_tokens"] == 9111
+    assert normalized["cached_input_tokens"] == 0
+    assert usage_to_legacy_tokens(normalized) == 9111
 
 
 def test_build_usage_update_appends_entry_and_increments_tokens():

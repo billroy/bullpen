@@ -6,7 +6,7 @@ import shutil
 import sys
 
 from server.agents.base import AgentAdapter
-from server.usage import normalize_usage
+from server.usage import extract_gemini_usage_event, merge_usage_dicts
 
 if sys.platform == "win32":
     _GEMINI_SEARCH_PATHS = [
@@ -94,6 +94,10 @@ class GeminiAdapter(AgentAdapter):
         if msg_type == "result":
             return None
 
+        response = obj.get("response")
+        if isinstance(response, str) and response.strip():
+            return response.strip()
+
         text = obj.get("text")
         if isinstance(text, str) and text.strip():
             return text.strip()
@@ -110,6 +114,10 @@ class GeminiAdapter(AgentAdapter):
             merged = "\n".join([t for t in texts if t])
             if merged:
                 return merged
+
+        # Metadata payloads (session/stats/tools/files) are non-display.
+        if any(key in obj for key in ("session_id", "stats", "tools", "files")):
+            return None
 
         return line
 
@@ -131,17 +139,24 @@ class GeminiAdapter(AgentAdapter):
                 non_json_lines.append(raw_line)
                 continue
 
+            usage = merge_usage_dicts(usage, extract_gemini_usage_event(obj))
+
             if obj.get("type") == "result":
-                usage = normalize_usage(obj.get("usage", {}))
                 is_error = bool(obj.get("is_error"))
                 result_text = (
                     obj.get("result")
+                    or obj.get("response")
                     or obj.get("text")
                     or obj.get("message")
                     or ""
                 )
                 if is_error:
                     error_msg = result_text or obj.get("error", "")
+                continue
+
+            response = obj.get("response")
+            if isinstance(response, str) and response.strip():
+                result_text = response.strip()
                 continue
 
             text = obj.get("text")
@@ -155,6 +170,9 @@ class GeminiAdapter(AgentAdapter):
             content = obj.get("content")
             if isinstance(content, str) and content:
                 non_json_lines.append(content)
+                continue
+
+            if any(key in obj for key in ("session_id", "stats", "tools", "files")):
                 continue
 
             non_json_lines.append(raw_line)

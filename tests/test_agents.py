@@ -274,6 +274,31 @@ class TestGeminiAdapter:
         line = json.dumps({"type": "message", "text": "hello from gemini"})
         assert adapter.format_stream_line(line) == "hello from gemini"
 
+    def test_format_stream_line_response_stats_json(self):
+        adapter = GeminiAdapter()
+        line = json.dumps({
+            "session_id": "6746315d-4574-495a-a0ea-229bb8c43d09",
+            "response": "Aloha. How can I help you today?",
+            "stats": {
+                "models": {
+                    "gemini-2.5-flash": {
+                        "tokens": {
+                            "input": 9058,
+                            "prompt": 9058,
+                            "candidates": 10,
+                            "total": 9111,
+                            "cached": 0,
+                            "thoughts": 43,
+                            "tool": 0,
+                        }
+                    }
+                }
+            },
+            "tools": {"totalCalls": 0},
+            "files": {"totalLinesAdded": 0, "totalLinesRemoved": 0},
+        })
+        assert adapter.format_stream_line(line) == "Aloha. How can I help you today?"
+
     def test_parse_output_json_result_with_usage(self):
         adapter = GeminiAdapter()
         stdout = "\n".join([
@@ -296,6 +321,37 @@ class TestGeminiAdapter:
         result = adapter.parse_output("line 1\nline 2\n", "", 0)
         assert result["success"] is True
         assert result["output"] == "line 1\nline 2"
+
+    def test_parse_output_response_stats_json(self):
+        adapter = GeminiAdapter()
+        stdout = json.dumps({
+            "session_id": "6746315d-4574-495a-a0ea-229bb8c43d09",
+            "response": "Aloha. How can I help you today?",
+            "stats": {
+                "models": {
+                    "gemini-2.5-flash": {
+                        "tokens": {
+                            "input": 9058,
+                            "prompt": 9058,
+                            "candidates": 10,
+                            "total": 9111,
+                            "cached": 0,
+                            "thoughts": 43,
+                            "tool": 0,
+                        }
+                    }
+                }
+            },
+            "tools": {"totalCalls": 0},
+            "files": {"totalLinesAdded": 0, "totalLinesRemoved": 0},
+        })
+        result = adapter.parse_output(stdout, "", 0)
+        assert result["success"] is True
+        assert result["output"] == "Aloha. How can I help you today?"
+        assert result["usage"]["input_tokens"] == 9058
+        assert result["usage"]["output_tokens"] == 53
+        assert result["usage"]["reasoning_output_tokens"] == 43
+        assert result["usage"]["total_tokens"] == 9111
 
 
 class TestMockAdapter:
