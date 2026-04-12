@@ -2431,4 +2431,59 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.commit-diff-line {
+  display: block;
+}
+
+.commit-diff-line-meta {
+  color: var(--text-secondary);
+}
+
+.commit-diff-line-hunk {
+  color: #9cc4ff;
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.commit-diff-line-file-old {
+  color: #f8bbbb;
+}
+
+.commit-diff-line-file-new {
+  color: #a5e9c8;
+}
+
+.commit-diff-line-add {
+  color: #8decc4;
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.commit-diff-line-remove {
+  color: #ffbdbd;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+[data-theme="light"] .commit-diff-line-hunk {
+  color: #2f4f7f;
+  background: rgba(59, 130, 246, 0.14);
+}
+
+[data-theme="light"] .commit-diff-line-file-old {
+  color: #8f2f2d;
+}
+
+[data-theme="light"] .commit-diff-line-file-new {
+  color: #1e5f33;
+}
+
+[data-theme="light"] .commit-diff-line-add {
+  color: #1e5f33;
+  background: #e4f5ec;
+}
+
+[data-theme="light"] .commit-diff-line-remove {
+  color: #8f2f2d;
+  background: #f7e3e0;
 }

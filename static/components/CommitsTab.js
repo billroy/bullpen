@@ -1,4 +1,9 @@
 const CommitsTab = {
+  computed: {
+    highlightedDiffHtml() {
+      return this.renderDiffHtml(this.commitDiff || 'No diff output.');
+    },
+  },
   data() {
     return {
       commits: [],
@@ -16,6 +21,33 @@ const CommitsTab = {
     this.refresh();
   },
   methods: {
+    escapeHtml(text) {
+      return (text || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+    },
+    classifyDiffLine(line) {
+      if (line.startsWith('@@')) return 'commit-diff-line-hunk';
+      if (line.startsWith('diff --git')) return 'commit-diff-line-meta';
+      if (line.startsWith('index ')) return 'commit-diff-line-meta';
+      if (line.startsWith('--- ')) return 'commit-diff-line-file-old';
+      if (line.startsWith('+++ ')) return 'commit-diff-line-file-new';
+      if (line.startsWith('+')) return 'commit-diff-line-add';
+      if (line.startsWith('-')) return 'commit-diff-line-remove';
+      return '';
+    },
+    renderDiffHtml(text) {
+      return text
+        .split('\n')
+        .map((line) => {
+          const lineClass = this.classifyDiffLine(line);
+          const className = lineClass ? `commit-diff-line ${lineClass}` : 'commit-diff-line';
+          const content = this.escapeHtml(line);
+          return `<span class="${className}">${content}</span>`;
+        })
+        .join('\n');
+    },
     async refresh() {
       this.commits = [];
       this.offset = 0;
@@ -135,7 +167,7 @@ const CommitsTab = {
             <div class="commit-meta">{{ selectedCommit.author }} &middot; {{ formatDate(selectedCommit.date) }}</div>
             <div v-if="diffLoading" class="commits-loading">Loading diff...</div>
             <div v-else-if="diffError" class="commits-error">{{ diffError }}</div>
-            <pre v-else class="commit-diff">{{ commitDiff || 'No diff output.' }}</pre>
+            <pre v-else class="commit-diff" v-html="highlightedDiffHtml"></pre>
           </div>
           <div class="modal-footer">
             <div></div>
