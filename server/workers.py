@@ -648,10 +648,11 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                             "Gemini model capacity exhausted. "
                             "Try gemini-2.5-flash or wait and retry later."
                         )
-                        try:
-                            _terminate_proc(proc)
-                        except OSError:
-                            pass
+                        if not combined_lines:
+                            try:
+                                _terminate_proc(proc)
+                            except OSError:
+                                pass
             except (ValueError, OSError):
                 pass  # stderr closed
 
@@ -694,7 +695,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         stdout = "".join(stdout_lines)
         exit_code = proc.returncode
         result = adapter.parse_output(stdout, stderr, exit_code)
-        if force_fail_message[0]:
+        if force_fail_message[0] and not result.get("output"):
             result = {
                 "success": False,
                 "output": result.get("output", ""),

@@ -97,7 +97,7 @@ class GeminiAdapter(AgentAdapter):
             return line
 
         msg_type = obj.get("type")
-        if msg_type == "result":
+        if msg_type in ("init", "result", "tool_use", "tool_result", "error"):
             return None
         if msg_type == "message" and obj.get("role") == "user":
             return None
@@ -150,6 +150,9 @@ class GeminiAdapter(AgentAdapter):
             usage = merge_usage_dicts(usage, extract_gemini_usage_event(obj))
 
             if obj.get("type") == "message" and obj.get("role") == "user":
+                continue
+
+            if obj.get("type") in ("init", "tool_use", "tool_result", "error"):
                 continue
 
             if obj.get("type") == "result":

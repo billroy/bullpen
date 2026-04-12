@@ -324,6 +324,21 @@ class TestGeminiAdapter:
         })
         assert adapter.format_stream_line(line) == "Aloha"
 
+    def test_format_stream_line_skips_tool_events(self):
+        adapter = GeminiAdapter()
+        tool_use = json.dumps({
+            "type": "tool_use",
+            "tool_name": "google_web_search",
+            "parameters": {"query": "UTC offset of Perth, AU"},
+        })
+        tool_result = json.dumps({
+            "type": "tool_result",
+            "status": "success",
+            "output": "Search results returned.",
+        })
+        assert adapter.format_stream_line(tool_use) is None
+        assert adapter.format_stream_line(tool_result) is None
+
     def test_parse_output_json_result_with_usage(self):
         adapter = GeminiAdapter()
         stdout = "\n".join([
@@ -423,6 +438,31 @@ class TestGeminiAdapter:
         assert result["usage"]["input_tokens"] == 6791
         assert result["usage"]["output_tokens"] == 2
         assert result["usage"]["total_tokens"] == 6812
+
+    def test_parse_output_stream_json_skips_tool_events(self):
+        adapter = GeminiAdapter()
+        stdout = "\n".join([
+            json.dumps({
+                "type": "tool_use",
+                "tool_name": "google_web_search",
+                "parameters": {"query": "UTC offset of Perth, AU"},
+            }),
+            json.dumps({
+                "type": "tool_result",
+                "status": "success",
+                "output": "Search results returned.",
+            }),
+            json.dumps({
+                "type": "message",
+                "role": "assistant",
+                "content": "The UTC offset of Perth is +8 hours.",
+            }),
+        ])
+        result = adapter.parse_output(stdout, "", 0)
+        assert result["success"] is True
+        assert result["output"] == "The UTC offset of Perth is +8 hours."
+        assert "tool_use" not in result["output"]
+        assert "tool_result" not in result["output"]
 
 
 class TestMockAdapter:

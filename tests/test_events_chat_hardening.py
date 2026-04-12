@@ -65,3 +65,26 @@ def test_classify_chat_provider_error_for_gemini_model_not_found():
     msg = _classify_chat_provider_error("gemini", "ModelNotFoundError: Requested entity was not found.")
     assert msg is not None
     assert "model not found" in msg.lower()
+
+
+def test_classify_chat_provider_error_for_current_gemini_flash_capacity():
+    msg = _classify_chat_provider_error(
+        "gemini",
+        "You have exhausted your capacity on this model.",
+        model="gemini-2.5-flash",
+    )
+    assert msg is not None
+    assert "gemini-2.5-flash" in msg
+    assert "flash-lite" in msg
+    assert "try gemini-2.5-flash or" not in msg.lower()
+
+
+def test_classify_chat_provider_error_for_gemini_pro_capacity():
+    msg = _classify_chat_provider_error(
+        "gemini",
+        "You have exhausted your capacity on this model.",
+        model="gemini-2.5-pro",
+    )
+    assert msg is not None
+    assert "gemini-2.5-pro" in msg
+    assert "Try gemini-2.5-flash" in msg

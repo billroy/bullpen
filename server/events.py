@@ -82,20 +82,41 @@ def _claude_mcp_startup_state(line):
     return ("error", "Bullpen MCP unavailable at startup (missing status). Please retry.")
 
 
-def _classify_chat_provider_error(provider, *texts):
+def _classify_chat_provider_error(provider, *texts, model=None):
     """Return a user-facing message for known non-retryable provider failures."""
     provider = (provider or "").strip().lower()
+    model = (model or "").strip()
     haystack = "\n".join([t for t in texts if isinstance(t, str)]).lower()
     if not haystack:
         return None
 
     if provider == "gemini":
         if "requested entity was not found" in haystack or "modelnotfounderror" in haystack:
+            if model:
+                return (
+                    f"Gemini model {model} was not found or is not available for this account. "
+                    "Try gemini-2.5-flash."
+                )
             return (
                 "Gemini model not found or unavailable for this account. "
                 "Try gemini-2.5-flash."
             )
         if worker_mod.is_non_retryable_provider_error(provider, haystack):
+            if model == "gemini-2.5-flash":
+                return (
+                    "Gemini says capacity or quota is exhausted for gemini-2.5-flash. "
+                    "Try gemini-2.5-flash-lite or wait and retry later."
+                )
+            if model == "gemini-2.5-flash-lite":
+                return (
+                    "Gemini says capacity or quota is exhausted for gemini-2.5-flash-lite. "
+                    "Wait and retry later, or check your Gemini CLI quota/account status."
+                )
+            if model:
+                return (
+                    f"Gemini says capacity or quota is exhausted for {model}. "
+                    "Try gemini-2.5-flash or wait and retry later."
+                )
             return (
                 "Gemini model capacity exhausted. "
                 "Try gemini-2.5-flash or wait and retry later."
@@ -737,8 +758,10 @@ def register_events(socketio, app):
                             if line:
                                 logging.warning("chat agent stderr [%s]: %s", session_id, line)
                                 if force_fail_message[0] is None:
-                                    force_fail_message[0] = _classify_chat_provider_error(adapter.name, line)
-                                if force_fail_message[0]:
+                                    force_fail_message[0] = _classify_chat_provider_error(
+                                        adapter.name, line, model=model,
+                                    )
+                                if force_fail_message[0] and not collected:
                                     try:
                                         _terminate_proc(proc)
                                     except OSError:
@@ -770,19 +793,20 @@ def register_events(socketio, app):
                         socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)})
                         batch.clear()
 
-                if force_fail_message[0]:
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": force_fail_message[0]})
-                    return
-
                 stdout = "".join(raw_stdout)
                 stderr = "".join(raw_stderr)
                 parsed = adapter.parse_output(stdout, stderr, proc.returncode)
+                parsed_output = (parsed.get("output") or "").strip()
+                if force_fail_message[0] and not collected and not parsed_output:
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": force_fail_message[0]})
+                    return
                 if not parsed.get("success", False):
                     classified_error = _classify_chat_provider_error(
                         adapter.name,
                         parsed.get("error", ""),
                         parsed.get("output", ""),
                         stderr,
+                        model=model,
                     )
                     error_message = classified_error or parsed.get("error") or "Agent run failed."
                     socketio.emit("chat:error", {"sessionId": session_id, "message": error_message})
@@ -790,7 +814,6 @@ def register_events(socketio, app):
 
                 full_response = "\n".join(collected).strip()
                 if not full_response:
-                    parsed_output = (parsed.get("output") or "").strip()
                     if parsed_output:
                         parsed_lines = parsed_output.splitlines() or [parsed_output]
                         socketio.emit("chat:output", {"sessionId": session_id, "lines": parsed_lines})
