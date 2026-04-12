@@ -180,6 +180,7 @@ class TestConfigUpdate:
 
     @pytest.mark.parametrize("theme", [
         "shades-of-purple", "solarized", "panda", "cobalt-2", "one-dark-pro",
+        "light-ethereal", "light-stone-teal", "light-ivory-olive",
     ])
     def test_new_themes_accepted(self, theme):
         result = validate_config_update({"theme": theme})

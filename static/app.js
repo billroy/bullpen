@@ -21,6 +21,9 @@ const app = createApp({
     const THEME_CATALOG = [
       { id: 'dark', label: 'Dark', mode: 'dark' },
       { id: 'light', label: 'Light', mode: 'light' },
+      { id: 'light-ethereal', label: 'Light Ethereal', mode: 'light' },
+      { id: 'light-stone-teal', label: 'Light Stone Teal', mode: 'light' },
+      { id: 'light-ivory-olive', label: 'Light Ivory Olive', mode: 'light' },
       { id: 'dracula', label: 'Dracula', mode: 'dark' },
       { id: 'nord', label: 'Nord', mode: 'dark' },
       { id: 'gruvbox', label: 'Gruvbox Dark', mode: 'dark' },
