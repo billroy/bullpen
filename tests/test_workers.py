@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import time
 
 import pytest
@@ -82,6 +83,37 @@ class GeminiCapacityExceededAdapter(MockAdapter):
             "output": stdout.strip(),
             "error": "You have exhausted your capacity on this model.",
         }
+
+
+class LiveTokenStreamAdapter(MockAdapter):
+    @property
+    def name(self):
+        return "codex"
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        script = (
+            "import json,sys,time;"
+            "print(json.dumps({'type':'token_count','input_tokens':120,'cached_input_tokens':30,'output_tokens':45,'reasoning_output_tokens':10,'total_tokens':205}), flush=True);"
+            "time.sleep(0.2);"
+            "print('stream done', flush=True)"
+        )
+        return [sys.executable, "-c", script]
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {
+            "success": exit_code == 0,
+            "output": stdout.strip() or self._output,
+            "error": None if exit_code == 0 else (stderr.strip() or f"Exit code {exit_code}"),
+            "usage": {},
+        }
+
+
+class CapturingSocket:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event, payload, to=None):
+        self.events.append((event, payload, to))
 
 
 @pytest.fixture
@@ -297,6 +329,34 @@ class TestStartWorker:
         history = updated.get("history", [])
         assert sum(1 for h in history if h.get("event") == "retry") == 0
         assert "exhausted your capacity on this model" in (updated.get("body") or "").lower()
+
+    def test_stream_usage_emits_live_task_token_updates(self, bp_dir, worker_slot):
+        previous = get_adapter("codex")
+        register_adapter("codex", LiveTokenStreamAdapter(output="live"))
+        socket = CapturingSocket()
+        try:
+            layout = _load_layout(bp_dir)
+            layout["slots"][worker_slot]["agent"] = "codex"
+            layout["slots"][worker_slot]["model"] = "gpt-5.4"
+            write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+            task = create_task(bp_dir, "Live token stream")
+            assign_task(bp_dir, worker_slot, task["id"])
+
+            start_worker(bp_dir, worker_slot, socketio=socket, ws_id="ws-live")
+            time.sleep(0.7)
+
+            task_updates = [
+                payload for event, payload, _ in socket.events
+                if event == "task:updated" and payload.get("id") == task["id"]
+            ]
+            assert any(
+                update.get("status") == "in_progress" and int(update.get("tokens") or 0) >= 205
+                for update in task_updates
+            )
+        finally:
+            if previous is not None:
+                register_adapter("codex", previous)
 
 
 class TestStopWorker:

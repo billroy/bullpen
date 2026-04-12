@@ -1,5 +1,6 @@
 """Worker state machine, queue management, agent execution."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -11,7 +12,13 @@ from datetime import datetime, timezone
 from server.agents import get_adapter
 from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
-from server.usage import build_usage_entry, build_usage_update
+from server.usage import (
+    TOKEN_FIELDS,
+    build_usage_entry,
+    build_usage_update,
+    extract_stream_usage_event,
+    usage_to_legacy_tokens,
+)
 from server import tasks as task_mod
 from server.model_aliases import normalize_model
 
@@ -510,6 +517,7 @@ def _setup_worktree(workspace, bp_dir, task_id):
 
 MAX_OUTPUT_BUFFER = 100_000  # 100KB server-side buffer for live display
 MAX_LINE_LEN = 10_000  # 10KB per line cap
+LIVE_TOKEN_EMIT_INTERVAL_SECONDS = 0.5
 
 
 def is_non_retryable_provider_error(provider, *texts):
@@ -538,6 +546,34 @@ def get_output_buffer(ws_id, slot_index):
     """Return the output buffer entry for a running process, or None."""
     with _process_lock:
         return _processes.get((ws_id, slot_index))
+
+
+def _coerce_non_negative_int(value):
+    """Convert value to non-negative int or return None."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    if n < 0:
+        return None
+    return n
+
+
+def _merge_live_usage_max(base, extra):
+    """Merge normalized usage snapshots using per-field max values."""
+    merged = {}
+    for field in TOKEN_FIELDS:
+        best = None
+        for src in (base, extra):
+            if not isinstance(src, dict):
+                continue
+            n = _coerce_non_negative_int(src.get(field))
+            if n is None:
+                continue
+            best = n if best is None else max(best, n)
+        if best is not None:
+            merged[field] = best
+    return merged
 
 
 def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None):
@@ -593,12 +629,16 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         batch_lock = threading.Lock()
         last_emit = [time.time()]
         force_fail_message = [None]
+        live_usage = [{}]
+        last_live_tokens = [None]
+        last_live_emit_at = [0.0]
 
         def _append_stream_line(line, sink):
             # Always store the full line for parse_output (e.g. the result
             # JSON can be very large and truncating it would break parsing
             # of the usage/token fields).
             sink.append(line)
+            _maybe_emit_live_usage(line)
 
             display_line = line
             if len(display_line) > MAX_LINE_LEN:
@@ -635,6 +675,36 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                         last_emit[0] = now
                 if socketio and to_emit:
                     _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
+
+        def _maybe_emit_live_usage(line):
+            if not socketio:
+                return
+            try:
+                obj = json.loads((line or "").strip())
+            except json.JSONDecodeError:
+                return
+            live_update = extract_stream_usage_event(adapter.name, obj)
+            if not live_update:
+                return
+
+            live_usage[0] = _merge_live_usage_max(live_usage[0], live_update)
+            tokens = usage_to_legacy_tokens(live_usage[0])
+            if tokens <= 0:
+                return
+
+            now = time.time()
+            if last_live_tokens[0] is not None and tokens == last_live_tokens[0]:
+                return
+            if now - last_live_emit_at[0] < LIVE_TOKEN_EMIT_INTERVAL_SECONDS:
+                return
+
+            task = task_mod.read_task(bp_dir, task_id)
+            if not task or task.get("status") != "in_progress":
+                return
+            task["tokens"] = tokens
+            _ws_emit(socketio, "task:updated", task, ws_id)
+            last_live_tokens[0] = tokens
+            last_live_emit_at[0] = now
 
         def _drain_stderr():
             try:
