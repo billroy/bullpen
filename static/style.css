@@ -448,6 +448,7 @@ body {
   flex: 1;
   overflow: auto;
   padding: 16px;
+  min-height: 0;
 }
 
 /* === Kanban Board === */
@@ -456,6 +457,8 @@ body {
   gap: 12px;
   height: 100%;
   overflow-x: auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .kanban-column {
@@ -466,6 +469,7 @@ body {
   background: var(--bg-secondary);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  min-height: 0;
 }
 
 .kanban-column-header {
@@ -531,6 +535,9 @@ body {
   flex-direction: column;
   gap: 6px;
   min-height: 60px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 
 .kanban-column.drag-over {
