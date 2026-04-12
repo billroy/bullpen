@@ -658,6 +658,7 @@ def register_events(socketio, app):
                 batch = []
                 batch_lock = threading.Lock()
                 last_emit = [time.time()]
+                force_fail_message = [None]
 
                 def _drain_stdout():
                     nonlocal pending_startup, startup_error, saw_ready, chat_usage
@@ -709,6 +710,15 @@ def register_events(socketio, app):
                             line = line.rstrip()
                             if line:
                                 logging.warning("chat agent stderr [%s]: %s", session_id, line)
+                                if force_fail_message[0] is None and worker_mod.is_non_retryable_provider_error(adapter.name, line):
+                                    force_fail_message[0] = (
+                                        "Gemini model capacity exhausted. "
+                                        "Try a different model (for example gemini-2.5-flash) or wait and retry later."
+                                    )
+                                    try:
+                                        _terminate_proc(proc)
+                                    except OSError:
+                                        pass
                     except Exception:
                         pass
 
@@ -735,6 +745,10 @@ def register_events(socketio, app):
                     if batch:
                         socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)})
                         batch.clear()
+
+                if force_fail_message[0]:
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": force_fail_message[0]})
+                    return
 
                 full_response = "\n".join(collected).strip()
 

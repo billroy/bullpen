@@ -512,6 +512,19 @@ MAX_OUTPUT_BUFFER = 100_000  # 100KB server-side buffer for live display
 MAX_LINE_LEN = 10_000  # 10KB per line cap
 
 
+def is_non_retryable_provider_error(provider, *texts):
+    """Return True when provider output indicates retrying will not help."""
+    provider = (provider or "").strip().lower()
+    haystack = "\n".join([t for t in texts if isinstance(t, str)]).lower()
+    if not haystack:
+        return False
+
+    if provider == "gemini":
+        return "you have exhausted your capacity on this model" in haystack
+
+    return False
+
+
 def get_output_buffer(ws_id, slot_index):
     """Return the output buffer entry for a running process, or None."""
     with _process_lock:
@@ -569,6 +582,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         batch = []
         batch_lock = threading.Lock()
         last_emit = [time.time()]
+        force_fail_message = [None]
 
         def _append_stream_line(line, sink):
             # Always store the full line for parse_output (e.g. the result
@@ -619,6 +633,15 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                     if not line:
                         break
                     _append_stream_line(line, stderr_lines)
+                    if force_fail_message[0] is None and is_non_retryable_provider_error(adapter.name, line):
+                        force_fail_message[0] = (
+                            "Gemini model capacity exhausted. "
+                            "Try a different model (for example gemini-2.5-flash) or wait and retry later."
+                        )
+                        try:
+                            _terminate_proc(proc)
+                        except OSError:
+                            pass
             except (ValueError, OSError):
                 pass  # stderr closed
 
@@ -661,6 +684,13 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         stdout = "".join(stdout_lines)
         exit_code = proc.returncode
         result = adapter.parse_output(stdout, stderr, exit_code)
+        if force_fail_message[0]:
+            result = {
+                "success": False,
+                "output": result.get("output", ""),
+                "error": force_fail_message[0],
+                "usage": result.get("usage", {}),
+            }
 
         # Log the invocation
         _write_log(bp_dir, slot_index, task_id, prompt, result)
@@ -673,7 +703,18 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         if result["success"]:
             _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace, ws_id, result.get("usage", {}))
         else:
-            _on_agent_error(bp_dir, slot_index, task_id, result.get("error", "Unknown error"), socketio, result.get("output", ""), ws_id)
+            error_text = result.get("error", "Unknown error")
+            output_text = result.get("output", "")
+            _on_agent_error(
+                bp_dir,
+                slot_index,
+                task_id,
+                error_text,
+                socketio,
+                output_text,
+                ws_id,
+                non_retryable=is_non_retryable_provider_error(adapter.name, error_text, output_text, stderr),
+            )
 
     except Exception as e:
         _on_agent_error(bp_dir, slot_index, task_id, str(e), socketio, ws_id=ws_id)
@@ -925,7 +966,7 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
     assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
 
 
-def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="", ws_id=None):
+def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="", ws_id=None, non_retryable=False):
     """Handle agent failure. Retry or block."""
     should_retry = False
     retry_delay = 0
@@ -949,7 +990,7 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="",
         history = task.get("history", [])
         retry_count = sum(1 for h in history if h.get("event") == "retry")
 
-        if retry_count < max_retries:
+        if (not non_retryable) and retry_count < max_retries:
             # Retry with backoff
             retry_delay = 5 * (retry_count + 1)
             history.append({"timestamp": _now_iso(), "event": "retry", "detail": error_msg})
