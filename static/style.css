@@ -1383,26 +1383,8 @@ body {
 
 .worker-card-status {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.worker-card-readouts {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 6px;
-}
-
-.worker-card-readout {
-  font-size: 10px;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 2px 6px;
-  line-height: 1.2;
-  white-space: nowrap;
 }
 
 .status-pill {
@@ -1410,8 +1392,8 @@ body {
   padding: 2px 6px;
   border-radius: 3px;
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 .status-pill.status-idle { background: #374151; color: #9CA3AF; }
@@ -1426,6 +1408,13 @@ body {
 .worker-card-agent {
   font-size: 10px;
   color: var(--text-muted);
+  margin-left: auto;
+}
+
+.worker-card-token-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .worker-card-queue {

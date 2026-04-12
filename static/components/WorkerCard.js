@@ -37,13 +37,10 @@ const WorkerCard = {
       <div class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
         <div class="worker-card-status">
           <span class="status-pill" :class="'status-' + workerState">
-            {{ isPaused ? 'PAUSED' : workerState.toUpperCase() }}
+            {{ statusLabel }}
           </span>
+          <span v-if="isWorking && currentTaskTokens !== null" class="worker-card-token-meta" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
           <span class="worker-card-agent">{{ worker.agent }}/{{ worker.model }}</span>
-        </div>
-        <div v-if="isWorking" class="worker-card-readouts">
-          <span class="worker-card-readout" title="Working time on current task">{{ elapsed }} elapsed</span>
-          <span v-if="currentTaskTokens !== null" class="worker-card-readout" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
         </div>
         <div class="worker-card-queue" v-if="queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
@@ -87,6 +84,11 @@ const WorkerCard = {
     },
     workerState() { return this.worker.state || 'idle'; },
     isWorking() { return this.workerState === 'working'; },
+    statusLabel() {
+      if (this.isPaused) return 'PAUSED';
+      if (this.isWorking) return `Working ${this.elapsed}`;
+      return this.workerState.toUpperCase();
+    },
     canStart() {
       return this.workerState === 'idle';
     },
