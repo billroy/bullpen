@@ -24,3 +24,8 @@ def test_app_quick_create_accepts_payload_with_description():
     assert "const title = typeof payload === 'string' ? payload.trim() : (payload?.title || '').trim();" in text
     assert "const description = typeof payload === 'string' ? '' : (payload?.description || '').trim();" in text
     assert "socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));" in text
+
+
+def test_leftpane_quick_create_placeholder_uses_bug_template_text():
+    text = _read("static/components/LeftPane.js")
+    assert 'placeholder="title&#10;&#10;Type: task&#10;&#10;Priority: normal&#10;&#10;## Description&#10;&#10;description"' in text
