@@ -46,7 +46,7 @@ const CommitsTab = {
           const content = this.escapeHtml(line);
           return `<span class="${className}">${content}</span>`;
         })
-        .join('\n');
+        .join('');
     },
     async refresh() {
       this.commits = [];
