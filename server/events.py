@@ -692,6 +692,58 @@ def register_events(socketio, app):
 
         _activate_and_broadcast_project(manager, ws_id)
 
+    @socketio.on("project:clone")
+    @with_lock
+    def on_project_clone(data):
+        manager = app.config["manager"]
+        url = (data.get("url") or "").strip()
+        if not url:
+            emit("error", {"message": "project:clone requires a git URL"})
+            return
+
+        raw_path = (data.get("path") or "").strip()
+        if raw_path:
+            path = os.path.abspath(raw_path)
+        else:
+            repo_name = url.rstrip("/").rsplit("/", 1)[-1]
+            if repo_name.endswith(".git"):
+                repo_name = repo_name[:-4]
+            if not repo_name:
+                emit("error", {"message": f"Cannot derive directory name from URL: {url}"})
+                return
+            path = os.path.abspath(repo_name)
+
+        if ".." in path.split(os.sep):
+            emit("error", {"message": f"Invalid path: {path}"})
+            return
+
+        if os.path.exists(path):
+            emit("error", {"message": f"Path already exists: {path}"})
+            return
+
+        try:
+            subprocess.run(
+                ["git", "clone", url, path],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except subprocess.CalledProcessError as e:
+            emit("error", {"message": f"git clone failed: {e.stderr.strip() or e.stdout.strip()}"})
+            return
+        except subprocess.TimeoutExpired:
+            emit("error", {"message": "git clone timed out (5 min limit)"})
+            return
+
+        try:
+            ws_id = manager.register_project(path)
+        except ValueError as e:
+            emit("error", {"message": str(e)})
+            return
+
+        _activate_and_broadcast_project(manager, ws_id)
+
     @socketio.on("project:remove")
     @with_lock
     def on_project_remove(data):

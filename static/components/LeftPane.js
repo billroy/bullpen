@@ -1,6 +1,6 @@
 const LeftPane = {
   props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces', 'quickCreateClearToken'],
-  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'remove-project', 'quick-create-task'],
+  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project', 'quick-create-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
       <div v-if="projects && projects.length > 1" class="left-pane-section">
@@ -11,6 +11,7 @@ const LeftPane = {
             <div v-if="showProjectMenu" class="project-menu">
               <button class="project-menu-item" @click="promptAddProject">Add Project</button>
               <button class="project-menu-item" @click="promptNewProject">New Project</button>
+              <button class="project-menu-item" @click="promptCloneProject">Clone from Git</button>
             </div>
           </div>
         </div>
@@ -196,6 +197,13 @@ const LeftPane = {
       if (path && path.trim()) {
         this.$emit('new-project', path.trim());
       }
+    },
+    promptCloneProject() {
+      this.showProjectMenu = false;
+      const url = prompt('Enter Git repository URL:');
+      if (!url || !url.trim()) return;
+      const path = prompt('Enter absolute path to clone into (leave empty for default):');
+      this.$emit('clone-project', { url: url.trim(), path: (path || '').trim() || null });
     },
     onRosterDragOver(e, w) {
       if (e.dataTransfer.types.includes('text/plain')) {

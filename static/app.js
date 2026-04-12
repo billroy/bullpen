@@ -569,6 +569,7 @@ const app = createApp({
     // Project actions
     function addProject(path) { socket.emit('project:add', { path }); }
     function newProject(path) { socket.emit('project:new', { path }); }
+    function cloneProject(data) { socket.emit('project:clone', data); }
     function removeProject(wsId) { socket.emit('project:remove', { workspaceId: wsId }); }
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
@@ -733,6 +734,7 @@ const app = createApp({
           @switch-workspace="switchWorkspace"
           @add-project="addProject"
           @new-project="newProject"
+          @clone-project="cloneProject"
           @remove-project="removeProject"
         />
         <div class="main-pane">
