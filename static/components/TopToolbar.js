@@ -1,10 +1,10 @@
 const TopToolbar = {
-  props: ['name', 'connected', 'themes', 'activeTheme'],
+  props: ['projectName', 'connected', 'themes', 'activeTheme'],
   template: `
     <div class="top-toolbar">
       <div class="toolbar-left">
         <button class="btn btn-icon" @click="$emit('toggle-left-pane')" title="Toggle left pane">&#9776;</button>
-        <span class="toolbar-name">{{ name }}</span>
+        <span class="toolbar-name">Bullpen<span v-if="projectName"> / {{ projectName }}</span></span>
       </div>
       <div class="toolbar-center">
       </div>

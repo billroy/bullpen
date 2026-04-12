@@ -115,13 +115,25 @@ const app = createApp({
       _applyTheme(ws?.config?.theme || 'dark');
     }
 
+    function _workspaceBaseName(workspacePath) {
+      if (typeof workspacePath !== 'string') return '';
+      const trimmed = workspacePath.trim();
+      if (!trimmed) return '';
+      const parts = trimmed.split(/[\\/]+/).filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : '';
+    }
+
+    function _updateDocumentTitle() {
+      document.title = _workspaceBaseName(state.workspace) || 'Bullpen';
+    }
+
     function switchWorkspace(wsId) {
       if (!workspaces[wsId]) return;
       activeWorkspaceId.value = wsId;
       workspaces[wsId].unseenActivity = 0;
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
-      document.title = state.config.name || 'Bullpen';
+      _updateDocumentTitle();
     }
 
     const connected = ref(false);
@@ -225,7 +237,7 @@ const app = createApp({
       if (_isActive(wsId)) {
         _syncToView(wsId);
         _applyWorkspaceTheme(wsId);
-        document.title = state.config.name || 'Bullpen';
+        _updateDocumentTitle();
       }
     });
 
@@ -500,6 +512,7 @@ const app = createApp({
     }
     const themeOptions = computed(() => THEME_CATALOG.map(t => ({ id: t.id, label: t.label })));
     const currentTheme = computed(() => _normalizeTheme(state.config?.theme || 'dark'));
+    const activeProjectName = computed(() => _workspaceBaseName(state.workspace));
 
     function addToast(message, type = 'info') {
       const id = ++toastId;
@@ -564,7 +577,7 @@ const app = createApp({
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, chatTabs, addLiveAgentTab, closeLiveAgentTab,
-      tabIcon,
+      tabIcon, activeProjectName,
     };
   },
   mounted() {
@@ -576,7 +589,7 @@ const app = createApp({
   template: `
     <div class="app-container">
       <TopToolbar
-        :name="state.config.name"
+        :project-name="activeProjectName"
         :connected="connected"
         :themes="themeOptions"
         :active-theme="currentTheme"
