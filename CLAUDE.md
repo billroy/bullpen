@@ -15,9 +15,11 @@ Direct filesystem writes bypass the running Flask/Socket.IO server, so the
 browser will not receive `task:created` or `task:updated` events and the user
 will not see the ticket until they refresh the page.
 
-Only fall back to direct `.bullpen/tasks` writes if MCP is genuinely unavailable
-and the user has agreed to that tradeoff. If you must fall back, explicitly warn
-that the page may need to be refreshed.
+**NEVER fall back to direct `.bullpen/tasks` filesystem writes.** If MCP is
+unavailable (socket errors, connection refused, etc.), stop and tell the user
+the MCP is down — do not write ticket files directly under any circumstances.
+Direct writes corrupt the live server's view of ticket state and have caused
+repeated problems.
 
 ## MCP Stdio Server (`server/mcp_tools.py`)
 
