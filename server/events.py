@@ -82,6 +82,27 @@ def _claude_mcp_startup_state(line):
     return ("error", "Bullpen MCP unavailable at startup (missing status). Please retry.")
 
 
+def _classify_chat_provider_error(provider, *texts):
+    """Return a user-facing message for known non-retryable provider failures."""
+    provider = (provider or "").strip().lower()
+    haystack = "\n".join([t for t in texts if isinstance(t, str)]).lower()
+    if not haystack:
+        return None
+
+    if provider == "gemini":
+        if "requested entity was not found" in haystack or "modelnotfounderror" in haystack:
+            return (
+                "Gemini model not found or unavailable for this account. "
+                "Try a different model (for example gemini-2.5-flash)."
+            )
+        if worker_mod.is_non_retryable_provider_error(provider, haystack):
+            return (
+                "Gemini model capacity exhausted. "
+                "Try a different model (for example gemini-2.5-flash) or wait and retry later."
+            )
+    return None
+
+
 def _load_layout(bp_dir):
     return read_json(os.path.join(bp_dir, "layout.json"))
 
@@ -659,10 +680,13 @@ def register_events(socketio, app):
                 batch_lock = threading.Lock()
                 last_emit = [time.time()]
                 force_fail_message = [None]
+                raw_stdout = []
+                raw_stderr = []
 
                 def _drain_stdout():
                     nonlocal pending_startup, startup_error, saw_ready, chat_usage
                     for line in proc.stdout:
+                        raw_stdout.append(line)
                         if adapter.name == "claude":
                             startup = _claude_mcp_startup_state(line)
                             if startup:
@@ -707,14 +731,13 @@ def register_events(socketio, app):
                 def _drain_stderr():
                     try:
                         for line in proc.stderr:
+                            raw_stderr.append(line)
                             line = line.rstrip()
                             if line:
                                 logging.warning("chat agent stderr [%s]: %s", session_id, line)
-                                if force_fail_message[0] is None and worker_mod.is_non_retryable_provider_error(adapter.name, line):
-                                    force_fail_message[0] = (
-                                        "Gemini model capacity exhausted. "
-                                        "Try a different model (for example gemini-2.5-flash) or wait and retry later."
-                                    )
+                                if force_fail_message[0] is None:
+                                    force_fail_message[0] = _classify_chat_provider_error(adapter.name, line)
+                                if force_fail_message[0]:
                                     try:
                                         _terminate_proc(proc)
                                     except OSError:
@@ -750,7 +773,27 @@ def register_events(socketio, app):
                     socketio.emit("chat:error", {"sessionId": session_id, "message": force_fail_message[0]})
                     return
 
+                stdout = "".join(raw_stdout)
+                stderr = "".join(raw_stderr)
+                parsed = adapter.parse_output(stdout, stderr, proc.returncode)
+                if not parsed.get("success", False):
+                    classified_error = _classify_chat_provider_error(
+                        adapter.name,
+                        parsed.get("error", ""),
+                        parsed.get("output", ""),
+                        stderr,
+                    )
+                    error_message = classified_error or parsed.get("error") or "Agent run failed."
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": error_message})
+                    return
+
                 full_response = "\n".join(collected).strip()
+                if not full_response:
+                    parsed_output = (parsed.get("output") or "").strip()
+                    if parsed_output:
+                        parsed_lines = parsed_output.splitlines() or [parsed_output]
+                        socketio.emit("chat:output", {"sessionId": session_id, "lines": parsed_lines})
+                        full_response = parsed_output
 
                 # Update session history
                 with _chat_lock:
@@ -771,7 +814,7 @@ def register_events(socketio, app):
                             source="chat",
                             provider=adapter.name,
                             model=model,
-                            usage=chat_usage,
+                            usage=merge_usage_dicts(chat_usage, parsed.get("usage", {})),
                             occurred_at=now,
                         )
 

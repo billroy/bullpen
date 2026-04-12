@@ -60,6 +60,32 @@ class ChatUsageAdapter(AgentAdapter):
         return None
 
 
+class ChatFailingAdapter(AgentAdapter):
+    @property
+    def name(self):
+        return "chat-failing-mock"
+
+    def available(self):
+        return True
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        import sys
+        script = (
+            "import sys; "
+            "sys.stderr.write('ModelNotFoundError: Requested entity was not found.\\n'); "
+            "sys.exit(1)"
+        )
+        return [sys.executable, "-c", script]
+
+    def parse_output(self, stdout, stderr, exit_code):
+        if exit_code != 0:
+            return {"success": False, "output": (stdout or "").strip(), "error": (stderr or "").strip(), "usage": {}}
+        return {"success": True, "output": (stdout or "").strip(), "error": None, "usage": {}}
+
+    def format_stream_line(self, line):
+        return None
+
+
 class TestTaskEvents:
     def test_create_task(self, client):
         c, app = client
@@ -377,6 +403,33 @@ class TestChatEvents:
         assert breakdown["output_tokens"] == 7
         assert breakdown["cached_input_tokens"] == 3
         assert breakdown["tokens"] == 18
+
+    def test_chat_emits_error_on_provider_failure(self, client):
+        c, _ = client
+        register_adapter("chat-failing-mock", ChatFailingAdapter())
+
+        c.emit("chat:send", {
+            "sessionId": "session-fail-1",
+            "provider": "chat-failing-mock",
+            "model": "mock-model",
+            "message": "hello",
+        })
+
+        deadline = time.time() + 3.0
+        error = None
+        done = False
+        while time.time() < deadline and error is None:
+            for evt in c.get_received():
+                if evt["name"] == "chat:error":
+                    error = evt["args"][0]
+                if evt["name"] == "chat:done":
+                    done = True
+            if error is None:
+                time.sleep(0.05)
+
+        assert error is not None, "chat:error not received"
+        assert "Requested entity was not found" in error["message"]
+        assert done is False
 
 
 class TestConfigEvents:

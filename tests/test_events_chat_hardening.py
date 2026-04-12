@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 
-from server.events import _claude_mcp_startup_state, _harden_live_agent_argv
+from server.events import _claude_mcp_startup_state, _classify_chat_provider_error, _harden_live_agent_argv
 
 
 def test_harden_live_agent_argv_for_claude_adds_strict_and_disallowed_tools():
@@ -59,3 +59,9 @@ def test_claude_mcp_startup_state_error_when_server_missing():
     state, msg = _claude_mcp_startup_state(line)
     assert state == "error"
     assert "not loaded" in msg
+
+
+def test_classify_chat_provider_error_for_gemini_model_not_found():
+    msg = _classify_chat_provider_error("gemini", "ModelNotFoundError: Requested entity was not found.")
+    assert msg is not None
+    assert "model not found" in msg.lower()
