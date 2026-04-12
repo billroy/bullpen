@@ -616,10 +616,11 @@ def register_events(socketio, app):
         from server.app import reconcile, load_state
         reconcile(ws.bp_dir)
 
-        # Send state for the new workspace to all clients
+        # Send state for the new workspace to the requesting client
         state = load_state(ws.bp_dir, ws.path)
         state["workspaceId"] = ws_id
-        socketio.emit("state:init", state)
+        state["switchTo"] = True
+        emit("state:init", state)
 
         # Broadcast updated project list
         socketio.emit("projects:updated", manager.list_projects())

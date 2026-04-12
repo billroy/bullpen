@@ -274,9 +274,9 @@ const app = createApp({
       ws.profiles = data.profiles || [];
       ws.teams = data.teams || [];
 
-      // First workspace becomes active
-      if (!activeWorkspaceId.value) {
-        activeWorkspaceId.value = wsId;
+      // First workspace or explicitly requested switch becomes active
+      if (!activeWorkspaceId.value || data.switchTo) {
+        switchWorkspace(wsId);
       }
 
       if (_isActive(wsId)) {
