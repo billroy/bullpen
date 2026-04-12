@@ -34,7 +34,7 @@ const LeftPane = {
         <input
           class="quick-create-input"
           v-model="quickCreateText"
-          placeholder="title&#10;&#10;Type: task&#10;&#10;Priority: normal&#10;&#10;## Description&#10;&#10;description"
+          placeholder="enter title/description"
           @keyup.enter="submitQuickCreate"
         />
         <div class="inbox-list">
