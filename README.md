@@ -34,10 +34,10 @@ If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires aut
 - **Agent execution** -- workers invoke Claude, Codex, or Gemini CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (structured stream parsing for Claude/Codex)
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
 - **Live Agent Chat** -- interactive chat tabs for Claude, Codex, and Gemini with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
-- **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, and an in-browser editor with find/replace
+- **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, and an in-browser editor with find/replace; clicking `.html` files opens them in the default browser
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
 - **Commit diff viewer** -- click a commit row to open its full patch in a modal
-- **Multi-project** -- register multiple project directories, switch between them, with per-workspace state and activity badges
+- **Multi-project** -- register multiple project directories, switch between them, with per-workspace state and activity badges; clone new projects directly from a Git URL via the Projects menu
 - **Inter-project worker transfer** -- copy or move workers (optionally with profile copy) between registered workspaces
 - **Scheduling** -- workers can activate on a time schedule (at a specific time, or on an interval) or on queue events; pause/unpause individual workers
 - **Auto-commit & auto-PR** -- optionally commit agent output on success and open a pull request automatically
@@ -48,6 +48,7 @@ If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires aut
 - **Ticket editing** -- edit ticket title, tags, and description inline; Cmd+Enter to save
 - **Token tracking** -- per-ticket token consumption tracking plus provider/model usage metadata, displayed in list view and ticket details
 - **Worker roster queue count** -- left-pane worker roster shows queued workload while workers are in `WORKING` state
+- **Ambient sounds** -- 18 synthesized ambient soundscapes (Server Room, Forest Rain, Deep Space, War Room, etc.) generated via the Web Audio API with per-workspace volume control
 - **Light/dark theme** -- toggle between dark and light themes
 - **Context menu** -- right-click worker cards for actions (configure, start, stop, duplicate, remove)
 - **Real-time sync** -- Socket.IO keeps all connected clients in sync, scoped per workspace (CORS `*` for reverse-proxy compatibility)
@@ -88,7 +89,7 @@ static/
   style.css             # Light/dark theme
   components/           # Vue components (KanbanTab, WorkerCard, FilesTab, LiveAgentChatTab, etc.)
 profiles/               # 24 built-in worker profile JSON files
-tests/                  # 365 tests passing (pytest)
+tests/                  # 465 tests passing (pytest)
 ```
 
 ## How It Works
