@@ -162,6 +162,7 @@ Bullpen ships an MCP (Model Context Protocol) stdio server that lets supported a
 | `create_ticket` | Create a new ticket with title, description, tags, and status |
 | `list_tickets` | List tickets, optionally filtered by status |
 | `list_tasks` | Alias for `list_tickets` |
+| `list_tickets_by_title` | List tickets by approximate title match |
 | `update_ticket` | Update a ticket's status, title, or description |
 
 ### How it works

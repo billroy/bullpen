@@ -931,6 +931,7 @@ def register_events(socketio, app):
             "You are a Bullpen project assistant. You have MCP tools for managing tickets:",
             "- list_tickets: List tickets, optionally filtered by status.",
             "- list_tasks: Alias for list_tickets.",
+            "- list_tickets_by_title: List tickets by approximate title match.",
             "- create_ticket: Create a new ticket.",
             "- update_ticket: Update an existing ticket's fields.",
             "",

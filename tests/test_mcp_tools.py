@@ -192,6 +192,55 @@ def test_list_tasks_alias_returns_ticket_summary(tmp_workspace, monkeypatch):
     assert created["id"] in ids
 
 
+def test_list_tickets_by_title_returns_approximate_matches(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    matched = create_task(bp_dir, "SocketIO CORS rejects reverse-proxy connections")
+    create_task(bp_dir, "Add kanban column icons")
+
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured["id"] = msg_id
+        captured["text"] = text
+        captured["is_error"] = is_error
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+
+    mcp_tools.handle_call(
+        bp_dir,
+        client=None,
+        msg_id=8,
+        name="list_tickets_by_title",
+        args={"title": "sockt cors reverse proxy"},
+    )
+
+    assert captured["id"] == 8
+    assert captured["is_error"] is False
+    summary = json.loads(captured["text"])
+    ids = {item["id"] for item in summary}
+    assert matched["id"] in ids
+    assert len(summary) == 1
+
+
+def test_list_tickets_by_title_requires_title(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured["id"] = msg_id
+        captured["text"] = text
+        captured["is_error"] = is_error
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=9, name="list_tickets_by_title", args={})
+
+    assert captured["id"] == 9
+    assert captured["is_error"] is True
+    assert captured["text"] == "Error: title is required"
+
+
 def test_bullpen_client_degrades_when_socket_unavailable(monkeypatch):
     monkeypatch.setattr(
         mcp_tools.socketio,
@@ -400,6 +449,7 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
     assert [r["id"] for r in responses] == [1, 2, 3]
     tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
     assert "list_tasks" in tool_names
+    assert "list_tickets_by_title" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
     assert created["id"] in ids
@@ -461,6 +511,7 @@ def test_main_processes_line_json_initialize_tools_and_list_tasks(tmp_workspace,
     assert [r["id"] for r in responses] == [1, 2, 3]
     tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
     assert "list_tasks" in tool_names
+    assert "list_tickets_by_title" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
     assert created["id"] in ids

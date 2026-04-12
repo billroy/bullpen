@@ -11,6 +11,7 @@ Responses are emitted using the same transport format as the request.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import sys
 import threading
@@ -80,6 +81,24 @@ TOOLS = [
                     "description": "Optional status filter (inbox, assigned, in_progress, review, done, blocked).",
                 }
             },
+        },
+    },
+    {
+        "name": "list_tickets_by_title",
+        "description": "List tickets whose titles approximately match a query string.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title query used for approximate matching.",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Optional status filter (inbox, assigned, in_progress, review, done, blocked).",
+                },
+            },
+            "required": ["title"],
         },
     },
     {
@@ -398,6 +417,29 @@ def _render_ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_query_text(value: str) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def _title_matches_query(title: str, query: str) -> bool:
+    normalized_title = _normalize_query_text(title)
+    normalized_query = _normalize_query_text(query)
+    if not normalized_query:
+        return False
+    if normalized_query in normalized_title:
+        return True
+
+    query_tokens = [token for token in normalized_query.split() if len(token) >= 2]
+    if query_tokens and all(token in normalized_title for token in query_tokens):
+        return True
+
+    if len(normalized_query) < 4:
+        return False
+
+    # Fuzzy fallback for minor typos in title searches.
+    return difflib.SequenceMatcher(None, normalized_query, normalized_title).ratio() >= 0.5
+
+
 def handle_call(
     bp_dir: str,
     client: BullpenClient | None,
@@ -427,6 +469,23 @@ def handle_call(
         tickets = task_store.list_tasks(bp_dir)
         if status_filter:
             tickets = [item for item in tickets if item.get("status") == status_filter]
+        payload = [_render_ticket_summary(ticket) for ticket in tickets]
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name == "list_tickets_by_title":
+        title_query = str(args.get("title", "")).strip()
+        if not title_query:
+            _tool_result(msg_id, "Error: title is required", is_error=True, mode=io_mode)
+            return
+        status_filter = args.get("status")
+        tickets = task_store.list_tasks(bp_dir)
+        if status_filter:
+            tickets = [item for item in tickets if item.get("status") == status_filter]
+        tickets = [
+            item for item in tickets
+            if _title_matches_query(str(item.get("title", "")), title_query)
+        ]
         payload = [_render_ticket_summary(ticket) for ticket in tickets]
         _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
         return
