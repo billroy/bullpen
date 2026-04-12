@@ -19,6 +19,7 @@ This opens a browser at `http://localhost:5000`. The workspace directory is wher
 | `--port` | 5000 | Server port |
 | `--host` | 127.0.0.1 | Bind address (network-exposed binds require auth to be enabled) |
 | `--no-browser` | off | Don't auto-open the browser |
+| `--websocket-debug` / `--no-websocket-debug` | off | Enable/disable Socket.IO and Engine.IO packet/activity logging |
 | `--set-password [USERNAME]` | — | Interactively set/update user passwords (repeatable for multiple users); can be combined with `--delete-user`; exits after applying changes |
 | `--delete-user USERNAME` | — | Remove configured login users (repeatable); can be combined with `--set-password`; exits after applying changes |
 

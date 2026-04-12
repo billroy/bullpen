@@ -38,10 +38,10 @@ def parse_args(argv=None):
     parser.add_argument(
         "--websocket-debug",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help=(
             "Enable Socket.IO / Engine.IO websocket activity logging "
-            "(default: enabled for testing)"
+            "(default: disabled)"
         ),
     )
     parser.add_argument(

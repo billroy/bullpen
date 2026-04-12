@@ -79,7 +79,7 @@ def create_app(
     global_dir=None,
     host="127.0.0.1",
     port=5000,
-    websocket_debug=True,
+    websocket_debug=False,
 ):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
