@@ -10,6 +10,7 @@ import pytest
 
 from server.app import create_app, socketio
 from server.agents import register_adapter
+from server.validation import MAX_TITLE
 from tests.conftest import MockAdapter
 
 
@@ -133,7 +134,7 @@ class TestSecurityValidation:
 
     def test_oversized_title_rejected(self, client):
         c, _ = client
-        c.emit("task:create", {"title": "x" * 300})
+        c.emit("task:create", {"title": "x" * (MAX_TITLE + 1)})
         err = get_event(c, "error")
         assert err is not None
         assert "exceeds" in err["message"]

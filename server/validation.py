@@ -4,7 +4,7 @@ import re
 import sys
 
 # Field constraints
-MAX_TITLE = 200
+MAX_TITLE = 500
 MAX_DESCRIPTION = 50_000
 MAX_TAG_LEN = 50
 MAX_TAGS = 20
