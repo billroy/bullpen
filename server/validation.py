@@ -14,7 +14,7 @@ MAX_PAYLOAD_SIZE = 1_000_000  # 1MB
 
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
-VALID_AGENTS = {"claude", "codex"}
+VALID_AGENTS = {"claude", "codex", "gemini"}
 VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval"}
 VALID_DISPOSITIONS = {"review", "done"}
 VALID_THEMES = {

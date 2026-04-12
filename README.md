@@ -1,6 +1,6 @@
 # Bullpen
 
-An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
+An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex, Gemini) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
 
 ## Quick Start
 
@@ -31,9 +31,9 @@ If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires aut
 - **Kanban board** -- drag-and-drop ticket management with user-configurable columns (add, remove, rename, reorder); drag tickets between columns or onto workers
 - **List view** -- switchable list view for the Tickets tab with sortable columns, full-text search, priority/status/type filters, timestamped Created column, and token-consumption display
 - **Worker grid** -- configurable grid of AI agent slots; drag tickets onto workers to assign them
-- **Agent execution** -- workers invoke Claude or Codex CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (stream-json for Claude)
+- **Agent execution** -- workers invoke Claude, Codex, or Gemini CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (structured stream parsing for Claude/Codex)
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
-- **Live Agent Chat** -- interactive chat tabs for Claude and Codex with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
+- **Live Agent Chat** -- interactive chat tabs for Claude, Codex, and Gemini with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
 - **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, and an in-browser editor with find/replace
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
 - **Commit diff viewer** -- click a commit row to open its full patch in a modal
@@ -80,7 +80,7 @@ server/
   scheduler.py          # Time-based and interval-based worker activation
   workspace_manager.py  # Multi-project registry and workspace state
   mcp_tools.py          # MCP stdio server (JSON-RPC ticket tools)
-  agents/               # Agent adapter layer (Claude, Codex)
+  agents/               # Agent adapter layer (Claude, Codex, Gemini)
 static/
   index.html            # CDN script tags with SRI (Vue 3, Socket.IO, Prism, markdown-it)
   login.html            # Login page (served publicly when auth is enabled)
@@ -101,7 +101,7 @@ tests/                  # 365 tests passing (pytest)
 6. **On completion**, the worker optionally auto-commits, opens a PR, and routes the ticket based on its disposition (Review, Done, or hand off to another worker)
 7. **On failure**, the worker retries with backoff, then moves the ticket to Blocked
 8. **Scheduled workers** can activate on a timer (specific time or interval) to process queued tickets or create their own ephemeral tickets
-9. **Chat directly** with Claude or Codex via the Live Agent Chat tab, with conversations logged to tickets
+9. **Chat directly** with Claude, Codex, or Gemini via the Live Agent Chat tab, with conversations logged to tickets
 10. **Open additional chat tabs** as needed to run parallel conversations with separate session histories
 
 ## Supported Agents
@@ -110,6 +110,7 @@ tests/                  # 365 tests passing (pytest)
 |-------|----------|-------|
 | Claude | `claude` | Real-time streaming via stream-json |
 | Codex | `codex` | GPT-5 family models, stderr streaming |
+| Gemini | `gemini` | Gemini CLI prompt execution with stdout streaming |
 
 The agent must be installed and available on your PATH.
 

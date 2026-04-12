@@ -21,6 +21,13 @@ def test_claude_model_options_do_not_include_removed_haiku_slug():
     assert "'claude-haiku-4-5-20251001'" in text
 
 
+def test_gemini_model_options_present():
+    text = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
+    assert "gemini:" in text
+    assert "'gemini-2.5-pro'" in text
+    assert "'gemini-2.5-flash'" in text
+
+
 def test_model_options_defined_in_shared_constant():
     """Both components must use MODEL_OPTIONS from utils.js, not inline lists."""
     utils = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")

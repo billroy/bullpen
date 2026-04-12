@@ -8,7 +8,9 @@ import pytest
 from server.agents import get_adapter, register_adapter, list_adapters
 from server.agents.claude_adapter import ClaudeAdapter
 from server.agents.codex_adapter import CodexAdapter
+from server.agents.gemini_adapter import GeminiAdapter
 import server.agents.codex_adapter as codex_mod
+import server.agents.gemini_adapter as gemini_mod
 from tests.conftest import MockAdapter
 
 
@@ -237,6 +239,65 @@ class TestCodexAdapter:
         assert result["usage"]["total_tokens"] == 205
 
 
+class TestGeminiAdapter:
+    def test_name(self):
+        adapter = GeminiAdapter()
+        assert adapter.name == "gemini"
+
+    def test_build_argv(self):
+        adapter = GeminiAdapter()
+        argv = adapter.build_argv("test prompt", "gemini-2.5-pro", "/workspace")
+        assert any("gemini" in arg for arg in argv)
+        assert "--model" in argv
+        assert "gemini-2.5-pro" in argv
+        assert "--output-format" in argv
+        assert "json" in argv
+        assert "--approval-mode" in argv
+        assert "yolo" in argv
+        assert "--prompt" in argv
+
+    def test_find_gemini_honors_configured_path(self, monkeypatch):
+        configured = "/opt/bullpen/bin/gemini"
+        monkeypatch.setenv("BULLPEN_GEMINI_PATH", configured)
+        monkeypatch.setattr(gemini_mod, "_is_executable", lambda path: path == configured)
+
+        assert gemini_mod._find_gemini() == configured
+
+    def test_unavailable_message_mentions_configured_bad_path(self, monkeypatch):
+        monkeypatch.setenv("BULLPEN_GEMINI_PATH", "/missing/gemini")
+        msg = GeminiAdapter().unavailable_message()
+        assert "BULLPEN_GEMINI_PATH" in msg
+        assert "/missing/gemini" in msg
+
+    def test_format_stream_line_text_json(self):
+        adapter = GeminiAdapter()
+        line = json.dumps({"type": "message", "text": "hello from gemini"})
+        assert adapter.format_stream_line(line) == "hello from gemini"
+
+    def test_parse_output_json_result_with_usage(self):
+        adapter = GeminiAdapter()
+        stdout = "\n".join([
+            json.dumps({"type": "message", "text": "partial"}),
+            json.dumps({
+                "type": "result",
+                "is_error": False,
+                "result": "done",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 4},
+            }),
+        ])
+        result = adapter.parse_output(stdout, "", 0)
+        assert result["success"] is True
+        assert result["output"] == "done"
+        assert result["usage"]["input_tokens"] == 10
+        assert result["usage"]["output_tokens"] == 4
+
+    def test_parse_output_plain_text_fallback(self):
+        adapter = GeminiAdapter()
+        result = adapter.parse_output("line 1\nline 2\n", "", 0)
+        assert result["success"] is True
+        assert result["output"] == "line 1\nline 2"
+
+
 class TestMockAdapter:
     def test_basic(self):
         adapter = MockAdapter(output="test output")
@@ -262,6 +323,11 @@ class TestRegistry:
         adapter = get_adapter("codex")
         assert adapter is not None
         assert adapter.name == "codex"
+
+    def test_get_gemini(self):
+        adapter = get_adapter("gemini")
+        assert adapter is not None
+        assert adapter.name == "gemini"
 
     def test_get_nonexistent(self):
         assert get_adapter("nonexistent") is None

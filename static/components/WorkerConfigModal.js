@@ -71,6 +71,7 @@ const WorkerConfigModal = {
               <select class="form-select" v-model="form.agent" @change="onAgentChange">
                 <option value="claude">Claude</option>
                 <option value="codex">Codex</option>
+                <option value="gemini">Gemini</option>
               </select>
             </label>
             <label class="form-label">

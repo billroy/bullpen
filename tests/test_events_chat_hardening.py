@@ -24,6 +24,12 @@ def test_harden_live_agent_argv_for_codex_no_change():
     assert hardened == argv
 
 
+def test_harden_live_agent_argv_for_gemini_no_change():
+    argv = ["gemini", "--model", "gemini-2.5-pro"]
+    hardened = _harden_live_agent_argv("gemini", argv)
+    assert hardened == argv
+
+
 def test_claude_mcp_startup_state_on_pending_status():
     line = json.dumps({
         "type": "system",

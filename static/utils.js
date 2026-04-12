@@ -7,10 +7,11 @@ const MODEL_OPTIONS = {
     'claude-haiku-4-5-20251001',
   ],
   codex: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'],
+  gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
 };
 
 function agentColor(agent) {
-  return { claude: '#da7756', codex: '#5b6fd6' }[agent] || '#6B7280';
+  return { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4' }[agent] || '#6B7280';
 }
 
 function isHumanWorker(worker) {

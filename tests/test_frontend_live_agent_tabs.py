@@ -33,3 +33,8 @@ def test_live_agent_component_uses_injected_session_id():
     assert "activeSessionId: this.sessionId || _generateChatSessionId()" in text
     assert "data.sessionId !== this.activeSessionId" in text
     assert "sessionId: this.activeSessionId" in text
+
+
+def test_live_agent_provider_options_include_gemini():
+    text = _read("static/components/LiveAgentChatTab.js")
+    assert "['claude', 'codex', 'gemini']" in text

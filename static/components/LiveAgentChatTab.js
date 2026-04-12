@@ -18,7 +18,7 @@ const LiveAgentChatTab = {
   },
   computed: {
     providerOptions() {
-      return ['claude', 'codex'];
+      return ['claude', 'codex', 'gemini'];
     },
     modelOptions() {
       return MODEL_OPTIONS[this.provider] || [];
