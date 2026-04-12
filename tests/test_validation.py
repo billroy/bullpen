@@ -162,8 +162,8 @@ class TestPayloadSize:
 
 class TestConfigUpdate:
     def test_valid_keys_accepted(self):
-        result = validate_config_update({"name": "test", "auto_commit": True, "workspaceId": "ws1"})
-        assert result == {"name": "test", "auto_commit": True}
+        result = validate_config_update({"name": "test", "auto_commit": True, "theme": "nord", "workspaceId": "ws1"})
+        assert result == {"name": "test", "auto_commit": True, "theme": "nord"}
         assert "workspaceId" not in result
 
     def test_unknown_key_rejected(self):
@@ -173,6 +173,10 @@ class TestConfigUpdate:
     def test_grid_key_accepted(self):
         result = validate_config_update({"grid": {"rows": 3, "cols": 6}})
         assert "grid" in result
+
+    def test_invalid_theme_rejected(self):
+        with pytest.raises(ValidationError, match="Invalid theme"):
+            validate_config_update({"theme": "mystery"})
 
 
 class TestWorkerMove:

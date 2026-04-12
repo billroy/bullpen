@@ -371,10 +371,11 @@ class TestChatEvents:
 class TestConfigEvents:
     def test_config_update(self, client):
         c, app = client
-        c.emit("config:update", {"name": "My Team"})
+        c.emit("config:update", {"name": "My Team", "theme": "nord"})
         config = get_event(c, "config:updated")
         assert config is not None
         assert config["name"] == "My Team"
+        assert config["theme"] == "nord"
 
     def test_prompt_update(self, client):
         c, app = client

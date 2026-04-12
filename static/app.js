@@ -18,6 +18,24 @@ const app = createApp({
     ToastContainer,
   },
   setup() {
+    const THEME_CATALOG = [
+      { id: 'dark', label: 'Dark', mode: 'dark' },
+      { id: 'light', label: 'Light', mode: 'light' },
+      { id: 'dracula', label: 'Dracula', mode: 'dark' },
+      { id: 'nord', label: 'Nord', mode: 'dark' },
+      { id: 'gruvbox', label: 'Gruvbox Dark', mode: 'dark' },
+      { id: 'tokyo-night', label: 'Tokyo Night', mode: 'dark' },
+      { id: 'catppuccin', label: 'Catppuccin Mocha', mode: 'dark' },
+      { id: 'github-dark', label: 'GitHub Dark', mode: 'dark' },
+      { id: 'monokai', label: 'Monokai', mode: 'dark' },
+      { id: 'one-dark', label: 'One Dark', mode: 'dark' },
+      { id: 'everforest', label: 'Everforest Dark', mode: 'dark' },
+      { id: 'ayu-dark', label: 'Ayu Dark', mode: 'dark' },
+      { id: 'material-ocean', label: 'Material Ocean', mode: 'dark' },
+      { id: 'night-owl', label: 'Night Owl', mode: 'dark' },
+    ];
+    const THEME_IDS = new Set(THEME_CATALOG.map(t => t.id));
+
     // Per-workspace backing store (not directly rendered)
     const workspaces = reactive({});  // workspaceId -> { workspace, config, layout, tasks, profiles, teams, filesVersion, unseenActivity }
 
@@ -69,11 +87,32 @@ const app = createApp({
       return wsId === activeWorkspaceId.value;
     }
 
+    const PRISM_DARK = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css';
+    const PRISM_LIGHT = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css';
+    function _normalizeTheme(themeId) {
+      if (typeof themeId !== 'string') return 'dark';
+      return THEME_IDS.has(themeId) ? themeId : 'dark';
+    }
+    function _themeMode(themeId) {
+      return THEME_CATALOG.find(t => t.id === themeId)?.mode || 'dark';
+    }
+    function _applyTheme(themeId) {
+      const next = _normalizeTheme(themeId);
+      document.documentElement.setAttribute('data-theme', next);
+      const prismLink = document.getElementById('prism-theme');
+      if (prismLink) prismLink.href = _themeMode(next) === 'light' ? PRISM_LIGHT : PRISM_DARK;
+    }
+    function _applyWorkspaceTheme(wsId) {
+      const ws = workspaces[wsId];
+      _applyTheme(ws?.config?.theme || 'dark');
+    }
+
     function switchWorkspace(wsId) {
       if (!workspaces[wsId]) return;
       activeWorkspaceId.value = wsId;
       workspaces[wsId].unseenActivity = 0;
       _syncToView(wsId);
+      _applyWorkspaceTheme(wsId);
       document.title = state.config.name || 'Bullpen';
     }
 
@@ -164,7 +203,7 @@ const app = createApp({
       const wsId = data.workspaceId;
       const ws = _getWs(wsId);
       ws.workspace = data.workspace;
-      ws.config = data.config;
+      ws.config = { ...data.config, theme: _normalizeTheme(data.config?.theme || 'dark') };
       ws.layout = data.layout;
       ws.tasks = data.tasks;
       ws.profiles = data.profiles || [];
@@ -177,6 +216,7 @@ const app = createApp({
 
       if (_isActive(wsId)) {
         _syncToView(wsId);
+        _applyWorkspaceTheme(wsId);
         document.title = state.config.name || 'Bullpen';
       }
     });
@@ -220,8 +260,11 @@ const app = createApp({
     socket.on('config:updated', (config) => {
       const wsId = config.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
-      ws.config = config;
-      if (_isActive(wsId)) state.config = config;
+      ws.config = { ...config, theme: _normalizeTheme(config?.theme || 'dark') };
+      if (_isActive(wsId)) {
+        state.config = ws.config;
+        _applyWorkspaceTheme(wsId);
+      }
     });
     socket.on('profiles:updated', (profiles) => {
       // profiles is an array, workspaceId may be on any element or absent
@@ -426,20 +469,18 @@ const app = createApp({
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
 
     // Theme
-    const PRISM_DARK = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css';
-    const PRISM_LIGHT = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css';
-    (function initTheme() {
-      const saved = localStorage.getItem('bullpen-theme');
-      if (saved) document.documentElement.setAttribute('data-theme', saved);
-    })();
-    function toggleTheme() {
-      const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-      const next = isLight ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('bullpen-theme', next);
-      const prismLink = document.getElementById('prism-theme');
-      if (prismLink) prismLink.href = next === 'light' ? PRISM_LIGHT : PRISM_DARK;
+    function setTheme(themeId) {
+      const next = _normalizeTheme(themeId);
+      _applyTheme(next);
+      if (activeWorkspaceId.value) {
+        const ws = _getWs(activeWorkspaceId.value);
+        ws.config = { ...(ws.config || {}), theme: next };
+        if (_isActive(activeWorkspaceId.value)) state.config = ws.config;
+        updateConfig({ theme: next });
+      }
     }
+    const themeOptions = computed(() => THEME_CATALOG.map(t => ({ id: t.id, label: t.label })));
+    const currentTheme = computed(() => _normalizeTheme(state.config?.theme || 'dark'));
 
     function addToast(message, type = 'info') {
       const id = ++toastId;
@@ -496,7 +537,7 @@ const app = createApp({
       addProject, removeProject,
       connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
-      toggleLeftPane, toggleTheme, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
+      toggleLeftPane, setTheme, themeOptions, currentTheme, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
@@ -511,8 +552,10 @@ const app = createApp({
       <TopToolbar
         :name="state.config.name"
         :connected="connected"
+        :themes="themeOptions"
+        :active-theme="currentTheme"
         @toggle-left-pane="toggleLeftPane"
-        @toggle-theme="toggleTheme"
+        @set-theme="setTheme"
       />
       <div class="app-body">
         <LeftPane

@@ -8,6 +8,7 @@ from server.persistence import write_json, atomic_write
 
 DEFAULT_CONFIG = {
     "name": "Bullpen",
+    "theme": "dark",
     "grid": {"rows": 4, "cols": 6},
     "columns": [
         {"key": "inbox", "label": "Inbox", "color": "#6B7280"},

@@ -17,6 +17,11 @@ VALID_TYPES = {"task", "bug", "feature", "chore"}
 VALID_AGENTS = {"claude", "codex"}
 VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval"}
 VALID_DISPOSITIONS = {"review", "done"}
+VALID_THEMES = {
+    "dark", "light", "dracula", "nord", "gruvbox", "tokyo-night", "catppuccin",
+    "github-dark", "monokai", "one-dark", "everforest", "ayu-dark",
+    "material-ocean", "night-owl",
+}
 
 ID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')
 SLUG_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')
@@ -216,7 +221,7 @@ def validate_grid(data):
 # Allowed keys for config:update
 VALID_CONFIG_KEYS = {
     "name", "grid", "columns", "agent_timeout_seconds",
-    "max_prompt_chars", "auto_commit", "auto_pr",
+    "max_prompt_chars", "auto_commit", "auto_pr", "theme",
 }
 
 
@@ -229,6 +234,9 @@ def validate_config_update(data):
             continue
         if k not in VALID_CONFIG_KEYS:
             raise ValidationError(f"Unknown config key: '{k}'")
+        if k == "theme":
+            sanitized[k] = _enum(v, VALID_THEMES, "theme")
+            continue
         sanitized[k] = v
     return sanitized
 

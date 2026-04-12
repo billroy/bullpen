@@ -603,6 +603,8 @@ def reconcile(bp_dir):
 def load_state(bp_dir, workspace):
     """Load full app state from .bullpen/ files."""
     config = read_json(os.path.join(bp_dir, "config.json"))
+    if not isinstance(config.get("theme"), str):
+        config["theme"] = "dark"
     layout = read_json(os.path.join(bp_dir, "layout.json"))
 
     # Load all tasks

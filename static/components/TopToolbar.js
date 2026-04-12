@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['name', 'connected'],
+  props: ['name', 'connected', 'themes', 'activeTheme'],
   template: `
     <div class="top-toolbar">
       <div class="toolbar-left">
@@ -9,16 +9,11 @@ const TopToolbar = {
       <div class="toolbar-center">
       </div>
       <div class="toolbar-right">
-        <button class="btn btn-icon theme-toggle" @click="$emit('toggle-theme')" :title="isDark ? 'Switch to light theme' : 'Switch to dark theme'">
-          {{ isDark ? '\u2600' : '\u263E' }}
-        </button>
+        <select class="form-select theme-select" :value="activeTheme" @change="$emit('set-theme', $event.target.value)" title="Theme">
+          <option v-for="t in themes || []" :key="t.id" :value="t.id">{{ t.label }}</option>
+        </select>
         <span class="connection-dot" :class="{ connected }"></span>
       </div>
     </div>
-  `,
-  computed: {
-    isDark() {
-      return document.documentElement.getAttribute('data-theme') !== 'light';
-    }
-  }
+  `
 };
