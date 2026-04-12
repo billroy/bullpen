@@ -22,8 +22,8 @@ def parse_args(argv=None):
     parser.add_argument(
         "--port",
         type=int,
-        default=5000,
-        help="Port to serve on (default: 5000)",
+        default=int(os.environ.get("PORT", 5000)),
+        help="Port to serve on (default: $PORT or 5000)",
     )
     parser.add_argument(
         "--host",

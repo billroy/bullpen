@@ -32,7 +32,7 @@ from server.workspace_manager import WorkspaceManager
 socketio = SocketIO()
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
-_TRUSTED_TUNNEL_SUFFIXES = (".ngrok-free.app", ".ngrok.app", ".ngrok.io")
+_TRUSTED_TUNNEL_SUFFIXES = (".ngrok-free.app", ".ngrok.app", ".ngrok.io", ".sprites.app")
 
 
 def _origin_host(origin):
@@ -112,13 +112,15 @@ def create_app(
     auth.reset_auth_cache()
     auth.load_credentials(manager.global_dir)
     app.config["SECRET_KEY"] = auth.load_or_create_secret_key(manager.global_dir)
+    production = os.environ.get("BULLPEN_PRODUCTION") == "1"
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        # Left False so non-HTTPS localhost access still works; production
-        # deployments should terminate TLS at a reverse proxy. See docs/login.md.
-        SESSION_COOKIE_SECURE=False,
+        SESSION_COOKIE_SECURE=production,
     )
+    if production:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
     if auth.auth_enabled():
         users = auth.get_users()
         user_count = len(users)
