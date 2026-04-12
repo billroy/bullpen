@@ -178,6 +178,13 @@ class TestConfigUpdate:
         with pytest.raises(ValidationError, match="Invalid theme"):
             validate_config_update({"theme": "mystery"})
 
+    @pytest.mark.parametrize("theme", [
+        "shades-of-purple", "solarized", "panda", "cobalt-2", "one-dark-pro",
+    ])
+    def test_new_themes_accepted(self, theme):
+        result = validate_config_update({"theme": theme})
+        assert result == {"theme": theme}
+
 
 class TestWorkerMove:
     def test_valid_move(self):

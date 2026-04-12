@@ -20,7 +20,8 @@ VALID_DISPOSITIONS = {"review", "done"}
 VALID_THEMES = {
     "dark", "light", "dracula", "nord", "gruvbox", "tokyo-night", "catppuccin",
     "github-dark", "monokai", "one-dark", "everforest", "ayu-dark",
-    "material-ocean", "night-owl",
+    "material-ocean", "night-owl", "shades-of-purple", "solarized", "panda",
+    "cobalt-2", "one-dark-pro",
 }
 
 ID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')

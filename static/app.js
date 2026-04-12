@@ -29,10 +29,15 @@ const app = createApp({
       { id: 'github-dark', label: 'GitHub Dark', mode: 'dark' },
       { id: 'monokai', label: 'Monokai', mode: 'dark' },
       { id: 'one-dark', label: 'One Dark', mode: 'dark' },
+      { id: 'one-dark-pro', label: 'One Dark Pro', mode: 'dark' },
       { id: 'everforest', label: 'Everforest Dark', mode: 'dark' },
       { id: 'ayu-dark', label: 'Ayu Dark', mode: 'dark' },
       { id: 'material-ocean', label: 'Material Ocean', mode: 'dark' },
       { id: 'night-owl', label: 'Night Owl', mode: 'dark' },
+      { id: 'shades-of-purple', label: 'Shades of Purple', mode: 'dark' },
+      { id: 'solarized', label: 'Solarized Dark', mode: 'dark' },
+      { id: 'panda', label: 'Panda Theme', mode: 'dark' },
+      { id: 'cobalt-2', label: 'Cobalt 2', mode: 'dark' },
     ];
     const THEME_IDS = new Set(THEME_CATALOG.map(t => t.id));
 
