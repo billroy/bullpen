@@ -34,6 +34,14 @@ def test_ticket_detail_header_renders_ticket_icon():
     assert "renderLucideIcons(this.$el);" in text
 
 
+def test_leftpane_ticket_title_renders_ticket_icon():
+    text = _read("static/components/LeftPane.js")
+    assert "class=\"inbox-title-wrap\"" in text
+    assert "class=\"ticket-type-icon ticket-type-icon--inbox\"" in text
+    assert "data-lucide=\"tag\"" in text
+    assert "class=\"inbox-title\"" in text
+
+
 def test_lucide_render_helper_tolerates_vue_comment_roots():
     text = _read("static/utils.js")
     assert "const root = rootEl?.querySelectorAll ? rootEl : document;" in text
@@ -45,7 +53,9 @@ def test_ticket_icon_styles_exist():
     assert ".ticket-type-icon" in text
     assert ".ticket-type-icon--card" in text
     assert ".ticket-type-icon--list" in text
+    assert ".ticket-type-icon--inbox" in text
     assert ".ticket-type-icon--detail" in text
+    assert ".inbox-title-wrap" in text
     assert ".task-card-title-text" in text
     assert ".ticket-list-title-wrap" in text
     assert ".ticket-list-title-text" in text

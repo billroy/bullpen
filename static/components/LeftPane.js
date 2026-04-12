@@ -44,7 +44,10 @@ const LeftPane = {
                draggable="true"
                @dragstart="onDragStart($event, task.id)"
                @click="$emit('select-task', task.id)">
-            <span class="inbox-title">{{ task.title }}</span>
+            <span class="inbox-title-wrap">
+              <i class="ticket-type-icon ticket-type-icon--inbox" data-lucide="tag" aria-hidden="true"></i>
+              <span class="inbox-title">{{ task.title }}</span>
+            </span>
             <span class="badge" :class="'priority-' + (task.priority || 'normal')">{{ task.priority || 'normal' }}</span>
           </div>
         </div>
