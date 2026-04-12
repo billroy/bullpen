@@ -21,6 +21,7 @@ from server.usage import (
     extract_stream_usage_event,
     merge_usage_dicts,
 )
+from server.model_aliases import normalize_model
 from server import workers as worker_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
@@ -408,6 +409,8 @@ def register_events(socketio, app):
         for k, v in fields.items():
             if k not in ("task_queue", "state"):
                 worker[k] = v
+        if "model" in fields:
+            worker["model"] = normalize_model(worker.get("agent", "claude"), worker.get("model"))
 
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
@@ -809,6 +812,7 @@ def register_events(socketio, app):
         session_id = data.get("sessionId", "")
         provider = data.get("provider", "claude")
         model = data.get("model", "claude-sonnet-4-6")
+        model = normalize_model(provider, model)
         message = (data.get("message") or "").strip()
         ws_id, bp_dir = _resolve(data)
 

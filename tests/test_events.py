@@ -316,6 +316,17 @@ class TestWorkerEvents:
         layout = get_event(c, "layout:updated")
         assert layout["slots"][0]["disposition"] == "worker:Code Reviewer"
 
+    def test_configure_worker_normalizes_legacy_claude_haiku_model(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:configure", {"slot": 0, "fields": {
+            "model": "claude-haiku-4-6",
+        }})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0]["model"] == "claude-haiku-4-5-20250414"
+
 
 class TestChatEvents:
     def test_chat_logs_structured_usage_and_tokens(self, client):

@@ -13,6 +13,7 @@ from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
 from server.usage import build_usage_entry, build_usage_update
 from server import tasks as task_mod
+from server.model_aliases import normalize_model
 
 MAX_HANDOFF_DEPTH = 10
 
@@ -220,6 +221,9 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         )
         return
 
+    model = normalize_model(worker.get("agent", "claude"), worker.get("model", "claude-sonnet-4-6"))
+    worker["model"] = model
+
     # Update state
     worker["state"] = "working"
     worker["started_at"] = _now_iso()
@@ -244,7 +248,6 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
             _on_agent_error(bp_dir, slot_index, task_id, f"Worktree setup failed: {e}", socketio, ws_id=ws_id)
             return
 
-    model = worker.get("model", "claude-sonnet-4-6")
     argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
 
     # Launch subprocess in background thread

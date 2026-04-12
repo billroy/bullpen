@@ -22,7 +22,7 @@ from server.workers import (
     _refill_from_watch_column,
     _setup_worktree,
 )
-from server.agents import register_adapter
+from server.agents import get_adapter, register_adapter
 from tests.conftest import MockAdapter
 
 
@@ -58,6 +58,16 @@ class UsageAdapter(MockAdapter):
                 "reasoning_output_tokens": 10,
             },
         }
+
+
+class ModelExpectingAdapter(MockAdapter):
+    @property
+    def name(self):
+        return "claude"
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        assert model == "claude-haiku-4-5-20250414"
+        return super().build_argv(prompt, model, workspace, bp_dir=bp_dir)
 
 
 @pytest.fixture
@@ -190,6 +200,26 @@ class TestStartWorker:
         assert updated["assigned_to"] == ""
         assert "Unavailable test agent" in updated["body"]
         assert task["id"] not in layout["slots"][worker_slot]["task_queue"]
+
+    def test_start_normalizes_legacy_claude_haiku_model(self, bp_dir, worker_slot):
+        previous = get_adapter("claude")
+        register_adapter("claude", ModelExpectingAdapter(output="normalized"))
+        try:
+            layout = _load_layout(bp_dir)
+            layout["slots"][worker_slot]["agent"] = "claude"
+            layout["slots"][worker_slot]["model"] = "claude-haiku-4-6"
+            write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+            task = create_task(bp_dir, "Normalize model before run")
+            assign_task(bp_dir, worker_slot, task["id"])
+
+            start_worker(bp_dir, worker_slot)
+            time.sleep(0.5)
+
+            updated_layout = _load_layout(bp_dir)
+            assert updated_layout["slots"][worker_slot]["model"] == "claude-haiku-4-5-20250414"
+        finally:
+            register_adapter("claude", previous)
 
     def test_worker_success_appends_structured_usage_and_keeps_tokens_compatible(self, bp_dir, worker_slot):
         register_adapter("usage-mock", UsageAdapter(output="Usage output"))
