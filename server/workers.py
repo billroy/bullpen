@@ -520,7 +520,13 @@ def is_non_retryable_provider_error(provider, *texts):
         return False
 
     if provider == "gemini":
-        return "you have exhausted your capacity on this model" in haystack
+        phrases = (
+            "you have exhausted your capacity on this model",
+            "resource has been exhausted",
+            "quota exceeded",
+            "exceeded your current quota",
+        )
+        return any(phrase in haystack for phrase in phrases)
 
     return False
 

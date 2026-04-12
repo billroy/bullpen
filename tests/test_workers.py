@@ -21,6 +21,7 @@ from server.workers import (
     _load_layout,
     _refill_from_watch_column,
     _setup_worktree,
+    is_non_retryable_provider_error,
 )
 from server.agents import get_adapter, register_adapter
 from tests.conftest import MockAdapter
@@ -68,6 +69,19 @@ class ModelExpectingAdapter(MockAdapter):
     def build_argv(self, prompt, model, workspace, bp_dir=None):
         assert model == "claude-haiku-4-5-20251001"
         return super().build_argv(prompt, model, workspace, bp_dir=bp_dir)
+
+
+class GeminiCapacityExceededAdapter(MockAdapter):
+    @property
+    def name(self):
+        return "gemini"
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {
+            "success": False,
+            "output": stdout.strip(),
+            "error": "You have exhausted your capacity on this model.",
+        }
 
 
 @pytest.fixture
@@ -128,6 +142,12 @@ class TestAssignTask:
 
 
 class TestStartWorker:
+    def test_non_retryable_gemini_capacity_error_is_classified(self):
+        assert is_non_retryable_provider_error("gemini", "You have exhausted your capacity on this model.")
+        assert is_non_retryable_provider_error("gemini", "Error: RESOURCE HAS BEEN EXHAUSTED for this request.")
+        assert not is_non_retryable_provider_error("gemini", "Temporary upstream timeout")
+        assert not is_non_retryable_provider_error("claude", "You have exhausted your capacity on this model.")
+
     def test_start_transitions_to_working(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Test task")
         assign_task(bp_dir, worker_slot, task["id"])
@@ -257,6 +277,26 @@ class TestStartWorker:
         assert breakdown["output_tokens"] == 40
         assert breakdown["reasoning_output_tokens"] == 10
         assert breakdown["tokens"] == 140
+
+    def test_non_retryable_capacity_error_blocks_without_retry(self, bp_dir, worker_slot):
+        register_adapter("gemini", GeminiCapacityExceededAdapter(output="capacity fail"))
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "gemini"
+        layout["slots"][worker_slot]["model"] = "gemini-2.5-pro"
+        layout["slots"][worker_slot]["max_retries"] = 5
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Capacity exhausted")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+        history = updated.get("history", [])
+        assert sum(1 for h in history if h.get("event") == "retry") == 0
+        assert "exhausted your capacity on this model" in (updated.get("body") or "").lower()
 
 
 class TestStopWorker:
