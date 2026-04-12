@@ -41,6 +41,10 @@ const WorkerCard = {
           </span>
           <span class="worker-card-agent">{{ worker.agent }}/{{ worker.model }}</span>
         </div>
+        <div v-if="isWorking" class="worker-card-readouts">
+          <span class="worker-card-readout" title="Working time on current task">{{ elapsed }} elapsed</span>
+          <span v-if="currentTaskTokens !== null" class="worker-card-readout" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
+        </div>
         <div class="worker-card-queue" v-if="queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
                @click.stop="$emit('select-task', t.id)">
@@ -56,10 +60,12 @@ const WorkerCard = {
     </div>
   `,
   data() {
-    return { dragOver: false, showMenu: false, menuPos: { top: 0, left: 0 } };
+    return { dragOver: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null };
   },
   mounted() {
     renderLucideIcons(this.$el);
+    this._timer = setInterval(() => this.updateElapsed(), 1000);
+    this.updateElapsed();
     this._closeMenu = (e) => {
       if (this.showMenu && !this.$el.contains(e.target)) {
         this.showMenu = false;
@@ -71,6 +77,7 @@ const WorkerCard = {
     renderLucideIcons(this.$el);
   },
   beforeUnmount() {
+    if (this._timer) clearInterval(this._timer);
     document.removeEventListener('click', this._closeMenu);
   },
   computed: {
@@ -107,6 +114,17 @@ const WorkerCard = {
         const t = this.tasks.find(task => task.id === id);
         return t || { id, title: id };
       });
+    },
+    currentTask() {
+      if (!this.worker.task_queue?.length || !this.tasks) return null;
+      const currentTaskId = this.worker.task_queue[0];
+      return this.tasks.find(t => t.id === currentTaskId) || null;
+    },
+    currentTaskTokens() {
+      if (!this.currentTask) return null;
+      const n = Number(this.currentTask.tokens);
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return Math.floor(n);
     },
     menuStyle() {
       return { top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
@@ -219,6 +237,32 @@ const WorkerCard = {
     menuDelete() {
       this.showMenu = false;
       this.$root.removeWorker(this.slotIndex);
+    },
+    updateElapsed() {
+      if (!this.isWorking || !this.worker?.started_at) {
+        this.elapsed = '0s';
+        return;
+      }
+      const start = new Date(this.worker.started_at).getTime();
+      const now = Date.now();
+      const secs = Math.floor((now - start) / 1000);
+      if (secs < 0 || Number.isNaN(secs)) {
+        this.elapsed = '0s';
+        return;
+      }
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      if (h > 0) {
+        this.elapsed = `${h}h ${m}m ${s}s`;
+        return;
+      }
+      this.elapsed = m > 0 ? `${m}m ${s}s` : `${s}s`;
+    },
+    formatTokens(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M tok';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'k tok';
+      return String(n) + ' tok';
     }
   }
 };
