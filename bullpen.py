@@ -36,6 +36,15 @@ def parse_args(argv=None):
         help="Don't open a browser on startup",
     )
     parser.add_argument(
+        "--websocket-debug",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Enable Socket.IO / Engine.IO websocket activity logging "
+            "(default: enabled for testing)"
+        ),
+    )
+    parser.add_argument(
         "--set-password",
         nargs="?",
         action="append",
@@ -171,7 +180,13 @@ def main():
 
     from server.app import create_app, socketio
 
-    app = create_app(workspace, no_browser=args.no_browser, host=args.host, port=args.port)
+    app = create_app(
+        workspace,
+        no_browser=args.no_browser,
+        host=args.host,
+        port=args.port,
+        websocket_debug=args.websocket_debug,
+    )
 
     if not args.no_browser:
         import webbrowser

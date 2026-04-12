@@ -44,3 +44,23 @@ def test_socketio_cors_is_not_wildcard_by_default():
     with tempfile.TemporaryDirectory(prefix="bullpen_cors_") as ws:
         create_app(ws, no_browser=True)
         assert socketio.server.eio.cors_allowed_origins is _socketio_origin_allowed
+
+
+def test_create_app_passes_websocket_debug_to_socketio_init(monkeypatch):
+    calls = []
+    original_init = socketio.init_app
+
+    def capture_init(*args, **kwargs):
+        calls.append(kwargs)
+        return original_init(*args, **kwargs)
+
+    monkeypatch.setattr(socketio, "init_app", capture_init)
+
+    with tempfile.TemporaryDirectory(prefix="bullpen_cors_") as ws:
+        create_app(ws, no_browser=True, websocket_debug=False)
+        create_app(ws, no_browser=True, websocket_debug=True)
+
+    assert calls[0]["logger"] is False
+    assert calls[0]["engineio_logger"] is False
+    assert calls[1]["logger"] is True
+    assert calls[1]["engineio_logger"] is True

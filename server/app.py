@@ -73,7 +73,14 @@ def _socketio_origin_allowed(origin, environ=None):
     return any(origin_host.endswith(suffix) for suffix in _TRUSTED_TUNNEL_SUFFIXES)
 
 
-def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", port=5000):
+def create_app(
+    workspace,
+    no_browser=False,
+    global_dir=None,
+    host="127.0.0.1",
+    port=5000,
+    websocket_debug=True,
+):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
 
@@ -135,7 +142,13 @@ def create_app(workspace, no_browser=False, global_dir=None, host="127.0.0.1", p
     app.config["bp_dir"] = bp_dir
     app.config["no_browser"] = no_browser
 
-    socketio.init_app(app, cors_allowed_origins=_socketio_origin_allowed, async_mode="threading")
+    socketio.init_app(
+        app,
+        cors_allowed_origins=_socketio_origin_allowed,
+        async_mode="threading",
+        logger=websocket_debug,
+        engineio_logger=websocket_debug,
+    )
 
     # Store server address and a per-run MCP token so the stdio MCP server
     # (which has no session cookie) can authenticate via Socket.IO ``auth``.

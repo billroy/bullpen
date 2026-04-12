@@ -51,6 +51,16 @@ def test_parse_args_accepts_multiple_set_password_and_delete_user():
     assert args.delete_user == ["legacy"]
 
 
+def test_parse_args_websocket_debug_defaults_true():
+    args = bullpen.parse_args([])
+    assert args.websocket_debug is True
+
+
+def test_parse_args_supports_no_websocket_debug():
+    args = bullpen.parse_args(["--no-websocket-debug"])
+    assert args.websocket_debug is False
+
+
 def test_set_password_cli_add_and_delete_users(tmp_path, monkeypatch):
     monkeypatch.setattr("server.workspace_manager.GLOBAL_DIR", str(tmp_path))
     existing = auth.apply_credentials_mapping(
