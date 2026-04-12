@@ -79,6 +79,13 @@ class Scheduler:
                 elif activation == "on_interval":
                     interval_min = worker.get("trigger_interval_minutes")
                     last_trigger = worker.get("last_trigger_time") or 0
+                    if not last_trigger:
+                        # First tick after config or restart — seed the
+                        # timestamp so the worker waits a full interval
+                        # before its first fire instead of firing immediately.
+                        worker["last_trigger_time"] = current_ts
+                        dirty = True
+                        continue
                     if interval_min and (current_ts - last_trigger) >= interval_min * 60:
                         worker["last_trigger_time"] = current_ts
                         dirty = True

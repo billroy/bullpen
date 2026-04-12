@@ -119,7 +119,7 @@ class TestSchedulerTick:
             bp_dir,
             activation="on_interval",
             trigger_interval_minutes=1,
-            last_trigger_time=0,
+            last_trigger_time=time.time() - 120,  # 2 min ago, exceeds 1-min interval
         )
 
         scheduler = Scheduler(bp_dir, None, interval=60)
@@ -132,6 +132,29 @@ class TestSchedulerTick:
         assert len(auto_tasks) == 1
 
         # last_trigger_time should be updated
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        assert layout["slots"][0]["last_trigger_time"] > 0
+
+    def test_interval_cold_start_seeds_timestamp_without_firing(self, bp_dir):
+        """on_interval worker with no last_trigger_time seeds the timestamp
+        on first tick instead of firing immediately (prevents burst on restart)."""
+        _make_worker(
+            bp_dir,
+            activation="on_interval",
+            trigger_interval_minutes=1,
+            last_trigger_time=0,
+        )
+
+        scheduler = Scheduler(bp_dir, None, interval=60)
+        scheduler._tick()
+        time.sleep(0.5)
+
+        # No auto task should be created on cold start
+        tasks = list_tasks(bp_dir)
+        auto_tasks = [t for t in tasks if t["title"].startswith("[Auto]")]
+        assert len(auto_tasks) == 0
+
+        # But last_trigger_time should now be seeded
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         assert layout["slots"][0]["last_trigger_time"] > 0
 
