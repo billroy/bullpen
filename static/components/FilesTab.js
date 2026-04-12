@@ -259,6 +259,12 @@ const FilesTab = {
     },
     async openFile(node) {
       if (node.type !== 'file') return;
+      // Open HTML files in a new browser tab
+      const ext = this.getExt(node.name);
+      if (ext === '.html' || ext === '.htm') {
+        window.open(this._filesUrl(node.path) + (this._filesUrl(node.path).includes('?') ? '&' : '?') + 'raw=1', '_blank');
+        return;
+      }
       const existing = this.openFiles.find(f => f.path === node.path);
       if (existing) {
         this.activeFile = existing;
@@ -267,7 +273,6 @@ const FilesTab = {
         return;
       }
       // Images/PDFs don't need content fetch
-      const ext = this.getExt(node.name);
       if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.pdf'].includes(ext)) {
         const file = { path: node.path, name: node.name, content: null };
         this.openFiles.push(file);

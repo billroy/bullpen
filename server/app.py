@@ -364,6 +364,12 @@ def create_app(
         # Determine if binary
         import mimetypes
         mime, _ = mimetypes.guess_type(full_path)
+
+        # Serve the raw file directly (e.g. open HTML in browser)
+        if request.args.get("raw"):
+            from flask import send_file
+            return send_file(full_path, mimetype=mime or "text/plain")
+
         if mime and mime.startswith("image/"):
             from flask import send_file
             return send_file(full_path, mimetype=mime)
