@@ -1417,11 +1417,26 @@ body {
 }
 
 .worker-queue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   font-size: 10px;
   color: var(--text-secondary);
   padding: 2px 4px;
   background: var(--bg-primary);
   border-radius: 3px;
+  min-width: 0;
+}
+
+.ticket-type-icon--worker-queue {
+  width: 10px;
+  height: 10px;
+  margin-top: 1px;
+  color: var(--text-muted);
+}
+
+.worker-queue-title {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

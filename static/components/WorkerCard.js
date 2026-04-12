@@ -44,7 +44,8 @@ const WorkerCard = {
         <div class="worker-card-queue" v-if="queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
                @click.stop="$emit('select-task', t.id)">
-            {{ t.title }}
+            <i class="ticket-type-icon ticket-type-icon--worker-queue" data-lucide="tag" aria-hidden="true"></i>
+            <span class="worker-queue-title">{{ t.title }}</span>
           </div>
         </div>
         <div v-else class="worker-card-empty">No tasks queued</div>
