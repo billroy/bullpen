@@ -50,3 +50,11 @@ def test_ticket_icon_styles_exist():
     assert ".ticket-list-title-wrap" in text
     assert ".ticket-list-title-text" in text
     assert ".detail-title-wrap" in text
+
+
+def test_kanban_ticket_card_title_supports_three_line_clamp():
+    text = _read("static/style.css")
+    assert ".task-card-title-text" in text
+    assert "white-space: normal;" in text
+    assert "-webkit-line-clamp: 3;" in text
+    assert "-webkit-box-orient: vertical;" in text
