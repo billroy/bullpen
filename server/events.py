@@ -248,6 +248,15 @@ def register_events(socketio, app):
         task = task_mod.clear_task_output(bp_dir, task_id)
         _emit("task:updated", task, ws_id)
 
+    @socketio.on("task:list")
+    @with_lock
+    def on_task_list(data):
+        ws_id, bp_dir = _resolve(data or {})
+        scope = (data or {}).get("scope", "live")
+        archived = str(scope).strip().lower() == "archived"
+        tasks = task_mod.list_tasks(bp_dir, archived=archived)
+        _emit("task:list", {"scope": "archived" if archived else "live", "tasks": tasks}, ws_id)
+
     # --- Worker / Layout events ---
 
     @socketio.on("worker:add")

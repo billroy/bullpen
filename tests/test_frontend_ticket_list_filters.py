@@ -13,6 +13,9 @@ def _read(rel_path: str) -> str:
 def test_ticket_list_renders_search_and_filter_controls():
     text = _read("static/components/KanbanTab.js")
     assert "class=\"ticket-list-filters\"" in text
+    assert ":value=\"listScope || 'live'\"" in text
+    assert "@emit('update-list-scope'" not in text
+    assert "@change=\"$emit('update-list-scope', $event.target.value)\"" in text
     assert "v-model.trim=\"searchText\"" in text
     assert "v-model=\"priorityFilter\"" in text
     assert "v-model=\"statusFilter\"" in text

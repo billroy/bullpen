@@ -107,6 +107,10 @@ def _tasks_dir(bp_dir):
     return os.path.join(bp_dir, "tasks")
 
 
+def _archive_dir(bp_dir):
+    return os.path.join(_tasks_dir(bp_dir), "archive")
+
+
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -240,19 +244,30 @@ def clear_task_output(bp_dir, task_id):
     return {**meta, "id": slug or task_id, "body": body}
 
 
-def list_tasks(bp_dir):
-    """List all tasks, sorted by order key."""
-    tasks_dir = _tasks_dir(bp_dir)
-    if not os.path.isdir(tasks_dir):
-        return []
-
+def _read_tasks_from_dir(path):
     tasks = []
-    for fname in os.listdir(tasks_dir):
+    if not os.path.isdir(path):
+        return tasks
+    for fname in os.listdir(path):
         if fname.endswith(".md"):
-            path = os.path.join(tasks_dir, fname)
-            meta, body, slug = read_frontmatter(path)
+            fpath = os.path.join(path, fname)
+            meta, body, slug = read_frontmatter(fpath)
             tasks.append({**meta, "id": slug or fname[:-3], "body": body})
+    return tasks
 
+
+def _sort_tasks(tasks):
+    tasks = list(tasks or [])
     priority_weight = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
     tasks.sort(key=lambda t: (priority_weight.get(t.get("priority", "normal"), 2), t.get("order", "")))
     return tasks
+
+
+def list_tasks(bp_dir, archived=False):
+    """List tasks, sorted by order key.
+
+    Args:
+        archived: When True, list only archived tasks.
+    """
+    tasks_dir = _archive_dir(bp_dir) if archived else _tasks_dir(bp_dir)
+    return _sort_tasks(_read_tasks_from_dir(tasks_dir))

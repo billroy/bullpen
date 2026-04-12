@@ -222,6 +222,27 @@ class TestTaskEvents:
         active_path = os.path.join(app.config["bp_dir"], "tasks", f"{t2['id']}.md")
         assert os.path.exists(active_path)
 
+    def test_task_list_scope_live_vs_archived(self, client):
+        c, _ = client
+        c.emit("task:create", {"title": "Live Task"})
+        live_task = get_event(c, "task:created")
+        c.get_received()
+
+        c.emit("task:archive", {"id": live_task["id"]})
+        c.get_received()
+
+        c.emit("task:list", {"scope": "live"})
+        live_list = get_event(c, "task:list")
+        assert live_list is not None
+        assert live_list["scope"] == "live"
+        assert all(t["id"] != live_task["id"] for t in live_list["tasks"])
+
+        c.emit("task:list", {"scope": "archived"})
+        archived_list = get_event(c, "task:list")
+        assert archived_list is not None
+        assert archived_list["scope"] == "archived"
+        assert any(t["id"] == live_task["id"] for t in archived_list["tasks"])
+
 
 class TestWorkerEvents:
     def test_add_worker(self, client):

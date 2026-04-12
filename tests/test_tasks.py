@@ -209,3 +209,12 @@ class TestArchive:
         tasks = list_tasks(bp_dir)
         assert len(tasks) == 1
         assert tasks[0]["id"] == t1["id"]
+
+    def test_list_archived_only(self, bp_dir):
+        t1 = create_task(bp_dir, "Live")
+        t2 = create_task(bp_dir, "Archived")
+        archive_task(bp_dir, t2["id"])
+        archived = list_tasks(bp_dir, archived=True)
+        assert len(archived) == 1
+        assert archived[0]["id"] == t2["id"]
+        assert archived[0]["id"] != t1["id"]

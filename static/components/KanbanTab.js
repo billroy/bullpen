@@ -1,6 +1,6 @@
 const KanbanTab = {
-  props: ['tasks', 'columns', 'layout', 'viewMode'],
-  emits: ['select-task', 'move-task', 'archive-done', 'new-task'],
+  props: ['tasks', 'columns', 'layout', 'viewMode', 'listScope'],
+  emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope'],
   components: { TaskCard },
   template: `
     <div v-if="viewMode !== 'list'" class="kanban-board">
@@ -42,6 +42,18 @@ const KanbanTab = {
             placeholder="Search title, description, tags, id..."
             aria-label="Search tickets"
           >
+        </label>
+        <label class="ticket-list-filter">
+          <span class="ticket-list-filter-label">View</span>
+          <select
+            :value="listScope || 'live'"
+            class="form-select ticket-list-filter-select"
+            aria-label="View live or archived tickets"
+            @change="$emit('update-list-scope', $event.target.value)"
+          >
+            <option value="live">Live tickets</option>
+            <option value="archived">Archived tickets</option>
+          </select>
         </label>
         <label class="ticket-list-filter">
           <span class="ticket-list-filter-label">Priority</span>
@@ -96,7 +108,7 @@ const KanbanTab = {
             v-for="task in sortedTasks"
             :key="task.id"
             class="ticket-list-row"
-            @click="$emit('select-task', task.id)"
+            @click="onListRowClick(task)"
           >
             <td class="ticket-list-col-priority">
               <span class="badge" :class="'priority-' + (task.priority || 'normal')">{{ task.priority || 'normal' }}</span>
@@ -323,6 +335,10 @@ const KanbanTab = {
         if (!confirm('This task has a running agent. Stop the agent and move the task?')) return;
       }
       this.$emit('move-task', { id: taskId, status: colKey });
+    },
+    onListRowClick(task) {
+      if ((this.listScope || 'live') !== 'live') return;
+      this.$emit('select-task', task.id);
     }
   }
 };

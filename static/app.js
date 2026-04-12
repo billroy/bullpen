@@ -67,6 +67,7 @@ const app = createApp({
         config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [] },
         layout: { slots: [] },
         tasks: [],
+        archivedTasks: [],
         profiles: [],
         teams: [],
         filesVersion: 0,
@@ -132,6 +133,7 @@ const app = createApp({
       if (!workspaces[wsId]) return;
       activeWorkspaceId.value = wsId;
       workspaces[wsId].unseenActivity = 0;
+      ticketListScope.value = 'live';
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
       _updateDocumentTitle();
@@ -140,6 +142,7 @@ const app = createApp({
     const connected = ref(false);
     const activeTab = ref('tasks');
     const ticketsViewMode = ref('kanban');
+    const ticketListScope = ref('live');
     const leftPaneVisible = ref(true);
     const toasts = reactive([]);
     const showCreateModal = ref(false);
@@ -269,6 +272,14 @@ const app = createApp({
       ws.tasks = ws.tasks.filter(t => t.id !== data.id);
       if (_isActive(wsId)) state.tasks = ws.tasks;
       if (selectedTaskId.value === data.id) selectedTaskId.value = null;
+      if (_isActive(wsId) && ticketListScope.value === 'archived') {
+        socket.emit('task:list', _wsData({ scope: 'archived' }));
+      }
+    });
+    socket.on('task:list', (data) => {
+      const wsId = data.workspaceId || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      ws.archivedTasks = Array.isArray(data.tasks) ? data.tasks : [];
     });
 
     socket.on('layout:updated', (layout) => {
@@ -377,6 +388,16 @@ const app = createApp({
     function clearTaskOutput(id) { socket.emit('task:clear_output', _wsData({ id })); }
     function moveTask({ id, status }) { socket.emit('task:update', _wsData({ id, status })); }
     function selectTask(id) { selectedTaskId.value = id; }
+    function setTicketListScope(scope) {
+      const normalized = String(scope || '').trim().toLowerCase() === 'archived' ? 'archived' : 'live';
+      ticketListScope.value = normalized;
+      if (normalized === 'archived') {
+        socket.emit('task:list', _wsData({ scope: 'archived' }));
+      } else if (selectedTaskId.value) {
+        const isLiveTaskSelected = state.tasks.some(t => t.id === selectedTaskId.value);
+        if (!isLiveTaskSelected) selectedTaskId.value = null;
+      }
+    }
 
     // Worker actions
     function addWorker({ slot, profile }) { socket.emit('worker:add', _wsData({ slot, profile })); }
@@ -514,6 +535,13 @@ const app = createApp({
     const themeOptions = computed(() => THEME_CATALOG.map(t => ({ id: t.id, label: t.label })));
     const currentTheme = computed(() => _normalizeTheme(state.config?.theme || 'dark'));
     const activeProjectName = computed(() => _workspaceBaseName(state.workspace));
+    const visibleTicketTasks = computed(() => {
+      if (ticketsViewMode.value === 'list' && ticketListScope.value === 'archived') {
+        const ws = activeWorkspaceId.value ? _getWs(activeWorkspaceId.value) : null;
+        return ws?.archivedTasks || [];
+      }
+      return state.tasks;
+    });
 
     function addToast(message, type = 'info') {
       const id = ++toastId;
@@ -577,7 +605,7 @@ const app = createApp({
       gridOptions, onTabBarGridResize, duplicateWorker, multipleWorkspaces,
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
-      ticketsViewMode, chatTabs, addLiveAgentTab, closeLiveAgentTab,
+      ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       tabIcon, activeProjectName,
     };
   },
@@ -650,14 +678,16 @@ const app = createApp({
           <div class="tab-content">
             <KanbanTab
               v-if="activeTab === 'tasks'"
-              :tasks="state.tasks"
+              :tasks="visibleTicketTasks"
               :columns="state.config.columns"
               :layout="state.layout"
               :view-mode="ticketsViewMode"
+              :list-scope="ticketListScope"
               @select-task="selectTask"
               @move-task="moveTask"
               @archive-done="archiveDone"
               @new-task="showCreateModal = true"
+              @update-list-scope="setTicketListScope"
             />
             <BullpenTab
               v-if="activeTab === 'workers'"
