@@ -74,6 +74,33 @@ def test_extract_gemini_stats_models_usage_event():
     assert usage_to_legacy_tokens(normalized) == 9111
 
 
+def test_extract_gemini_stream_result_usage_event():
+    event = {
+        "type": "result",
+        "status": "success",
+        "stats": {
+            "total_tokens": 6812,
+            "input_tokens": 6791,
+            "output_tokens": 2,
+            "cached": 0,
+            "models": {
+                "gemini-2.5-flash": {
+                    "total_tokens": 6812,
+                    "input_tokens": 6791,
+                    "output_tokens": 2,
+                    "cached": 0,
+                }
+            },
+        },
+    }
+
+    normalized = extract_gemini_usage_event(event)
+    assert normalized["input_tokens"] == 6791
+    assert normalized["output_tokens"] == 2
+    assert normalized["total_tokens"] == 6812
+    assert normalized["cached_input_tokens"] == 0
+
+
 def test_build_usage_update_appends_entry_and_increments_tokens():
     task = {"tokens": 7, "usage": [{"source": "worker", "provider": "claude", "input_tokens": 10, "output_tokens": 3}]}
     entry = build_usage_entry(

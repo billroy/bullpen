@@ -522,9 +522,12 @@ def is_non_retryable_provider_error(provider, *texts):
     if provider == "gemini":
         phrases = (
             "you have exhausted your capacity on this model",
+            "exhausted your capacity",
             "resource has been exhausted",
             "quota exceeded",
             "exceeded your current quota",
+            "retrying with exponential backoff",
+            "exponential backoff",
         )
         return any(phrase in haystack for phrase in phrases)
 
@@ -564,7 +567,8 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 
         # Write prompt to stdin, then close so agent can begin
         try:
-            proc.stdin.write(prompt)
+            if adapter.prompt_via_stdin():
+                proc.stdin.write(prompt)
             proc.stdin.close()
         except (BrokenPipeError, OSError):
             pass  # Agent may have exited immediately
@@ -642,7 +646,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                     if force_fail_message[0] is None and is_non_retryable_provider_error(adapter.name, line):
                         force_fail_message[0] = (
                             "Gemini model capacity exhausted. "
-                            "Try a different model (for example gemini-2.5-flash) or wait and retry later."
+                            "Try gemini-2.5-flash or wait and retry later."
                         )
                         try:
                             _terminate_proc(proc)

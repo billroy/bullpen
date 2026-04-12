@@ -71,13 +71,19 @@ class GeminiAdapter(AgentAdapter):
         argv = [
             gemini_bin,
             "--model", model,
-            "--output-format", "json",
+            "--output-format", "stream-json",
             "--approval-mode", "yolo",
-            # Keep execution non-interactive while still delivering the full
-            # prompt over stdin from the shared worker/chat runners.
-            "--prompt", "",
+            "--prompt", prompt,
         ]
         return argv
+
+    def prompt_via_stdin(self):
+        """Gemini headless mode receives the prompt through --prompt.
+
+        Passing both --prompt and stdin causes Gemini CLI to append the stdin
+        content to the prompt, which duplicates the user's turn.
+        """
+        return False
 
     def format_stream_line(self, line):
         """Extract display text from Gemini output when possible."""
@@ -92,6 +98,8 @@ class GeminiAdapter(AgentAdapter):
 
         msg_type = obj.get("type")
         if msg_type == "result":
+            return None
+        if msg_type == "message" and obj.get("role") == "user":
             return None
 
         response = obj.get("response")
@@ -140,6 +148,9 @@ class GeminiAdapter(AgentAdapter):
                 continue
 
             usage = merge_usage_dicts(usage, extract_gemini_usage_event(obj))
+
+            if obj.get("type") == "message" and obj.get("role") == "user":
+                continue
 
             if obj.get("type") == "result":
                 is_error = bool(obj.get("is_error"))

@@ -49,6 +49,10 @@ class AgentAdapter(ABC):
         """
         return line.rstrip("\n")
 
+    def prompt_via_stdin(self):
+        """Return True when the shared runner should write the prompt to stdin."""
+        return True
+
     def unavailable_message(self):
         """Return a user-facing setup message when this adapter is unavailable."""
         return f"{self.name} agent executable was not found. Install it or add it to PATH."

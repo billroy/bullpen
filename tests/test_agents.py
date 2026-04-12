@@ -251,10 +251,16 @@ class TestGeminiAdapter:
         assert "--model" in argv
         assert "gemini-2.5-pro" in argv
         assert "--output-format" in argv
-        assert "json" in argv
+        assert "stream-json" in argv
         assert "--approval-mode" in argv
         assert "yolo" in argv
         assert "--prompt" in argv
+        assert "test prompt" in argv
+        assert "" not in argv
+
+    def test_gemini_prompt_is_not_written_to_stdin(self):
+        adapter = GeminiAdapter()
+        assert adapter.prompt_via_stdin() is False
 
     def test_find_gemini_honors_configured_path(self, monkeypatch):
         configured = "/opt/bullpen/bin/gemini"
@@ -298,6 +304,25 @@ class TestGeminiAdapter:
             "files": {"totalLinesAdded": 0, "totalLinesRemoved": 0},
         })
         assert adapter.format_stream_line(line) == "Aloha. How can I help you today?"
+
+    def test_format_stream_line_skips_echoed_user_message(self):
+        adapter = GeminiAdapter()
+        line = json.dumps({
+            "type": "message",
+            "role": "user",
+            "content": "Human: Aloha",
+        })
+        assert adapter.format_stream_line(line) is None
+
+    def test_format_stream_line_assistant_stream_content(self):
+        adapter = GeminiAdapter()
+        line = json.dumps({
+            "type": "message",
+            "role": "assistant",
+            "content": "Aloha",
+            "delta": True,
+        })
+        assert adapter.format_stream_line(line) == "Aloha"
 
     def test_parse_output_json_result_with_usage(self):
         adapter = GeminiAdapter()
@@ -352,6 +377,52 @@ class TestGeminiAdapter:
         assert result["usage"]["output_tokens"] == 53
         assert result["usage"]["reasoning_output_tokens"] == 43
         assert result["usage"]["total_tokens"] == 9111
+
+    def test_parse_output_stream_json_skips_user_echo_and_keeps_usage(self):
+        adapter = GeminiAdapter()
+        stdout = "\n".join([
+            json.dumps({
+                "type": "init",
+                "session_id": "s1",
+                "model": "gemini-2.5-flash",
+            }),
+            json.dumps({
+                "type": "message",
+                "role": "user",
+                "content": "Human: Aloha",
+            }),
+            json.dumps({
+                "type": "message",
+                "role": "assistant",
+                "content": "Aloha",
+                "delta": True,
+            }),
+            json.dumps({
+                "type": "result",
+                "status": "success",
+                "stats": {
+                    "total_tokens": 6812,
+                    "input_tokens": 6791,
+                    "output_tokens": 2,
+                    "cached": 0,
+                    "models": {
+                        "gemini-2.5-flash": {
+                            "total_tokens": 6812,
+                            "input_tokens": 6791,
+                            "output_tokens": 2,
+                            "cached": 0,
+                        }
+                    },
+                },
+            }),
+        ])
+        result = adapter.parse_output(stdout, "", 0)
+        assert result["success"] is True
+        assert result["output"] == "Aloha"
+        assert "Human: Aloha" not in result["output"]
+        assert result["usage"]["input_tokens"] == 6791
+        assert result["usage"]["output_tokens"] == 2
+        assert result["usage"]["total_tokens"] == 6812
 
 
 class TestMockAdapter:

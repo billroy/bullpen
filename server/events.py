@@ -93,12 +93,12 @@ def _classify_chat_provider_error(provider, *texts):
         if "requested entity was not found" in haystack or "modelnotfounderror" in haystack:
             return (
                 "Gemini model not found or unavailable for this account. "
-                "Try a different model (for example gemini-2.5-flash)."
+                "Try gemini-2.5-flash."
             )
         if worker_mod.is_non_retryable_provider_error(provider, haystack):
             return (
                 "Gemini model capacity exhausted. "
-                "Try a different model (for example gemini-2.5-flash) or wait and retry later."
+                "Try gemini-2.5-flash or wait and retry later."
             )
     return None
 
@@ -671,7 +671,8 @@ def register_events(socketio, app):
                     _chat_processes[session_id] = proc
                 prompt = response_collector["prompt"]
                 try:
-                    proc.stdin.write(prompt)
+                    if adapter.prompt_via_stdin():
+                        proc.stdin.write(prompt)
                     proc.stdin.close()
                 except (BrokenPipeError, OSError):
                     pass

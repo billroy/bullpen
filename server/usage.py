@@ -167,14 +167,21 @@ def extract_gemini_usage_event(event_obj):
     stats = event_obj.get("stats")
     if isinstance(stats, dict):
         models = stats.get("models")
+        saw_model_usage = False
         if isinstance(models, dict):
             for model_bucket in models.values():
                 if not isinstance(model_bucket, dict):
                     continue
-                tokens = model_bucket.get("tokens")
-                usage = merge_usage_dicts(usage, _normalize_gemini_tokens(tokens))
+                tokens = model_bucket.get("tokens") if isinstance(model_bucket.get("tokens"), dict) else model_bucket
+                model_usage = _normalize_gemini_tokens(tokens)
+                if model_usage:
+                    saw_model_usage = True
+                    usage = merge_usage_dicts(usage, model_usage)
         # Some payload variants may provide top-level stats.tokens directly.
-        usage = merge_usage_dicts(usage, _normalize_gemini_tokens(stats.get("tokens")))
+        if isinstance(stats.get("tokens"), dict):
+            usage = merge_usage_dicts(usage, _normalize_gemini_tokens(stats.get("tokens")))
+        elif not saw_model_usage:
+            usage = merge_usage_dicts(usage, _normalize_gemini_tokens(stats))
 
     return usage
 
@@ -188,15 +195,21 @@ def _normalize_gemini_tokens(raw_tokens):
     input_tokens = _coerce_non_negative_int(raw_tokens.get("prompt"))
     if input_tokens is None:
         input_tokens = _coerce_non_negative_int(raw_tokens.get("input"))
+    if input_tokens is None:
+        input_tokens = _coerce_non_negative_int(raw_tokens.get("input_tokens"))
 
     total_tokens = _coerce_non_negative_int(raw_tokens.get("total"))
+    if total_tokens is None:
+        total_tokens = _coerce_non_negative_int(raw_tokens.get("total_tokens"))
     cached_input_tokens = _coerce_non_negative_int(raw_tokens.get("cached"))
     reasoning_output_tokens = _coerce_non_negative_int(raw_tokens.get("thoughts"))
     candidate_tokens = _coerce_non_negative_int(raw_tokens.get("candidates"))
     tool_tokens = _coerce_non_negative_int(raw_tokens.get("tool"))
 
-    output_tokens = None
-    if total_tokens is not None and input_tokens is not None:
+    output_tokens = _coerce_non_negative_int(raw_tokens.get("output_tokens"))
+    if output_tokens is not None:
+        pass
+    elif total_tokens is not None and input_tokens is not None:
         output_tokens = max(total_tokens - input_tokens, 0)
     else:
         parts = [
