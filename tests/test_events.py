@@ -488,3 +488,26 @@ class TestConfigEvents:
         assert profiles is not None
         ids = {p["id"] for p in profiles}
         assert "custom" in ids
+
+
+class TestProjectEvents:
+    def test_project_new_creates_empty_directory_and_registers(self, client):
+        c, _ = client
+        with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
+            path = os.path.join(parent, "new-empty-project")
+            c.emit("project:new", {"path": path})
+            events = c.get_received()
+
+            state_inits = [evt for evt in events if evt["name"] == "state:init"]
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            errors = [evt for evt in events if evt["name"] == "error"]
+
+            assert not errors
+            assert os.path.isdir(path)
+            assert os.path.isdir(os.path.join(path, ".bullpen"))
+            assert state_inits
+            assert project_updates
+
+            listed = project_updates[-1]["args"][0]
+            expected = os.path.realpath(path)
+            assert any(p["path"] == expected for p in listed)

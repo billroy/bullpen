@@ -1,12 +1,18 @@
 const LeftPane = {
   props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces'],
-  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'remove-project', 'quick-create-task'],
+  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'remove-project', 'quick-create-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
       <div v-if="projects && projects.length > 1" class="left-pane-section">
         <div class="section-header">
           <h3>Projects</h3>
-          <button class="btn btn-sm" @click="promptAddProject">+</button>
+          <div class="project-menu-wrap" @click.stop>
+            <button class="btn btn-sm" @click="toggleProjectMenu">...</button>
+            <div v-if="showProjectMenu" class="project-menu">
+              <button class="project-menu-item" @click="promptAddProject">Add Project</button>
+              <button class="project-menu-item" @click="promptNewProject">New Project</button>
+            </div>
+          </div>
         </div>
         <div class="project-list">
           <div v-for="p in projects" :key="p.id"
@@ -22,7 +28,13 @@ const LeftPane = {
         </div>
       </div>
       <div v-else-if="projects && projects.length <= 1" class="left-pane-section project-add-only">
-        <button class="btn btn-sm" @click="promptAddProject">+ Add Project</button>
+        <div class="project-menu-wrap" @click.stop>
+          <button class="btn btn-sm" @click="toggleProjectMenu">...</button>
+          <div v-if="showProjectMenu" class="project-menu">
+            <button class="project-menu-item" @click="promptAddProject">Add Project</button>
+            <button class="project-menu-item" @click="promptNewProject">New Project</button>
+          </div>
+        </div>
       </div>
       <div class="left-pane-section">
         <div class="section-header">
@@ -115,15 +127,25 @@ const LeftPane = {
     }
   },
   data() {
-    return { rosterDragSlot: null, selectedColumn: 'inbox', quickCreateText: '' };
+    return { rosterDragSlot: null, selectedColumn: 'inbox', quickCreateText: '', showProjectMenu: false };
   },
   mounted() {
+    document.addEventListener('click', this.onGlobalClick);
     renderLucideIcons(this.$el);
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this.onGlobalClick);
   },
   updated() {
     renderLucideIcons(this.$el);
   },
   methods: {
+    toggleProjectMenu() {
+      this.showProjectMenu = !this.showProjectMenu;
+    },
+    onGlobalClick() {
+      this.showProjectMenu = false;
+    },
     submitQuickCreate() {
       const text = this.quickCreateText.trim();
       if (!text) return;
@@ -160,9 +182,17 @@ const LeftPane = {
       return this.workspaces[wsId].unseenActivity || 0;
     },
     promptAddProject() {
+      this.showProjectMenu = false;
       const path = prompt('Enter absolute path to project directory:');
       if (path && path.trim()) {
         this.$emit('add-project', path.trim());
+      }
+    },
+    promptNewProject() {
+      this.showProjectMenu = false;
+      const path = prompt('Enter absolute path for new project directory:');
+      if (path && path.trim()) {
+        this.$emit('new-project', path.trim());
       }
     },
     onRosterDragOver(e, w) {

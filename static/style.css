@@ -492,6 +492,10 @@ body {
   padding: 8px 12px;
 }
 
+.left-pane-section.project-add-only .project-menu-wrap {
+  margin-left: auto;
+}
+
 /* === Project List === */
 .project-list {
   display: flex;
@@ -561,6 +565,41 @@ body {
   padding: 0 4px;
   flex-shrink: 0;
   margin-left: 6px;
+}
+
+.project-menu-wrap {
+  position: relative;
+}
+
+.project-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 132px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 40;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+.project-menu-item {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.project-menu-item:hover {
+  background: var(--bg-hover);
 }
 
 .section-header {

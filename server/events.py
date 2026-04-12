@@ -598,20 +598,7 @@ def register_events(socketio, app):
 
     # --- Project events ---
 
-    @socketio.on("project:add")
-    @with_lock
-    def on_project_add(data):
-        manager = app.config["manager"]
-        path = data.get("path", "").strip()
-        if not path:
-            emit("error", {"message": "project:add requires path"})
-            return
-        try:
-            ws_id = manager.register_project(path)
-        except ValueError as e:
-            emit("error", {"message": str(e)})
-            return
-
+    def _activate_and_broadcast_project(manager, ws_id):
         ws = manager.get(ws_id)
 
         # Start scheduler for new workspace
@@ -632,6 +619,59 @@ def register_events(socketio, app):
 
         # Broadcast updated project list
         socketio.emit("projects:updated", manager.list_projects())
+
+    @socketio.on("project:add")
+    @with_lock
+    def on_project_add(data):
+        manager = app.config["manager"]
+        path = data.get("path", "").strip()
+        if not path:
+            emit("error", {"message": "project:add requires path"})
+            return
+        try:
+            ws_id = manager.register_project(path)
+        except ValueError as e:
+            emit("error", {"message": str(e)})
+            return
+
+        _activate_and_broadcast_project(manager, ws_id)
+
+    @socketio.on("project:new")
+    @with_lock
+    def on_project_new(data):
+        manager = app.config["manager"]
+        raw_path = data.get("path", "")
+        path = os.path.abspath(raw_path.strip())
+        if not path:
+            emit("error", {"message": "project:new requires path"})
+            return
+
+        # Match register_project traversal hardening.
+        if ".." in path.split(os.sep):
+            emit("error", {"message": f"Invalid path: {path}"})
+            return
+
+        if os.path.exists(path):
+            if not os.path.isdir(path):
+                emit("error", {"message": f"Path exists and is not a directory: {path}"})
+                return
+            if os.listdir(path):
+                emit("error", {"message": f"Directory is not empty: {path}"})
+                return
+        else:
+            try:
+                os.makedirs(path, exist_ok=False)
+            except OSError as e:
+                emit("error", {"message": f"Failed to create directory: {e}"})
+                return
+
+        try:
+            ws_id = manager.register_project(path)
+        except ValueError as e:
+            emit("error", {"message": str(e)})
+            return
+
+        _activate_and_broadcast_project(manager, ws_id)
 
     @socketio.on("project:remove")
     @with_lock

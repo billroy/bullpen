@@ -517,6 +517,7 @@ const app = createApp({
 
     // Project actions
     function addProject(path) { socket.emit('project:add', { path }); }
+    function newProject(path) { socket.emit('project:new', { path }); }
     function removeProject(wsId) { socket.emit('project:remove', { workspaceId: wsId }); }
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
@@ -595,7 +596,7 @@ const app = createApp({
 
     return {
       state, workspaces, activeWorkspaceId, switchWorkspace, projects,
-      addProject, removeProject,
+      addProject, newProject, removeProject,
       connected, activeTab, leftPaneVisible, toasts,
       showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, themeOptions, currentTheme, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
@@ -639,6 +640,7 @@ const app = createApp({
           @select-task="selectTask"
           @switch-workspace="switchWorkspace"
           @add-project="addProject"
+          @new-project="newProject"
           @remove-project="removeProject"
         />
         <div class="main-pane">
