@@ -4,7 +4,8 @@
 _MODEL_ALIASES = {
     "claude": {
         # Legacy/non-existent slug kept in older layouts and docs.
-        "claude-haiku-4-6": "claude-haiku-4-5-20250414",
+        "claude-haiku-4-6": "claude-haiku-4-5-20251001",
+        "claude-haiku-4-5-20250414": "claude-haiku-4-5-20251001",
     },
 }
 

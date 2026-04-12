@@ -66,7 +66,7 @@ class ModelExpectingAdapter(MockAdapter):
         return "claude"
 
     def build_argv(self, prompt, model, workspace, bp_dir=None):
-        assert model == "claude-haiku-4-5-20250414"
+        assert model == "claude-haiku-4-5-20251001"
         return super().build_argv(prompt, model, workspace, bp_dir=bp_dir)
 
 
@@ -217,7 +217,7 @@ class TestStartWorker:
             time.sleep(0.5)
 
             updated_layout = _load_layout(bp_dir)
-            assert updated_layout["slots"][worker_slot]["model"] == "claude-haiku-4-5-20250414"
+            assert updated_layout["slots"][worker_slot]["model"] == "claude-haiku-4-5-20251001"
         finally:
             register_adapter("claude", previous)
 

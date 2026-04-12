@@ -325,7 +325,7 @@ class TestWorkerEvents:
             "model": "claude-haiku-4-6",
         }})
         layout = get_event(c, "layout:updated")
-        assert layout["slots"][0]["model"] == "claude-haiku-4-5-20250414"
+        assert layout["slots"][0]["model"] == "claude-haiku-4-5-20251001"
 
 
 class TestChatEvents:

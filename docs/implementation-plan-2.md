@@ -10,9 +10,9 @@
 ### 1. Model dropdown completeness
 - **File:** `static/components/WorkerConfigModal.js:35-42`
 - `modelOptions` computed property hardcodes a limited set. The model field is a free-text `<input>` with `<datalist>` suggestions, so users can type any slug — but the suggestions should be comprehensive.
-- Update Claude models: add `claude-haiku-4-6`, ensure all current slugs are accurate.
+- Update Claude models: use the Claude Code-supported `claude-haiku-4-5-20251001` identifier for Haiku; normalize stale `claude-haiku-*` slugs from older layouts.
 - Update Codex models: add `o3`, `gpt-4.1`.
-- The slug is passed directly to `--model` in the CLI adapter, so it must match the API model name exactly.
+- The model value is passed to Claude Code's `--model`, so it must be a Claude Code-supported alias or model identifier.
 
 ### 2. Rename "Agent" label to "AI Provider"
 - **File:** `static/components/WorkerConfigModal.js:58` — change form label text from "Agent" to "AI Provider"
@@ -64,7 +64,7 @@
 #### T1.1 Update model dropdown slugs
 - **File:** `static/components/WorkerConfigModal.js`
 - In `modelOptions` computed property (~line 35):
-  - Claude: `['claude-sonnet-4-5-20250514', 'claude-sonnet-4-6', 'claude-opus-4-5-20250514', 'claude-opus-4-6', 'claude-haiku-4-5-20250414', 'claude-haiku-4-6']`
+  - Claude: `['claude-sonnet-4-5-20250514', 'claude-sonnet-4-6', 'claude-opus-4-5-20250514', 'claude-opus-4-6', 'claude-haiku-4-5-20251001']`
   - Codex: `['o3', 'o3-mini', 'o4-mini', 'gpt-4.1', 'codex-1']`
 
 #### T1.2 Rename "Agent" label to "AI Provider"
