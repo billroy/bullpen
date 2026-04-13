@@ -68,9 +68,9 @@ const TopToolbar = {
           <button class="btn btn-icon" @click="toggleMainMenu" title="Main menu">&#9776;</button>
           <div v-if="showMainMenu" class="project-menu toolbar-menu">
             <button class="project-menu-item" @click="onToggleLeftPane">Toggle Left Pane</button>
-            <button class="project-menu-item" @click="onExportWorkspace">Export Workspace</button>
+            <button class="project-menu-item" @click="onExportWorkspace">Export Project</button>
             <button class="project-menu-item" @click="onExportAll">Export All</button>
-            <button class="project-menu-item" @click="triggerImportWorkspace">Import Workspace</button>
+            <button class="project-menu-item" @click="triggerImportWorkspace">Import Project</button>
             <button class="project-menu-item" @click="triggerImportAll">Import All</button>
           </div>
           <input

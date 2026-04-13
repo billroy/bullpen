@@ -13,9 +13,9 @@ def _read(rel_path: str) -> str:
 def test_toolbar_menu_contains_export_import_actions():
     text = _read("static/components/TopToolbar.js")
     assert "@click=\"toggleMainMenu\"" in text
-    assert "class=\"project-menu-item\" @click=\"onExportWorkspace\">Export Workspace</button>" in text
+    assert "class=\"project-menu-item\" @click=\"onExportWorkspace\">Export Project</button>" in text
     assert "class=\"project-menu-item\" @click=\"onExportAll\">Export All</button>" in text
-    assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\">Import Workspace</button>" in text
+    assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\">Import Project</button>" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportAll\">Import All</button>" in text
 
 
