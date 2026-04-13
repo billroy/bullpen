@@ -34,3 +34,16 @@ def test_project_menu_styles_exist():
     text = _read("static/style.css")
     assert ".project-menu {" in text
     assert ".project-menu-item {" in text
+
+
+def test_project_remove_button_wiring_exists():
+    text = _read("static/components/LeftPane.js")
+    assert "class=\"btn-icon project-remove-btn\"" in text
+    assert "@click.stop=\"confirmRemoveProject(p)\"" in text
+    assert "this.$emit('remove-project', project.id);" in text
+
+
+def test_project_remove_button_styles_exist():
+    text = _read("static/style.css")
+    assert ".project-remove-btn {" in text
+    assert ".project-item:hover .project-remove-btn" in text

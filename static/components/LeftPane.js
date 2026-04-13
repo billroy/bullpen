@@ -24,7 +24,15 @@ const LeftPane = {
               <i class="project-label-icon" data-lucide="folder" aria-hidden="true"></i>
               <span class="project-label-text">{{ p.name }}</span>
             </span>
-            <span v-if="unseenCount(p.id)" class="project-badge">{{ unseenCount(p.id) }}</span>
+            <span class="project-item-actions">
+              <span v-if="unseenCount(p.id)" class="project-badge">{{ unseenCount(p.id) }}</span>
+              <button
+                v-if="canRemoveProject(p)"
+                class="btn-icon project-remove-btn"
+                title="Remove project"
+                @click.stop="confirmRemoveProject(p)"
+              >&times;</button>
+            </span>
           </div>
         </div>
       </div>
@@ -184,6 +192,17 @@ const LeftPane = {
     unseenCount(wsId) {
       if (!this.workspaces || !this.workspaces[wsId]) return 0;
       return this.workspaces[wsId].unseenActivity || 0;
+    },
+    canRemoveProject(project) {
+      return !!(project && project.id && this.projects && this.projects.length > 1);
+    },
+    confirmRemoveProject(project) {
+      const name = project?.name || 'this project';
+      if (!project?.id) return;
+      if (!confirm(`Remove "${name}" from the project list?\n\nThis only unregisters the project from Bullpen. No project files are deleted.`)) {
+        return;
+      }
+      this.$emit('remove-project', project.id);
     },
     promptAddProject() {
       this.showProjectMenu = false;

@@ -366,10 +366,11 @@ const app = createApp({
       projects.splice(0, projects.length, ...list);
     });
     socket.on('project:removed', (data) => {
-      delete workspaces[data.workspaceId];
-      if (activeWorkspaceId.value === data.workspaceId) {
+      const removedId = data.workspaceId;
+      delete workspaces[removedId];
+      if (activeWorkspaceId.value === removedId) {
         // Switch to first available
-        const firstId = projects[0]?.id;
+        const firstId = projects.find(p => p.id !== removedId)?.id;
         if (firstId) switchWorkspace(firstId);
       }
     });

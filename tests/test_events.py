@@ -534,3 +534,33 @@ class TestProjectEvents:
             assert created is not None
             assert created["title"] == "Appears without refresh"
             assert created["workspaceId"] == ws_id
+
+    def test_project_remove_unregisters_but_keeps_workspace_files(self, client):
+        c, _ = client
+        with tempfile.TemporaryDirectory(prefix="bullpen_remove_project_parent_") as parent:
+            path = os.path.join(parent, "remove-me-project")
+            c.emit("project:new", {"path": path})
+            events = c.get_received()
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            listed = project_updates[-1]["args"][0]
+            ws_id = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+
+            c.emit("task:create", {"workspaceId": ws_id, "title": "Keep this task on disk"})
+            created = get_event(c, "task:created")
+            assert created is not None
+            task_path = os.path.join(path, ".bullpen", "tasks", f"{created['id']}.md")
+            assert os.path.exists(task_path)
+
+            c.emit("project:remove", {"workspaceId": ws_id})
+            remove_events = c.get_received()
+            removed = [evt for evt in remove_events if evt["name"] == "project:removed"]
+            updates = [evt for evt in remove_events if evt["name"] == "projects:updated"]
+            assert removed
+            assert removed[-1]["args"][0]["workspaceId"] == ws_id
+            assert updates
+            listed_after = updates[-1]["args"][0]
+            assert all(p["id"] != ws_id for p in listed_after)
+
+            # Unregister only: no project files are deleted.
+            assert os.path.isdir(os.path.join(path, ".bullpen"))
+            assert os.path.exists(task_path)
