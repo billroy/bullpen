@@ -27,3 +27,10 @@ def test_app_wires_toolbar_export_import_events():
     assert "@import-all=\"importAll\"" in text
     assert "await _downloadZip('/api/export/all', 'bullpen-all.zip');" in text
     assert "await _importZip('/api/import/all', file, 'All-workspace import complete');" in text
+
+
+def test_toolbar_menu_css_anchors_from_left_edge():
+    text = _read("static/style.css")
+    assert ".toolbar-menu {" in text
+    assert "left: 0;" in text
+    assert "right: auto;" in text

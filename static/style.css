@@ -402,8 +402,10 @@ body {
   position: relative;
 }
 
-.toolbar-menu {
+.top-toolbar .toolbar-menu {
   min-width: 176px;
+  left: 0;
+  right: auto;
 }
 
 .toolbar-import-input {
