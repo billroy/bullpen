@@ -419,12 +419,24 @@ def test_write_emits_line_json_when_mode_line():
     assert parsed[0]["result"]["ok"] is True
 
 
+def test_initialize_result_echoes_requested_protocol_version():
+    result = mcp_tools._initialize_result("2024-11-05")
+
+    assert result["protocolVersion"] == "2024-11-05"
+
+
+def test_initialize_result_uses_default_protocol_without_request():
+    result = mcp_tools._initialize_result()
+
+    assert result["protocolVersion"] == mcp_tools.DEFAULT_PROTOCOL_VERSION
+
+
 def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, monkeypatch):
     bp_dir = init_workspace(tmp_workspace)
     created = create_task(bp_dir, "MCP integration test")
 
     req = b"".join([
-        _frame({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        _frame({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2024-11-05"}}),
         _frame({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}),
         _frame({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
         _frame({
@@ -447,6 +459,7 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
     responses = _parse_framed_messages(out_stream.getvalue())
 
     assert [r["id"] for r in responses] == [1, 2, 3]
+    assert responses[0]["result"]["protocolVersion"] == "2024-11-05"
     tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names

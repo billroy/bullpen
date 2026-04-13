@@ -160,8 +160,11 @@ class TestCodexAdapter:
         assert "mcp_servers.bullpen.command=" in joined
         assert "mcp_servers.bullpen.args=" in joined
         assert "mcp_servers.bullpen.env.PYTHONPATH=" in joined
+        assert "mcp_servers.bullpen.cwd=" in joined
+        assert "mcp_servers.bullpen.tool_timeout_sec=120" in joined
         assert "--host" in joined
         assert "127.0.0.1" in joined
+        assert os.path.abspath(bp_dir) in joined
 
     def test_format_stream_line_passthrough_non_json(self):
         adapter = CodexAdapter()

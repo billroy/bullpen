@@ -508,9 +508,13 @@ def handle_call(
     _error(msg_id, -32602, f"Unknown tool: {name}", mode=io_mode)
 
 
-def _initialize_result() -> dict[str, Any]:
+DEFAULT_PROTOCOL_VERSION = "2025-11-25"
+
+
+def _initialize_result(requested_protocol_version: str | None = None) -> dict[str, Any]:
+    protocol_version = requested_protocol_version or DEFAULT_PROTOCOL_VERSION
     return {
-        "protocolVersion": "2025-11-25",
+        "protocolVersion": protocol_version,
         "capabilities": {
             "tools": {
                 "listChanged": False,
@@ -552,7 +556,13 @@ def main(bp_dir: str, host: str, port: int) -> None:
                 msg_id = message.get("id")
 
                 if method == "initialize":
-                    _result(msg_id, _initialize_result(), mode=io_mode)
+                    params = message.get("params", {})
+                    requested_protocol_version = None
+                    if isinstance(params, dict):
+                        value = params.get("protocolVersion")
+                        if isinstance(value, str) and value:
+                            requested_protocol_version = value
+                    _result(msg_id, _initialize_result(requested_protocol_version), mode=io_mode)
                     continue
 
                 if method == "notifications/initialized":

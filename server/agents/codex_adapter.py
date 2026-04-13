@@ -86,8 +86,9 @@ class CodexAdapter(AgentAdapter):
 
     def _mcp_overrides(self, bp_dir):
         """Return -c overrides to register the bullpen MCP server for this run."""
-        server_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mcp_tools.py")
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        server_script = os.path.join(project_root, "server", "mcp_tools.py")
+        bp_dir = os.path.abspath(bp_dir)
         from server.persistence import read_json
 
         bp_config = read_json(os.path.join(bp_dir, "config.json"))
@@ -100,7 +101,9 @@ class CodexAdapter(AgentAdapter):
         return [
             "-c", f"mcp_servers.bullpen.command={json.dumps(sys.executable)}",
             "-c", f"mcp_servers.bullpen.args={json.dumps(args)}",
+            "-c", f"mcp_servers.bullpen.cwd={json.dumps(project_root)}",
             "-c", f"mcp_servers.bullpen.env.PYTHONPATH={json.dumps(project_root)}",
+            "-c", "mcp_servers.bullpen.tool_timeout_sec=120",
         ]
 
     def format_stream_line(self, line):
