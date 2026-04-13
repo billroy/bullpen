@@ -621,6 +621,17 @@ const app = createApp({
       }
     }
 
+    async function exportWorkers() {
+      if (!activeWorkspaceId.value) return;
+      try {
+        const url = `/api/export/workers?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
+        await _downloadZip(url, 'bullpen-workers.zip');
+        addToast('Workers export ready');
+      } catch (e) {
+        addToast('Workers export failed: ' + e.message, 'error');
+      }
+    }
+
     async function exportAll() {
       try {
         await _downloadZip('/api/export/all', 'bullpen-all.zip');
@@ -649,6 +660,16 @@ const app = createApp({
         await _importZip(url, file, 'Workspace import complete');
       } catch (e) {
         addToast('Workspace import failed: ' + e.message, 'error');
+      }
+    }
+
+    async function importWorkers(file) {
+      if (!activeWorkspaceId.value) return;
+      try {
+        const url = `/api/import/workers?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
+        await _importZip(url, file, 'Workers import complete');
+      } catch (e) {
+        addToast('Workers import failed: ' + e.message, 'error');
       }
     }
 
@@ -770,7 +791,7 @@ const app = createApp({
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
-      tabIcon, activeProjectName, exportWorkspace, exportAll, importWorkspace, importAll,
+      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportAll, importWorkspace, importWorkers, importAll,
     };
   },
   mounted() {
@@ -801,8 +822,10 @@ const app = createApp({
         :ambient-volume="currentAmbientVolume"
         @toggle-left-pane="toggleLeftPane"
         @export-workspace="exportWorkspace"
+        @export-workers="exportWorkers"
         @export-all="exportAll"
         @import-workspace="importWorkspace"
+        @import-workers="importWorkers"
         @import-all="importAll"
         @set-theme="setTheme"
         @set-ambient-preset="setAmbientPreset"

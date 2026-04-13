@@ -469,6 +469,36 @@ def create_app(
         mem.seek(0)
         return mem
 
+    def _export_workers_zip_bytes(ws):
+        mem = BytesIO()
+        created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        layout_path = os.path.join(ws.bp_dir, "layout.json")
+        layout = read_json(layout_path) if os.path.exists(layout_path) else {"slots": []}
+        slots = layout.get("slots", []) if isinstance(layout, dict) else []
+        workers_layout = {"slots": slots if isinstance(slots, list) else []}
+
+        with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(".bullpen/layout.json", json.dumps(workers_layout, indent=2))
+
+            profile_ids = set()
+            for slot in workers_layout["slots"]:
+                if isinstance(slot, dict) and isinstance(slot.get("profile"), str) and slot.get("profile").strip():
+                    profile_ids.add(slot["profile"].strip())
+            for profile_id in sorted(profile_ids):
+                profile_path = os.path.join(ws.bp_dir, "profiles", f"{profile_id}.json")
+                if os.path.exists(profile_path):
+                    zf.write(profile_path, f".bullpen/profiles/{profile_id}.json")
+
+            manifest = {
+                "schema": "bullpen-workers-export-v1",
+                "created_at": created_at,
+                "workspace": ws.to_dict(),
+                "profiles": sorted(profile_ids),
+            }
+            zf.writestr("bullpen-workers-export.json", json.dumps(manifest, indent=2))
+        mem.seek(0)
+        return mem
+
     def _export_all_zip_bytes():
         mem = BytesIO()
         created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -519,6 +549,14 @@ def create_app(
             return extracted_root
         return None
 
+    def _workers_payload_root(extracted_root):
+        explicit = os.path.join(extracted_root, ".bullpen")
+        if os.path.exists(os.path.join(explicit, "layout.json")):
+            return explicit
+        if os.path.exists(os.path.join(extracted_root, "layout.json")):
+            return extracted_root
+        return None
+
     def _replace_workspace_bp_dir(ws, source_bp_dir):
         bp_dir = ws.bp_dir
         if os.path.exists(bp_dir):
@@ -530,6 +568,38 @@ def create_app(
         state["workspaceId"] = ws.id
         socketio.emit("state:init", state, to=ws.id)
         socketio.emit("files:changed", {"workspaceId": ws.id}, to=ws.id)
+
+    def _replace_workspace_workers(ws, source_bp_dir):
+        source_layout_path = os.path.join(source_bp_dir, "layout.json")
+        if not os.path.exists(source_layout_path):
+            raise ValueError("Archive does not contain layout.json")
+
+        source_layout = read_json(source_layout_path)
+        if not isinstance(source_layout, dict):
+            raise ValueError("layout.json must be a JSON object")
+        slots = source_layout.get("slots", [])
+        if not isinstance(slots, list):
+            raise ValueError("layout.json slots must be a list")
+
+        bp_dir = ws.bp_dir
+        init_workspace(ws.path)
+        write_json(os.path.join(bp_dir, "layout.json"), {"slots": slots})
+
+        source_profiles_dir = os.path.join(source_bp_dir, "profiles")
+        if os.path.isdir(source_profiles_dir):
+            target_profiles_dir = os.path.join(bp_dir, "profiles")
+            os.makedirs(target_profiles_dir, exist_ok=True)
+            for filename in os.listdir(source_profiles_dir):
+                if not filename.endswith(".json"):
+                    continue
+                src_path = os.path.join(source_profiles_dir, filename)
+                dst_path = os.path.join(target_profiles_dir, filename)
+                shutil.copy2(src_path, dst_path)
+
+        reconcile(bp_dir)
+        state = load_state(bp_dir, ws.path)
+        state["workspaceId"] = ws.id
+        socketio.emit("state:init", state, to=ws.id)
 
     @app.route("/api/export/workspace")
     @auth.require_auth
@@ -557,6 +627,21 @@ def create_app(
             download_name=export_name,
         )
 
+    @app.route("/api/export/workers")
+    @auth.require_auth
+    def export_workers():
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws = manager.get(ws_id)
+        if ws is None:
+            return jsonify({"error": "Unknown workspace"}), 404
+        export_name = f"bullpen-workers-{ws.name}-{ws.id[:8]}.zip"
+        return send_file(
+            _export_workers_zip_bytes(ws),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=export_name,
+        )
+
     @app.route("/api/import/workspace", methods=["POST"])
     @auth.require_auth
     def import_workspace():
@@ -575,6 +660,32 @@ def create_app(
                     if not payload_root:
                         return jsonify({"error": "Archive does not contain a workspace .bullpen payload"}), 400
                     _replace_workspace_bp_dir(ws, payload_root)
+        except zipfile.BadZipFile:
+            return jsonify({"error": "Invalid zip file"}), 400
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        return jsonify({"ok": True, "imported": 1, "workspaceId": ws_id})
+
+    @app.route("/api/import/workers", methods=["POST"])
+    @auth.require_auth
+    def import_workers():
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws = manager.get(ws_id)
+        if ws is None:
+            return jsonify({"error": "Unknown workspace"}), 404
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            return jsonify({"error": "Missing upload file"}), 400
+        try:
+            with zipfile.ZipFile(upload.stream, "r") as zf:
+                with tempfile.TemporaryDirectory(prefix="bullpen_import_workers_") as tmp_dir:
+                    _safe_extract_zip(zf, tmp_dir)
+                    payload_root = _workers_payload_root(tmp_dir)
+                    if not payload_root:
+                        return jsonify({"error": "Archive does not contain a workers payload"}), 400
+                    _replace_workspace_workers(ws, payload_root)
         except zipfile.BadZipFile:
             return jsonify({"error": "Invalid zip file"}), 400
         except ValueError as e:

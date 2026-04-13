@@ -91,3 +91,75 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     assert import_resp.get_json()["imported"] == 2
     assert read_json(os.path.join(bp1, "config.json"))["name"] == "Imported One"
     assert read_json(os.path.join(bp2, "config.json"))["name"] == "Imported Two"
+
+
+def test_export_workers_returns_workers_payload(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {
+                    "name": "Builder",
+                    "profile": "custom-worker",
+                    "state": "idle",
+                    "task_queue": [],
+                }
+            ]
+        },
+    )
+    write_json(
+        os.path.join(bp_dir, "profiles", "custom-worker.json"),
+        {"id": "custom-worker", "name": "Custom Worker"},
+    )
+
+    resp = client.get("/api/export/workers")
+    assert resp.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        names = set(zf.namelist())
+        exported_layout = json.loads(zf.read(".bullpen/layout.json"))
+    assert ".bullpen/layout.json" in names
+    assert ".bullpen/config.json" not in names
+    assert ".bullpen/profiles/custom-worker.json" in names
+    assert exported_layout["slots"][0]["name"] == "Builder"
+
+
+def test_import_workers_replaces_layout_from_zip(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+    archive = _zip_bytes(
+        {
+            ".bullpen/layout.json": json.dumps(
+                {
+                    "slots": [
+                        {
+                            "name": "Imported Worker",
+                            "profile": "imported-profile",
+                            "state": "idle",
+                            "task_queue": [],
+                        }
+                    ]
+                }
+            ),
+            ".bullpen/profiles/imported-profile.json": json.dumps(
+                {"id": "imported-profile", "name": "Imported Profile"}
+            ),
+        }
+    )
+
+    resp = client.post(
+        "/api/import/workers",
+        data={"file": (archive, "workers.zip")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    profile = read_json(os.path.join(bp_dir, "profiles", "imported-profile.json"))
+    assert layout["slots"][0]["name"] == "Imported Worker"
+    assert profile["id"] == "imported-profile"

@@ -2,11 +2,13 @@ const TopToolbar = {
   props: ['projectName', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume'],
   emits: [
     'toggle-left-pane',
+    'export-workers',
     'set-theme',
     'set-ambient-preset',
     'set-ambient-volume',
     'export-workspace',
     'export-all',
+    'import-workers',
     'import-workspace',
     'import-all',
   ],
@@ -34,9 +36,19 @@ const TopToolbar = {
       this.showMainMenu = false;
       this.$emit('export-workspace');
     },
+    onExportWorkers() {
+      this.showMainMenu = false;
+      this.$emit('export-workers');
+    },
     onExportAll() {
       this.showMainMenu = false;
       this.$emit('export-all');
+    },
+    triggerImportWorkers() {
+      if (!this.$refs.workersImportInput) return;
+      this.$refs.workersImportInput.value = '';
+      this.$refs.workersImportInput.click();
+      this.showMainMenu = false;
     },
     triggerImportWorkspace() {
       if (!this.$refs.workspaceImportInput) return;
@@ -55,6 +67,11 @@ const TopToolbar = {
       if (!file) return;
       this.$emit('import-workspace', file);
     },
+    onImportWorkersSelected(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      this.$emit('import-workers', file);
+    },
     onImportAllSelected(event) {
       const file = event?.target?.files?.[0];
       if (!file) return;
@@ -69,10 +86,19 @@ const TopToolbar = {
           <div v-if="showMainMenu" class="project-menu toolbar-menu">
             <button class="project-menu-item" @click="onToggleLeftPane">Toggle Left Pane</button>
             <button class="project-menu-item" @click="onExportWorkspace">Export Project</button>
+            <button class="project-menu-item" @click="onExportWorkers">Export Workers</button>
             <button class="project-menu-item" @click="onExportAll">Export All</button>
             <button class="project-menu-item" @click="triggerImportWorkspace">Import Project</button>
+            <button class="project-menu-item" @click="triggerImportWorkers">Import Workers</button>
             <button class="project-menu-item" @click="triggerImportAll">Import All</button>
           </div>
+          <input
+            ref="workersImportInput"
+            type="file"
+            accept=".zip,application/zip"
+            class="toolbar-import-input"
+            @change="onImportWorkersSelected"
+          >
           <input
             ref="workspaceImportInput"
             type="file"
