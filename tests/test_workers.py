@@ -108,6 +108,32 @@ class LiveTokenStreamAdapter(MockAdapter):
         }
 
 
+class ThrottledTokenStreamAdapter(MockAdapter):
+    """Emits two token_count events in quick succession to test throttle deferral."""
+    @property
+    def name(self):
+        return "codex"
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        script = (
+            "import json,sys,time;"
+            "print(json.dumps({'type':'token_count','input_tokens':100,'output_tokens':50,'total_tokens':150}), flush=True);"
+            "time.sleep(0.05);"
+            "print(json.dumps({'type':'token_count','input_tokens':200,'output_tokens':100,'total_tokens':300}), flush=True);"
+            "time.sleep(1);"
+            "print('done', flush=True)"
+        )
+        return [sys.executable, "-c", script]
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {
+            "success": exit_code == 0,
+            "output": stdout.strip() or self._output,
+            "error": None if exit_code == 0 else (stderr.strip() or f"Exit code {exit_code}"),
+            "usage": {},
+        }
+
+
 class CapturingSocket:
     def __init__(self):
         self.events = []
@@ -354,6 +380,35 @@ class TestStartWorker:
                 update.get("status") == "in_progress" and int(update.get("tokens") or 0) >= 205
                 for update in task_updates
             )
+        finally:
+            if previous is not None:
+                register_adapter("codex", previous)
+
+    def test_throttled_token_update_emits_via_deferred_timer(self, bp_dir, worker_slot):
+        """When a token update is throttled, a deferred timer emits it later."""
+        previous = get_adapter("codex")
+        register_adapter("codex", ThrottledTokenStreamAdapter(output="throttled"))
+        socket = CapturingSocket()
+        try:
+            layout = _load_layout(bp_dir)
+            layout["slots"][worker_slot]["agent"] = "codex"
+            layout["slots"][worker_slot]["model"] = "gpt-5.4"
+            write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+            task = create_task(bp_dir, "Throttled token stream")
+            assign_task(bp_dir, worker_slot, task["id"])
+
+            start_worker(bp_dir, worker_slot, socketio=socket, ws_id="ws-throttle")
+            time.sleep(2)
+
+            task_updates = [
+                payload for event, payload, _ in socket.events
+                if event == "task:updated" and payload.get("id") == task["id"]
+            ]
+            # The second token value (300) should eventually be emitted
+            # even though it arrived within the throttle window.
+            token_values = [int(u.get("tokens", 0)) for u in task_updates if u.get("status") == "in_progress"]
+            assert 300 in token_values, f"Expected 300 in token values, got {token_values}"
         finally:
             if previous is not None:
                 register_adapter("codex", previous)

@@ -197,6 +197,16 @@ def extract_codex_usage_event(event_obj):
                 usage = merge_usage_max(usage, normalized)
         return usage
 
+    # item.completed events fire after each tool use / command execution and
+    # may carry per-item usage, giving us mid-execution token updates even
+    # when periodic token_count events are absent.
+    if evt_type == "item.completed":
+        item = event_obj.get("item", {})
+        usage = normalize_usage(item.get("usage", {}))
+        if not usage:
+            usage = normalize_usage(event_obj.get("usage", {}))
+        return usage
+
     return {}
 
 
@@ -290,8 +300,19 @@ def extract_stream_usage_event(provider, event_obj):
     if provider == "gemini":
         return extract_gemini_usage_event(event_obj)
 
-    if isinstance(event_obj, dict) and event_obj.get("type") == "result":
+    if not isinstance(event_obj, dict):
+        return {}
+
+    evt_type = event_obj.get("type")
+
+    if evt_type == "result":
         return normalize_usage(event_obj.get("usage", {}))
+
+    # Claude stream-json emits "assistant" events with message.usage after
+    # each turn, giving us live token updates throughout execution.
+    if provider == "claude" and evt_type == "assistant":
+        msg = event_obj.get("message", {})
+        return normalize_usage(msg.get("usage", {}))
 
     return {}
 

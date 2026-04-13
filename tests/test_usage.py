@@ -5,6 +5,7 @@ from server.usage import (
     build_usage_update,
     extract_codex_usage_event,
     extract_gemini_usage_event,
+    extract_stream_usage_event,
     normalize_usage,
     usage_to_legacy_tokens,
 )
@@ -196,3 +197,88 @@ def test_build_usage_update_separates_provider_and_model_totals():
     assert update["tokens_by_provider_model"][2]["input_tokens"] == 20
     assert update["tokens_by_provider_model"][2]["output_tokens"] == 5
     assert update["tokens_by_provider_model"][2]["tokens"] == 25
+
+
+def test_extract_codex_item_completed_with_item_usage():
+    """item.completed events carry per-item usage for mid-execution updates."""
+    event = {
+        "type": "item.completed",
+        "item": {
+            "type": "command_execution",
+            "command": "ls",
+            "usage": {
+                "input_tokens": 50,
+                "output_tokens": 20,
+                "total_tokens": 70,
+            },
+        },
+    }
+    usage = extract_codex_usage_event(event)
+    assert usage["input_tokens"] == 50
+    assert usage["output_tokens"] == 20
+    assert usage_to_legacy_tokens(usage) == 70
+
+
+def test_extract_codex_item_completed_with_top_level_usage():
+    """item.completed may carry usage at the top level instead of item."""
+    event = {
+        "type": "item.completed",
+        "item": {"type": "agent_message", "text": "done"},
+        "usage": {
+            "input_tokens": 100,
+            "output_tokens": 30,
+        },
+    }
+    usage = extract_codex_usage_event(event)
+    assert usage["input_tokens"] == 100
+    assert usage["output_tokens"] == 30
+    assert usage_to_legacy_tokens(usage) == 130
+
+
+def test_extract_codex_item_completed_no_usage():
+    """item.completed without usage returns empty dict."""
+    event = {
+        "type": "item.completed",
+        "item": {"type": "agent_message", "text": "hello"},
+    }
+    usage = extract_codex_usage_event(event)
+    assert usage == {}
+
+
+def test_extract_stream_usage_claude_assistant_event():
+    """Claude assistant events include message.usage for live token updates."""
+    event = {
+        "type": "assistant",
+        "message": {
+            "content": [{"type": "text", "text": "Hello"}],
+            "usage": {
+                "input_tokens": 200,
+                "output_tokens": 50,
+            },
+        },
+    }
+    usage = extract_stream_usage_event("claude", event)
+    assert usage["input_tokens"] == 200
+    assert usage["output_tokens"] == 50
+    assert usage_to_legacy_tokens(usage) == 250
+
+
+def test_extract_stream_usage_claude_result_event():
+    """Claude result events still work as before."""
+    event = {
+        "type": "result",
+        "usage": {
+            "input_tokens": 500,
+            "output_tokens": 100,
+        },
+    }
+    usage = extract_stream_usage_event("claude", event)
+    assert usage["input_tokens"] == 500
+    assert usage["output_tokens"] == 100
+
+
+def test_extract_stream_usage_claude_ignores_unknown_events():
+    """Non-assistant, non-result Claude events return empty."""
+    event = {"type": "system", "data": "something"}
+    usage = extract_stream_usage_event("claude", event)
+    assert usage == {}

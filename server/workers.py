@@ -632,6 +632,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         live_usage = [{}]
         last_live_tokens = [None]
         last_live_emit_at = [0.0]
+        _deferred_timer = [None]
 
         def _append_stream_line(line, sink):
             # Always store the full line for parse_output (e.g. the result
@@ -676,6 +677,26 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 if socketio and to_emit:
                     _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
 
+        def _emit_token_update(tokens):
+            """Emit a task:updated event with the given token count."""
+            task = task_mod.read_task(bp_dir, task_id)
+            if not task or task.get("status") != "in_progress":
+                return
+            task["tokens"] = tokens
+            _ws_emit(socketio, "task:updated", task, ws_id)
+            last_live_tokens[0] = tokens
+            last_live_emit_at[0] = time.time()
+
+        def _deferred_emit():
+            """Fire the pending token update after the throttle interval."""
+            _deferred_timer[0] = None
+            tokens = usage_to_legacy_tokens(live_usage[0])
+            if tokens <= 0:
+                return
+            if last_live_tokens[0] is not None and tokens == last_live_tokens[0]:
+                return
+            _emit_token_update(tokens)
+
         def _maybe_emit_live_usage(line):
             if not socketio:
                 return
@@ -692,19 +713,27 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             if tokens <= 0:
                 return
 
-            now = time.time()
             if last_live_tokens[0] is not None and tokens == last_live_tokens[0]:
                 return
-            if now - last_live_emit_at[0] < LIVE_TOKEN_EMIT_INTERVAL_SECONDS:
+
+            now = time.time()
+            elapsed = now - last_live_emit_at[0]
+            if elapsed < LIVE_TOKEN_EMIT_INTERVAL_SECONDS:
+                # Throttled — schedule a deferred emit so this update is not lost.
+                if _deferred_timer[0] is None:
+                    delay = LIVE_TOKEN_EMIT_INTERVAL_SECONDS - elapsed
+                    t = threading.Timer(delay, _deferred_emit)
+                    t.daemon = True
+                    _deferred_timer[0] = t
+                    t.start()
                 return
 
-            task = task_mod.read_task(bp_dir, task_id)
-            if not task or task.get("status") != "in_progress":
-                return
-            task["tokens"] = tokens
-            _ws_emit(socketio, "task:updated", task, ws_id)
-            last_live_tokens[0] = tokens
-            last_live_emit_at[0] = now
+            # Cancel any pending deferred emit — we're emitting now.
+            if _deferred_timer[0] is not None:
+                _deferred_timer[0].cancel()
+                _deferred_timer[0] = None
+
+            _emit_token_update(tokens)
 
         def _drain_stderr():
             try:
