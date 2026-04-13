@@ -44,6 +44,35 @@ def test_extract_codex_token_count_event():
     assert usage_to_legacy_tokens(normalized) == 220
 
 
+def test_extract_codex_token_count_event_prefers_nested_totals_without_double_count():
+    event = {
+        "type": "token_count",
+        "info": {
+            "total_token_usage": {
+                "input_tokens": 120,
+                "cached_input_tokens": 30,
+                "output_tokens": 45,
+                "reasoning_output_tokens": 10,
+                "total_tokens": 205,
+            },
+            # Smaller per-step snapshot should not be added to totals.
+            "last_token_usage": {
+                "input_tokens": 0,
+                "output_tokens": 2,
+                "total_tokens": 2,
+            },
+        },
+    }
+
+    normalized = extract_codex_usage_event(event)
+    assert normalized["input_tokens"] == 120
+    assert normalized["cached_input_tokens"] == 30
+    assert normalized["output_tokens"] == 45
+    assert normalized["reasoning_output_tokens"] == 10
+    assert normalized["total_tokens"] == 205
+    assert usage_to_legacy_tokens(normalized) == 205
+
+
 def test_extract_gemini_stats_models_usage_event():
     event = {
         "session_id": "s1",

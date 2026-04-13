@@ -6,7 +6,7 @@ import shutil
 import sys
 
 from server.agents.base import AgentAdapter
-from server.usage import extract_codex_usage_event, merge_usage_dicts
+from server.usage import extract_codex_usage_event, merge_usage_dicts, merge_usage_max
 
 if sys.platform == "win32":
     _CODEX_SEARCH_PATHS = [
@@ -152,6 +152,7 @@ class CodexAdapter(AgentAdapter):
         """Parse Codex --json JSONL output, extracting the final message and usage."""
         last_message = ""
         usage = {}
+        token_count_usage = {}
         has_error = False
         error_text = ""
 
@@ -166,7 +167,11 @@ class CodexAdapter(AgentAdapter):
 
             evt_type = obj.get("type", "")
 
-            usage = merge_usage_dicts(usage, extract_codex_usage_event(obj))
+            extracted = extract_codex_usage_event(obj)
+            if evt_type == "token_count":
+                token_count_usage = merge_usage_max(token_count_usage, extracted)
+            else:
+                usage = merge_usage_dicts(usage, extracted)
 
             if evt_type == "item.completed":
                 item = obj.get("item", {})
@@ -186,6 +191,10 @@ class CodexAdapter(AgentAdapter):
             last_message = (stdout or "").strip()
             if not last_message and stderr:
                 last_message = stderr.strip()
+
+        # token_count events are snapshots; fold them in via max to avoid
+        # double counting against turn.completed usage.
+        usage = merge_usage_max(usage, token_count_usage)
 
         if exit_code != 0 or has_error:
             return {

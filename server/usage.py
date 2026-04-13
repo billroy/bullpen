@@ -23,6 +23,20 @@ _TOKEN_ALIASES = {
     "total_tokens": ("total_tokens",),
 }
 
+_USAGE_WRAPPER_KEYS = (
+    "usage",
+    "token_count",
+    "info",
+    "stats",
+    "total_token_usage",
+    "last_token_usage",
+    "token_usage",
+    "tokens",
+    "totals",
+    "total",
+    "last",
+)
+
 
 def _coerce_non_negative_int(value):
     """Convert input to non-negative int or return None."""
@@ -75,6 +89,41 @@ def merge_usage_dicts(base, extra):
         if seen:
             out[field] = value
     return out
+
+
+def merge_usage_max(base, extra):
+    """Merge two normalized usage dicts by taking per-field max values."""
+    out = {}
+    for field in TOKEN_FIELDS:
+        best = None
+        for src in (base, extra):
+            if isinstance(src, dict) and field in src:
+                n = _coerce_non_negative_int(src.get(field))
+                if n is not None:
+                    best = n if best is None else max(best, n)
+        if best is not None:
+            out[field] = best
+    return out
+
+
+def _iter_usage_payload_candidates(value, max_depth=3, _seen=None):
+    """Yield nested dict payload candidates that may contain usage fields."""
+    if max_depth < 0 or not isinstance(value, dict):
+        return
+
+    if _seen is None:
+        _seen = set()
+    marker = id(value)
+    if marker in _seen:
+        return
+    _seen.add(marker)
+
+    yield value
+
+    for key in _USAGE_WRAPPER_KEYS:
+        nested = value.get(key)
+        if isinstance(nested, dict):
+            yield from _iter_usage_payload_candidates(nested, max_depth=max_depth - 1, _seen=_seen)
 
 
 def usage_to_legacy_tokens(usage):
@@ -140,13 +189,12 @@ def extract_codex_usage_event(event_obj):
 
     if evt_type == "token_count":
         usage = {}
-        for candidate in (
-            event_obj.get("usage"),
-            event_obj.get("token_count"),
-            event_obj.get("info"),
-            event_obj,
-        ):
-            usage = merge_usage_dicts(usage, normalize_usage(candidate))
+        for candidate in _iter_usage_payload_candidates(event_obj):
+            normalized = normalize_usage(candidate)
+            if normalized:
+                # token_count events are snapshots; take max per field across
+                # alternate wrappers to avoid double-counting the same event.
+                usage = merge_usage_max(usage, normalized)
         return usage
 
     return {}

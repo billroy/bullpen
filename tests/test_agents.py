@@ -238,6 +238,40 @@ class TestCodexAdapter:
         assert result["usage"]["reasoning_output_tokens"] == 10
         assert result["usage"]["total_tokens"] == 205
 
+    def test_parse_output_does_not_double_count_token_count_with_turn_completed(self):
+        adapter = CodexAdapter()
+        lines = [
+            json.dumps({
+                "type": "token_count",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 120,
+                        "cached_input_tokens": 30,
+                        "output_tokens": 45,
+                        "reasoning_output_tokens": 10,
+                        "total_tokens": 205,
+                    },
+                },
+            }),
+            json.dumps({
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 120,
+                    "cached_input_tokens": 30,
+                    "output_tokens": 45,
+                    "reasoning_output_tokens": 10,
+                    "total_tokens": 205,
+                },
+            }),
+        ]
+        result = adapter.parse_output("\n".join(lines), "", 0)
+        assert result["success"] is True
+        assert result["usage"]["input_tokens"] == 120
+        assert result["usage"]["cached_input_tokens"] == 30
+        assert result["usage"]["output_tokens"] == 45
+        assert result["usage"]["reasoning_output_tokens"] == 10
+        assert result["usage"]["total_tokens"] == 205
+
 
 class TestGeminiAdapter:
     def test_name(self):
