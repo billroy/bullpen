@@ -20,7 +20,7 @@ const WorkerCard = {
         </div>
         <div class="worker-card-actions">
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
-          <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop>
+          <div v-if="showMenu" ref="menu" class="worker-menu" :style="menuStyle" @click.stop>
             <button class="worker-menu-item" @click="menuEdit">Edit</button>
             <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun">Run</button>
             <button v-if="isWorking" class="worker-menu-item" @click="menuWatch">Watch</button>
@@ -191,14 +191,31 @@ const WorkerCard = {
         return;
       }
       const btn = this.$refs.menuBtn;
-      if (btn) {
-        const rect = btn.getBoundingClientRect();
-        const menuWidth = 130;
-        let left = rect.right - menuWidth;
-        if (left < 4) left = rect.left;
-        this.menuPos = { top: rect.bottom + 4, left };
-      }
+      if (!btn) return;
       this.showMenu = true;
+      this.$nextTick(() => {
+        const rect = btn.getBoundingClientRect();
+        const menuEl = this.$refs.menu;
+        const menuWidth = menuEl?.offsetWidth || 160;
+        const menuHeight = menuEl?.offsetHeight || 0;
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const gutter = 4;
+        let left = rect.right - menuWidth;
+        if (left < gutter) left = gutter;
+        if (viewportWidth > 0) {
+          const maxLeft = Math.max(gutter, viewportWidth - menuWidth - gutter);
+          if (left > maxLeft) left = maxLeft;
+        }
+        let top = rect.bottom + gutter;
+        if (viewportHeight > 0 && menuHeight > 0) {
+          const maxTop = viewportHeight - menuHeight - gutter;
+          if (top > maxTop) {
+            top = Math.max(gutter, rect.top - menuHeight - gutter);
+          }
+        }
+        this.menuPos = { top, left };
+      });
     },
     menuEdit() {
       this.showMenu = false;
