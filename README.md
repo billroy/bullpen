@@ -2,6 +2,27 @@
 
 An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex, Gemini) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
 
+## Deploy on Fly.io Sprite (Recommended Remote Deploy)
+
+Use the one-command deploy script:
+
+```bash
+curl -sL https://raw.githubusercontent.com/billroy/bullpen/main/deploy-sprite.sh | bash
+```
+
+The script prompts for Sprite name, admin username/password, then:
+- Creates (or reuses) the Sprite
+- Clones/updates Bullpen and installs requirements
+- Bootstraps Bullpen credentials non-interactively
+- Configures production mode (`BULLPEN_PRODUCTION=1`)
+- Creates a background service on port `8080`
+- Makes the Sprite URL public and prints the actual HTTPS URL
+- Performs a short health check before exiting
+
+See detailed deployment docs:
+- `docs/sprite.md` (one-command deploy flow and implementation notes)
+- `docs/fly-config.md` (Sprite architecture, hibernation behavior, production details)
+
 ## Quick Start
 
 ```bash
@@ -16,15 +37,17 @@ This opens a browser at `http://localhost:5000`. The workspace directory is wher
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--workspace` | current directory | Project directory for agents to work in |
-| `--port` | 5000 | Server port |
+| `--port` | `$PORT` or `5000` | Server port (`PORT` env var is respected for Sprite/hosted deploys) |
 | `--host` | 127.0.0.1 | Bind address (network-exposed binds require auth to be enabled) |
 | `--no-browser` | off | Don't auto-open the browser |
 | `--websocket-debug` / `--no-websocket-debug` | off | Enable/disable Socket.IO and Engine.IO packet/activity logging |
 | `--set-password [USERNAME]` | — | Interactively set/update user passwords (repeatable for multiple users); can be combined with `--delete-user`; exits after applying changes |
 | `--delete-user USERNAME` | — | Remove configured login users (repeatable); can be combined with `--set-password`; exits after applying changes |
+| `--bootstrap-credentials` | off | Create initial credentials from `BULLPEN_BOOTSTRAP_USER` (default `admin`) and `BULLPEN_BOOTSTRAP_PASSWORD`, then exit (idempotent if users already exist) |
 
-By default the server only accepts connections from localhost. Socket.IO allows cross-origin connections (`cors_allowed_origins="*"`) so reverse proxies and tunneled dev URLs work; authentication remains the primary access control.
+By default the server only accepts connections from localhost. Socket.IO accepts same-origin, localhost, and trusted tunnel origins (including `*.ngrok*` and `*.sprites.app`) so reverse proxies and tunneled URLs work without wildcard CORS; authentication remains the primary access control.
 If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires authentication credentials to be configured first.
+For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` so secure cookies and forwarded-proxy headers are handled correctly.
 
 ## Features
 
@@ -51,12 +74,19 @@ If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires aut
 - **Ambient sounds** -- 18 synthesized ambient soundscapes (Server Room, Forest Rain, Deep Space, War Room, etc.) generated via the Web Audio API with per-workspace volume control
 - **Light/dark theme** -- toggle between dark and light themes
 - **Context menu** -- right-click worker cards for actions (configure, start, stop, duplicate, remove)
-- **Real-time sync** -- Socket.IO keeps all connected clients in sync, scoped per workspace (CORS `*` for reverse-proxy compatibility)
+- **Real-time sync** -- Socket.IO keeps all connected clients in sync, scoped per workspace, with origin checks that allow localhost/same-origin and trusted tunnel domains (including `.sprites.app`)
 - **Persistence** -- tickets stored as frontmatter markdown files in `.bullpen/tasks/`, layout and config as JSON
 - **Ticket archiving** -- archive completed tickets to keep the board clean
 - **Authentication** -- optional local username/password login (supports multiple users; see [Authentication](#authentication) below)
 - **MCP server** -- expose ticket management tools to supported agents via JSON-RPC stdio (see [MCP Integration](#mcp-integration) below)
 - **Cross-platform** -- runs on macOS, Linux, and Windows
+
+## Deployment Notes
+
+- **Sprite/tunnel origin trust** -- Socket.IO origin checks include trusted tunnel suffixes including `.sprites.app` for Fly.io Sprite URLs.
+- **Sprite service port compatibility** -- Bullpen supports `PORT` env var fallback so hosted runtimes that expect port `8080` work without custom patching.
+- **Production TLS mode** -- setting `BULLPEN_PRODUCTION=1` enables secure session cookies and proxy header handling for HTTPS deployments.
+- **One-command Sprite install** -- `deploy-sprite.sh` automates Sprite provisioning, auth bootstrap, service creation, and URL publication.
 
 ## Architecture
 
@@ -182,3 +212,7 @@ The MCP server communicates exclusively over stdout. Any stray `print()` call or
 pip install -r requirements.txt
 python3 -m pytest tests/
 ```
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE.md`.
