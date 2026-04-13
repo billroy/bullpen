@@ -4,6 +4,12 @@ import os
 import re
 import subprocess
 import sys
+import json
+import tempfile
+import zipfile
+from datetime import datetime, timezone
+from io import BytesIO
+import shutil
 from urllib.parse import urlparse
 
 from flask import (
@@ -13,6 +19,7 @@ from flask import (
     redirect,
     render_template_string,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -33,6 +40,7 @@ socketio = SocketIO()
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _TRUSTED_TUNNEL_SUFFIXES = (".ngrok-free.app", ".ngrok.app", ".ngrok.io", ".sprites.app")
+_MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
 
 
 def _origin_host(origin):
@@ -448,6 +456,165 @@ def create_app(
                 socketio.emit("layout:updated", src_layout, to=src_ws.id)
 
         return jsonify(result)
+
+    def _export_workspace_zip_bytes(ws):
+        mem = BytesIO()
+        with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            if os.path.isdir(ws.bp_dir):
+                for root, _dirs, files in os.walk(ws.bp_dir):
+                    for filename in files:
+                        full_path = os.path.join(root, filename)
+                        rel_path = os.path.relpath(full_path, ws.path).replace(os.sep, "/")
+                        zf.write(full_path, rel_path)
+        mem.seek(0)
+        return mem
+
+    def _export_all_zip_bytes():
+        mem = BytesIO()
+        created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for ws in manager.all_workspaces():
+                if not os.path.isdir(ws.bp_dir):
+                    continue
+                for root, _dirs, files in os.walk(ws.bp_dir):
+                    for filename in files:
+                        full_path = os.path.join(root, filename)
+                        rel_path = os.path.relpath(full_path, ws.bp_dir).replace(os.sep, "/")
+                        arcname = f"workspaces/{ws.id}/.bullpen/{rel_path}"
+                        zf.write(full_path, arcname)
+            manifest = {
+                "schema": "bullpen-export-all-v1",
+                "created_at": created_at,
+                "workspaces": [ws.to_dict() for ws in manager.all_workspaces()],
+            }
+            zf.writestr("bullpen-export.json", json.dumps(manifest, indent=2))
+        mem.seek(0)
+        return mem
+
+    def _safe_extract_zip(zf, target_dir):
+        total_size = 0
+        for info in zf.infolist():
+            name = (info.filename or "").replace("\\", "/")
+            if not name or name.endswith("/"):
+                continue
+            parts = [p for p in name.split("/") if p not in ("", ".")]
+            if any(p == ".." for p in parts):
+                raise ValueError("Archive contains invalid relative paths")
+            if parts and parts[0].endswith(":"):
+                raise ValueError("Archive contains invalid absolute paths")
+            total_size += max(0, int(info.file_size or 0))
+            if total_size > _MAX_IMPORT_ARCHIVE_BYTES:
+                raise ValueError("Archive is too large")
+            dest_path = os.path.join(target_dir, *parts)
+            ensure_within(dest_path, target_dir)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            with zf.open(info, "r") as src, open(dest_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+
+    def _workspace_payload_root(extracted_root):
+        explicit = os.path.join(extracted_root, ".bullpen")
+        if os.path.isdir(explicit):
+            return explicit
+        if os.path.exists(os.path.join(extracted_root, "config.json")):
+            return extracted_root
+        return None
+
+    def _replace_workspace_bp_dir(ws, source_bp_dir):
+        bp_dir = ws.bp_dir
+        if os.path.exists(bp_dir):
+            shutil.rmtree(bp_dir)
+        shutil.copytree(source_bp_dir, bp_dir)
+        init_workspace(ws.path)
+        reconcile(bp_dir)
+        state = load_state(bp_dir, ws.path)
+        state["workspaceId"] = ws.id
+        socketio.emit("state:init", state, to=ws.id)
+        socketio.emit("files:changed", {"workspaceId": ws.id}, to=ws.id)
+
+    @app.route("/api/export/workspace")
+    @auth.require_auth
+    def export_workspace():
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws = manager.get(ws_id)
+        if ws is None:
+            return jsonify({"error": "Unknown workspace"}), 404
+        export_name = f"bullpen-workspace-{ws.name}-{ws.id[:8]}.zip"
+        return send_file(
+            _export_workspace_zip_bytes(ws),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=export_name,
+        )
+
+    @app.route("/api/export/all")
+    @auth.require_auth
+    def export_all():
+        export_name = f"bullpen-all-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.zip"
+        return send_file(
+            _export_all_zip_bytes(),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=export_name,
+        )
+
+    @app.route("/api/import/workspace", methods=["POST"])
+    @auth.require_auth
+    def import_workspace():
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws = manager.get(ws_id)
+        if ws is None:
+            return jsonify({"error": "Unknown workspace"}), 404
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            return jsonify({"error": "Missing upload file"}), 400
+        try:
+            with zipfile.ZipFile(upload.stream, "r") as zf:
+                with tempfile.TemporaryDirectory(prefix="bullpen_import_") as tmp_dir:
+                    _safe_extract_zip(zf, tmp_dir)
+                    payload_root = _workspace_payload_root(tmp_dir)
+                    if not payload_root:
+                        return jsonify({"error": "Archive does not contain a workspace .bullpen payload"}), 400
+                    _replace_workspace_bp_dir(ws, payload_root)
+        except zipfile.BadZipFile:
+            return jsonify({"error": "Invalid zip file"}), 400
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        return jsonify({"ok": True, "imported": 1, "workspaceId": ws_id})
+
+    @app.route("/api/import/all", methods=["POST"])
+    @auth.require_auth
+    def import_all():
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            return jsonify({"error": "Missing upload file"}), 400
+        imported = 0
+        try:
+            with zipfile.ZipFile(upload.stream, "r") as zf:
+                with tempfile.TemporaryDirectory(prefix="bullpen_import_all_") as tmp_dir:
+                    _safe_extract_zip(zf, tmp_dir)
+                    workspaces_dir = os.path.join(tmp_dir, "workspaces")
+                    if not os.path.isdir(workspaces_dir):
+                        return jsonify({"error": "Archive does not contain a workspaces/ directory"}), 400
+                    for ws in manager.all_workspaces():
+                        candidate = os.path.join(workspaces_dir, ws.id)
+                        if not os.path.isdir(candidate):
+                            continue
+                        payload_root = _workspace_payload_root(candidate)
+                        if not payload_root:
+                            continue
+                        _replace_workspace_bp_dir(ws, payload_root)
+                        imported += 1
+        except zipfile.BadZipFile:
+            return jsonify({"error": "Invalid zip file"}), 400
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        if imported == 0:
+            return jsonify({"error": "No matching workspaces found in archive"}), 400
+        return jsonify({"ok": True, "imported": imported})
 
     @socketio.on("connect")
     def on_connect(auth_data=None):

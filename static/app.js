@@ -574,6 +574,91 @@ const app = createApp({
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
 
+    function _downloadNameFromDisposition(contentDisposition, fallback) {
+      if (typeof contentDisposition !== 'string' || !contentDisposition) return fallback;
+      const match = contentDisposition.match(/filename\*?=(?:UTF-8''|\"?)([^\";]+)/i);
+      if (!match || !match[1]) return fallback;
+      try {
+        return decodeURIComponent(match[1].trim());
+      } catch (_err) {
+        return match[1].trim();
+      }
+    }
+
+    async function _downloadZip(url, fallbackName) {
+      const resp = await fetch(url, { method: 'GET' });
+      if (!resp.ok) {
+        let message = 'Download failed';
+        try {
+          const body = await resp.json();
+          if (body && body.error) message = body.error;
+        } catch (_err) {
+          // Keep generic message when non-JSON response body.
+        }
+        throw new Error(message);
+      }
+      const blob = await resp.blob();
+      const name = _downloadNameFromDisposition(resp.headers.get('content-disposition'), fallbackName);
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = name || fallbackName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    }
+
+    async function exportWorkspace() {
+      if (!activeWorkspaceId.value) return;
+      try {
+        const url = `/api/export/workspace?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
+        await _downloadZip(url, 'bullpen-workspace.zip');
+        addToast('Workspace export ready');
+      } catch (e) {
+        addToast('Workspace export failed: ' + e.message, 'error');
+      }
+    }
+
+    async function exportAll() {
+      try {
+        await _downloadZip('/api/export/all', 'bullpen-all.zip');
+        addToast('All-workspace export ready');
+      } catch (e) {
+        addToast('Export all failed: ' + e.message, 'error');
+      }
+    }
+
+    async function _importZip(url, file, successMessage) {
+      if (!file) return;
+      const form = new FormData();
+      form.append('file', file);
+      const resp = await fetch(url, { method: 'POST', body: form });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(body?.error || 'Import failed');
+      }
+      addToast(successMessage + (body?.imported ? ` (${body.imported})` : ''));
+    }
+
+    async function importWorkspace(file) {
+      if (!activeWorkspaceId.value) return;
+      try {
+        const url = `/api/import/workspace?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
+        await _importZip(url, file, 'Workspace import complete');
+      } catch (e) {
+        addToast('Workspace import failed: ' + e.message, 'error');
+      }
+    }
+
+    async function importAll(file) {
+      try {
+        await _importZip('/api/import/all', file, 'All-workspace import complete');
+      } catch (e) {
+        addToast('Import all failed: ' + e.message, 'error');
+      }
+    }
+
     // Theme
     function setTheme(themeId) {
       const next = _normalizeTheme(themeId);
@@ -684,7 +769,7 @@ const app = createApp({
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
-      tabIcon, activeProjectName,
+      tabIcon, activeProjectName, exportWorkspace, exportAll, importWorkspace, importAll,
     };
   },
   mounted() {
@@ -714,6 +799,10 @@ const app = createApp({
         :ambient-preset="currentAmbientPreset"
         :ambient-volume="currentAmbientVolume"
         @toggle-left-pane="toggleLeftPane"
+        @export-workspace="exportWorkspace"
+        @export-all="exportAll"
+        @import-workspace="importWorkspace"
+        @import-all="importAll"
         @set-theme="setTheme"
         @set-ambient-preset="setAmbientPreset"
         @set-ambient-volume="setAmbientVolume"

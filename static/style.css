@@ -398,6 +398,18 @@ body {
   gap: 10px;
 }
 
+.toolbar-menu-wrap {
+  position: relative;
+}
+
+.toolbar-menu {
+  min-width: 176px;
+}
+
+.toolbar-import-input {
+  display: none;
+}
+
 .toolbar-right {
   display: flex;
   align-items: center;
