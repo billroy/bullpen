@@ -207,6 +207,7 @@ curl -sL https://raw.githubusercontent.com/billroy/bullpen/main/deploy-sprite.sh
 The script prompts for Sprite name, admin username/password, then:
 - Creates (or reuses) the Sprite
 - Clones/updates Bullpen and installs requirements
+- Ensures `node` and `rg` (ripgrep) are installed on the Sprite
 - Bootstraps Bullpen credentials non-interactively
 - Configures production mode (`BULLPEN_PRODUCTION=1`)
 - Creates a background service on port `8080`

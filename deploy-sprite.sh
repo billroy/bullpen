@@ -91,6 +91,21 @@ NODE_OUT=$(sprite exec $S -- bash -c "
 }
 ok
 
+# ── install ripgrep ─────────────────────────────────────────────
+
+step "Ensuring ripgrep (rg) is available"
+RG_OUT=$(sprite exec $S -- bash -c "
+    command -v rg >/dev/null 2>&1 && echo ok || {
+        sudo apt-get update &&
+        sudo apt-get install -y ripgrep
+    }
+" 2>&1) || {
+    printf '\033[31mfailed\033[0m\n'
+    echo "$RG_OUT"
+    die "ripgrep installation failed."
+}
+ok
+
 # ── install AI agent CLIs ───────────────────────────────────────
 
 step "Installing AI agent CLIs (claude, codex, gemini)"
