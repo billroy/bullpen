@@ -208,6 +208,10 @@ def create_app(
     def index():
         return app.send_static_file("index.html")
 
+    @app.route("/health", methods=["GET"])
+    def health():
+        return jsonify({"ok": True}), 200
+
     # --- Login / logout -------------------------------------------------
 
     @app.route("/login", methods=["GET"])

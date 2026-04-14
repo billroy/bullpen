@@ -97,6 +97,11 @@ def _login(client, username=USERNAME, password=PASSWORD):
 
 
 class TestHttpAuthEnabled:
+    def test_health_public_without_session(self, auth_client):
+        r = auth_client.get("/health")
+        assert r.status_code == 200
+        assert r.get_json() == {"ok": True}
+
     def test_index_unauthenticated_redirects_to_login(self, auth_client):
         r = auth_client.get("/")
         assert r.status_code == 302
@@ -236,6 +241,11 @@ class TestSocketIoAuthEnabled:
 
 
 class TestAuthDisabled:
+    def test_no_auth_health_endpoint(self, noauth_client):
+        r = noauth_client.get("/health")
+        assert r.status_code == 200
+        assert r.get_json() == {"ok": True}
+
     def test_no_auth_index_accessible(self, noauth_client):
         r = noauth_client.get("/")
         assert r.status_code == 200

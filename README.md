@@ -88,6 +88,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Sprite service port compatibility** -- Bullpen supports `PORT` env var fallback so hosted runtimes that expect port `8080` work without custom patching.
 - **Production TLS mode** -- setting `BULLPEN_PRODUCTION=1` enables secure session cookies and proxy header handling for HTTPS deployments.
 - **One-command Sprite install** -- `deploy-sprite.sh` automates Sprite provisioning, auth bootstrap, service creation, and URL publication.
+- **DigitalOcean Droplet runbook** -- `docs/digitalocean-droplet.md` provides nginx + `systemd` + TLS + firewall setup, plus checked-in templates under `deploy/digitalocean/`.
 
 ## Architecture
 
@@ -182,6 +183,17 @@ Delete `~/.bullpen/.env` and restart. Bullpen will report auth disabled and all 
 ### Deploying remotely
 
 When exposing Bullpen outside localhost, put TLS in front (nginx, Caddy, Cloudflare Tunnel, etc.) so the session cookie is never transmitted in plaintext. See [docs/login.md](docs/login.md) for full details on CSRF protection, cookie settings, and the env file format.
+
+For a full single-host production baseline on Ubuntu, see [docs/digitalocean-droplet.md](docs/digitalocean-droplet.md).
+
+## DigitalOcean Droplet Deployment
+
+For a full Droplet guide, use:
+
+- [docs/digitalocean-droplet.md](docs/digitalocean-droplet.md)
+- `deploy/digitalocean/bullpen.service` (systemd template)
+- `deploy/digitalocean/nginx-bullpen.conf` (reverse proxy template)
+- `deploy-do-droplet.sh` (optional bootstrap automation)
 
 ## MCP Integration
 
