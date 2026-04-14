@@ -170,11 +170,7 @@ Large scope.
 
 ### 12. Manual activation is broken / needs play button
 
-**Finding:** Two bugs:
-1. `validation.py:18` has `VALID_ACTIVATIONS = {"on_drop", "watch_column"}`. The value `"manual"` is shown in the UI dropdown but fails validation.
-2. Naming inconsistency: `workers.py:57` checks `activation in ("on_drop", "on_queue")` but validation only allows `"watch_column"`. So `"on_queue"` can't be saved either.
-
-**Action:** Change `VALID_ACTIVATIONS` in `validation.py:18` to `{"on_drop", "on_queue", "manual"}` (drop `"watch_column"`, align with UI values and workers.py). The play button for manual mode already works: `WorkerCard.js:14` shows a start button when `canStart` is true. Two-line fix. Small scope.
+**Status: FIXED.** `VALID_ACTIVATIONS` now includes all five activation modes: `{"on_drop", "on_queue", "manual", "at_time", "on_interval"}`.
 
 ---
 

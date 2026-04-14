@@ -362,7 +362,7 @@ const app = createApp({
       ws.teams = teams;
       if (_isActive(wsId)) state.teams = teams;
     });
-    socket.on('error', (data) => { addToast(data.message, 'error'); });
+    socket.on('error', (data) => { addToast((data && data.message) || 'An error occurred', 'error'); });
     socket.on('projects:updated', (list) => {
       projects.splice(0, projects.length, ...list);
     });
