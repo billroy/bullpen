@@ -11,6 +11,22 @@ python3 bullpen.py --workspace /path/to/your/project
 
 This opens a browser at `http://localhost:5000`. The workspace directory is where your agents will operate.
 
+### AI CLI Prerequisites
+
+Bullpen runs provider CLIs locally. Install and authenticate each provider you want to use:
+
+- **Claude Code CLI**
+  - Install/setup: https://code.claude.com/docs/en/setup
+  - Authentication: https://code.claude.com/docs/en/authentication
+- **Codex CLI**
+  - Installation: https://github.com/openai/codex/blob/main/docs/install.md
+  - Authentication: https://github.com/openai/codex/blob/main/docs/authentication.md
+- **Gemini CLI**
+  - Installation: https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/index.md
+  - Authentication: https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/authentication.md
+
+Only authenticated providers are usable in Bullpen. If you plan to use all three agents, complete login/auth setup in all three CLIs first.
+
 ### Options
 
 | Flag | Default | Description |
@@ -122,7 +138,7 @@ tests/                  # 465 tests passing (pytest)
 | Codex | `codex` | GPT-5 family models, stderr streaming |
 | Gemini | `gemini` | Gemini CLI prompt execution with stdout streaming |
 
-The agent must be installed and available on your PATH.
+Each agent CLI must be installed, available on your PATH, and authenticated with its provider before Bullpen can use it.
 
 ## Authentication
 
