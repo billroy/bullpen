@@ -469,6 +469,10 @@ def create_app(
         mem.seek(0)
         return mem
 
+    def _workspace_export_meta(ws):
+        # Do not expose host filesystem paths in export manifests.
+        return {"id": ws.id, "name": ws.name}
+
     def _export_workers_zip_bytes(ws):
         mem = BytesIO()
         created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -492,7 +496,7 @@ def create_app(
             manifest = {
                 "schema": "bullpen-workers-export-v1",
                 "created_at": created_at,
-                "workspace": ws.to_dict(),
+                "workspace": _workspace_export_meta(ws),
                 "profiles": sorted(profile_ids),
             }
             zf.writestr("bullpen-workers-export.json", json.dumps(manifest, indent=2))
@@ -515,7 +519,7 @@ def create_app(
             manifest = {
                 "schema": "bullpen-export-all-v1",
                 "created_at": created_at,
-                "workspaces": [ws.to_dict() for ws in manager.all_workspaces()],
+                "workspaces": [_workspace_export_meta(ws) for ws in manager.all_workspaces()],
             }
             zf.writestr("bullpen-export.json", json.dumps(manifest, indent=2))
         mem.seek(0)

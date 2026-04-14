@@ -75,8 +75,11 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     assert export_resp.status_code == 200
     with zipfile.ZipFile(io.BytesIO(export_resp.data), "r") as zf:
         names = set(zf.namelist())
+        manifest = json.loads(zf.read("bullpen-export.json"))
     assert f"workspaces/{ws1_id}/.bullpen/config.json" in names
     assert f"workspaces/{ws2_id}/.bullpen/config.json" in names
+    for ws in manifest["workspaces"]:
+        assert "path" not in ws
 
     import_archive = _zip_bytes({
         f"workspaces/{ws1_id}/.bullpen/config.json": json.dumps({"name": "Imported One", "columns": [], "grid": {"rows": 4, "cols": 6}}),
@@ -121,10 +124,12 @@ def test_export_workers_returns_workers_payload(tmp_workspace):
     with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
         names = set(zf.namelist())
         exported_layout = json.loads(zf.read(".bullpen/layout.json"))
+        manifest = json.loads(zf.read("bullpen-workers-export.json"))
     assert ".bullpen/layout.json" in names
     assert ".bullpen/config.json" not in names
     assert ".bullpen/profiles/custom-worker.json" in names
     assert exported_layout["slots"][0]["name"] == "Builder"
+    assert "path" not in manifest["workspace"]
 
 
 def test_import_workers_replaces_layout_from_zip(tmp_workspace):
