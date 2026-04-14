@@ -39,6 +39,9 @@ const LeftPane = {
       <div v-else-if="projects && projects.length <= 1" class="left-pane-section project-add-only">
         <div class="project-menu-wrap" @click.stop>
           <button class="btn btn-sm" @click="toggleProjectMenu">...</button>
+          <div v-if="showEmptyProjectHint" class="project-menu-tooltip" role="status" aria-live="polite">
+            Open the menu to add or create your first project.
+          </div>
           <div v-if="showProjectMenu" class="project-menu">
             <button class="project-menu-item" @click="promptAddProject">Add Project</button>
             <button class="project-menu-item" @click="promptNewProject">New Project</button>
@@ -137,10 +140,25 @@ const LeftPane = {
     },
     quickCreateClearToken() {
       this.quickCreateText = '';
+    },
+    projects: {
+      immediate: true,
+      handler(list) {
+        if (this.emptyProjectHintInitialized || !Array.isArray(list)) return;
+        this.emptyProjectHintInitialized = true;
+        this.showEmptyProjectHint = list.length === 0;
+      }
     }
   },
   data() {
-    return { rosterDragSlot: null, selectedColumn: 'inbox', quickCreateText: '', showProjectMenu: false };
+    return {
+      rosterDragSlot: null,
+      selectedColumn: 'inbox',
+      quickCreateText: '',
+      showProjectMenu: false,
+      showEmptyProjectHint: false,
+      emptyProjectHintInitialized: false,
+    };
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
@@ -155,9 +173,11 @@ const LeftPane = {
   methods: {
     toggleProjectMenu() {
       this.showProjectMenu = !this.showProjectMenu;
+      this.showEmptyProjectHint = false;
     },
     onGlobalClick() {
       this.showProjectMenu = false;
+      this.showEmptyProjectHint = false;
     },
     submitQuickCreate() {
       const text = this.quickCreateText.trim();
@@ -206,6 +226,7 @@ const LeftPane = {
     },
     promptAddProject() {
       this.showProjectMenu = false;
+      this.showEmptyProjectHint = false;
       const path = prompt('Enter absolute path to project directory:');
       if (path && path.trim()) {
         this.$emit('add-project', path.trim());
@@ -213,6 +234,7 @@ const LeftPane = {
     },
     promptNewProject() {
       this.showProjectMenu = false;
+      this.showEmptyProjectHint = false;
       const path = prompt('Enter absolute path for new project directory:');
       if (path && path.trim()) {
         this.$emit('new-project', path.trim());
@@ -220,6 +242,7 @@ const LeftPane = {
     },
     promptCloneProject() {
       this.showProjectMenu = false;
+      this.showEmptyProjectHint = false;
       const url = prompt('Enter Git repository URL:');
       if (!url || !url.trim()) return;
       const path = prompt('Enter absolute path to clone into (leave empty for default):');

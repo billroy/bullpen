@@ -17,6 +17,15 @@ def test_leftpane_projects_header_uses_menu_button_with_add_and_new_options():
     assert "class=\"project-menu-item\" @click=\"promptNewProject\">New Project</button>" in text
 
 
+def test_leftpane_empty_project_hint_tooltip_is_wired():
+    text = _read("static/components/LeftPane.js")
+    assert "v-if=\"showEmptyProjectHint\" class=\"project-menu-tooltip\"" in text
+    assert "Open the menu to add or create your first project." in text
+    assert "emptyProjectHintInitialized" in text
+    assert "this.showEmptyProjectHint = list.length === 0;" in text
+    assert "this.showEmptyProjectHint = false;" in text
+
+
 def test_leftpane_emits_new_project_and_registers_menu_dismiss_listener():
     text = _read("static/components/LeftPane.js")
     assert "document.addEventListener('click', this.onGlobalClick);" in text
@@ -32,6 +41,8 @@ def test_switching_projects_joins_project_socket_room():
 
 def test_project_menu_styles_exist():
     text = _read("static/style.css")
+    assert ".project-menu-tooltip {" in text
+    assert ".project-menu-tooltip::after {" in text
     assert ".project-menu {" in text
     assert ".project-menu-item {" in text
 
