@@ -85,3 +85,24 @@ def test_set_password_cli_add_and_delete_users(tmp_path, monkeypatch):
     users = auth.get_users()
     assert "new" in users
     assert "old" not in users
+
+
+def test_bootstrap_credentials_force_updates_existing_user(tmp_path, monkeypatch):
+    monkeypatch.setattr("server.workspace_manager.GLOBAL_DIR", str(tmp_path))
+    existing = auth.apply_credentials_mapping(
+        {},
+        {"admin": auth.generate_password_hash("oldpass")},
+    )
+    auth.write_env_file(auth.env_path(str(tmp_path)), existing)
+
+    monkeypatch.setenv("BULLPEN_BOOTSTRAP_USER", "admin")
+    monkeypatch.setenv("BULLPEN_BOOTSTRAP_PASSWORD", "newpass")
+    monkeypatch.setenv("BULLPEN_BOOTSTRAP_FORCE", "1")
+
+    rc = bullpen.bootstrap_credentials()
+    assert rc == 0
+
+    auth.reset_auth_cache()
+    auth.load_credentials(str(tmp_path))
+    assert auth.check_password("newpass", auth.get_password_hash("admin"))
+    assert not auth.check_password("oldpass", auth.get_password_hash("admin"))

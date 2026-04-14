@@ -10,6 +10,7 @@ The script handles deployment end-to-end:
 - prompts for container name, workspace path, ports, and Bullpen admin credentials
 - builds the Docker image when needed
 - starts/replaces the container with the correct runtime settings
+- updates Bullpen login credentials to match the admin username/password entered for this deploy
 - auto-loads provider credentials by mounting local auth directories and forwarding detected API/token environment variables
 - falls back to secure credential prompts only when no credentials are detected
 

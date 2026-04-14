@@ -42,7 +42,11 @@ if [[ ! -f "$HOME/.claude.json" && -d "$HOME/.claude/backups" ]]; then
 fi
 
 if [[ -n "${BULLPEN_BOOTSTRAP_PASSWORD:-}" ]]; then
-  echo "Bootstrapping Bullpen credentials (if none exist yet)"
+  if [[ -n "${BULLPEN_BOOTSTRAP_FORCE:-}" ]]; then
+    echo "Bootstrapping Bullpen credentials (force enabled)"
+  else
+    echo "Bootstrapping Bullpen credentials (if none exist yet)"
+  fi
   python3 bullpen.py --bootstrap-credentials
 else
   echo "BULLPEN_BOOTSTRAP_PASSWORD not set; skipping credential bootstrap"

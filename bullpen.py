@@ -75,7 +75,8 @@ def parse_args(argv=None):
         help=(
             "Create login credentials from BULLPEN_BOOTSTRAP_USER (default: "
             "'admin') and BULLPEN_BOOTSTRAP_PASSWORD env vars, then exit. "
-            "No-op if credentials already exist. For headless/scripted deploys."
+            "No-op if credentials already exist unless BULLPEN_BOOTSTRAP_FORCE=1. "
+            "For headless/scripted deploys."
         ),
     )
     return parser.parse_args(argv)
@@ -154,7 +155,8 @@ def bootstrap_credentials():
 
     Reads BULLPEN_BOOTSTRAP_USER (default: 'admin') and
     BULLPEN_BOOTSTRAP_PASSWORD.  Writes hashed credentials and exits.
-    No-op if credentials already exist (idempotent restarts).
+    No-op if credentials already exist unless BULLPEN_BOOTSTRAP_FORCE=1
+    (idempotent restarts by default).
     """
     from server import auth
     from server.workspace_manager import GLOBAL_DIR
@@ -164,7 +166,10 @@ def bootstrap_credentials():
 
     existing = auth.parse_env_file(path)
     users = auth.parse_credentials_mapping(existing)
-    if users:
+    force = os.environ.get("BULLPEN_BOOTSTRAP_FORCE", "").strip().lower() in {
+        "1", "true", "yes", "y", "on"
+    }
+    if users and not force:
         print(f"Credentials already exist ({len(users)} user(s)); skipping bootstrap.")
         return 0
 
@@ -180,7 +185,8 @@ def bootstrap_credentials():
     users[username] = auth.generate_password_hash(password)
     updated = auth.apply_credentials_mapping(existing, users)
     auth.write_env_file(path, updated)
-    print(f"Bootstrapped credentials for '{username}' in {path}")
+    action = "Updated" if force else "Bootstrapped"
+    print(f"{action} credentials for '{username}' in {path}")
     return 0
 
 
