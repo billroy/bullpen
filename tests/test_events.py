@@ -255,6 +255,18 @@ class TestWorkerEvents:
         assert layout["slots"][0]["name"] == "Feature Architect"
         assert layout["slots"][0]["state"] == "idle"
 
+    def test_add_unconfigured_worker_uses_safe_defaults(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "unconfigured-worker"})
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        worker = layout["slots"][0]
+        assert worker["profile"] == "unconfigured-worker"
+        assert worker["activation"] == "manual"
+        assert worker["max_retries"] == 0
+        assert worker["task_queue"] == []
+        assert worker["state"] == "idle"
+
     def test_add_worker_persists(self, client):
         c, app = client
         c.emit("worker:add", {"slot": 2, "profile": "code-reviewer"})

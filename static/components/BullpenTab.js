@@ -1,4 +1,5 @@
 const BullpenTab = {
+  UNCONFIGURED_PROFILE_ID: 'unconfigured-worker',
   props: ['layout', 'config', 'profiles', 'tasks', 'workspace', 'multipleWorkspaces'],
   emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker'],
   components: { WorkerCard },
@@ -92,7 +93,12 @@ const BullpenTab = {
       return max;
     },
     sortedProfiles() {
-      return (this.profiles || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      const pin = this.$options.UNCONFIGURED_PROFILE_ID;
+      return (this.profiles || []).slice().sort((a, b) => {
+        if (a?.id === pin && b?.id !== pin) return -1;
+        if (b?.id === pin && a?.id !== pin) return 1;
+        return (a?.name || '').localeCompare(b?.name || '');
+      });
     }
   },
   methods: {

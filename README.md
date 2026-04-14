@@ -67,7 +67,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Auto-commit & auto-PR** -- optionally commit agent output on success and open a pull request automatically
 - **Worktrees** -- agents can work in isolated git worktrees per task to avoid conflicts
 - **Worker handoff** -- chain workers by setting disposition to route completed tasks to the next worker
-- **Profiles** -- 24 built-in worker profiles (feature-architect, code-reviewer, test-writer, etc.) with customizable expertise prompts; create custom profiles
+- **Profiles** -- 25 built-in worker profiles (feature-architect, code-reviewer, test-writer, unconfigured-worker, etc.) with customizable expertise prompts; create custom profiles
 - **Teams** -- save and restore grid configurations
 - **Ticket editing** -- edit ticket title, tags, and description inline; Cmd+Enter to save
 - **Token tracking** -- per-ticket token consumption tracking plus provider/model usage metadata, displayed in list view and ticket details
@@ -119,7 +119,7 @@ static/
   app.js                # Vue app setup, state management
   style.css             # Light/dark theme
   components/           # Vue components (KanbanTab, WorkerCard, FilesTab, LiveAgentChatTab, etc.)
-profiles/               # 24 built-in worker profile JSON files
+profiles/               # 25 built-in worker profile JSON files
 tests/                  # 465 tests passing (pytest)
 ```
 

@@ -16,11 +16,12 @@ def bp_dir(tmp_workspace):
 class TestProfiles:
     def test_list_defaults(self, bp_dir):
         profiles = list_profiles(bp_dir)
-        assert len(profiles) == 24
+        assert len(profiles) == 25
         ids = {p["id"] for p in profiles}
         assert "feature-architect" in ids
         assert "code-reviewer" in ids
         assert "bug-triager" in ids
+        assert "unconfigured-worker" in ids
 
     def test_all_profiles_have_required_fields(self, bp_dir):
         profiles = list_profiles(bp_dir)
@@ -59,7 +60,7 @@ class TestProfiles:
 
         # Verify appears in list
         profiles = list_profiles(bp_dir)
-        assert len(profiles) == 25
+        assert len(profiles) == 26
         ids = {p["id"] for p in profiles}
         assert "custom-worker" in ids
 
@@ -96,4 +97,4 @@ class TestProfiles:
 
             assert state_init is not None
             assert "profiles" in state_init
-            assert len(state_init["profiles"]) == 24
+            assert len(state_init["profiles"]) == 25
