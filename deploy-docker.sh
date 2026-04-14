@@ -6,6 +6,7 @@ CONTAINER_NAME_DEFAULT="bullpen"
 BULLPEN_PORT_DEFAULT="8080"
 APP_PORT_DEFAULT="3000"
 ADMIN_USER_DEFAULT="admin"
+DOCKER_HOME_DEFAULT="$HOME/.bullpen/docker-home"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33mwarn:\033[0m %s\n' "$1" >&2; }
@@ -142,6 +143,28 @@ build_image() {
     -t "$IMAGE_NAME" .
 }
 
+seed_file_if_missing() {
+  local source_path="$1"
+  local target_path="$2"
+  if [[ -f "$source_path" && ! -e "$target_path" ]]; then
+    mkdir -p "$(dirname "$target_path")"
+    cp -p "$source_path" "$target_path"
+  fi
+}
+
+seed_dir_if_missing() {
+  local source_path="$1"
+  local target_path="$2"
+  if [[ -d "$source_path" && ! -e "$target_path" ]]; then
+    mkdir -p "$(dirname "$target_path")"
+    cp -pR "$source_path" "$target_path"
+  fi
+}
+
+claude_logged_in() {
+  docker exec "$CONTAINER_NAME" bash -lc 'claude config list >/dev/null 2>&1'
+}
+
 require_command docker
 
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or not reachable."
@@ -168,16 +191,25 @@ RUNTIME_VOLUME_ARGS=()
 DETECTED_CREDENTIALS=()
 DETECTED_GIT_AUTH=()
 
-# Always persist Bullpen auth/session data across container recreation.
-mkdir -p "$HOME/.bullpen"
-RUNTIME_VOLUME_ARGS+=("-v" "$HOME/.bullpen:/home/bullpen/.bullpen")
+# Persist the container user's home across container recreation. Claude Code
+# login writes auth state to this home and cannot use host keychain-backed login
+# metadata mounted read-only.
+DOCKER_HOME="${BULLPEN_DOCKER_HOME:-$DOCKER_HOME_DEFAULT}"
+mkdir -p "$DOCKER_HOME"
+chmod 700 "$DOCKER_HOME" 2>/dev/null || true
+seed_file_if_missing "$HOME/.claude.json" "$DOCKER_HOME/.claude.json"
+seed_dir_if_missing "$HOME/.claude" "$DOCKER_HOME/.claude"
+seed_dir_if_missing "$HOME/.config/codex" "$DOCKER_HOME/.config/codex"
+seed_dir_if_missing "$HOME/.config/gemini" "$DOCKER_HOME/.config/gemini"
+seed_dir_if_missing "$HOME/.config/google-gemini" "$DOCKER_HOME/.config/google-gemini"
+RUNTIME_VOLUME_ARGS+=("-v" "${DOCKER_HOME}:/home/bullpen")
 
-# Auto-detect provider credential mounts.
-add_mount_if_exists "$HOME/.claude" "/home/bullpen/.claude"
-add_file_mount_if_exists "$HOME/.claude.json" "/home/bullpen/.claude.json"
-add_mount_if_exists "$HOME/.config/codex" "/home/bullpen/.config/codex"
-add_mount_if_exists "$HOME/.config/gemini" "/home/bullpen/.config/gemini"
-add_mount_if_exists "$HOME/.config/google-gemini" "/home/bullpen/.config/google-gemini"
+# Auto-detect provider credentials seeded into the persistent container home.
+[[ -d "$DOCKER_HOME/.claude" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.claude")
+[[ -f "$DOCKER_HOME/.claude.json" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.claude.json")
+[[ -d "$DOCKER_HOME/.config/codex" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/codex")
+[[ -d "$DOCKER_HOME/.config/gemini" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/gemini")
+[[ -d "$DOCKER_HOME/.config/google-gemini" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/google-gemini")
 
 # Auto-detect Git/GitHub auth. These are separate from agent-provider
 # credentials because they enable push and pull request workflows.
@@ -187,8 +219,10 @@ add_git_env_if_set "GIT_AUTHOR_NAME"
 add_git_env_if_set "GIT_AUTHOR_EMAIL"
 add_git_env_if_set "GIT_COMMITTER_NAME"
 add_git_env_if_set "GIT_COMMITTER_EMAIL"
-add_git_file_mount_if_exists "$HOME/.gitconfig" "/home/bullpen/.gitconfig.host"
-add_git_mount_if_exists "$HOME/.config/gh" "/home/bullpen/.config/gh"
+seed_file_if_missing "$HOME/.gitconfig" "$DOCKER_HOME/.gitconfig.host"
+seed_dir_if_missing "$HOME/.config/gh" "$DOCKER_HOME/.config/gh"
+[[ -f "$DOCKER_HOME/.gitconfig.host" ]] && DETECTED_GIT_AUTH+=("home:${DOCKER_HOME}/.gitconfig.host")
+[[ -d "$DOCKER_HOME/.config/gh" ]] && DETECTED_GIT_AUTH+=("home:${DOCKER_HOME}/.config/gh")
 if [[ -d "$HOME/.ssh" ]] && prompt_yes_no "Mount ~/.ssh read-only for git SSH remotes?" "N"; then
   add_git_mount_if_exists "$HOME/.ssh" "/home/bullpen/.ssh"
 fi
@@ -199,6 +233,19 @@ add_env_if_set "ANTHROPIC_API_KEY"
 add_env_if_set "OPENAI_API_KEY"
 add_env_if_set "GEMINI_API_KEY"
 add_env_if_set "GOOGLE_API_KEY"
+
+if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+  echo ""
+  echo "Claude Code in Docker needs a headless OAuth token."
+  echo "On your LOCAL machine, run: claude setup-token"
+  echo "Then paste the token here, or press Enter to skip Claude login."
+  echo ""
+  CLAUDE_TOKEN="$(prompt_secret "Claude Code OAuth token (optional)")"
+  if [[ -n "$CLAUDE_TOKEN" ]]; then
+    RUNTIME_ENV_ARGS+=("-e" "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_TOKEN}")
+    DETECTED_CREDENTIALS+=("env:CLAUDE_CODE_OAUTH_TOKEN")
+  fi
+fi
 
 if [[ ${#DETECTED_CREDENTIALS[@]} -eq 0 ]]; then
   warn "No provider credentials were auto-detected on this machine."
@@ -256,6 +303,13 @@ DOCKER_RUN_ARGS+=("$IMAGE_NAME")
 
 docker run "${DOCKER_RUN_ARGS[@]}" >/dev/null
 
+if ! claude_logged_in; then
+  warn "Claude CLI is not logged in inside the container."
+  warn "Run 'claude setup-token' locally, redeploy, and paste the token when prompted."
+else
+  log "Claude CLI login verified in container"
+fi
+
 log "Waiting for Bullpen to become reachable"
 HEALTHY=0
 for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -285,6 +339,7 @@ printf 'UI:   http://localhost:%s\n' "$BULLPEN_PORT"
 printf 'App:  http://localhost:%s\n' "$APP_PORT"
 printf 'User: %s\n' "$ADMIN_USER"
 printf 'Container: %s\n' "$CONTAINER_NAME"
+printf 'Container home: %s\n' "$DOCKER_HOME"
 printf 'Credential sources attached: %s\n' "${#DETECTED_CREDENTIALS[@]}"
 printf 'Git auth sources attached: %s\n' "${#DETECTED_GIT_AUTH[@]}"
 printf '\nUseful commands:\n'

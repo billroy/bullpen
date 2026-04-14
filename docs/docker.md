@@ -38,6 +38,18 @@ If `~/.claude.json` is missing but a backup exists under `~/.claude/backups`,
 the entrypoint restores the newest backup into the container user's writable
 home directory before Bullpen starts.
 
+Claude Code's normal desktop login may rely on host-native credential storage
+that is not available inside Docker. The reliable Docker path matches the
+Sprite deployer: run this on the host machine first:
+
+```bash
+claude setup-token
+```
+
+Then paste the token into `./deploy-docker.sh` when prompted. The script passes
+it into the container as `CLAUDE_CODE_OAUTH_TOKEN`, which Bullpen's Claude
+workers inherit when they launch the CLI.
+
 ## Git and Pull Request Auth
 
 The Docker image includes `git`, `openssh-client`, and the GitHub CLI (`gh`).
