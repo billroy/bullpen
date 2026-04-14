@@ -37,7 +37,7 @@ prompt_secret() {
   local prompt="$1"
   local value
   IFS= read -rsp "$prompt: " value
-  echo
+  printf '\n' >&2
   printf '%s' "$value"
 }
 
