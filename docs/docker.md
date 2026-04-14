@@ -40,18 +40,17 @@ the entrypoint restores the newest backup into the container user's writable
 home directory before Bullpen starts.
 
 Claude Code's normal desktop login may rely on host-native credential storage
-that is not available inside Docker. The reliable Docker path is to log in from
-inside the container that Bullpen will actually use:
+that is not available inside Docker. The reliable Docker path is to run the
+host Claude CLI with the persistent Docker home:
 
 ```text
-./deploy-docker.sh -> docker exec -it bullpen claude auth login
+./deploy-docker.sh -> HOME=~/.bullpen/docker-home claude auth login
 ```
 
-After the container starts, the deploy script checks `claude config list`
-inside the container. If Claude is not logged in, it opens `claude auth login`
-inside that same container and terminal, captures the login URL, and opens that
-URL in the host browser. The login writes to the persistent Docker home mounted
-at `/home/bullpen`, so future container replacements keep the Claude auth state.
+The browser opens normally on the host, while Claude writes the resulting auth
+state into the same directory Docker mounts at `/home/bullpen`. Future container
+replacements keep the Claude auth state because `~/.bullpen/docker-home`
+persists.
 
 If `CLAUDE_CODE_OAUTH_TOKEN` is already set in the host environment, the deploy
 script still forwards it into the container.

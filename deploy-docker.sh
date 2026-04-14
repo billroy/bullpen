@@ -162,70 +162,10 @@ seed_dir_if_missing() {
 }
 
 claude_logged_in() {
-  docker exec "$CONTAINER_NAME" bash -lc 'claude config list >/dev/null 2>&1'
-}
-
-open_browser_url() {
-  local url="$1"
-  if command -v open >/dev/null 2>&1; then
-    open "$url" >/dev/null 2>&1
-  elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$url" >/dev/null 2>&1
-  elif command -v wslview >/dev/null 2>&1; then
-    wslview "$url" >/dev/null 2>&1
-  elif command -v python3 >/dev/null 2>&1; then
-    python3 - "$url" >/dev/null 2>&1 <<'PY'
-import sys
-import webbrowser
-webbrowser.open(sys.argv[1])
-PY
-  else
-    return 1
-  fi
-}
-
-monitor_claude_login_url() {
-  local output_file="$1"
-  local opened=0
-  local url=""
-  local i
-
-  for i in {1..120}; do
-    if [[ -s "$output_file" ]]; then
-      url="$(
-        grep -Eo 'https://[^"[:space:]]+' "$output_file" 2>/dev/null |
-          grep -E 'claude\.com|anthropic\.com' |
-          tail -n 1 || true
-      )"
-      if [[ -n "$url" && "$opened" -eq 0 ]]; then
-        log "Opening Claude login page in your browser"
-        if ! open_browser_url "$url"; then
-          warn "Could not open the browser automatically. Use the Claude URL printed below."
-        fi
-        opened=1
-      fi
-    fi
-    sleep 1
-  done
-}
-
-run_claude_container_login() {
-  local output_file monitor_pid status
-  output_file="$(mktemp)"
-  chmod 600 "$output_file" 2>/dev/null || true
-
-  monitor_claude_login_url "$output_file" &
-  monitor_pid=$!
-
-  set +e
-  docker exec -it "$CONTAINER_NAME" claude auth login > >(tee "$output_file") 2>&1
-  status=$?
-  set -e
-
-  kill "$monitor_pid" >/dev/null 2>&1 || true
-  wait "$monitor_pid" 2>/dev/null || true
-  rm -f "$output_file"
-  return "$status"
+  # Check for a non-empty credentials file in the persistent home on the host.
+  # This avoids a docker exec and correctly reflects OAuth login state rather
+  # than just whether the claude binary runs (which config list tests).
+  [[ -s "$DOCKER_HOME/.claude/.credentials.json" ]]
 }
 
 require_command docker
@@ -262,6 +202,15 @@ mkdir -p "$DOCKER_HOME"
 chmod 700 "$DOCKER_HOME" 2>/dev/null || true
 seed_file_if_missing "$HOME/.claude.json" "$DOCKER_HOME/.claude.json"
 seed_dir_if_missing "$HOME/.claude" "$DOCKER_HOME/.claude"
+
+# Always sync the OAuth credentials file from the host so re-logins on the
+# host propagate into the container home without a full re-deploy. Only runs
+# when the source exists; leaves the file alone if the host has none.
+if [[ -f "$HOME/.claude/.credentials.json" ]]; then
+  mkdir -p "$DOCKER_HOME/.claude"
+  cp -p "$HOME/.claude/.credentials.json" "$DOCKER_HOME/.claude/.credentials.json"
+  chmod 600 "$DOCKER_HOME/.claude/.credentials.json" 2>/dev/null || true
+fi
 seed_dir_if_missing "$HOME/.config/codex" "$DOCKER_HOME/.config/codex"
 seed_dir_if_missing "$HOME/.config/gemini" "$DOCKER_HOME/.config/gemini"
 seed_dir_if_missing "$HOME/.config/google-gemini" "$DOCKER_HOME/.config/google-gemini"
@@ -291,8 +240,17 @@ if [[ -d "$HOME/.ssh" ]] && prompt_yes_no "Mount ~/.ssh read-only for git SSH re
 fi
 
 # Auto-forward commonly used API/token env vars when present on host.
-add_env_if_set "CLAUDE_CODE_OAUTH_TOKEN"
-add_env_if_set "ANTHROPIC_API_KEY"
+# ANTHROPIC_API_KEY takes priority over OAuth credentials inside the container,
+# which would silently switch from subscription billing to pay-as-you-go API
+# billing. Skip forwarding it when OAuth credentials are already present.
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  if [[ -s "$DOCKER_HOME/.claude/.credentials.json" ]]; then
+    warn "ANTHROPIC_API_KEY is set on the host but OAuth credentials were found in ${DOCKER_HOME}/.claude/.credentials.json"
+    warn "Skipping ANTHROPIC_API_KEY to preserve subscription OAuth auth. Unset it on the host or remove the credentials file to use API key billing."
+  else
+    add_env_if_set "ANTHROPIC_API_KEY"
+  fi
+fi
 add_env_if_set "OPENAI_API_KEY"
 add_env_if_set "GEMINI_API_KEY"
 add_env_if_set "GOOGLE_API_KEY"
@@ -355,19 +313,19 @@ DOCKER_RUN_ARGS+=("$IMAGE_NAME")
 docker run "${DOCKER_RUN_ARGS[@]}" >/dev/null
 
 if ! claude_logged_in; then
-  warn "Claude CLI is not logged in inside the container."
-  if prompt_yes_no "Log in to Claude Code inside the container now?" "Y"; then
-    run_claude_container_login || true
+  warn "Claude CLI is not logged in for Docker home ${DOCKER_HOME}."
+  if command -v claude >/dev/null 2>&1 && prompt_yes_no "Log in to Claude Code now using the host browser?" "Y"; then
+    HOME="$DOCKER_HOME" claude auth login || true
     if claude_logged_in; then
-      log "Claude CLI login verified in container"
+      log "Claude CLI login saved in Docker home"
     else
       warn "Claude still does not report a valid login. Live Agent Claude workers may fail until login is completed."
     fi
   else
-    warn "Complete container login before using Claude Live Agent workers."
+    warn "Install Claude Code on the host or complete login before using Claude Live Agent workers."
   fi
 else
-  log "Claude CLI login verified in container"
+  log "Claude CLI login found in Docker home"
 fi
 
 log "Waiting for Bullpen to become reachable"
