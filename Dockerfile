@@ -1,6 +1,8 @@
 FROM python:3.12-slim
 
 ARG NODE_MAJOR=22
+ARG BULLPEN_UID=1000
+ARG BULLPEN_GID=1000
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV BULLPEN_PRODUCTION=1
@@ -13,7 +15,7 @@ ENV HOME=/home/bullpen
 WORKDIR /opt/bullpen
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates curl git ripgrep gnupg && \
+    bash ca-certificates curl gh git openssh-client ripgrep gnupg && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | \
       gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
@@ -28,10 +30,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN useradd --create-home --shell /bin/bash bullpen && \
+RUN if getent group "${BULLPEN_GID}" >/dev/null; then \
+      BULLPEN_GROUP="$(getent group "${BULLPEN_GID}" | cut -d: -f1)"; \
+    else \
+      groupadd --gid "${BULLPEN_GID}" bullpen; \
+      BULLPEN_GROUP="bullpen"; \
+    fi && \
+    useradd --uid "${BULLPEN_UID}" --gid "${BULLPEN_GROUP}" --create-home --shell /bin/bash bullpen && \
     chmod +x deploy/docker/entrypoint.sh && \
     mkdir -p /workspace && \
-    chown -R bullpen:bullpen /opt/bullpen /workspace /home/bullpen
+    chown -R bullpen:"${BULLPEN_GROUP}" /opt/bullpen /workspace /home/bullpen
 
 EXPOSE 8080 3000
 

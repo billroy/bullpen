@@ -80,12 +80,38 @@ add_env_if_set() {
   fi
 }
 
+add_git_env_if_set() {
+  local var_name="$1"
+  if [[ -n "${!var_name:-}" ]]; then
+    RUNTIME_ENV_ARGS+=("-e" "${var_name}=${!var_name}")
+    DETECTED_GIT_AUTH+=("env:${var_name}")
+  fi
+}
+
 add_mount_if_exists() {
   local host_path="$1"
   local container_path="$2"
   if [[ -d "$host_path" ]]; then
     RUNTIME_VOLUME_ARGS+=("-v" "${host_path}:${container_path}:ro")
     DETECTED_CREDENTIALS+=("mount:${host_path}")
+  fi
+}
+
+add_git_mount_if_exists() {
+  local host_path="$1"
+  local container_path="$2"
+  if [[ -d "$host_path" ]]; then
+    RUNTIME_VOLUME_ARGS+=("-v" "${host_path}:${container_path}:ro")
+    DETECTED_GIT_AUTH+=("mount:${host_path}")
+  fi
+}
+
+add_git_file_mount_if_exists() {
+  local host_path="$1"
+  local container_path="$2"
+  if [[ -f "$host_path" ]]; then
+    RUNTIME_VOLUME_ARGS+=("-v" "${host_path}:${container_path}:ro")
+    DETECTED_GIT_AUTH+=("mount:${host_path}")
   fi
 }
 
@@ -107,6 +133,13 @@ prompt_optional_credential() {
     RUNTIME_ENV_ARGS+=("-e" "${env_name}=${value}")
     DETECTED_CREDENTIALS+=("env:${env_name}")
   fi
+}
+
+build_image() {
+  docker build \
+    --build-arg "BULLPEN_UID=$(id -u)" \
+    --build-arg "BULLPEN_GID=$(id -g)" \
+    -t "$IMAGE_NAME" .
 }
 
 require_command docker
@@ -133,6 +166,7 @@ ADMIN_PASSWORD="$(collect_bootstrap_password)"
 RUNTIME_ENV_ARGS=()
 RUNTIME_VOLUME_ARGS=()
 DETECTED_CREDENTIALS=()
+DETECTED_GIT_AUTH=()
 
 # Always persist Bullpen auth/session data across container recreation.
 mkdir -p "$HOME/.bullpen"
@@ -144,6 +178,20 @@ add_file_mount_if_exists "$HOME/.claude.json" "/home/bullpen/.claude.json"
 add_mount_if_exists "$HOME/.config/codex" "/home/bullpen/.config/codex"
 add_mount_if_exists "$HOME/.config/gemini" "/home/bullpen/.config/gemini"
 add_mount_if_exists "$HOME/.config/google-gemini" "/home/bullpen/.config/google-gemini"
+
+# Auto-detect Git/GitHub auth. These are separate from agent-provider
+# credentials because they enable push and pull request workflows.
+add_git_env_if_set "GH_TOKEN"
+add_git_env_if_set "GITHUB_TOKEN"
+add_git_env_if_set "GIT_AUTHOR_NAME"
+add_git_env_if_set "GIT_AUTHOR_EMAIL"
+add_git_env_if_set "GIT_COMMITTER_NAME"
+add_git_env_if_set "GIT_COMMITTER_EMAIL"
+add_git_file_mount_if_exists "$HOME/.gitconfig" "/home/bullpen/.gitconfig.host"
+add_git_mount_if_exists "$HOME/.config/gh" "/home/bullpen/.config/gh"
+if [[ -d "$HOME/.ssh" ]] && prompt_yes_no "Mount ~/.ssh read-only for git SSH remotes?" "N"; then
+  add_git_mount_if_exists "$HOME/.ssh" "/home/bullpen/.ssh"
+fi
 
 # Auto-forward commonly used API/token env vars when present on host.
 add_env_if_set "CLAUDE_CODE_OAUTH_TOKEN"
@@ -166,11 +214,11 @@ fi
 if docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
   if prompt_yes_no "Rebuild Docker image ${IMAGE_NAME}?" "N"; then
     log "Building Docker image ${IMAGE_NAME}"
-    docker build -t "$IMAGE_NAME" .
+    build_image
   fi
 else
   log "Building Docker image ${IMAGE_NAME}"
-  docker build -t "$IMAGE_NAME" .
+  build_image
 fi
 
 if docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER_NAME"; then
@@ -238,6 +286,7 @@ printf 'App:  http://localhost:%s\n' "$APP_PORT"
 printf 'User: %s\n' "$ADMIN_USER"
 printf 'Container: %s\n' "$CONTAINER_NAME"
 printf 'Credential sources attached: %s\n' "${#DETECTED_CREDENTIALS[@]}"
+printf 'Git auth sources attached: %s\n' "${#DETECTED_GIT_AUTH[@]}"
 printf '\nUseful commands:\n'
 printf '  docker logs -f %s\n' "$CONTAINER_NAME"
 printf '  docker exec -it %s bash\n' "$CONTAINER_NAME"

@@ -21,6 +21,9 @@ services:
       # - ${HOME}/.claude.json:/home/bullpen/.claude.json:ro
       # - ${HOME}/.config/codex:/home/bullpen/.config/codex:ro
       # - ${HOME}/.config/gemini:/home/bullpen/.config/gemini:ro
+      # - ${HOME}/.gitconfig:/home/bullpen/.gitconfig.host:ro
+      # - ${HOME}/.config/gh:/home/bullpen/.config/gh:ro
+      # - ${HOME}/.ssh:/home/bullpen/.ssh:ro
     restart: unless-stopped
 
   # Optional advanced mode: run app in a separate runtime container that

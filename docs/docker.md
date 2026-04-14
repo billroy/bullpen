@@ -19,6 +19,10 @@ The container runs Bullpen as a non-root `bullpen` user. This is required for
 agent CLIs such as Claude Code, which refuse unattended permission-bypass flags
 when executed as root.
 
+The deploy script builds that user with the host UID/GID. This lets the
+container read host credential files that are commonly mode `600`, including
+Claude and GitHub auth files.
+
 Detected provider credentials are mounted into that user's home directory. For
 Claude Code this includes both:
 
@@ -29,6 +33,41 @@ Claude Code this includes both:
 
 Claude may need both paths because some versions keep account state in
 `~/.claude.json` while backups live under `~/.claude/backups/`.
+
+If `~/.claude.json` is missing but a backup exists under `~/.claude/backups`,
+the entrypoint restores the newest backup into the container user's writable
+home directory before Bullpen starts.
+
+## Git and Pull Request Auth
+
+The Docker image includes `git`, `openssh-client`, and the GitHub CLI (`gh`).
+The deploy script auto-forwards common GitHub and Git identity environment
+variables when they are set:
+
+```text
+GH_TOKEN
+GITHUB_TOKEN
+GIT_AUTHOR_NAME
+GIT_AUTHOR_EMAIL
+GIT_COMMITTER_NAME
+GIT_COMMITTER_EMAIL
+```
+
+It also mounts host GitHub CLI auth and Git config when present:
+
+```text
+~/.config/gh -> /home/bullpen/.config/gh
+~/.gitconfig -> /home/bullpen/.gitconfig.host
+```
+
+The entrypoint creates a writable `/home/bullpen/.gitconfig` that includes the
+host config, marks the mounted workspace as a safe Git directory, applies Git
+identity environment variables when provided, and runs `gh auth setup-git` when
+`GH_TOKEN` or `GITHUB_TOKEN` is available.
+
+For SSH remotes, the deploy script can optionally mount `~/.ssh` read-only into
+`/home/bullpen/.ssh`. Prefer a dedicated deploy key or a scoped GitHub token
+over mounting a broad personal SSH directory.
 
 ## Notes
 
