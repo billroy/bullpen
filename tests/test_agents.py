@@ -129,6 +129,7 @@ class TestCodexAdapter:
         assert "--model" in argv
         assert "o4-mini" in argv
         assert "--full-auto" in argv
+        assert "--skip-git-repo-check" in argv
         assert "-" in argv
         assert "--approval-mode" not in argv
         assert "--quiet" not in argv

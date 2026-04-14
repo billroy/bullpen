@@ -77,6 +77,7 @@ class CodexAdapter(AgentAdapter):
             "--model", model,
             "--full-auto",
             "--json",
+            "--skip-git-repo-check",
         ]
         if bp_dir:
             argv.extend(self._mcp_overrides(bp_dir))
