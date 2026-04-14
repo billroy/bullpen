@@ -136,52 +136,6 @@ prompt_optional_credential() {
   fi
 }
 
-strip_ansi() {
-  sed -E $'s/\x1B\\[[0-9;?]*[ -/]*[@-~]//g'
-}
-
-extract_claude_token() {
-  # Claude setup tokens currently use sk-ant-* shapes. Keep this parser
-  # deliberately token-shaped so unrelated command output is not captured.
-  grep -Eo 'sk-ant-[A-Za-z0-9._:-]+' | tail -n 1
-}
-
-collect_claude_token() {
-  if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-    printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN"
-    return 0
-  fi
-
-  command -v claude >/dev/null 2>&1 || return 1
-
-  local tmp_out token status
-  tmp_out="$(mktemp)"
-  chmod 600 "$tmp_out" 2>/dev/null || true
-
-  echo "" >&2
-  echo "Setting up Claude Code token from this terminal." >&2
-  echo "The Claude CLI may open a browser or ask you to confirm the login flow." >&2
-  echo "" >&2
-
-  set +e
-  claude setup-token >"$tmp_out" 2>&1
-  status=$?
-  set -e
-
-  token="$(strip_ansi <"$tmp_out" | extract_claude_token || true)"
-  if [[ -n "$token" ]]; then
-    rm -f "$tmp_out"
-    printf '%s' "$token"
-    return 0
-  fi
-
-  warn "Could not automatically collect a Claude setup token."
-  warn "Claude setup-token exited with status ${status}."
-  strip_ansi <"$tmp_out" | sed -E 's/sk-ant-[A-Za-z0-9._:-]+/<redacted-claude-token>/g' >&2
-  rm -f "$tmp_out"
-  return 1
-}
-
 build_image() {
   docker build \
     --build-arg "BULLPEN_UID=$(id -u)" \
@@ -280,14 +234,6 @@ add_env_if_set "OPENAI_API_KEY"
 add_env_if_set "GEMINI_API_KEY"
 add_env_if_set "GOOGLE_API_KEY"
 
-if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
-  CLAUDE_TOKEN="$(collect_claude_token || true)"
-  if [[ -n "$CLAUDE_TOKEN" ]]; then
-    RUNTIME_ENV_ARGS+=("-e" "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_TOKEN}")
-    DETECTED_CREDENTIALS+=("env:CLAUDE_CODE_OAUTH_TOKEN")
-  fi
-fi
-
 if [[ ${#DETECTED_CREDENTIALS[@]} -eq 0 ]]; then
   warn "No provider credentials were auto-detected on this machine."
   echo "Enter any credentials you have now; at least one is required so agent CLIs can run."
@@ -347,13 +293,15 @@ docker run "${DOCKER_RUN_ARGS[@]}" >/dev/null
 
 if ! claude_logged_in; then
   warn "Claude CLI is not logged in inside the container."
-  if command -v claude >/dev/null 2>&1; then
-    warn "The automatic setup-token flow did not produce a usable container login."
-  elif prompt_yes_no "Open Claude login inside the container now?" "Y"; then
+  if prompt_yes_no "Log in to Claude Code inside the container now?" "Y"; then
     docker exec -it "$CONTAINER_NAME" claude auth login || true
-    claude_logged_in || warn "Claude still does not report a valid login. Live Agent Claude workers may fail until login is completed."
+    if claude_logged_in; then
+      log "Claude CLI login verified in container"
+    else
+      warn "Claude still does not report a valid login. Live Agent Claude workers may fail until login is completed."
+    fi
   else
-    warn "Install Claude Code locally or complete container login before using Claude Live Agent workers."
+    warn "Complete container login before using Claude Live Agent workers."
   fi
 else
   log "Claude CLI login verified in container"

@@ -40,20 +40,21 @@ the entrypoint restores the newest backup into the container user's writable
 home directory before Bullpen starts.
 
 Claude Code's normal desktop login may rely on host-native credential storage
-that is not available inside Docker. The reliable Docker path matches the
-Sprite deployer, but the Docker deploy script runs the token setup itself:
+that is not available inside Docker. The reliable Docker path is to log in from
+inside the container that Bullpen will actually use:
 
 ```text
-./deploy-docker.sh -> claude setup-token -> CLAUDE_CODE_OAUTH_TOKEN
+./deploy-docker.sh -> docker exec -it bullpen claude auth login
 ```
 
-If the local `claude` CLI is available, the script runs `claude setup-token`
-from the same terminal, captures the generated token without printing it, and
-passes it into the container as `CLAUDE_CODE_OAUTH_TOKEN`. Bullpen's Claude
-workers inherit that environment variable when they launch the CLI.
+After the container starts, the deploy script checks `claude config list`
+inside the container. If Claude is not logged in, it opens `claude auth login`
+inside that same container and terminal. The login writes to the persistent
+Docker home mounted at `/home/bullpen`, so future container replacements keep
+the Claude auth state.
 
-If the local `claude` CLI is not installed, the script can fall back to opening
-`claude auth login` inside the container after it starts.
+If `CLAUDE_CODE_OAUTH_TOKEN` is already set in the host environment, the deploy
+script still forwards it into the container.
 
 ## Git and Pull Request Auth
 
