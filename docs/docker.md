@@ -1,84 +1,22 @@
-# Docker Deployment (Dual Ports)
+# Docker Deployment
 
-This guide runs Bullpen in Docker while exposing:
-- one port for Bullpen UI/API
-- one port for the app being developed inside the same workspace container
-
-## 1. Build image
+Use the interactive deploy script from the repo root:
 
 ```bash
-docker build -t bullpen:local .
+./deploy-docker.sh
 ```
 
-## 2. Run with two host ports
+The script handles deployment end-to-end:
+- prompts for container name, workspace path, ports, and Bullpen admin credentials
+- builds the Docker image when needed
+- starts/replaces the container with the correct runtime settings
+- auto-loads provider credentials by mounting local auth directories and forwarding detected API/token environment variables
+- falls back to secure credential prompts only when no credentials are detected
 
-```bash
-docker run -d \
-  --name bullpen \
-  -e BULLPEN_BOOTSTRAP_PASSWORD='change-me' \
-  -e BULLPEN_BOOTSTRAP_USER='admin' \
-  -e BULLPEN_PORT=8080 \
-  -e APP_PORT=3000 \
-  -p 8080:8080 \
-  -p 3000:3000 \
-  -v ~/my-project:/workspace \
-  bullpen:local
-```
+After deployment, the script prints URLs and operational commands (`docker logs`, `docker exec`, remove/redeploy).
 
-What this does:
-- Bootstraps Bullpen credentials once (if none exist yet).
-- Starts Bullpen on `0.0.0.0:$BULLPEN_PORT`.
-- Leaves `APP_PORT` as a convention for your app process.
+## Notes
 
-Your app must still bind to `0.0.0.0:$APP_PORT` from inside the container.
-
-## 3. Optional docker compose
-
-Use `docker-compose.yml` for a repeatable setup:
-
-```bash
-BULLPEN_BOOTSTRAP_PASSWORD='change-me' docker compose up -d --build
-```
-
-The compose file includes:
-- default single-container mode (`bullpen`)
-- optional advanced profile (`app`) for a separate app runtime container:
-
-```bash
-BULLPEN_BOOTSTRAP_PASSWORD='change-me' docker compose --profile app up -d --build
-```
-
-## 4. Provider CLI authentication
-
-Bullpen does not manage provider secrets itself. You have two common options:
-
-1. Pass token env vars at runtime (preferred when available).
-2. Mount provider config directories read-only.
-
-Example read-only mount:
-
-```bash
--v ~/.claude:/root/.claude:ro
-```
-
-### Risks of read-only `.claude` mount
-
-Read-only prevents direct file modification, but does not prevent secret use.
-
-- Token replay/exfiltration risk: any process in the container that can read mounted files can use those credentials for API calls.
-- Prompt-injection blast radius: agent-executed code can intentionally trigger paid calls or privileged actions using mounted auth.
-- Account-scope leakage: if host auth is tied to a personal or broad-scope account, compromise impacts more than this one project.
-- Metadata leakage: config files can expose account identifiers, org/project context, model preferences, and usage endpoints.
-- Cross-project coupling: one shared host credential mount means all containerized projects run with the same identity unless isolated.
-
-Recommended mitigations:
-- Prefer short-lived or scoped env tokens over full profile mounts when possible.
-- Use a dedicated low-privilege provider account for containerized automation.
-- Mount only exact subpaths needed, not whole home directories.
-- Treat workspace code as potentially hostile; avoid running untrusted repos with mounted credentials.
-
-## 5. Notes
-
-- No nginx is required inside the container for this model.
-- For multiple app services, expose a range (for example `-p 3000-3010:3000-3010`) or add explicit mappings.
-- Persistent Bullpen auth/session files are stored in the container user home (`~/.bullpen`). Mount a volume there if you need auth/session persistence across container rebuilds.
+- Bullpen runs on the configured Bullpen port (default `8080`).
+- Your app can use the configured app port (default `3000`) from the same container workspace.
+- Bullpen auth/session data is persisted by mounting `~/.bullpen` into the container.
