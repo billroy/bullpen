@@ -165,6 +165,69 @@ claude_logged_in() {
   docker exec "$CONTAINER_NAME" bash -lc 'claude config list >/dev/null 2>&1'
 }
 
+open_browser_url() {
+  local url="$1"
+  if command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1
+  elif command -v wslview >/dev/null 2>&1; then
+    wslview "$url" >/dev/null 2>&1
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "$url" >/dev/null 2>&1 <<'PY'
+import sys
+import webbrowser
+webbrowser.open(sys.argv[1])
+PY
+  else
+    return 1
+  fi
+}
+
+monitor_claude_login_url() {
+  local output_file="$1"
+  local opened=0
+  local url=""
+  local i
+
+  for i in {1..120}; do
+    if [[ -s "$output_file" ]]; then
+      url="$(
+        grep -Eo 'https://[^"[:space:]]+' "$output_file" 2>/dev/null |
+          grep -E 'claude\.com|anthropic\.com' |
+          tail -n 1 || true
+      )"
+      if [[ -n "$url" && "$opened" -eq 0 ]]; then
+        log "Opening Claude login page in your browser"
+        if ! open_browser_url "$url"; then
+          warn "Could not open the browser automatically. Use the Claude URL printed below."
+        fi
+        opened=1
+      fi
+    fi
+    sleep 1
+  done
+}
+
+run_claude_container_login() {
+  local output_file monitor_pid status
+  output_file="$(mktemp)"
+  chmod 600 "$output_file" 2>/dev/null || true
+
+  monitor_claude_login_url "$output_file" &
+  monitor_pid=$!
+
+  set +e
+  docker exec -it "$CONTAINER_NAME" claude auth login > >(tee "$output_file") 2>&1
+  status=$?
+  set -e
+
+  kill "$monitor_pid" >/dev/null 2>&1 || true
+  wait "$monitor_pid" 2>/dev/null || true
+  rm -f "$output_file"
+  return "$status"
+}
+
 require_command docker
 
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or not reachable."
@@ -294,7 +357,7 @@ docker run "${DOCKER_RUN_ARGS[@]}" >/dev/null
 if ! claude_logged_in; then
   warn "Claude CLI is not logged in inside the container."
   if prompt_yes_no "Log in to Claude Code inside the container now?" "Y"; then
-    docker exec -it "$CONTAINER_NAME" claude auth login || true
+    run_claude_container_login || true
     if claude_logged_in; then
       log "Claude CLI login verified in container"
     else

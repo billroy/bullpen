@@ -49,9 +49,9 @@ inside the container that Bullpen will actually use:
 
 After the container starts, the deploy script checks `claude config list`
 inside the container. If Claude is not logged in, it opens `claude auth login`
-inside that same container and terminal. The login writes to the persistent
-Docker home mounted at `/home/bullpen`, so future container replacements keep
-the Claude auth state.
+inside that same container and terminal, captures the login URL, and opens that
+URL in the host browser. The login writes to the persistent Docker home mounted
+at `/home/bullpen`, so future container replacements keep the Claude auth state.
 
 If `CLAUDE_CODE_OAUTH_TOKEN` is already set in the host environment, the deploy
 script still forwards it into the container.
