@@ -15,6 +15,21 @@ The script handles deployment end-to-end:
 
 After deployment, the script prints URLs and operational commands (`docker logs`, `docker exec`, remove/redeploy).
 
+The container runs Bullpen as a non-root `bullpen` user. This is required for
+agent CLIs such as Claude Code, which refuse unattended permission-bypass flags
+when executed as root.
+
+Detected provider credentials are mounted into that user's home directory. For
+Claude Code this includes both:
+
+```text
+~/.claude      -> /home/bullpen/.claude
+~/.claude.json -> /home/bullpen/.claude.json
+```
+
+Claude may need both paths because some versions keep account state in
+`~/.claude.json` while backups live under `~/.claude/backups/`.
+
 ## Notes
 
 - Bullpen runs on the configured Bullpen port (default `8080`).

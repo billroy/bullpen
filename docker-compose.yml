@@ -17,9 +17,10 @@ services:
     volumes:
       - ${WORKSPACE_PATH:-./workspace}:/workspace
       # Optional provider auth mounts. See docs/docker.md for risks.
-      # - ${HOME}/.claude:/root/.claude:ro
-      # - ${HOME}/.config/codex:/root/.config/codex:ro
-      # - ${HOME}/.config/gemini:/root/.config/gemini:ro
+      # - ${HOME}/.claude:/home/bullpen/.claude:ro
+      # - ${HOME}/.claude.json:/home/bullpen/.claude.json:ro
+      # - ${HOME}/.config/codex:/home/bullpen/.config/codex:ro
+      # - ${HOME}/.config/gemini:/home/bullpen/.config/gemini:ro
     restart: unless-stopped
 
   # Optional advanced mode: run app in a separate runtime container that

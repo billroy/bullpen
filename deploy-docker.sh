@@ -89,6 +89,15 @@ add_mount_if_exists() {
   fi
 }
 
+add_file_mount_if_exists() {
+  local host_path="$1"
+  local container_path="$2"
+  if [[ -f "$host_path" ]]; then
+    RUNTIME_VOLUME_ARGS+=("-v" "${host_path}:${container_path}:ro")
+    DETECTED_CREDENTIALS+=("mount:${host_path}")
+  fi
+}
+
 prompt_optional_credential() {
   local env_name="$1"
   local label="$2"
@@ -127,13 +136,14 @@ DETECTED_CREDENTIALS=()
 
 # Always persist Bullpen auth/session data across container recreation.
 mkdir -p "$HOME/.bullpen"
-RUNTIME_VOLUME_ARGS+=("-v" "$HOME/.bullpen:/root/.bullpen")
+RUNTIME_VOLUME_ARGS+=("-v" "$HOME/.bullpen:/home/bullpen/.bullpen")
 
 # Auto-detect provider credential mounts.
-add_mount_if_exists "$HOME/.claude" "/root/.claude"
-add_mount_if_exists "$HOME/.config/codex" "/root/.config/codex"
-add_mount_if_exists "$HOME/.config/gemini" "/root/.config/gemini"
-add_mount_if_exists "$HOME/.config/google-gemini" "/root/.config/google-gemini"
+add_mount_if_exists "$HOME/.claude" "/home/bullpen/.claude"
+add_file_mount_if_exists "$HOME/.claude.json" "/home/bullpen/.claude.json"
+add_mount_if_exists "$HOME/.config/codex" "/home/bullpen/.config/codex"
+add_mount_if_exists "$HOME/.config/gemini" "/home/bullpen/.config/gemini"
+add_mount_if_exists "$HOME/.config/google-gemini" "/home/bullpen/.config/google-gemini"
 
 # Auto-forward commonly used API/token env vars when present on host.
 add_env_if_set "CLAUDE_CODE_OAUTH_TOKEN"
@@ -171,21 +181,32 @@ fi
 
 log "Starting container ${CONTAINER_NAME}"
 
-docker run -d \
-  --name "$CONTAINER_NAME" \
-  --restart unless-stopped \
-  -e "BULLPEN_BOOTSTRAP_USER=${ADMIN_USER}" \
-  -e "BULLPEN_BOOTSTRAP_PASSWORD=${ADMIN_PASSWORD}" \
-  -e "BULLPEN_PORT=${BULLPEN_PORT}" \
-  -e "APP_PORT=${APP_PORT}" \
-  -e "BULLPEN_WORKSPACE=/workspace" \
-  -e "BULLPEN_PRODUCTION=1" \
-  -p "${BULLPEN_PORT}:${BULLPEN_PORT}" \
-  -p "${APP_PORT}:${APP_PORT}" \
-  -v "${WORKSPACE_PATH}:/workspace" \
-  "${RUNTIME_VOLUME_ARGS[@]}" \
-  "${RUNTIME_ENV_ARGS[@]}" \
-  "$IMAGE_NAME" >/dev/null
+DOCKER_RUN_ARGS=(
+  -d
+  --name "$CONTAINER_NAME"
+  --restart unless-stopped
+  -e "BULLPEN_BOOTSTRAP_USER=${ADMIN_USER}"
+  -e "BULLPEN_BOOTSTRAP_PASSWORD=${ADMIN_PASSWORD}"
+  -e "BULLPEN_PORT=${BULLPEN_PORT}"
+  -e "APP_PORT=${APP_PORT}"
+  -e "BULLPEN_WORKSPACE=/workspace"
+  -e "BULLPEN_PRODUCTION=1"
+  -p "${BULLPEN_PORT}:${BULLPEN_PORT}"
+  -p "${APP_PORT}:${APP_PORT}"
+  -v "${WORKSPACE_PATH}:/workspace"
+)
+
+if [[ ${#RUNTIME_VOLUME_ARGS[@]} -gt 0 ]]; then
+  DOCKER_RUN_ARGS+=("${RUNTIME_VOLUME_ARGS[@]}")
+fi
+
+if [[ ${#RUNTIME_ENV_ARGS[@]} -gt 0 ]]; then
+  DOCKER_RUN_ARGS+=("${RUNTIME_ENV_ARGS[@]}")
+fi
+
+DOCKER_RUN_ARGS+=("$IMAGE_NAME")
+
+docker run "${DOCKER_RUN_ARGS[@]}" >/dev/null
 
 log "Waiting for Bullpen to become reachable"
 HEALTHY=0

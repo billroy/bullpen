@@ -8,6 +8,7 @@ ENV BULLPEN_PORT=8080
 ENV APP_PORT=3000
 ENV BULLPEN_WORKSPACE=/workspace
 ENV BULLPEN_HOST=0.0.0.0
+ENV HOME=/home/bullpen
 
 WORKDIR /opt/bullpen
 
@@ -27,8 +28,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x deploy/docker/entrypoint.sh && mkdir -p /workspace
+RUN useradd --create-home --shell /bin/bash bullpen && \
+    chmod +x deploy/docker/entrypoint.sh && \
+    mkdir -p /workspace && \
+    chown -R bullpen:bullpen /opt/bullpen /workspace /home/bullpen
 
 EXPOSE 8080 3000
+
+USER bullpen
 
 ENTRYPOINT ["./deploy/docker/entrypoint.sh"]
