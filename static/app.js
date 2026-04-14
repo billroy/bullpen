@@ -180,6 +180,7 @@ const app = createApp({
 
     const connected = ref(false);
     const activeTab = ref('tasks');
+    const requestedCommitDiffHash = ref('');
     const ticketsViewMode = ref('kanban');
     const ticketListScope = ref('live');
     const leftPaneVisible = ref(true);
@@ -746,6 +747,19 @@ const app = createApp({
       if (idx >= 0) toasts.splice(idx, 1);
     }
 
+    function openCommitDiffFromTicket(hash) {
+      const normalized = String(hash || '').trim();
+      if (!/^[0-9a-f]{7,40}$/i.test(normalized)) {
+        addToast('Invalid commit hash in ticket output', 'error');
+        return;
+      }
+      activeTab.value = 'commits';
+      requestedCommitDiffHash.value = '';
+      setTimeout(() => {
+        requestedCommitDiffHash.value = normalized;
+      }, 0);
+    }
+
     // Grid options for tab bar selector
     const multipleWorkspaces = computed(() => projects.length >= 2);
 
@@ -781,7 +795,7 @@ const app = createApp({
     return {
       state, workspaces, activeWorkspaceId, switchWorkspace, projects,
       addProject, newProject, cloneProject, removeProject,
-      connected, activeTab, leftPaneVisible, toasts, quickCreateClearToken,
+      connected, activeTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
@@ -791,7 +805,7 @@ const app = createApp({
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
-      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportAll, importWorkspace, importWorkers, importAll,
+      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
     };
   },
   mounted() {
@@ -916,6 +930,8 @@ const app = createApp({
             <CommitsTab
               v-if="activeTab === 'commits'"
               :workspace-id="activeWorkspaceId"
+              :open-diff-hash="requestedCommitDiffHash"
+              @handled-open-diff-hash="requestedCommitDiffHash = ''"
               :key="'commits-' + (activeWorkspaceId || 'none')"
             />
             <LiveAgentChatTab
@@ -946,6 +962,7 @@ const app = createApp({
           @archive="archiveTask"
           @clear-output="clearTaskOutput"
           @toast="addToast"
+          @open-commit-diff="openCommitDiffFromTicket"
         />
       </div>
       <TaskCreateModal

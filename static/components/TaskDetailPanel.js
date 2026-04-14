@@ -1,6 +1,6 @@
 const TaskDetailPanel = {
   props: ['task', 'columns'],
-  emits: ['close', 'update', 'delete', 'archive', 'clear-output', 'toast'],
+  emits: ['close', 'update', 'delete', 'archive', 'clear-output', 'toast', 'open-commit-diff'],
   data() {
     return {
       editing: false,
@@ -29,6 +29,21 @@ const TaskDetailPanel = {
     renderedBody() {
       if (!this.bodyWithoutOutput) return '<p class="empty-state">No description</p>';
       return window.markdownit({ html: false }).render(this.bodyWithoutOutput);
+    },
+    parsedAgentOutputLines() {
+      if (!this.agentOutput) return [];
+      return this.agentOutput.split('\n').map((line, idx) => {
+        const match = line.match(/^(.*?\bCommit:\s*)([0-9a-f]{7,40})(\b.*)$/i);
+        if (!match) {
+          return { id: idx, prefix: line, commitHash: null, suffix: '' };
+        }
+        return {
+          id: idx,
+          prefix: match[1] || '',
+          commitHash: match[2] || null,
+          suffix: match[3] || '',
+        };
+      });
     }
   },
   watch: {
@@ -129,7 +144,14 @@ const TaskDetailPanel = {
             <h3>Agent Output</h3>
             <button class="btn btn-sm btn-danger" @click="$emit('clear-output', task.id)">Clear</button>
           </div>
-          <pre class="detail-output-content">{{ agentOutput }}</pre>
+          <pre class="detail-output-content">
+            <span v-for="line in parsedAgentOutputLines" :key="line.id" class="detail-output-line">
+              <template v-if="line.commitHash">
+                {{ line.prefix }}<button class="detail-output-commit" @click="openCommitDiff(line.commitHash)">{{ line.commitHash }}</button>{{ line.suffix }}
+              </template>
+              <template v-else>{{ line.prefix }}</template>
+            </span>
+          </pre>
         </div>
 
         <div class="detail-footer">
@@ -234,6 +256,10 @@ const TaskDetailPanel = {
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M tok';
       if (n >= 1000) return (n / 1000).toFixed(1) + 'k tok';
       return n + ' tok';
+    },
+    openCommitDiff(hash) {
+      if (!hash) return;
+      this.$emit('open-commit-diff', hash);
     }
   }
 };

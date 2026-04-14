@@ -1,5 +1,6 @@
 const CommitsTab = {
-  props: ['workspaceId'],
+  props: ['workspaceId', 'openDiffHash'],
+  emits: ['handled-open-diff-hash'],
   computed: {
     highlightedDiffHtml() {
       return this.renderDiffHtml(this.commitDiff || 'No diff output.');
@@ -26,6 +27,12 @@ const CommitsTab = {
       if (newId === oldId) return;
       this.closeDiff();
       this.refresh();
+    },
+    openDiffHash: {
+      immediate: true,
+      handler(newHash) {
+        this.openDiffByHash(newHash);
+      },
     },
   },
   methods: {
@@ -127,6 +134,28 @@ const CommitsTab = {
       } finally {
         this.diffLoading = false;
       }
+    },
+    async openDiffByHash(hash) {
+      const normalized = String(hash || '').trim();
+      if (!normalized) return;
+      if (!/^[0-9a-f]{7,40}$/i.test(normalized)) {
+        this.$emit('handled-open-diff-hash', normalized);
+        return;
+      }
+      const existing = this.commits.find((commit) => {
+        const commitHash = String(commit?.hash || '').toLowerCase();
+        const desired = normalized.toLowerCase();
+        return commitHash === desired || commitHash.startsWith(desired);
+      });
+      const commit = existing || {
+        hash: normalized,
+        short_hash: normalized.slice(0, 7),
+        subject: 'Commit',
+        author: '',
+        date: '',
+      };
+      await this.openDiff(commit);
+      this.$emit('handled-open-diff-hash', normalized);
     },
     closeDiff() {
       this.selectedCommit = null;

@@ -21,15 +21,20 @@ def test_commits_tab_rows_open_diff_modal():
 
 def test_commits_tab_requests_are_workspace_scoped():
     text = _read("static/components/CommitsTab.js")
-    assert "props: ['workspaceId']" in text
+    assert "props: ['workspaceId', 'openDiffHash']" in text
+    assert "emits: ['handled-open-diff-hash']" in text
     assert "params.set('workspaceId', this.workspaceId);" in text
     assert "fetch(`/api/commits?${params.toString()}`)" in text
     assert "workspaceId(newId, oldId)" in text
+    assert "openDiffHash:" in text
+    assert "this.openDiffByHash(newHash);" in text
 
 
 def test_commits_tab_receives_active_workspace_id():
     text = _read("static/app.js")
     assert ":workspace-id=\"activeWorkspaceId\"" in text
+    assert ":open-diff-hash=\"requestedCommitDiffHash\"" in text
+    assert "@handled-open-diff-hash=\"requestedCommitDiffHash = ''\"" in text
     assert ":key=\"'commits-' + (activeWorkspaceId || 'none')\"" in text
 
 
