@@ -1,0 +1,35 @@
+services:
+  bullpen:
+    build:
+      context: .
+    image: bullpen:local
+    container_name: bullpen
+    environment:
+      BULLPEN_BOOTSTRAP_PASSWORD: ${BULLPEN_BOOTSTRAP_PASSWORD:?set_in_.env_or_shell}
+      BULLPEN_BOOTSTRAP_USER: ${BULLPEN_BOOTSTRAP_USER:-admin}
+      BULLPEN_PORT: ${BULLPEN_PORT:-8080}
+      APP_PORT: ${APP_PORT:-3000}
+      BULLPEN_WORKSPACE: /workspace
+      BULLPEN_PRODUCTION: "1"
+    ports:
+      - "${BULLPEN_PORT:-8080}:${BULLPEN_PORT:-8080}"
+      - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+    volumes:
+      - ${WORKSPACE_PATH:-./workspace}:/workspace
+      # Optional provider auth mounts. See docs/docker.md for risks.
+      # - ${HOME}/.claude:/root/.claude:ro
+      # - ${HOME}/.config/codex:/root/.config/codex:ro
+      # - ${HOME}/.config/gemini:/root/.config/gemini:ro
+    restart: unless-stopped
+
+  # Optional advanced mode: run app in a separate runtime container that
+  # shares the same workspace volume with Bullpen.
+  app:
+    image: node:22
+    profiles: ["app"]
+    working_dir: /workspace
+    command: sh -lc "npm install && npm run dev -- --host 0.0.0.0 --port ${APP_PORT:-3000}"
+    ports:
+      - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+    volumes:
+      - ${WORKSPACE_PATH:-./workspace}:/workspace

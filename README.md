@@ -87,6 +87,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Sprite/tunnel origin trust** -- Socket.IO origin checks include trusted tunnel suffixes including `.sprites.app` for Fly.io Sprite URLs.
 - **Sprite service port compatibility** -- Bullpen supports `PORT` env var fallback so hosted runtimes that expect port `8080` work without custom patching.
 - **Production TLS mode** -- setting `BULLPEN_PRODUCTION=1` enables secure session cookies and proxy header handling for HTTPS deployments.
+- **Docker dual-port deploy** -- run Bullpen and the in-container app with separate published ports (see [docs/docker.md](docs/docker.md)).
 - **One-command Sprite install** -- `deploy-sprite.sh` automates Sprite provisioning, auth bootstrap, service creation, and URL publication.
 - **DigitalOcean Droplet runbook** -- `docs/digitalocean-droplet.md` provides nginx + `systemd` + TLS + firewall setup, plus checked-in templates under `deploy/digitalocean/`.
 
@@ -194,6 +195,14 @@ For a full Droplet guide, use:
 - `deploy/digitalocean/bullpen.service` (systemd template)
 - `deploy/digitalocean/nginx-bullpen.conf` (reverse proxy template)
 - `deploy-do-droplet.sh` (optional bootstrap automation)
+
+## Docker Deployment
+
+For containerized deploys with separate Bullpen/app port mappings, use:
+
+- [docs/docker.md](docs/docker.md)
+- `Dockerfile`
+- `docker-compose.yml` (includes optional advanced two-container profile)
 
 ## MCP Integration
 
