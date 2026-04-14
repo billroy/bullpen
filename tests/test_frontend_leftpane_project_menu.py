@@ -26,6 +26,13 @@ def test_leftpane_empty_project_hint_tooltip_is_wired():
     assert "this.showEmptyProjectHint = false;" in text
 
 
+def test_leftpane_projects_header_remains_visible_in_empty_state():
+    text = _read("static/components/LeftPane.js")
+    assert "v-if=\"projects\" class=\"left-pane-section\" :class=\"{ 'project-add-only': projects.length <= 1 }\"" in text
+    assert "<h3>Projects</h3>" in text
+    assert "v-if=\"projects.length > 1\" class=\"project-list\"" in text
+
+
 def test_leftpane_emits_new_project_and_registers_menu_dismiss_listener():
     text = _read("static/components/LeftPane.js")
     assert "document.addEventListener('click', this.onGlobalClick);" in text

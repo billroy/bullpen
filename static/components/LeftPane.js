@@ -3,11 +3,14 @@ const LeftPane = {
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project', 'quick-create-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
-      <div v-if="projects && projects.length > 1" class="left-pane-section">
+      <div v-if="projects" class="left-pane-section" :class="{ 'project-add-only': projects.length <= 1 }">
         <div class="section-header">
           <h3>Projects</h3>
           <div class="project-menu-wrap" @click.stop>
             <button class="btn btn-sm" @click="toggleProjectMenu">...</button>
+            <div v-if="showEmptyProjectHint" class="project-menu-tooltip" role="status" aria-live="polite">
+              Open the menu to add or create your first project.
+            </div>
             <div v-if="showProjectMenu" class="project-menu">
               <button class="project-menu-item" @click="promptAddProject">Add Project</button>
               <button class="project-menu-item" @click="promptNewProject">New Project</button>
@@ -15,7 +18,7 @@ const LeftPane = {
             </div>
           </div>
         </div>
-        <div class="project-list">
+        <div v-if="projects.length > 1" class="project-list">
           <div v-for="p in projects" :key="p.id"
                class="project-item"
                :class="{ active: p.id === activeWorkspaceId }"
@@ -33,19 +36,6 @@ const LeftPane = {
                 @click.stop="confirmRemoveProject(p)"
               >&times;</button>
             </span>
-          </div>
-        </div>
-      </div>
-      <div v-else-if="projects && projects.length <= 1" class="left-pane-section project-add-only">
-        <div class="project-menu-wrap" @click.stop>
-          <button class="btn btn-sm" @click="toggleProjectMenu">...</button>
-          <div v-if="showEmptyProjectHint" class="project-menu-tooltip" role="status" aria-live="polite">
-            Open the menu to add or create your first project.
-          </div>
-          <div v-if="showProjectMenu" class="project-menu">
-            <button class="project-menu-item" @click="promptAddProject">Add Project</button>
-            <button class="project-menu-item" @click="promptNewProject">New Project</button>
-            <button class="project-menu-item" @click="promptCloneProject">Clone from Git</button>
           </div>
         </div>
       </div>
