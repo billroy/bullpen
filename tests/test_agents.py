@@ -9,6 +9,7 @@ from server.agents import get_adapter, register_adapter, list_adapters
 from server.agents.claude_adapter import ClaudeAdapter
 from server.agents.codex_adapter import CodexAdapter
 from server.agents.gemini_adapter import GeminiAdapter
+import server.agents.claude_adapter as claude_mod
 import server.agents.codex_adapter as codex_mod
 import server.agents.gemini_adapter as gemini_mod
 from tests.conftest import MockAdapter
@@ -27,6 +28,19 @@ class TestClaudeAdapter:
         assert "sonnet" in argv
         assert "--output-format" in argv
         assert "stream-json" in argv
+
+    def test_find_claude_honors_configured_path(self, monkeypatch):
+        configured = "/opt/bullpen/bin/claude"
+        monkeypatch.setenv("BULLPEN_CLAUDE_PATH", configured)
+        monkeypatch.setattr(claude_mod, "_is_executable", lambda path: path == configured)
+
+        assert claude_mod._find_claude() == configured
+
+    def test_unavailable_message_mentions_configured_bad_path(self, monkeypatch):
+        monkeypatch.setenv("BULLPEN_CLAUDE_PATH", "/missing/claude")
+        msg = ClaudeAdapter().unavailable_message()
+        assert "BULLPEN_CLAUDE_PATH" in msg
+        assert "/missing/claude" in msg
 
     def test_mcp_config_uses_loopback_for_wildcard_host(self, tmp_workspace):
         adapter = ClaudeAdapter()

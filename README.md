@@ -27,6 +27,12 @@ Bullpen runs provider CLIs locally. Install and authenticate each provider you w
 
 Only authenticated providers are usable in Bullpen. If you plan to use all three agents, complete login/auth setup in all three CLIs first.
 
+If a CLI is installed in a non-standard location, you can point Bullpen to explicit executables:
+
+- `BULLPEN_CLAUDE_PATH`
+- `BULLPEN_CODEX_PATH`
+- `BULLPEN_GEMINI_PATH`
+
 ### Options
 
 | Flag | Default | Description |

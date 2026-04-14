@@ -33,6 +33,10 @@ def _is_executable(path):
 
 def _find_claude():
     """Find the claude binary on PATH or common install locations."""
+    configured = os.environ.get("BULLPEN_CLAUDE_PATH")
+    if configured and _is_executable(os.path.expanduser(configured)):
+        return os.path.expanduser(configured)
+
     found = shutil.which("claude")
     if found:
         return found
@@ -50,6 +54,18 @@ class ClaudeAdapter(AgentAdapter):
 
     def available(self):
         return _find_claude() is not None
+
+    def unavailable_message(self):
+        configured = os.environ.get("BULLPEN_CLAUDE_PATH")
+        if configured:
+            return (
+                "Claude CLI is not available. BULLPEN_CLAUDE_PATH is set to "
+                f"{configured!r}, but that file was not found or is not executable."
+            )
+        return (
+            "Claude CLI is not available. Install Claude Code CLI and authenticate, "
+            "or set BULLPEN_CLAUDE_PATH to the claude executable."
+        )
 
     def build_argv(self, prompt, model, workspace, bp_dir=None):
         claude_bin = _find_claude() or "claude"
