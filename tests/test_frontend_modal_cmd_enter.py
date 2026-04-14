@@ -29,3 +29,9 @@ def test_column_manager_modal_supports_cmd_enter_save():
     assert "@keydown.meta.enter=\"onPrimaryShortcut\"" in text
     assert "onPrimaryShortcut(e)" in text
     assert "this.save();" in text
+
+
+def test_task_detail_title_edit_supports_cmd_enter_save():
+    text = _read("static/components/TaskDetailPanel.js")
+    assert "@keydown.meta.enter=\"saveTitle\"" in text
+    assert "@keydown.ctrl.enter=\"saveTitle\"" in text

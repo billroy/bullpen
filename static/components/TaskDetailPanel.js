@@ -43,7 +43,8 @@ const TaskDetailPanel = {
       <div class="detail-header">
         <div v-if="editingTitle" class="detail-title-edit">
           <input class="form-input detail-title-input" v-model="editTitle"
-                 @keyup.enter="saveTitle" @keyup.escape="cancelTitle" ref="titleInput" />
+                 @keyup.enter="saveTitle" @keyup.escape="cancelTitle"
+                 @keydown.meta.enter="saveTitle" @keydown.ctrl.enter="saveTitle" ref="titleInput" />
           <div class="detail-title-actions">
             <button class="btn btn-sm" @click="cancelTitle">Cancel</button>
             <button class="btn btn-sm btn-primary" @click="saveTitle">Save</button>
