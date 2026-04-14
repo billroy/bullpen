@@ -2,27 +2,6 @@
 
 An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex, Gemini) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
 
-## Deploy on Fly.io Sprite (Recommended Remote Deploy)
-
-Use the one-command deploy script:
-
-```bash
-curl -sL https://raw.githubusercontent.com/billroy/bullpen/main/deploy-sprite.sh | bash
-```
-
-The script prompts for Sprite name, admin username/password, then:
-- Creates (or reuses) the Sprite
-- Clones/updates Bullpen and installs requirements
-- Bootstraps Bullpen credentials non-interactively
-- Configures production mode (`BULLPEN_PRODUCTION=1`)
-- Creates a background service on port `8080`
-- Makes the Sprite URL public and prints the actual HTTPS URL
-- Performs a short health check before exiting
-
-See detailed deployment docs:
-- `docs/sprite.md` (one-command deploy flow and implementation notes)
-- `docs/fly-config.md` (Sprite architecture, hibernation behavior, production details)
-
 ## Quick Start
 
 ```bash
@@ -216,3 +195,24 @@ python3 -m pytest tests/
 ## License
 
 This project is licensed under the MIT License. See `LICENSE.md`.
+
+## Fly.io Sprite Deployment (Experimental)
+
+Use the one-command deploy script:
+
+```bash
+curl -sL https://raw.githubusercontent.com/billroy/bullpen/main/deploy-sprite.sh | bash
+```
+
+The script prompts for Sprite name, admin username/password, then:
+- Creates (or reuses) the Sprite
+- Clones/updates Bullpen and installs requirements
+- Bootstraps Bullpen credentials non-interactively
+- Configures production mode (`BULLPEN_PRODUCTION=1`)
+- Creates a background service on port `8080`
+- Makes the Sprite URL public and prints the actual HTTPS URL
+- Performs a short health check before exiting
+
+See detailed deployment docs:
+- `docs/sprite.md` (one-command deploy flow and implementation notes)
+- `docs/fly-config.md` (Sprite architecture, hibernation behavior, production details)

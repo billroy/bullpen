@@ -1,4 +1,4 @@
-# Bullpen Preview Proxy Proposal
+# Bullpen Web App Preview Options
 
 ## Problem
 
@@ -13,30 +13,158 @@ https://<sprite>.sprites.dev/ -> Bullpen on 127.0.0.1:8080
 That leaves no second public browser port for web apps being developed inside
 the Sprite. A dev server can still listen locally inside the Sprite, such as
 `127.0.0.1:5173`, but a browser outside the Sprite cannot reach that port
-directly.
+directly through the public Sprite URL.
 
 Normal Fly apps can define multiple services in `fly.toml`, but Sprites are a
 narrower environment. The Sprite URL/service model effectively gives Bullpen
-the one public web entry point. Sprite's separate proxy/tunnel support is useful
-from a local CLI, but it does not solve "open the app from Bullpen in a browser"
-without extra user-side setup.
+the one public web entry point.
 
-## Goal
+## Recommendation
 
-Add a Bullpen "Preview" tab that lets users view web apps running inside the
-Sprite through Bullpen's existing public HTTPS origin.
+Use SSH local port forwarding as the primary approach.
 
-The user experience should be:
+This keeps Bullpen simple and lets the browser reach the app dev server as if
+it were running locally. It also avoids the hardest parts of a built-in reverse
+proxy: path-prefix rewriting, root-absolute assets, dev-server WebSocket/HMR
+traffic, redirect rewriting, and iframe sandbox tradeoffs.
+
+The older Bullpen reverse-proxy proposal is preserved below as Option B, but it
+should be treated as deprecated unless there is a strong product requirement for
+opening app previews from the public Sprite URL without any user-side tunnel.
+
+## Option A: SSH Tunnel Preview
+
+### Shape
+
+Forward the app dev server port from the Sprite to the user's local machine:
+
+```bash
+ssh -L 5173:127.0.0.1:5173 <sprite-or-host>
+```
+
+Then open the app locally:
+
+```text
+http://127.0.0.1:5173 -> app dev server inside the Sprite
+```
+
+If Bullpen should also be accessed through the same local SSH session, forward
+both Bullpen and the app port:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 -L 5173:127.0.0.1:5173 <sprite-or-host>
+```
+
+Then use:
+
+```text
+http://127.0.0.1:8080 -> Bullpen inside the Sprite
+http://127.0.0.1:5173 -> app dev server inside the Sprite
+```
+
+### User Experience
 
 1. Start a dev server inside the Sprite, for example `npm run dev`.
-2. Open Bullpen.
-3. Select the dev server port in a Preview tab.
-4. View and interact with the app in an iframe without opening extra public
-   Sprite ports.
+2. Start an SSH tunnel for the dev server port.
+3. Open the app locally at the forwarded port.
+4. Optionally open Bullpen locally through a forwarded Bullpen port.
 
-## Proposed Shape
+For example:
 
-Bullpen should become an authenticated reverse proxy for loopback dev servers.
+```text
+Browser on laptop
+  |
+  | http://127.0.0.1:5173
+  v
+SSH tunnel
+  |
+  | http://127.0.0.1:5173 inside Sprite
+  v
+Workspace dev server
+```
+
+### Why This Is Easier
+
+Most dev servers assume they are mounted at `/`. SSH local forwarding preserves
+that assumption:
+
+```html
+<script src="/assets/app.js"></script>
+fetch("/api/data")
+new WebSocket("ws://127.0.0.1:5173/")
+```
+
+Those URLs continue to work because the browser is really visiting
+`http://127.0.0.1:5173/`. There is no `/__preview/...` prefix for assets,
+fetches, redirects, or WebSockets to escape.
+
+This is especially helpful for:
+
+- Vite and other HMR-heavy dev servers;
+- apps with root-absolute assets;
+- apps with local API routes;
+- frameworks that generate fixed WebSocket paths;
+- apps that are hard to configure with a non-root base path.
+
+### Bullpen UI Support
+
+Bullpen can still provide a lightweight Preview tab without becoming a reverse
+proxy.
+
+The tab could include:
+
+- detected loopback listener ports inside the Sprite;
+- manual port entry;
+- a generated SSH tunnel command for the selected port;
+- a local preview URL such as `http://127.0.0.1:5173`;
+- copy/open controls;
+- clear text explaining that the local URL works only after the tunnel is
+  running.
+
+The Preview tab should not assume Bullpen can verify the local tunnel from
+inside the Sprite. Bullpen can detect the remote listener, but only the user's
+local machine can confirm that local forwarding is active.
+
+### Limits
+
+SSH local forwarding requires user-side setup. It works well when the browser
+is on the same machine where the tunnel is running, but it does not create a
+shareable public preview URL.
+
+This means Option A does not solve:
+
+```text
+https://<sprite>.sprites.dev/app-preview
+```
+
+for someone who has not started a local tunnel.
+
+If the product requirement is "open Bullpen through the public Sprite URL and
+preview an app with no local setup", use an external tunnel service or revisit
+Option B with the known complexity accepted.
+
+### Security Notes
+
+SSH local forwarding keeps app preview traffic off the public Sprite URL. Access
+is controlled by SSH access to the Sprite or host.
+
+Recommended defaults:
+
+- bind forwarded local ports to loopback only;
+- document that `ssh -L` is preferred over public remote forwarding;
+- avoid forwarding privileged ports;
+- make the generated tunnel command explicit about each forwarded port;
+- warn when the selected app port is Bullpen's own port.
+
+## Option B: Bullpen Reverse Proxy Preview (Deprecated)
+
+This approach makes Bullpen an authenticated reverse proxy for loopback dev
+servers.
+
+It is deprecated as the primary design because it is substantially more complex
+than SSH local forwarding and remains fragile for common web-app workflows. It
+should only be implemented if Bullpen must support app previews through the
+public Sprite URL without local tunnel setup.
 
 ```text
 Browser
@@ -105,15 +233,14 @@ On macOS development:
 
 - fall back to `lsof -iTCP -sTCP:LISTEN -n -P` when available.
 
-The first implementation can also allow manual port entry. Manual entry is
-important because process discovery may be incomplete inside restricted
-environments.
+Manual entry is still important because process discovery may be incomplete
+inside restricted environments.
 
 ### Frontend Tab
 
 Add a new `PreviewTab` component and load it from `static/index.html`.
 
-The tab should include:
+For Option B, the tab would include:
 
 - a detected-port selector;
 - a manual port field;
@@ -131,7 +258,7 @@ Preview
 This is a better initial product shape than hiding preview under Files, because
 running app previews are operationally different from static HTML file previews.
 
-## WebSocket Proxying
+### WebSocket Proxying
 
 WebSocket support is necessary for modern dev servers, especially hot module
 reload.
@@ -212,7 +339,7 @@ socket-capable helper server inside the same Bullpen process, or switch the
 preview proxy implementation to a WSGI/ASGI-compatible layer that handles
 upgrades reliably.
 
-## Path Prefix Challenge
+### Path Prefix Challenge
 
 The main product risk is not basic byte forwarding. It is that many dev apps
 assume they are mounted at `/`.
@@ -240,9 +367,9 @@ new WebSocket("ws://localhost:5173/")
 Those requests would hit Bullpen routes instead of the dev server unless Bullpen
 rewrites them or the dev server is configured with a preview base path.
 
-## Implementation Plan
+### Deprecated Implementation Plan
 
-### Phase 1: Useful MVP
+#### Phase 1: Useful MVP
 
 Build a path-prefix HTTP proxy and Preview tab.
 
@@ -264,7 +391,7 @@ Known limitations:
 This phase is still valuable for static sites, simple local servers, Flask apps,
 FastAPI apps, and dev servers configured with a base path.
 
-### Phase 2: WebSocket and HMR
+#### Phase 2: WebSocket and HMR
 
 Add the WebSocket route and frame bridge.
 
@@ -289,7 +416,7 @@ while the upstream target remains:
 ws://127.0.0.1:<port>/...
 ```
 
-### Phase 3: Compatibility Rewrites
+#### Phase 3: Compatibility Rewrites
 
 Add targeted HTML and response rewriting:
 
@@ -301,7 +428,7 @@ Add targeted HTML and response rewriting:
 This should be conservative. Rewriting arbitrary JavaScript is fragile and can
 create surprising behavior.
 
-### Phase 4: Opt-In Root Preview Mode
+#### Phase 4: Opt-In Root Preview Mode
 
 Consider an opt-in mode where Bullpen reserves a preview session and proxies
 selected root paths to the active preview.
@@ -318,7 +445,7 @@ The downside is route ambiguity. Bullpen already owns `/api`, `/socket.io`,
 static assets, and app routes. Root preview mode should be explicit, temporary,
 and easy to disable.
 
-## Security Model
+### Security Model
 
 Preview proxying should be treated as local development access exposed through
 Bullpen authentication.
@@ -342,7 +469,7 @@ for the one-port Sprite constraint, but it means untrusted dev apps inside the
 iframe should be isolated. Use iframe sandboxing where possible, then selectively
 relax capabilities required for realistic app previews.
 
-## Open Questions
+### Open Questions
 
 - Should preview availability be global per workspace, or should each browser
   tab maintain its own selected port?
@@ -353,11 +480,3 @@ relax capabilities required for realistic app previews.
   always win?
 - Is the current Flask/Werkzeug production path sufficient for accepted raw
   WebSocket upgrade routes, or do we need a dedicated bridge server?
-
-## Recommendation
-
-Build the Preview tab and HTTP proxy first, with honest limitations. Then add
-WebSocket support around a small set of real dev-server test cases, starting
-with Vite. This gives Sprite users immediate value while keeping the riskier
-HMR and path-rewrite work grounded in observed failures instead of speculative
-rewrites.
