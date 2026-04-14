@@ -11,6 +11,7 @@ The script handles deployment end-to-end:
 - builds the Docker image when needed
 - starts/replaces the container with the correct runtime settings
 - updates Bullpen login credentials to match the admin username/password entered for this deploy
+- verifies inside the container that the entered admin password matches the stored Bullpen credentials
 - auto-loads provider credentials by mounting local auth directories and forwarding detected API/token environment variables
 - falls back to secure credential prompts only when no credentials are detected
 
@@ -91,3 +92,6 @@ over mounting a broad personal SSH directory.
 - Bullpen runs on the configured Bullpen port (default `8080`).
 - Your app can use the configured app port (default `3000`) from the same container workspace.
 - Bullpen auth/session data is persisted by mounting `~/.bullpen` into the container.
+- Docker deploys default to `BULLPEN_PRODUCTION=0` because the script serves
+  Bullpen at local HTTP URLs. Set `BULLPEN_PRODUCTION=1` only when an HTTPS
+  reverse proxy terminates TLS in front of the container.

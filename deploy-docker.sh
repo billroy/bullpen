@@ -36,7 +36,7 @@ prompt_yes_no() {
 prompt_secret() {
   local prompt="$1"
   local value
-  read -rsp "$prompt: " value
+  IFS= read -rsp "$prompt: " value
   echo
   printf '%s' "$value"
 }
@@ -168,6 +168,28 @@ claude_logged_in() {
   [[ -s "$DOCKER_HOME/.claude/.credentials.json" ]]
 }
 
+verify_admin_credentials() {
+  docker exec \
+    -e "BULLPEN_VERIFY_USER=${ADMIN_USER}" \
+    -e "BULLPEN_VERIFY_PASSWORD=${ADMIN_PASSWORD}" \
+    "$CONTAINER_NAME" \
+    bash -lc 'python3 - <<'"'"'PY'"'"'
+import os
+import sys
+from server import auth
+from server.workspace_manager import GLOBAL_DIR
+
+username = os.environ.get("BULLPEN_VERIFY_USER", "")
+password = os.environ.get("BULLPEN_VERIFY_PASSWORD", "")
+auth.load_credentials(GLOBAL_DIR)
+ok = bool(username) and auth.check_password(password, auth.get_password_hash(username))
+if not ok:
+    print(f"Credential verification failed for user {username!r} in {auth.env_path(GLOBAL_DIR)}", file=sys.stderr)
+    sys.exit(1)
+print(f"Credential verification passed for user {username!r}.")
+PY'
+}
+
 require_command docker
 
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or not reachable."
@@ -294,7 +316,7 @@ DOCKER_RUN_ARGS=(
   -e "BULLPEN_PORT=${BULLPEN_PORT}"
   -e "APP_PORT=${APP_PORT}"
   -e "BULLPEN_WORKSPACE=/workspace"
-  -e "BULLPEN_PRODUCTION=1"
+  -e "BULLPEN_PRODUCTION=${BULLPEN_PRODUCTION:-0}"
   -p "${BULLPEN_PORT}:${BULLPEN_PORT}"
   -p "${APP_PORT}:${APP_PORT}"
   -v "${WORKSPACE_PATH}:/workspace"
@@ -311,6 +333,10 @@ fi
 DOCKER_RUN_ARGS+=("$IMAGE_NAME")
 
 docker run "${DOCKER_RUN_ARGS[@]}" >/dev/null
+
+if ! verify_admin_credentials; then
+  die "The container did not store the admin credentials entered in this deploy."
+fi
 
 if ! claude_logged_in; then
   warn "Claude CLI is not logged in for Docker home ${DOCKER_HOME}."
