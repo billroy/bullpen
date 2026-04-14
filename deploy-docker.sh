@@ -169,11 +169,15 @@ claude_logged_in() {
 }
 
 verify_admin_credentials() {
-  docker exec \
-    -e "BULLPEN_VERIFY_USER=${ADMIN_USER}" \
-    -e "BULLPEN_VERIFY_PASSWORD=${ADMIN_PASSWORD}" \
-    "$CONTAINER_NAME" \
-    bash -lc 'python3 - <<'"'"'PY'"'"'
+  local output=""
+  local attempt
+
+  for attempt in {1..15}; do
+    if output="$(docker exec \
+      -e "BULLPEN_VERIFY_USER=${ADMIN_USER}" \
+      -e "BULLPEN_VERIFY_PASSWORD=${ADMIN_PASSWORD}" \
+      "$CONTAINER_NAME" \
+      bash -lc 'python3 - <<'"'"'PY'"'"'
 import os
 import sys
 from server import auth
@@ -188,6 +192,16 @@ if not ok:
     sys.exit(1)
 print(f"Credential verification passed for user {username!r}.")
 PY'
+      2>&1
+    )"; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+    sleep 1
+  done
+
+  printf '%s\n' "$output" >&2
+  return 1
 }
 
 require_command docker
