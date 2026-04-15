@@ -213,6 +213,7 @@ const app = createApp({
         id,
         label: chatTabCounter === 1 ? 'Live Agent' : `Live Agent ${chatTabCounter}`,
         sessionId: _newChatSessionId(),
+        workspaceId: activeWorkspaceId.value,
       });
       if (activate) activeTab.value = id;
     }
@@ -942,6 +943,7 @@ const app = createApp({
               v-show="activeTab === ct.id"
               :key="ct.id"
               :session-id="ct.sessionId"
+              :workspace-id="ct.workspaceId"
             />
             <WorkerFocusView
               v-for="ft in focusTabs"

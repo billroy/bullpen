@@ -783,6 +783,9 @@ def register_events(socketio, app):
 
     def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None, ws_id=None, bp_dir=None, model=None):
         """Run chat agent subprocess, emit streaming lines, then emit done."""
+        if not ws_id:
+            socketio.emit("chat:error", {"sessionId": session_id, "message": "No workspace context for chat session."})
+            return
         # Extract temp MCP config path for cleanup (written by adapter.build_argv)
         mcp_config_path = None
         for i, arg in enumerate(argv):
@@ -869,7 +872,7 @@ def register_events(socketio, app):
                                     batch.clear()
                                     last_emit[0] = now
                             if to_emit:
-                                socketio.emit("chat:output", {"sessionId": session_id, "lines": to_emit})
+                                socketio.emit("chat:output", {"sessionId": session_id, "lines": to_emit}, to=ws_id)
 
                 def _drain_stderr():
                     try:
@@ -897,7 +900,7 @@ def register_events(socketio, app):
                 t_err.join(timeout=2)
 
                 if startup_error:
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": startup_error})
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": startup_error}, to=ws_id)
                     return
 
                 if pending_startup and not saw_ready:
@@ -911,7 +914,7 @@ def register_events(socketio, app):
                 # Flush remaining batch
                 with batch_lock:
                     if batch:
-                        socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)})
+                        socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)}, to=ws_id)
                         batch.clear()
 
                 stdout = "".join(raw_stdout)
@@ -919,7 +922,7 @@ def register_events(socketio, app):
                 parsed = adapter.parse_output(stdout, stderr, proc.returncode)
                 parsed_output = (parsed.get("output") or "").strip()
                 if force_fail_message[0] and not collected and not parsed_output:
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": force_fail_message[0]})
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": force_fail_message[0]}, to=ws_id)
                     return
                 if not parsed.get("success", False):
                     classified_error = _classify_chat_provider_error(
@@ -930,14 +933,14 @@ def register_events(socketio, app):
                         model=model,
                     )
                     error_message = classified_error or parsed.get("error") or "Agent run failed."
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": error_message})
+                    socketio.emit("chat:error", {"sessionId": session_id, "message": error_message}, to=ws_id)
                     return
 
                 full_response = "\n".join(collected).strip()
                 if not full_response:
                     if parsed_output:
                         parsed_lines = parsed_output.splitlines() or [parsed_output]
-                        socketio.emit("chat:output", {"sessionId": session_id, "lines": parsed_lines})
+                        socketio.emit("chat:output", {"sessionId": session_id, "lines": parsed_lines}, to=ws_id)
                         full_response = parsed_output
 
                 # Update session history
@@ -993,12 +996,12 @@ def register_events(socketio, app):
                     except Exception:
                         logging.exception("Failed to log chat to ticket for session %s", session_id)
 
-                socketio.emit("chat:done", {"sessionId": session_id})
+                socketio.emit("chat:done", {"sessionId": session_id}, to=ws_id)
                 return
 
         except Exception as e:
             logging.exception("Chat agent error for session %s", session_id)
-            socketio.emit("chat:error", {"sessionId": session_id, "message": str(e)})
+            socketio.emit("chat:error", {"sessionId": session_id, "message": str(e)}, to=ws_id)
         finally:
             with _chat_proc_lock:
                 _chat_processes.pop(session_id, None)

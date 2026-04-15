@@ -4,6 +4,10 @@ const LiveAgentChatTab = {
       type: String,
       default: null,
     },
+    workspaceId: {
+      type: String,
+      default: null,
+    },
   },
   data() {
     return {
@@ -95,18 +99,19 @@ const LiveAgentChatTab = {
           provider: this.provider,
           model: this.model,
           message: text,
+          workspaceId: this.workspaceId,
         });
       }
     },
     stopChat() {
       const s = window._bullpenSocket;
-      if (s) s.emit('chat:stop', { sessionId: this.activeSessionId });
+      if (s) s.emit('chat:stop', { sessionId: this.activeSessionId, workspaceId: this.workspaceId });
     },
     clearChat() {
       this.messages = [];
       this.busy = false;
       const s = window._bullpenSocket;
-      if (s) s.emit('chat:clear', { sessionId: this.activeSessionId });
+      if (s) s.emit('chat:clear', { sessionId: this.activeSessionId, workspaceId: this.workspaceId });
       this.activeSessionId = _generateChatSessionId();
       this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
     },
