@@ -208,7 +208,7 @@ const app = createApp({
     let toastId = 0;
 
     function _newChatSessionId() {
-      return 'chat-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
+      return 'chat-' + crypto.randomUUID();
     }
 
     function addLiveAgentTab({ activate = true } = {}) {

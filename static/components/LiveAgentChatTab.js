@@ -170,5 +170,5 @@ const LiveAgentChatTab = {
 };
 
 function _generateChatSessionId() {
-  return 'chat-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now();
+  return 'chat-' + crypto.randomUUID();
 }

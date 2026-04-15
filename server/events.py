@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timezone
 
 from flask import request
-from flask_socketio import emit, join_room
+from flask_socketio import emit, join_room, rooms
 
 from server import tasks as task_mod
 from server.persistence import read_json, write_json, atomic_write
@@ -141,6 +141,7 @@ def register_events(socketio, app):
         ws_id = data.get("workspaceId") if isinstance(data, dict) else None
         if not ws_id:
             ws_id = app.config["startup_workspace_id"]
+            logging.warning("_resolve() fallback to startup_workspace_id %s — caller sent no workspaceId", ws_id)
         return ws_id, manager.get_bp_dir(ws_id)
 
     def _emit(event, payload, ws_id):
@@ -169,6 +170,9 @@ def register_events(socketio, app):
     @with_lock
     def on_task_create(data):
         ws_id, bp_dir = _resolve(data)
+        if ws_id not in rooms(request.sid):
+            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+            return
         clean = validate_task_create(data)
         kwargs = {
             "title": clean["title"],
@@ -192,6 +196,9 @@ def register_events(socketio, app):
     @with_lock
     def on_task_update(data):
         ws_id, bp_dir = _resolve(data)
+        if ws_id not in rooms(request.sid):
+            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+            return
         task_id, fields = validate_task_update(data)
 
         # If status is changing, check whether the task is owned by a worker
@@ -772,10 +779,21 @@ def register_events(socketio, app):
 
     # In-memory chat sessions: sessionId -> list of {role, content}
     _chat_sessions = {}
+    _chat_session_ts = {}  # sessionId -> last activity timestamp
     _chat_lock = threading.Lock()
+    _CHAT_SESSION_TTL = 86400  # 24 hours
 
     # Chat session -> ticket ID (created lazily on first message)
     _chat_ticket_ids = {}
+
+    def _evict_stale_chat_sessions():
+        cutoff = time.time() - _CHAT_SESSION_TTL
+        with _chat_lock:
+            stale = [sid for sid, ts in _chat_session_ts.items() if ts < cutoff]
+            for sid in stale:
+                _chat_sessions.pop(sid, None)
+                _chat_session_ts.pop(sid, None)
+                _chat_ticket_ids.pop(sid, None)
 
     # Active chat subprocesses: sessionId -> proc
     _chat_processes = {}
@@ -1020,6 +1038,10 @@ def register_events(socketio, app):
         model = normalize_model(provider, model)
         message = (data.get("message") or "").strip()
         ws_id, bp_dir = _resolve(data)
+        manager = app.config["manager"]
+        if not manager.get_bp_dir(ws_id):
+            emit("chat:error", {"sessionId": session_id, "message": f"Unknown workspace: {ws_id}"})
+            return
 
         if not session_id or not message:
             emit("chat:error", {"sessionId": session_id, "message": "sessionId and message are required"})
@@ -1036,10 +1058,13 @@ def register_events(socketio, app):
             emit("chat:error", {"sessionId": session_id, "message": adapter.unavailable_message()})
             return
 
+        _evict_stale_chat_sessions()
+
         # Build prompt with conversation history
         with _chat_lock:
             if session_id not in _chat_sessions:
                 _chat_sessions[session_id] = []
+            _chat_session_ts[session_id] = time.time()
             history = list(_chat_sessions[session_id])
 
         parts = [
@@ -1083,6 +1108,7 @@ def register_events(socketio, app):
         session_id = data.get("sessionId", "")
         with _chat_lock:
             _chat_sessions.pop(session_id, None)
+            _chat_session_ts.pop(session_id, None)
             _chat_ticket_ids.pop(session_id, None)
         emit("chat:cleared", {"sessionId": session_id})
 
