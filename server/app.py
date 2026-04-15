@@ -752,6 +752,7 @@ def create_app(
             token = (auth_data or {}).get("mcp_token") if isinstance(auth_data, dict) else None
             if not expected or not token or token != expected:
                 return False
+        join_room("authenticated")
         # Join rooms for all active workspaces
         for ws in manager.all_workspaces():
             join_room(ws.id)

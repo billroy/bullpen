@@ -629,8 +629,8 @@ def register_events(socketio, app):
         state["switchTo"] = True
         emit("state:init", state)
 
-        # Broadcast updated project list
-        socketio.emit("projects:updated", manager.list_projects())
+        # Broadcast updated project list to authenticated clients
+        socketio.emit("projects:updated", manager.list_projects(), to="authenticated")
 
     @socketio.on("project:join")
     def on_project_join(data):
@@ -767,8 +767,8 @@ def register_events(socketio, app):
             return
 
         manager.remove_project(ws_id)
-        socketio.emit("project:removed", {"workspaceId": ws_id})
-        socketio.emit("projects:updated", manager.list_projects())
+        socketio.emit("project:removed", {"workspaceId": ws_id}, to="authenticated")
+        socketio.emit("projects:updated", manager.list_projects(), to="authenticated")
 
     @socketio.on("project:list")
     def on_project_list(data=None):
