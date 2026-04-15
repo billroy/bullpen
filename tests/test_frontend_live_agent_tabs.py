@@ -13,8 +13,10 @@ def _read(rel_path: str) -> str:
 def test_live_agent_tabs_are_dynamic_in_app_shell():
     text = _read("static/app.js")
     assert "const chatTabs = reactive([]);" in text
+    assert "const lastLiveAgentTabByWorkspace = reactive({});" in text
     assert "function addLiveAgentTab({ activate = true } = {})" in text
     assert "function closeLiveAgentTab(tabId)" in text
+    assert "function setActiveTab(tabId)" in text
     assert "class=\"tab-btn tab-btn-add\"" in text
     assert "v-for=\"ct in chatTabs\"" in text
     assert ":session-id=\"ct.sessionId\"" in text
@@ -38,3 +40,20 @@ def test_live_agent_component_uses_injected_session_id():
 def test_live_agent_provider_options_include_gemini():
     text = _read("static/components/LiveAgentChatTab.js")
     assert "['claude', 'codex', 'gemini']" in text
+
+
+def test_live_agent_project_switch_preserves_live_agent_mode():
+    text = _read("static/app.js")
+    assert "const wasLiveAgent = !!currentChatTab;" in text
+    assert "const ensuredChatTab = _ensureChatTabForWorkspace(wsId);" in text
+    assert "const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);" in text
+    assert "const fallback = preferred || ensuredChatTab || chatTabs.find(t => t.workspaceId === wsId);" in text
+    assert "setActiveTab(fallback.id);" in text
+
+
+def test_live_agent_tabs_remember_last_active_per_workspace():
+    text = _read("static/app.js")
+    assert "lastLiveAgentTabByWorkspace[tab.workspaceId] = tab.id;" in text
+    assert "lastLiveAgentTabByWorkspace[currentChatTab.workspaceId] = currentChatTab.id;" in text
+    assert "@click=\"setActiveTab(tab.id)\"" in text
+    assert "if (lastLiveAgentTabByWorkspace[wsId] === tabId)" in text

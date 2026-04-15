@@ -169,15 +169,30 @@ const app = createApp({
 
     function switchWorkspace(wsId) {
       if (!workspaces[wsId]) return;
+      const currentChatTab = chatTabs.find(t => t.id === activeTab.value);
+      if (currentChatTab?.workspaceId) {
+        lastLiveAgentTabByWorkspace[currentChatTab.workspaceId] = currentChatTab.id;
+      }
+      const wasLiveAgent = !!currentChatTab;
       activeWorkspaceId.value = wsId;
       workspaces[wsId].unseenActivity = 0;
       ticketListScope.value = 'live';
-      _ensureChatTabForWorkspace(wsId);
+      const ensuredChatTab = _ensureChatTabForWorkspace(wsId);
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
       _applyWorkspaceAmbient(wsId);
       _updateDocumentTitle();
       if (socket?.connected) socket.emit('project:join', { workspaceId: wsId });
+      if (wasLiveAgent) {
+        const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);
+        const fallback = preferred || ensuredChatTab || chatTabs.find(t => t.workspaceId === wsId);
+        if (fallback) {
+          setActiveTab(fallback.id);
+        } else {
+          activeTab.value = 'tasks';
+        }
+        return;
+      }
       // If active tab belongs to a different workspace, fall back to tasks
       const ct = chatTabs.find(t => t.id === activeTab.value);
       if (ct && ct.workspaceId && ct.workspaceId !== wsId) { activeTab.value = 'tasks'; return; }
@@ -205,6 +220,7 @@ const app = createApp({
     const outputBuffers = reactive({});  // keyed by slot index
     const focusTabs = reactive([]);      // [{slotIndex, workspaceId, label}]
     const chatTabs = reactive([]);
+    const lastLiveAgentTabByWorkspace = reactive({});
     let chatTabCounter = 0;
     let toastId = 0;
 
@@ -212,21 +228,33 @@ const app = createApp({
       return 'chat-' + crypto.randomUUID();
     }
 
+    function _rememberLiveAgentTab(tabId) {
+      const tab = chatTabs.find(t => t.id === tabId);
+      if (tab?.workspaceId) lastLiveAgentTabByWorkspace[tab.workspaceId] = tab.id;
+    }
+
+    function setActiveTab(tabId) {
+      activeTab.value = tabId;
+      _rememberLiveAgentTab(tabId);
+    }
+
     function addLiveAgentTab({ activate = true } = {}) {
       const wsId = activeWorkspaceId.value;
-      if (!wsId) return;  // chat tabs are strictly per-workspace
+      if (!wsId) return null;  // chat tabs are strictly per-workspace
       chatTabCounter += 1;
       const id = 'chat-' + chatTabCounter;
       const projectName = _workspaceBaseName(workspaces[wsId]?.workspace || '');
       const perWsCount = chatTabs.filter(t => t.workspaceId === wsId).length + 1;
       const suffix = perWsCount === 1 ? '' : ` ${perWsCount}`;
-      chatTabs.push({
+      const tab = {
         id,
         label: projectName ? `Live Agent${suffix} (${projectName})` : `Live Agent${suffix}`,
         sessionId: _newChatSessionId(),
         workspaceId: wsId,
-      });
-      if (activate) activeTab.value = id;
+      };
+      chatTabs.push(tab);
+      if (activate) setActiveTab(id);
+      return tab;
     }
 
     function closeLiveAgentTab(tabId) {
@@ -236,16 +264,23 @@ const app = createApp({
       const siblingCount = chatTabs.filter(t => t.workspaceId === wsId).length;
       if (siblingCount <= 1) return;  // keep at least one chat tab per workspace
       chatTabs.splice(idx, 1);
+      if (lastLiveAgentTabByWorkspace[wsId] === tabId) {
+        const fallback = chatTabs.find(t => t.workspaceId === wsId);
+        if (fallback) lastLiveAgentTabByWorkspace[wsId] = fallback.id;
+        else delete lastLiveAgentTabByWorkspace[wsId];
+      }
       if (activeTab.value === tabId) {
         const fallback = chatTabs.find(t => t.workspaceId === wsId);
-        activeTab.value = fallback ? fallback.id : 'tasks';
+        if (fallback) setActiveTab(fallback.id);
+        else activeTab.value = 'tasks';
       }
     }
 
     function _ensureChatTabForWorkspace(wsId) {
-      if (!wsId) return;
-      if (chatTabs.some(t => t.workspaceId === wsId)) return;
-      addLiveAgentTab({ activate: false });
+      if (!wsId) return null;
+      const existing = chatTabs.find(t => t.workspaceId === wsId);
+      if (existing) return existing;
+      return addLiveAgentTab({ activate: false });
     }
 
     const selectedTask = computed(() => {
@@ -895,7 +930,7 @@ const app = createApp({
                 :key="tab.id"
                 class="tab-btn"
                 :class="{ active: activeTab === tab.id, 'focus-tab': tab.isFocus }"
-                @click="activeTab = tab.id"
+                @click="setActiveTab(tab.id)"
               >
                 <span class="tab-btn-label">
                   <i class="tab-label-icon" :data-lucide="tab.icon || tabIcon(tab)" aria-hidden="true"></i>
