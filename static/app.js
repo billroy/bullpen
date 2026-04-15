@@ -510,9 +510,12 @@ const app = createApp({
     function addWorker({ slot, profile }) { socket.emit('worker:add', _wsData({ slot, profile })); }
     function removeWorker(slot) {
       const worker = state.layout?.slots?.[slot];
-      if (worker?.task_queue?.length) {
-        if (!confirm(`Worker "${worker.name}" has ${worker.task_queue.length} task(s) queued. Remove anyway?`)) return;
-      }
+      const name = worker?.name || `Slot ${slot + 1}`;
+      const queued = Number(worker?.task_queue?.length || 0);
+      const confirmMessage = queued > 0
+        ? `Delete worker "${name}"?\n\nThis worker has ${queued} queued task(s).`
+        : `Delete worker "${name}"?`;
+      if (!confirm(confirmMessage)) return;
       socket.emit('worker:remove', _wsData({ slot }));
     }
     function moveWorker(from, to) { socket.emit('worker:move', _wsData({ from, to })); }

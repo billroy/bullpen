@@ -203,10 +203,8 @@ const WorkerConfigModal = {
       this.$emit('close');
     },
     onRemove() {
-      if (confirm('Remove this worker from the grid?')) {
-        this.$emit('remove', this.slotIndex);
-        this.$emit('close');
-      }
+      this.$emit('remove', this.slotIndex);
+      this.$emit('close');
     },
     onSaveProfile() {
       const id = this.form.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
