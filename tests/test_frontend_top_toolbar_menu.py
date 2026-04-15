@@ -19,6 +19,8 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\">Import Project</button>" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportWorkers\">Import Workers</button>" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportAll\">Import All</button>" in text
+    assert "class=\"project-menu-item\" @click=\"onOpenGitHub\">Bullpen on GitHub</button>" in text
+    assert "window.open('https://github.com/billroy/bullpen', '_blank', 'noopener,noreferrer');" in text
 
 
 def test_app_wires_toolbar_export_import_events():

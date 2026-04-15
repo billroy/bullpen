@@ -62,6 +62,10 @@ const TopToolbar = {
       this.$refs.allImportInput.click();
       this.showMainMenu = false;
     },
+    onOpenGitHub() {
+      window.open('https://github.com/billroy/bullpen', '_blank', 'noopener,noreferrer');
+      this.showMainMenu = false;
+    },
     onImportWorkspaceSelected(event) {
       const file = event?.target?.files?.[0];
       if (!file) return;
@@ -91,6 +95,7 @@ const TopToolbar = {
             <button class="project-menu-item" @click="triggerImportWorkspace">Import Project</button>
             <button class="project-menu-item" @click="triggerImportWorkers">Import Workers</button>
             <button class="project-menu-item" @click="triggerImportAll">Import All</button>
+            <button class="project-menu-item" @click="onOpenGitHub">Bullpen on GitHub</button>
           </div>
           <input
             ref="workersImportInput"
