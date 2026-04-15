@@ -852,7 +852,7 @@ const app = createApp({
     return {
       state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded,
       addProject, newProject, cloneProject, removeProject,
-      connected, activeTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
+      connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,

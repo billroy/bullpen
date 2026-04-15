@@ -56,4 +56,5 @@ def test_live_agent_tabs_remember_last_active_per_workspace():
     assert "lastLiveAgentTabByWorkspace[tab.workspaceId] = tab.id;" in text
     assert "lastLiveAgentTabByWorkspace[currentChatTab.workspaceId] = currentChatTab.id;" in text
     assert "@click=\"setActiveTab(tab.id)\"" in text
+    assert "connected, activeTab, setActiveTab," in text
     assert "if (lastLiveAgentTabByWorkspace[wsId] === tabId)" in text
