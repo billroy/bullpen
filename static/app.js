@@ -74,6 +74,7 @@ const app = createApp({
 
     const activeWorkspaceId = ref(null);
     const projects = reactive([]);  // [{id, path, name}]
+    const projectsLoaded = ref(false);  // true once server has delivered initial projects:updated
 
     function _defaultWsData() {
       return {
@@ -365,6 +366,7 @@ const app = createApp({
     socket.on('error', (data) => { addToast((data && data.message) || 'An error occurred', 'error'); });
     socket.on('projects:updated', (list) => {
       projects.splice(0, projects.length, ...list);
+      projectsLoaded.value = true;
     });
     socket.on('project:removed', (data) => {
       const removedId = data.workspaceId;
@@ -793,7 +795,7 @@ const app = createApp({
     }
 
     return {
-      state, workspaces, activeWorkspaceId, switchWorkspace, projects,
+      state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded,
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
@@ -852,6 +854,7 @@ const app = createApp({
           :config="state.config"
           :visible="leftPaneVisible"
           :projects="projects"
+          :projects-loaded="projectsLoaded"
           :active-workspace-id="activeWorkspaceId"
           :workspaces="workspaces"
           :quick-create-clear-token="quickCreateClearToken"

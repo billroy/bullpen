@@ -22,8 +22,28 @@ def test_leftpane_empty_project_hint_tooltip_is_wired():
     assert "v-if=\"showEmptyProjectHint\" class=\"project-menu-tooltip\"" in text
     assert "Open the menu to add or create your first project." in text
     assert "emptyProjectHintInitialized" in text
-    assert "this.showEmptyProjectHint = list.length === 0;" in text
+    # Hint must key off a "server has responded" signal, not the raw projects
+    # array — the reactive([]) initial value is indistinguishable from a real
+    # empty list and would cause the hint to flash for users who DO have projects.
+    assert "projectsLoaded" in text
     assert "this.showEmptyProjectHint = false;" in text
+
+
+def test_leftpane_accepts_projects_loaded_prop():
+    """Regression: the hint must not be driven solely by the projects array.
+    If it is, the initial empty reactive array triggers the hint before the
+    server response arrives, and users with real projects see a stale hint."""
+    text = _read("static/components/LeftPane.js")
+    assert "'projectsLoaded'" in text, "LeftPane must declare a projectsLoaded prop"
+
+
+def test_app_tracks_projects_loaded_and_passes_to_leftpane():
+    text = _read("static/app.js")
+    assert "projectsLoaded" in text
+    # Must be wired through the socket handler so it can only become true after
+    # the server confirms the project list.
+    assert "projectsLoaded.value = true;" in text
+    assert ':projects-loaded="projectsLoaded"' in text
 
 
 def test_leftpane_projects_header_remains_visible_in_empty_state():

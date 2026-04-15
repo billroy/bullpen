@@ -1,5 +1,5 @@
 const LeftPane = {
-  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'activeWorkspaceId', 'workspaces', 'quickCreateClearToken'],
+  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'activeWorkspaceId', 'workspaces', 'quickCreateClearToken'],
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project', 'quick-create-task'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
@@ -131,12 +131,15 @@ const LeftPane = {
     quickCreateClearToken() {
       this.quickCreateText = '';
     },
-    projects: {
+    projectsLoaded: {
       immediate: true,
-      handler(list) {
-        if (this.emptyProjectHintInitialized || !Array.isArray(list)) return;
+      handler(loaded) {
+        // Only evaluate the empty-state hint once the server has delivered the
+        // real project list. The reactive([]) initial value is pre-load and
+        // must not be mistaken for "user has zero projects".
+        if (!loaded || this.emptyProjectHintInitialized) return;
         this.emptyProjectHintInitialized = true;
-        this.showEmptyProjectHint = list.length === 0;
+        this.showEmptyProjectHint = Array.isArray(this.projects) && this.projects.length === 0;
       }
     }
   },
