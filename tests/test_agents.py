@@ -121,7 +121,8 @@ class TestCodexAdapter:
         adapter = CodexAdapter()
         assert adapter.name == "codex"
 
-    def test_build_argv(self):
+    def test_build_argv(self, monkeypatch):
+        monkeypatch.delenv("BULLPEN_CODEX_SANDBOX", raising=False)
         adapter = CodexAdapter()
         argv = adapter.build_argv("test prompt", "o4-mini", "/workspace")
         assert any("codex" in arg for arg in argv)
@@ -133,6 +134,14 @@ class TestCodexAdapter:
         assert "-" in argv
         assert "--approval-mode" not in argv
         assert "--quiet" not in argv
+
+    def test_build_argv_can_disable_nested_sandbox(self, monkeypatch):
+        monkeypatch.setenv("BULLPEN_CODEX_SANDBOX", "none")
+        adapter = CodexAdapter()
+        argv = adapter.build_argv("test prompt", "gpt-5.4", "/workspace")
+
+        assert "--dangerously-bypass-approvals-and-sandbox" in argv
+        assert "--full-auto" not in argv
 
     def test_find_codex_checks_app_bundle_when_not_on_path(self, monkeypatch):
         app_bin = "/Applications/Codex.app/Contents/Resources/codex"

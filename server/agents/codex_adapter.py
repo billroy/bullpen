@@ -47,6 +47,14 @@ def _find_codex():
     return None
 
 
+def _codex_execution_flags():
+    """Return Codex execution flags for the current runtime environment."""
+    sandbox_mode = os.environ.get("BULLPEN_CODEX_SANDBOX", "").strip().lower()
+    if sandbox_mode in {"none", "off", "false", "0", "bypass"}:
+        return ["--dangerously-bypass-approvals-and-sandbox"]
+    return ["--full-auto"]
+
+
 class CodexAdapter(AgentAdapter):
 
     @property
@@ -75,7 +83,7 @@ class CodexAdapter(AgentAdapter):
             codex_bin,
             "exec",
             "--model", model,
-            "--full-auto",
+            *_codex_execution_flags(),
             "--json",
             "--skip-git-repo-check",
         ]
