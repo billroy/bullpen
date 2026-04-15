@@ -2,6 +2,9 @@
 
 import io
 import json
+import os
+import subprocess
+import sys
 
 from server import mcp_tools
 from server.init import init_workspace
@@ -170,6 +173,20 @@ def _parse_line_messages(raw):
     return out
 
 
+def test_mcp_tools_script_help_runs_without_pythonpath():
+    root = os.path.dirname(os.path.dirname(__file__))
+    result = subprocess.run(
+        [sys.executable, os.path.join(root, "server", "mcp_tools.py"), "--help"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "--workspace" in result.stdout
+
+
 def test_list_tasks_alias_returns_ticket_summary(tmp_workspace, monkeypatch):
     bp_dir = init_workspace(tmp_workspace)
     created = create_task(bp_dir, "MCP alias test")
@@ -254,6 +271,9 @@ def test_bullpen_client_degrades_when_socket_unavailable(monkeypatch):
     task, err = client.create_ticket({"title": "x"})
     assert task is None
     assert "unavailable" in err
+    assert "Server: 127.0.0.1:5050" in err
+    assert "Last error:" in err
+    assert "python3 bullpen.py mcp --workspace <project>" in err
 
 
 def test_bullpen_client_adds_loopback_candidates_for_wildcard_host(monkeypatch):
@@ -367,6 +387,48 @@ def test_bullpen_client_selects_workspace_matching_bp_dir(monkeypatch, tmp_works
 
     assert client._connect_best_effort() is True
     assert client.workspace_id == "target-ws"
+
+
+def test_resolve_runtime_args_reads_workspace_config(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config_path = bp_dir + "/config.json"
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    config["server_host"] = "127.0.0.1"
+    config["server_port"] = 5099
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f)
+
+    resolved_bp_dir, host, port = mcp_tools.resolve_runtime_args(workspace=tmp_workspace)
+
+    assert resolved_bp_dir == bp_dir
+    assert host == "127.0.0.1"
+    assert port == 5099
+
+
+def test_resolve_runtime_args_allows_explicit_host_port_override(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+
+    resolved_bp_dir, host, port = mcp_tools.resolve_runtime_args(
+        bp_dir=bp_dir,
+        host="localhost",
+        port=6060,
+    )
+
+    assert resolved_bp_dir == bp_dir
+    assert host == "localhost"
+    assert port == 6060
+
+
+def test_resolve_runtime_args_requires_bullpen_dir(tmp_path):
+    missing = tmp_path / "missing-project"
+
+    try:
+        mcp_tools.resolve_runtime_args(workspace=str(missing))
+    except ValueError as exc:
+        assert ".bullpen directory not found" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
 
 
 def test_read_parses_mcp_content_length_frame():

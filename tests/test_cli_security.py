@@ -61,6 +61,46 @@ def test_parse_args_supports_websocket_debug():
     assert args.websocket_debug is True
 
 
+def test_parse_args_supports_mcp_subcommand():
+    args = bullpen.parse_args(["mcp", "--workspace", "/tmp/project", "--host", "127.0.0.1", "--port", "5050"])
+
+    assert args.command == "mcp"
+    assert args.workspace == "/tmp/project"
+    assert args.host == "127.0.0.1"
+    assert args.port == 5050
+
+
+def test_parse_args_mcp_preserves_global_workspace_before_subcommand():
+    args = bullpen.parse_args(["--workspace", "/tmp/project", "mcp"])
+
+    assert args.command == "mcp"
+    assert args.workspace == "/tmp/project"
+    assert args.host is None
+    assert args.port is None
+
+
+def test_run_mcp_cli_resolves_workspace_and_calls_mcp_main(tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    bp_dir = workspace / ".bullpen"
+    bp_dir.mkdir(parents=True)
+    (bp_dir / "config.json").write_text(
+        '{"server_host":"127.0.0.1","server_port":5055}\n',
+        encoding="utf-8",
+    )
+    called = {}
+
+    def fake_main(resolved_bp_dir, host, port):
+        called["args"] = (resolved_bp_dir, host, port)
+
+    monkeypatch.setattr("server.mcp_tools.main", fake_main)
+
+    args = bullpen.parse_args(["mcp", "--workspace", str(workspace)])
+    rc = bullpen.run_mcp_cli(args)
+
+    assert rc == 0
+    assert called["args"] == (str(bp_dir), "127.0.0.1", 5055)
+
+
 def test_set_password_cli_add_and_delete_users(tmp_path, monkeypatch):
     monkeypatch.setattr("server.workspace_manager.GLOBAL_DIR", str(tmp_path))
     existing = auth.apply_credentials_mapping(

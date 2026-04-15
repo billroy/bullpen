@@ -23,6 +23,10 @@ import os
 
 import socketio
 
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 from server import tasks as task_store
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
@@ -238,6 +242,7 @@ class BullpenClient:
         self.workspace_id: str | None = None
         self.connect_timeout_seconds = DEFAULT_CONNECT_TIMEOUT_SECONDS
         self.operation_timeout_seconds = DEFAULT_OPERATION_TIMEOUT_SECONDS
+        self.last_connect_error: str | None = None
         self._lock = threading.Lock()
         self._pending: dict[str, _Pending] = {}
 
@@ -299,6 +304,7 @@ class BullpenClient:
             return True
         token = self._read_mcp_token()
         auth_data = {"mcp_token": token} if token else None
+        errors: list[str] = []
         for attempt in range(MAX_CONNECT_ATTEMPTS):
             for url in self._candidate_urls():
                 for transports in self._transport_attempts():
@@ -322,10 +328,11 @@ class BullpenClient:
                             self.sio.connect(url)
                             self.connected = True
                             return True
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
+                        except Exception as exc:
+                            errors.append(f"{url}: legacy connect failed: {exc}")
+                    except Exception as exc:
+                        transport_label = ",".join(transports)
+                        errors.append(f"{url} via {transport_label}: {exc}")
                     # Ensure clean state before next attempt.
                     try:
                         self.sio.disconnect()
@@ -333,7 +340,27 @@ class BullpenClient:
                         pass
                     continue
         self.connected = False
+        self.last_connect_error = "; ".join(errors[-4:]) if errors else "No connection attempts succeeded"
         return False
+
+    def _connection_failure_message(self, op: str) -> str:
+        config_path = os.path.join(self.bp_dir, "config.json")
+        token_hint = ""
+        if not self._read_mcp_token():
+            token_hint = (
+                f" No mcp_token was found in {config_path}; start or restart Bullpen "
+                "for this project so it can write current MCP runtime config."
+            )
+        detail = f" Last error: {self.last_connect_error}." if self.last_connect_error else ""
+        return (
+            f"Bullpen socket connection unavailable for {op}. "
+            f"Workspace: {self.workspace_path}. "
+            f"MCP config: {self.bp_dir}. "
+            f"Server: {self.host}:{self.port}."
+            f"{token_hint}{detail} "
+            "Ensure Bullpen is running for this workspace; external MCP clients should launch "
+            "`python3 bullpen.py mcp --workspace <project>` from the Bullpen checkout."
+        )
 
     def _prepare_pending(self, op: str) -> _Pending:
         entry = _Pending(event=threading.Event())
@@ -359,7 +386,7 @@ class BullpenClient:
 
     def create_ticket(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         if not self._connect_best_effort():
-            return None, "Bullpen socket connection unavailable for create_ticket"
+            return None, self._connection_failure_message("create_ticket")
         if not self.workspace_id:
             return None, "MCP client has no workspace_id — path matching failed for all workspaces"
 
@@ -387,7 +414,7 @@ class BullpenClient:
 
     def update_ticket(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         if not self._connect_best_effort():
-            return None, "Bullpen socket connection unavailable for update_ticket"
+            return None, self._connection_failure_message("update_ticket")
         if not self.workspace_id:
             return None, "MCP client has no workspace_id — path matching failed for all workspaces"
 
@@ -533,6 +560,45 @@ def _initialize_result(requested_protocol_version: str | None = None) -> dict[st
     }
 
 
+def resolve_runtime_args(
+    *,
+    bp_dir: str | None = None,
+    workspace: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+) -> tuple[str, str, int]:
+    """Resolve the .bullpen path and server address for an MCP run."""
+    if bp_dir:
+        resolved_bp_dir = os.path.abspath(bp_dir)
+    else:
+        workspace_path = os.path.abspath(workspace or os.getcwd())
+        resolved_bp_dir = os.path.join(workspace_path, ".bullpen")
+
+    if not os.path.isdir(resolved_bp_dir):
+        raise ValueError(f".bullpen directory not found: {resolved_bp_dir}")
+
+    config_path = os.path.join(resolved_bp_dir, "config.json")
+    config: dict[str, Any] = {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+            if isinstance(loaded, dict):
+                config = loaded
+    except FileNotFoundError:
+        config = {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid MCP config JSON: {config_path}") from exc
+
+    resolved_host = host or str(config.get("server_host") or "127.0.0.1")
+    raw_port = port if port is not None else config.get("server_port", 5000)
+    try:
+        resolved_port = int(raw_port)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid MCP server port in {config_path}: {raw_port!r}") from exc
+
+    return resolved_bp_dir, resolved_host, resolved_port
+
+
 def main(bp_dir: str, host: str, port: int) -> None:
     global _mcp_out  # noqa: PLW0603
 
@@ -603,12 +669,28 @@ def main(bp_dir: str, host: str, port: int) -> None:
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run bullpen MCP stdio server")
-    parser.add_argument("--bp-dir", required=True, help="Path to .bullpen directory")
-    parser.add_argument("--host", default="127.0.0.1", help="Bullpen socket.io host")
-    parser.add_argument("--port", default=5000, type=int, help="Bullpen socket.io port")
+    parser.add_argument("--workspace", help="Project workspace directory; defaults to current directory")
+    parser.add_argument("--bp-dir", help="Path to .bullpen directory; defaults to --workspace/.bullpen")
+    parser.add_argument("--host", help="Bullpen socket.io host; defaults to .bullpen/config.json")
+    parser.add_argument("--port", type=int, help="Bullpen socket.io port; defaults to .bullpen/config.json")
     return parser
 
 
+def run_cli(argv: list[str] | None = None) -> int:
+    cli_args = _build_arg_parser().parse_args(argv)
+    try:
+        bp_dir, host, port = resolve_runtime_args(
+            bp_dir=cli_args.bp_dir,
+            workspace=cli_args.workspace,
+            host=cli_args.host,
+            port=cli_args.port,
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    main(bp_dir, host, port)
+    return 0
+
+
 if __name__ == "__main__":
-    cli_args = _build_arg_parser().parse_args()
-    main(cli_args.bp_dir, cli_args.host, cli_args.port)
+    sys.exit(run_cli())

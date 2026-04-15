@@ -14,6 +14,38 @@ def parse_args(argv=None):
         prog="bullpen",
         description="Bullpen — manage a team of AI coding agents",
     )
+    subparsers = parser.add_subparsers(dest="command")
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        help="Run the Bullpen MCP stdio server for an external MCP client",
+        description=(
+            "Run the Bullpen MCP stdio server for a project. Writes still require "
+            "a running Bullpen server so validation, locking, UI updates, and "
+            "workspace routing remain consistent."
+        ),
+    )
+    mcp_parser.add_argument(
+        "--workspace",
+        dest="mcp_workspace",
+        default=None,
+        help="Path to the workspace directory (default: current directory)",
+    )
+    mcp_parser.add_argument(
+        "--bp-dir",
+        dest="mcp_bp_dir",
+        help="Path to .bullpen directory (default: --workspace/.bullpen)",
+    )
+    mcp_parser.add_argument(
+        "--host",
+        dest="mcp_host",
+        help="Bullpen Socket.IO host (default: read from .bullpen/config.json)",
+    )
+    mcp_parser.add_argument(
+        "--port",
+        dest="mcp_port",
+        type=int,
+        help="Bullpen Socket.IO port (default: read from .bullpen/config.json)",
+    )
     parser.add_argument(
         "--workspace",
         default=os.getcwd(),
@@ -79,7 +111,32 @@ def parse_args(argv=None):
             "For headless/scripted deploys."
         ),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.command == "mcp":
+        args.workspace = args.mcp_workspace or args.workspace
+        args.bp_dir = args.mcp_bp_dir
+        args.host = args.mcp_host
+        args.port = args.mcp_port
+    return args
+
+
+def run_mcp_cli(args):
+    """Run the MCP stdio server using workspace-oriented CLI arguments."""
+    from server import mcp_tools
+
+    try:
+        bp_dir, host, port = mcp_tools.resolve_runtime_args(
+            bp_dir=args.bp_dir,
+            workspace=args.workspace,
+            host=args.host,
+            port=args.port,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    mcp_tools.main(bp_dir, host, port)
+    return 0
 
 
 def set_password_cli(set_usernames=None, delete_usernames=None):
@@ -210,6 +267,9 @@ def require_auth_for_network_bind(host):
 
 def main():
     args = parse_args()
+
+    if args.command == "mcp":
+        sys.exit(run_mcp_cli(args))
 
     if args.bootstrap_credentials:
         sys.exit(bootstrap_credentials())
