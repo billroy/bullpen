@@ -56,6 +56,18 @@ persists.
 If `CLAUDE_CODE_OAUTH_TOKEN` is already set in the host environment, the deploy
 script still forwards it into the container.
 
+For Codex, the deploy script copies the host Codex home into the persistent
+Docker home and refreshes the login file on each deploy:
+
+```text
+~/.codex/auth.json -> /home/bullpen/.codex/auth.json
+```
+
+Without that file, Codex can still launch but OpenAI API calls fail with a 401
+because no bearer or basic authentication header is available. If
+`OPENAI_API_KEY` is set in the host environment, the deploy script also forwards
+it into the container.
+
 ## Git and Pull Request Auth
 
 The Docker image includes `git`, `openssh-client`, and the GitHub CLI (`gh`).

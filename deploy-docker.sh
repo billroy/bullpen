@@ -152,6 +152,15 @@ seed_file_if_missing() {
   fi
 }
 
+sync_file_if_exists() {
+  local source_path="$1"
+  local target_path="$2"
+  if [[ -f "$source_path" ]]; then
+    mkdir -p "$(dirname "$target_path")"
+    cp -p "$source_path" "$target_path"
+  fi
+}
+
 seed_dir_if_missing() {
   local source_path="$1"
   local target_path="$2"
@@ -247,6 +256,8 @@ if [[ -f "$HOME/.claude/.credentials.json" ]]; then
   cp -p "$HOME/.claude/.credentials.json" "$DOCKER_HOME/.claude/.credentials.json"
   chmod 600 "$DOCKER_HOME/.claude/.credentials.json" 2>/dev/null || true
 fi
+seed_dir_if_missing "$HOME/.codex" "$DOCKER_HOME/.codex"
+sync_file_if_exists "$HOME/.codex/auth.json" "$DOCKER_HOME/.codex/auth.json"
 seed_dir_if_missing "$HOME/.config/codex" "$DOCKER_HOME/.config/codex"
 seed_dir_if_missing "$HOME/.config/gemini" "$DOCKER_HOME/.config/gemini"
 seed_dir_if_missing "$HOME/.config/google-gemini" "$DOCKER_HOME/.config/google-gemini"
@@ -255,6 +266,7 @@ RUNTIME_VOLUME_ARGS+=("-v" "${DOCKER_HOME}:/home/bullpen")
 # Auto-detect provider credentials seeded into the persistent container home.
 [[ -d "$DOCKER_HOME/.claude" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.claude")
 [[ -f "$DOCKER_HOME/.claude.json" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.claude.json")
+[[ -f "$DOCKER_HOME/.codex/auth.json" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.codex/auth.json")
 [[ -d "$DOCKER_HOME/.config/codex" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/codex")
 [[ -d "$DOCKER_HOME/.config/gemini" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/gemini")
 [[ -d "$DOCKER_HOME/.config/google-gemini" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/google-gemini")
