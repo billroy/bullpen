@@ -21,17 +21,19 @@ const LeftPane = {
         <div v-if="projects.length > 1" class="project-list">
           <div v-for="p in projects" :key="p.id"
                class="project-item"
-               :class="{ active: p.id === activeWorkspaceId }"
-               @click="$emit('switch-workspace', p.id)">
+               :class="{ active: p.id === activeWorkspaceId, unavailable: p.available === false }"
+               @click="p.available !== false && $emit('switch-workspace', p.id)"
+               :title="p.available === false ? 'Directory not found: ' + p.path : ''">
             <span class="project-name">
-              <i class="project-label-icon" data-lucide="folder" aria-hidden="true"></i>
+              <i class="project-label-icon" :data-lucide="p.available === false ? 'folder-x' : 'folder'" aria-hidden="true"></i>
               <span class="project-label-text">{{ p.name }}</span>
             </span>
             <span class="project-item-actions">
-              <span v-if="unseenCount(p.id)" class="project-badge">{{ unseenCount(p.id) }}</span>
+              <span v-if="p.available !== false && unseenCount(p.id)" class="project-badge">{{ unseenCount(p.id) }}</span>
               <button
                 v-if="canRemoveProject(p)"
                 class="btn-icon project-remove-btn"
+                :class="{ 'project-remove-btn--visible': p.available === false }"
                 title="Remove project"
                 @click.stop="confirmRemoveProject(p)"
               >&times;</button>

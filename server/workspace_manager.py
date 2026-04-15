@@ -2,6 +2,8 @@
 
 import json
 import os
+import shutil
+import tempfile
 import threading
 
 from server.init import init_workspace
@@ -10,6 +12,7 @@ from server.persistence import read_json, write_json
 
 GLOBAL_DIR = os.path.expanduser("~/.bullpen")
 REGISTRY_PATH = os.path.join(GLOBAL_DIR, "projects.json")
+REGISTRY_VERSION = 1
 
 
 class WorkspaceState:
@@ -49,18 +52,62 @@ class WorkspaceManager:
         return self._global_dir
 
     def _load_registry(self):
-        if os.path.exists(self._registry_path):
-            try:
-                with open(self._registry_path, "r") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                return []
+        if not os.path.exists(self._registry_path):
+            return []
+        try:
+            with open(self._registry_path, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return self._try_load_backup()
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict) and "projects" in data:
+            v = data.get("version", 0)
+            if v > REGISTRY_VERSION:
+                raise RuntimeError(
+                    f"projects.json version {v} is newer than supported "
+                    f"({REGISTRY_VERSION}); refusing to overwrite"
+                )
+            return data["projects"]
+        return []
+
+    def _try_load_backup(self):
+        bak = self._registry_path + ".bak"
+        if not os.path.exists(bak):
+            return []
+        try:
+            with open(bak, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return []
+        if isinstance(data, dict) and "projects" in data:
+            return data["projects"]
+        if isinstance(data, list):
+            return data
         return []
 
     def _save_registry(self):
         self._ensure_global_dir()
-        with open(self._registry_path, "w") as f:
-            json.dump(self._registry, f, indent=2)
+        envelope = {"version": REGISTRY_VERSION, "projects": self._registry}
+        content = json.dumps(envelope, indent=2) + "\n"
+        if os.path.exists(self._registry_path):
+            bak = self._registry_path + ".bak"
+            try:
+                shutil.copy2(self._registry_path, bak)
+            except OSError:
+                pass
+        dir_path = os.path.dirname(self._registry_path)
+        fd, tmp = tempfile.mkstemp(dir=dir_path, prefix=".tmp_projects_")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(content)
+            os.replace(tmp, self._registry_path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     # --- Project management ---
 
@@ -176,8 +223,17 @@ class WorkspaceManager:
         return list(self._workspaces.keys())
 
     def list_projects(self):
-        """Return registry entries for all registered projects."""
-        return [e.copy() for e in self._registry]
+        """Return registry entries for all registered projects.
+
+        Each entry includes an ``available`` flag indicating whether the
+        project directory currently exists on disk.
+        """
+        out = []
+        for e in self._registry:
+            entry = e.copy()
+            entry["available"] = os.path.isdir(e["path"])
+            out.append(entry)
+        return out
 
     @property
     def default_id(self):

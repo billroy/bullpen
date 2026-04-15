@@ -609,6 +609,22 @@ body {
   background: var(--bg-tertiary);
 }
 
+.project-item.unavailable {
+  opacity: 0.45;
+  cursor: default;
+  font-style: italic;
+}
+
+.project-item.unavailable:hover {
+  background: transparent;
+}
+
+.project-remove-btn--visible {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  transform: scale(1) !important;
+}
+
 .project-name {
   display: inline-flex;
   align-items: center;

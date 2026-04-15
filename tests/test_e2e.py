@@ -231,14 +231,21 @@ class TestMultiProjectStartup:
         # Seed another persisted project as if it was added in a previous run.
         projects_path = os.path.join(global_dir, "projects.json")
         with open(projects_path, "r") as f:
-            projects = json.load(f)
-        projects.append({
-            "id": "ws-b",
-            "path": os.path.realpath(ws_b),
-            "name": "workspace_b",
-        })
+            raw = json.load(f)
+        if isinstance(raw, dict) and "projects" in raw:
+            raw["projects"].append({
+                "id": "ws-b",
+                "path": os.path.realpath(ws_b),
+                "name": "workspace_b",
+            })
+        else:
+            raw.append({
+                "id": "ws-b",
+                "path": os.path.realpath(ws_b),
+                "name": "workspace_b",
+            })
         with open(projects_path, "w") as f:
-            json.dump(projects, f, indent=2)
+            json.dump(raw, f, indent=2)
 
         # Restart app; both projects should be activated and sent on connect.
         app = create_app(ws_a, no_browser=True, global_dir=global_dir)
