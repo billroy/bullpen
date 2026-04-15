@@ -103,7 +103,9 @@ def create_app(
         try:
             manager.register_project(entry["path"], name=entry.get("name"))
         except ValueError:
-            # Ignore invalid/unavailable paths; stale entries are pruned on manager init.
+            # Path is currently missing/unavailable (renamed, unmounted, etc.).
+            # Keep the registry entry so it returns when the path comes back;
+            # do not silently delete user data.
             continue
     bp_dir = manager.get_bp_dir(startup_id)
 

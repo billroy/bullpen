@@ -37,7 +37,6 @@ class WorkspaceManager:
         self._registry_path = os.path.join(self._global_dir, "projects.json")
         self._ensure_global_dir()
         self._registry = self._load_registry()
-        self._prune_stale()
 
     # --- Registry I/O ---
 
@@ -62,13 +61,6 @@ class WorkspaceManager:
         self._ensure_global_dir()
         with open(self._registry_path, "w") as f:
             json.dump(self._registry, f, indent=2)
-
-    def _prune_stale(self):
-        """Remove registry entries whose paths no longer exist on disk."""
-        before = len(self._registry)
-        self._registry = [e for e in self._registry if os.path.isdir(e.get("path", ""))]
-        if len(self._registry) < before:
-            self._save_registry()
 
     # --- Project management ---
 
