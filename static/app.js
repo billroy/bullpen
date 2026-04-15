@@ -172,6 +172,7 @@ const app = createApp({
       activeWorkspaceId.value = wsId;
       workspaces[wsId].unseenActivity = 0;
       ticketListScope.value = 'live';
+      _ensureChatTabForWorkspace(wsId);
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
       _applyWorkspaceAmbient(wsId);
@@ -212,11 +213,13 @@ const app = createApp({
     }
 
     function addLiveAgentTab({ activate = true } = {}) {
+      const wsId = activeWorkspaceId.value;
+      if (!wsId) return;  // chat tabs are strictly per-workspace
       chatTabCounter += 1;
       const id = 'chat-' + chatTabCounter;
-      const wsId = activeWorkspaceId.value;
       const projectName = _workspaceBaseName(workspaces[wsId]?.workspace || '');
-      const suffix = chatTabCounter === 1 ? '' : ` ${chatTabCounter}`;
+      const perWsCount = chatTabs.filter(t => t.workspaceId === wsId).length + 1;
+      const suffix = perWsCount === 1 ? '' : ` ${perWsCount}`;
       chatTabs.push({
         id,
         label: projectName ? `Live Agent${suffix} (${projectName})` : `Live Agent${suffix}`,
@@ -227,18 +230,23 @@ const app = createApp({
     }
 
     function closeLiveAgentTab(tabId) {
-      if (chatTabs.length <= 1) return;
       const idx = chatTabs.findIndex(t => t.id === tabId);
       if (idx < 0) return;
+      const wsId = chatTabs[idx].workspaceId;
+      const siblingCount = chatTabs.filter(t => t.workspaceId === wsId).length;
+      if (siblingCount <= 1) return;  // keep at least one chat tab per workspace
       chatTabs.splice(idx, 1);
       if (activeTab.value === tabId) {
-        const fallback = chatTabs[idx] || chatTabs[idx - 1];
+        const fallback = chatTabs.find(t => t.workspaceId === wsId);
         activeTab.value = fallback ? fallback.id : 'tasks';
       }
     }
 
-    // Seed the default chat tab without switching away from Tickets.
-    addLiveAgentTab({ activate: false });
+    function _ensureChatTabForWorkspace(wsId) {
+      if (!wsId) return;
+      if (chatTabs.some(t => t.workspaceId === wsId)) return;
+      addLiveAgentTab({ activate: false });
+    }
 
     const selectedTask = computed(() => {
       if (!selectedTaskId.value) return null;
@@ -555,9 +563,9 @@ const app = createApp({
         { id: 'commits', label: 'Commits', icon: 'git-commit' },
       ];
       const wsId = activeWorkspaceId.value;
-      for (const ct of chatTabs) {
-        if (ct.workspaceId && ct.workspaceId !== wsId) continue;
-        tabs.push({ id: ct.id, label: ct.label, isChat: true, canClose: chatTabs.length > 1, icon: 'message-square' });
+      const wsChatTabs = chatTabs.filter(ct => ct.workspaceId === wsId);
+      for (const ct of wsChatTabs) {
+        tabs.push({ id: ct.id, label: ct.label, isChat: true, canClose: wsChatTabs.length > 1, icon: 'message-square' });
       }
       for (const ft of focusTabs) {
         if (ft.workspaceId && ft.workspaceId !== wsId) continue;
