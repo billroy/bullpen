@@ -132,6 +132,15 @@ def _save_layout(bp_dir, layout):
     write_json(os.path.join(bp_dir, "layout.json"), layout)
 
 
+def _write_runtime_mcp_config(app, bp_dir):
+    """Write the current server connection metadata for MCP helper processes."""
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    config["server_host"] = app.config.get("host", "127.0.0.1")
+    config["server_port"] = app.config.get("port", 5000)
+    config["mcp_token"] = app.config.get("mcp_token")
+    write_json(os.path.join(bp_dir, "config.json"), config)
+
+
 def register_events(socketio, app):
     """Register all socket.io event handlers."""
 
@@ -607,6 +616,7 @@ def register_events(socketio, app):
 
     def _activate_and_broadcast_project(manager, ws_id):
         ws = manager.get(ws_id)
+        _write_runtime_mcp_config(app, ws.bp_dir)
 
         # The connection that added the project should immediately receive
         # future room-scoped events for it. Other clients join when selected.
@@ -777,23 +787,26 @@ def register_events(socketio, app):
 
     # --- Chat events ---
 
-    # In-memory chat sessions: sessionId -> list of {role, content}
+    # In-memory chat sessions: (workspaceId, sessionId) -> list of {role, content}
     _chat_sessions = {}
-    _chat_session_ts = {}  # sessionId -> last activity timestamp
+    _chat_session_ts = {}  # (workspaceId, sessionId) -> last activity timestamp
     _chat_lock = threading.Lock()
     _CHAT_SESSION_TTL = 86400  # 24 hours
 
-    # Chat session -> ticket ID (created lazily on first message)
+    # (workspaceId, sessionId) -> ticket ID (created lazily on first message)
     _chat_ticket_ids = {}
+
+    def _chat_key(ws_id, session_id):
+        return (ws_id, session_id)
 
     def _evict_stale_chat_sessions():
         cutoff = time.time() - _CHAT_SESSION_TTL
         with _chat_lock:
-            stale = [sid for sid, ts in _chat_session_ts.items() if ts < cutoff]
-            for sid in stale:
-                _chat_sessions.pop(sid, None)
-                _chat_session_ts.pop(sid, None)
-                _chat_ticket_ids.pop(sid, None)
+            stale = [key for key, ts in _chat_session_ts.items() if ts < cutoff]
+            for key in stale:
+                _chat_sessions.pop(key, None)
+                _chat_session_ts.pop(key, None)
+                _chat_ticket_ids.pop(key, None)
 
     # Active chat subprocesses: sessionId -> proc
     _chat_processes = {}
@@ -963,9 +976,10 @@ def register_events(socketio, app):
 
                 # Update session history
                 with _chat_lock:
-                    if session_id in _chat_sessions:
-                        _chat_sessions[session_id].append({"role": "user", "content": message})
-                        _chat_sessions[session_id].append({"role": "assistant", "content": full_response})
+                    chat_key = _chat_key(ws_id, session_id)
+                    if chat_key in _chat_sessions:
+                        _chat_sessions[chat_key].append({"role": "user", "content": message})
+                        _chat_sessions[chat_key].append({"role": "assistant", "content": full_response})
 
                 # Log chat exchange to a ticket
                 if ws_id and bp_dir:
@@ -985,7 +999,8 @@ def register_events(socketio, app):
                         )
 
                         with _chat_lock:
-                            ticket_id = _chat_ticket_ids.get(session_id)
+                            chat_key = _chat_key(ws_id, session_id)
+                            ticket_id = _chat_ticket_ids.get(chat_key)
                         if not ticket_id:
                             short_title = message[:57] + "..." if len(message) > 57 else message
                             task = task_mod.create_task(
@@ -1001,7 +1016,7 @@ def register_events(socketio, app):
                                 updates.update(build_usage_update(task, usage_entry))
                             task = task_mod.update_task(bp_dir, task["id"], updates)
                             with _chat_lock:
-                                _chat_ticket_ids[session_id] = task["id"]
+                                _chat_ticket_ids[chat_key] = task["id"]
                             _emit("task:created", task, ws_id)
                         else:
                             task = task_mod.read_task(bp_dir, ticket_id)
@@ -1061,11 +1076,12 @@ def register_events(socketio, app):
         _evict_stale_chat_sessions()
 
         # Build prompt with conversation history
+        chat_key = _chat_key(ws_id, session_id)
         with _chat_lock:
-            if session_id not in _chat_sessions:
-                _chat_sessions[session_id] = []
-            _chat_session_ts[session_id] = time.time()
-            history = list(_chat_sessions[session_id])
+            if chat_key not in _chat_sessions:
+                _chat_sessions[chat_key] = []
+            _chat_session_ts[chat_key] = time.time()
+            history = list(_chat_sessions[chat_key])
 
         parts = [
             "You are a Bullpen project assistant. You have MCP tools for managing tickets:",
@@ -1106,10 +1122,18 @@ def register_events(socketio, app):
     @socketio.on("chat:clear")
     def on_chat_clear(data):
         session_id = data.get("sessionId", "")
+        ws_id = data.get("workspaceId") if isinstance(data, dict) else None
         with _chat_lock:
-            _chat_sessions.pop(session_id, None)
-            _chat_session_ts.pop(session_id, None)
-            _chat_ticket_ids.pop(session_id, None)
+            if ws_id:
+                chat_key = _chat_key(ws_id, session_id)
+                _chat_sessions.pop(chat_key, None)
+                _chat_session_ts.pop(chat_key, None)
+                _chat_ticket_ids.pop(chat_key, None)
+            else:
+                for key in [key for key in _chat_sessions if key[1] == session_id]:
+                    _chat_sessions.pop(key, None)
+                    _chat_session_ts.pop(key, None)
+                    _chat_ticket_ids.pop(key, None)
         emit("chat:cleared", {"sessionId": session_id})
 
     @socketio.on("chat:stop")

@@ -3,6 +3,7 @@
 import os
 import tempfile
 import time
+import json
 
 import pytest
 
@@ -34,6 +35,16 @@ def get_event(client, name):
 def get_all_events(client, name):
     """Get all events with given name."""
     return [evt["args"][0] for evt in client.get_received() if evt["name"] == name]
+
+
+def _wait_for_event(client, name, timeout=3.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for evt in client.get_received():
+            if evt["name"] == name:
+                return evt["args"][0]
+        time.sleep(0.05)
+    return None
 
 
 class ChatUsageAdapter(AgentAdapter):
@@ -503,6 +514,68 @@ class TestConfigEvents:
 
 
 class TestProjectEvents:
+    def test_project_new_writes_current_mcp_runtime_config(self, client):
+        c, app = client
+        with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
+            path = os.path.join(parent, "new-mcp-project")
+            c.emit("project:new", {"path": path})
+            events = c.get_received()
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            assert project_updates
+
+            config_path = os.path.join(path, ".bullpen", "config.json")
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+
+            assert config["server_host"] == app.config["host"]
+            assert config["server_port"] == app.config["port"]
+            assert config["mcp_token"] == app.config["mcp_token"]
+
+    def test_chat_session_ids_are_scoped_by_workspace(self, client):
+        c, app = client
+        register_adapter("chat-usage-mock", ChatUsageAdapter())
+
+        with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
+            path = os.path.join(parent, "new-chat-project")
+            c.emit("project:new", {"path": path})
+            events = c.get_received()
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            listed = project_updates[-1]["args"][0]
+            ws_b = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+
+            session_id = "same-browser-session-id"
+            ws_a = app.config["startup_workspace_id"]
+
+            c.emit("chat:send", {
+                "workspaceId": ws_a,
+                "sessionId": session_id,
+                "provider": "chat-usage-mock",
+                "model": "mock-model",
+                "message": "hello from A",
+            })
+            assert _wait_for_event(c, "chat:done")
+
+            c.emit("chat:send", {
+                "workspaceId": ws_b,
+                "sessionId": session_id,
+                "provider": "chat-usage-mock",
+                "model": "mock-model",
+                "message": "hello from B",
+            })
+            assert _wait_for_event(c, "chat:done")
+
+            from server.tasks import list_tasks
+
+            tasks_a = list_tasks(app.config["bp_dir"])
+            tasks_b = list_tasks(os.path.join(path, ".bullpen"))
+            chat_a = [t for t in tasks_a if "chat" in (t.get("tags") or [])]
+            chat_b = [t for t in tasks_b if "chat" in (t.get("tags") or [])]
+
+            assert len(chat_a) == 1
+            assert len(chat_b) == 1
+            assert "hello from A" in (chat_a[0].get("body") or "")
+            assert "hello from B" in (chat_b[0].get("body") or "")
+
     def test_project_new_creates_empty_directory_and_registers(self, client):
         c, _ = client
         with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
