@@ -258,9 +258,6 @@ class BullpenClient:
             if isinstance(workspace, str) and workspace:
                 if os.path.realpath(workspace) == self.workspace_path:
                     self.workspace_id = workspace_id
-                return
-            if self.workspace_id is None:
-                self.workspace_id = workspace_id
 
         @self.sio.on("task:created")
         def _on_task_created(data: dict[str, Any]) -> None:
@@ -313,6 +310,11 @@ class BullpenClient:
                             transports=transports,
                         )
                         self.connected = True
+                        if self.workspace_id is None:
+                            print(
+                                f"WARNING: MCP connected but no workspace matched path {self.workspace_path}",
+                                file=sys.stderr,
+                            )
                         return True
                     except TypeError:
                         # Compatibility for older socketio client signatures.
@@ -358,6 +360,8 @@ class BullpenClient:
     def create_ticket(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         if not self._connect_best_effort():
             return None, "Bullpen socket connection unavailable for create_ticket"
+        if not self.workspace_id:
+            return None, "MCP client has no workspace_id — path matching failed for all workspaces"
 
         pending = self._prepare_pending("create")
         payload = {
@@ -384,6 +388,8 @@ class BullpenClient:
     def update_ticket(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         if not self._connect_best_effort():
             return None, "Bullpen socket connection unavailable for update_ticket"
+        if not self.workspace_id:
+            return None, "MCP client has no workspace_id — path matching failed for all workspaces"
 
         pending = self._prepare_pending("update")
         payload = dict(args)

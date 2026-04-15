@@ -177,6 +177,11 @@ const app = createApp({
       _applyWorkspaceAmbient(wsId);
       _updateDocumentTitle();
       if (socket?.connected) socket.emit('project:join', { workspaceId: wsId });
+      // If active tab belongs to a different workspace, fall back to tasks
+      const ct = chatTabs.find(t => t.id === activeTab.value);
+      if (ct && ct.workspaceId && ct.workspaceId !== wsId) { activeTab.value = 'tasks'; return; }
+      const ft = focusTabs.find(t => 'focus-' + t.slotIndex === activeTab.value);
+      if (ft && ft.workspaceId && ft.workspaceId !== wsId) activeTab.value = 'tasks';
     }
 
     const connected = ref(false);
@@ -209,11 +214,14 @@ const app = createApp({
     function addLiveAgentTab({ activate = true } = {}) {
       chatTabCounter += 1;
       const id = 'chat-' + chatTabCounter;
+      const wsId = activeWorkspaceId.value;
+      const projectName = _workspaceBaseName(workspaces[wsId]?.workspace || '');
+      const suffix = chatTabCounter === 1 ? '' : ` ${chatTabCounter}`;
       chatTabs.push({
         id,
-        label: chatTabCounter === 1 ? 'Live Agent' : `Live Agent ${chatTabCounter}`,
+        label: projectName ? `Live Agent${suffix} (${projectName})` : `Live Agent${suffix}`,
         sessionId: _newChatSessionId(),
-        workspaceId: activeWorkspaceId.value,
+        workspaceId: wsId,
       });
       if (activate) activeTab.value = id;
     }
@@ -546,10 +554,13 @@ const app = createApp({
         { id: 'files', label: 'Files', icon: 'folder' },
         { id: 'commits', label: 'Commits', icon: 'git-commit' },
       ];
+      const wsId = activeWorkspaceId.value;
       for (const ct of chatTabs) {
+        if (ct.workspaceId && ct.workspaceId !== wsId) continue;
         tabs.push({ id: ct.id, label: ct.label, isChat: true, canClose: chatTabs.length > 1, icon: 'message-square' });
       }
       for (const ft of focusTabs) {
+        if (ft.workspaceId && ft.workspaceId !== wsId) continue;
         tabs.push({ id: 'focus-' + ft.slotIndex, label: ft.label, isFocus: true, slotIndex: ft.slotIndex, icon: 'terminal' });
       }
       return tabs;

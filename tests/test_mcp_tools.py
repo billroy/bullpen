@@ -279,6 +279,7 @@ def test_bullpen_client_create_ticket_times_out_when_ack_missing(monkeypatch):
     )
 
     client = mcp_tools.BullpenClient("127.0.0.1", 5050)
+    client.workspace_id = "fake-ws"
     client.operation_timeout_seconds = 0.01
     task, err = client.create_ticket({"title": "x"})
 
