@@ -1037,6 +1037,8 @@ const app = createApp({
         :slot-index="configureSlot"
         :columns="state.config.columns"
         :workers="state.layout.slots"
+        :grid-rows="state.config.grid?.rows || 4"
+        :grid-cols="state.config.grid?.cols || 6"
         @close="configureSlot = null"
         @save="saveWorkerConfig"
         @remove="removeWorker"

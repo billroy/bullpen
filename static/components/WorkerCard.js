@@ -1,18 +1,26 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer'],
   template: `
-    <div class="worker-card" :class="{ 'drag-over': dragOver }"
+    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget }"
          draggable="true"
          @dragstart="onDragStart"
-         @dragover.prevent="onDragOver"
+         @dragover="onDragOver"
          @dragleave="onDragLeave"
          @drop.prevent="onDrop"
 >
-      <span v-if="passDir === 'up'" class="pass-indicator pass-up" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
-      <span v-if="passDir === 'down'" class="pass-indicator pass-down" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
-      <span v-if="passDir === 'left'" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
-      <span v-if="passDir === 'right'" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
+      <template v-for="dir in ['up','down','left','right']" :key="'handle-' + dir">
+        <div v-if="canConnect(dir)"
+             class="connect-handle" :class="'connect-handle-' + dir"
+             draggable="true"
+             @dragstart.stop="onHandleDragStart(dir, $event)"
+             @dragend.stop="onHandleDragEnd"
+             :title="'Drag to pass output ' + dir"></div>
+      </template>
+      <span v-if="passDir === 'up'" class="pass-indicator pass-up" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
+      <span v-if="passDir === 'down'" class="pass-indicator pass-down" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
+      <span v-if="passDir === 'left'" class="pass-indicator pass-left" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
+      <span v-if="passDir === 'right'" class="pass-indicator pass-right" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
       <div class="worker-card-header" :style="{ background: agentColor }" :title="expertiseTooltip || null" @dblclick="$emit('configure', slotIndex)">
         <div class="worker-card-identity">
           <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
@@ -57,7 +65,7 @@ const WorkerCard = {
     </div>
   `,
   data() {
-    return { dragOver: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null };
+    return { dragOver: false, connectTarget: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null };
   },
   mounted() {
     renderLucideIcons(this.$el);
@@ -81,6 +89,9 @@ const WorkerCard = {
     passDir() {
       const d = this.worker.disposition || '';
       return d.startsWith('pass:') ? d.slice(5) : null;
+    },
+    passConnectsToNeighbor() {
+      return !!(this.passDir && this.neighborSlots && this.neighborSlots[this.passDir] != null);
     },
     workerState() { return this.worker.state || 'idle'; },
     isWorking() { return this.workerState === 'working'; },
@@ -157,24 +168,71 @@ const WorkerCard = {
       const taskId = this.queuedTasks.length ? this.queuedTasks[0].id : null;
       if (taskId) this.$emit('select-task', taskId);
     },
+    canConnect(dir) {
+      return !!(this.neighborSlots && this.neighborSlots[dir] != null);
+    },
     onDragStart(e) {
       e.dataTransfer.setData('application/x-worker-slot', String(this.slotIndex));
       e.dataTransfer.effectAllowed = 'move';
     },
+    onHandleDragStart(dir, e) {
+      if (!this.canConnect(dir)) {
+        e.preventDefault();
+        return;
+      }
+      const payload = { source: this.slotIndex, direction: dir, target: this.neighborSlots[dir] };
+      // Custom MIME type stores the full payload; a global mirror lets dragover
+      // handlers know the intended target without having to read dataTransfer
+      // (which is restricted to drop events in most browsers).
+      try {
+        e.dataTransfer.setData('application/x-worker-connect', JSON.stringify(payload));
+      } catch (_err) { /* ignore */ }
+      e.dataTransfer.effectAllowed = 'link';
+      window._bullpenConnectDrag = payload;
+    },
+    onHandleDragEnd() {
+      window._bullpenConnectDrag = null;
+    },
     onDragOver(e) {
+      const types = e.dataTransfer.types;
+      if (types.includes('application/x-worker-connect')) {
+        const drag = window._bullpenConnectDrag;
+        if (drag && drag.target === this.slotIndex) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'link';
+          this.connectTarget = true;
+        } else {
+          // Do not call preventDefault — cursor shows "no drop" on non-targets.
+          e.dataTransfer.dropEffect = 'none';
+        }
+        return;
+      }
       if (
-        e.dataTransfer.types.includes(window.BULLPEN_TASK_DND_MIME) ||
-        e.dataTransfer.types.includes('text/plain') ||
-        e.dataTransfer.types.includes('application/x-worker-slot')
+        types.includes(window.BULLPEN_TASK_DND_MIME) ||
+        types.includes('text/plain') ||
+        types.includes('application/x-worker-slot')
       ) {
+        e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         this.dragOver = true;
       }
     },
-    onDragLeave() { this.dragOver = false; },
+    onDragLeave() { this.dragOver = false; this.connectTarget = false; },
     onDrop(e) {
       e.preventDefault();
       this.dragOver = false;
+      this.connectTarget = false;
+      const connectData = e.dataTransfer.getData('application/x-worker-connect');
+      if (connectData) {
+        try {
+          const payload = JSON.parse(connectData);
+          if (payload && payload.target === this.slotIndex) {
+            this.$root.saveWorkerConfig({ slot: payload.source, fields: { disposition: 'pass:' + payload.direction } });
+          }
+        } catch (_err) { /* ignore malformed payload */ }
+        window._bullpenConnectDrag = null;
+        return;
+      }
       const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
       if (fromSlot !== '' && Number(fromSlot) !== this.slotIndex) {
         this.$root.moveWorker(Number(fromSlot), this.slotIndex);

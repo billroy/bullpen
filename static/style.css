@@ -1425,7 +1425,9 @@ body {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* overflow: visible so drag handles and gutter connectors can render
+     outside the card footprint, into the grid gap. */
+  overflow: visible;
   cursor: grab;
   transition: border-color 0.15s;
   display: flex;
@@ -1440,6 +1442,12 @@ body {
 .worker-card.drag-over {
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
+}
+
+.worker-card.connect-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 /* Pass-direction indicators */
@@ -1482,6 +1490,88 @@ body {
   transform: translateY(-50%);
 }
 
+/* When a pass disposition has a live neighbor, the indicator becomes a
+   prominent pill straddling the gutter between the two cards to visualize
+   the connection. Direction is encoded in the unicode arrow character. */
+.pass-indicator.pass-connected {
+  background: var(--accent);
+  color: white;
+  opacity: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-size: 9px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  z-index: 5;
+}
+
+.pass-up.pass-connected {
+  top: -8px;
+}
+
+.pass-down.pass-connected {
+  bottom: -8px;
+}
+
+.pass-left.pass-connected {
+  left: -9px;
+}
+
+.pass-right.pass-connected {
+  right: -9px;
+}
+
+/* Draggable edge handles for creating pass-direction connections. */
+.connect-handle {
+  position: absolute;
+  background: var(--accent);
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  cursor: grab;
+  z-index: 4;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.worker-card:hover .connect-handle {
+  opacity: 0.75;
+}
+
+.connect-handle:hover {
+  opacity: 1;
+}
+
+.connect-handle:active {
+  cursor: grabbing;
+}
+
+.connect-handle-up {
+  top: -5px;
+  left: calc(50% - 12px);
+  width: 24px;
+  height: 6px;
+}
+
+.connect-handle-down {
+  bottom: -5px;
+  left: calc(50% - 12px);
+  width: 24px;
+  height: 6px;
+}
+
+.connect-handle-left {
+  left: -5px;
+  top: calc(50% - 12px);
+  width: 6px;
+  height: 24px;
+}
+
+.connect-handle-right {
+  right: -5px;
+  top: calc(50% - 12px);
+  width: 6px;
+  height: 24px;
+}
+
 .worker-card-header {
   padding: 8px 10px;
   display: flex;
@@ -1490,6 +1580,10 @@ body {
   color: white;
   font-weight: 600;
   font-size: 12px;
+  /* Round the top corners so the colored header aligns with the card's
+     rounded corners now that the card no longer uses overflow:hidden. */
+  border-top-left-radius: calc(var(--radius-lg) - 1px);
+  border-top-right-radius: calc(var(--radius-lg) - 1px);
 }
 
 .worker-card-name {

@@ -1,5 +1,5 @@
 const WorkerConfigModal = {
-  props: ['worker', 'slotIndex', 'columns', 'workers'],
+  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols'],
   emits: ['close', 'save', 'remove', 'save-profile'],
   data() {
     return {
@@ -45,6 +45,25 @@ const WorkerConfigModal = {
     },
     modelOptions() {
       return MODEL_OPTIONS[this.form.agent] || ['default'];
+    },
+    passAvailability() {
+      // Disable pass options when this worker is at the edge of the grid
+      // or the adjacent cell has no worker — mirroring the drag-handle
+      // availability shown on the grid.
+      const rows = this.gridRows || 4;
+      const cols = this.gridCols || 6;
+      const idx = this.slotIndex;
+      const slots = this.workers || [];
+      if (idx == null || idx < 0) return { up: false, down: false, left: false, right: false };
+      const r = Math.floor(idx / cols);
+      const c = idx % cols;
+      const occupied = (targetIdx) => targetIdx >= 0 && targetIdx < slots.length && !!slots[targetIdx];
+      return {
+        up: r > 0 && occupied((r - 1) * cols + c),
+        down: r < rows - 1 && occupied((r + 1) * cols + c),
+        left: c > 0 && occupied(r * cols + (c - 1)),
+        right: c < cols - 1 && occupied(r * cols + (c + 1)),
+      };
     },
     showCustomModel() {
       return !this.modelOptions.includes(this.form.model);
@@ -129,10 +148,10 @@ const WorkerConfigModal = {
                   <option v-for="w in otherWorkers" :key="'worker:' + w.name" :value="'worker:' + w.name">\u2192 {{ w.name }}</option>
                 </optgroup>
                 <optgroup label="Pass">
-                  <option value="pass:up">\u2191 Up</option>
-                  <option value="pass:down">\u2193 Down</option>
-                  <option value="pass:left">\u2190 Left</option>
-                  <option value="pass:right">\u2192 Right</option>
+                  <option value="pass:up" :disabled="!passAvailability.up">\u2191 Up</option>
+                  <option value="pass:down" :disabled="!passAvailability.down">\u2193 Down</option>
+                  <option value="pass:left" :disabled="!passAvailability.left">\u2190 Left</option>
+                  <option value="pass:right" :disabled="!passAvailability.right">\u2192 Right</option>
                 </optgroup>
               </select>
             </label>

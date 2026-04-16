@@ -20,6 +20,7 @@ const BullpenTab = {
             :tasks="tasks"
             :output-lines="$root.outputBuffers?.[i - 1] || []"
             :multiple-workspaces="multipleWorkspaces"
+            :neighbor-slots="neighborSlotsMap[i - 1]"
             @configure="$emit('configure-worker', $event)"
             @select-task="$emit('select-task', $event)"
             @open-focus="$emit('open-focus', $event)"
@@ -99,6 +100,31 @@ const BullpenTab = {
         if (b?.id === pin && a?.id !== pin) return 1;
         return (a?.name || '').localeCompare(b?.name || '');
       });
+    },
+    neighborSlotsMap() {
+      // For each occupied slot, compute the slot index of its occupied neighbor
+      // in each of the four cardinal directions. Returns null when the source
+      // is at the grid edge or the neighbor cell is empty — this disables the
+      // corresponding drag handle in the UI.
+      const slots = this.layout?.slots || [];
+      const cols = this.cols;
+      const rows = this.rows;
+      const map = {};
+      for (let i = 0; i < this.totalSlots; i++) {
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const up = r > 0 ? (r - 1) * cols + c : -1;
+        const down = r < rows - 1 ? (r + 1) * cols + c : -1;
+        const left = c > 0 ? r * cols + (c - 1) : -1;
+        const right = c < cols - 1 ? r * cols + (c + 1) : -1;
+        map[i] = {
+          up: up >= 0 && slots[up] ? up : null,
+          down: down >= 0 && slots[down] ? down : null,
+          left: left >= 0 && slots[left] ? left : null,
+          right: right >= 0 && slots[right] ? right : null,
+        };
+      }
+      return map;
     }
   },
   methods: {
