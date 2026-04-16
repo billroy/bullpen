@@ -1,5 +1,5 @@
 const TaskDetailPanel = {
-  props: ['task', 'columns'],
+  props: ['task', 'columns', 'readOnly'],
   emits: ['close', 'update', 'delete', 'archive', 'clear-output', 'toast', 'open-commit-diff'],
   data() {
     return {
@@ -51,6 +51,12 @@ const TaskDetailPanel = {
       this.editing = false;
       this.editingTitle = false;
       this.editingTags = false;
+    },
+    readOnly(nextValue) {
+      if (!nextValue) return;
+      this.editing = false;
+      this.editingTitle = false;
+      this.editingTags = false;
     }
   },
   template: `
@@ -67,7 +73,8 @@ const TaskDetailPanel = {
         </div>
         <div v-else class="detail-title-wrap">
           <i class="ticket-type-icon ticket-type-icon--detail" data-lucide="tag" aria-hidden="true"></i>
-          <h2 class="detail-title" @click="startEditTitle" title="Click to edit">{{ task.title }}</h2>
+          <h2 v-if="readOnly" class="detail-title detail-title-readonly">{{ task.title }}</h2>
+          <h2 v-else class="detail-title" @click="startEditTitle" title="Click to edit">{{ task.title }}</h2>
         </div>
         <button class="btn btn-icon" @click="$emit('close')">&times;</button>
       </div>
@@ -76,35 +83,38 @@ const TaskDetailPanel = {
         <div class="detail-meta">
           <label class="form-label form-label-inline">
             Status
-            <select class="form-select" :value="task.status"
+            <select v-if="!readOnly" class="form-select" :value="task.status"
                     @change="$emit('update', { id: task.id, status: $event.target.value })">
               <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
             </select>
+            <span v-else class="detail-readonly-value">{{ columnLabel(task.status) }}</span>
           </label>
           <label class="form-label form-label-inline">
             Type
-            <select class="form-select" :value="task.type"
+            <select v-if="!readOnly" class="form-select" :value="task.type"
                     @change="$emit('update', { id: task.id, type: $event.target.value })">
               <option value="task">Ticket</option>
               <option value="bug">Bug</option>
               <option value="feature">Feature</option>
               <option value="chore">Chore</option>
             </select>
+            <span v-else class="detail-readonly-value">{{ task.type || 'task' }}</span>
           </label>
           <label class="form-label form-label-inline">
             Priority
-            <select class="form-select" :value="task.priority"
+            <select v-if="!readOnly" class="form-select" :value="task.priority"
                     @change="$emit('update', { id: task.id, priority: $event.target.value })">
               <option value="low">Low</option>
               <option value="normal">Normal</option>
               <option value="high">High</option>
               <option value="urgent">Urgent</option>
             </select>
+            <span v-else class="detail-readonly-value">{{ task.priority || 'normal' }}</span>
           </label>
         </div>
 
         <div class="detail-tags-section">
-          <div v-if="editingTags">
+          <div v-if="editingTags && !readOnly">
             <input class="form-input" v-model="editTagsValue" placeholder="comma-separated tags"
                    @keyup.enter="saveTags" @keyup.escape="cancelTags" />
             <div class="detail-edit-actions">
@@ -114,7 +124,8 @@ const TaskDetailPanel = {
           </div>
           <div v-else class="detail-tags">
             <span class="badge type-badge" v-for="tag in task.tags" :key="tag">{{ tag }}</span>
-            <button class="btn btn-sm" @click="startEditTags">{{ task.tags && task.tags.length ? 'Edit Tags' : 'Add Tags' }}</button>
+            <span v-if="readOnly && (!task.tags || !task.tags.length)" class="empty-state">No tags</span>
+            <button v-if="!readOnly" class="btn btn-sm" @click="startEditTags">{{ task.tags && task.tags.length ? 'Edit Tags' : 'Add Tags' }}</button>
           </div>
         </div>
 
@@ -127,9 +138,9 @@ const TaskDetailPanel = {
         <div class="detail-body">
           <div class="detail-section-header">
             <h3>Description</h3>
-            <button class="btn btn-sm" @click="toggleEdit">{{ editing ? 'Preview' : 'Edit' }}</button>
+            <button v-if="!readOnly" class="btn btn-sm" @click="toggleEdit">{{ editing ? 'Preview' : 'Edit' }}</button>
           </div>
-          <div v-if="editing">
+          <div v-if="editing && !readOnly">
             <textarea class="form-textarea detail-editor" v-model="editBody" rows="12" @keydown.meta.enter="saveEdit" @keydown.ctrl.enter="saveEdit"></textarea>
             <div class="detail-edit-actions">
               <button class="btn btn-sm" @click="cancelEdit">Cancel</button>
@@ -142,12 +153,12 @@ const TaskDetailPanel = {
         <div class="detail-output" v-if="agentOutput">
           <div class="detail-section-header">
             <h3>Agent Output</h3>
-            <button class="btn btn-sm btn-danger" @click="$emit('clear-output', task.id)">Clear</button>
+            <button v-if="!readOnly" class="btn btn-sm btn-danger" @click="$emit('clear-output', task.id)">Clear</button>
           </div>
           <pre class="detail-output-content"><span v-for="line in parsedAgentOutputLines" :key="line.id" class="detail-output-line"><template v-if="line.commitHash">{{ line.prefix }}<button class="detail-output-commit" @click="openCommitDiff(line.commitHash)">{{ line.commitHash }}</button>{{ line.suffix }}</template><template v-else>{{ line.prefix }}</template></span></pre>
         </div>
 
-        <div class="detail-footer">
+        <div v-if="!readOnly" class="detail-footer">
           <button class="btn btn-danger btn-sm" @click="confirmDelete">Delete Ticket</button>
           <button v-if="task.status === 'done'" class="btn btn-sm" @click="$emit('archive', task.id); $emit('close')">Archive</button>
         </div>
@@ -162,6 +173,7 @@ const TaskDetailPanel = {
   },
   methods: {
     startEditTitle() {
+      if (this.readOnly) return;
       this.editTitle = this.task.title;
       this.editingTitle = true;
       this.$nextTick(() => this.$refs.titleInput?.focus());
@@ -177,6 +189,7 @@ const TaskDetailPanel = {
       this.editingTitle = false;
     },
     startEditTags() {
+      if (this.readOnly) return;
       this.editTagsValue = (this.task.tags || []).join(', ');
       this.editingTags = true;
     },
@@ -189,6 +202,7 @@ const TaskDetailPanel = {
       this.editingTags = false;
     },
     toggleEdit() {
+      if (this.readOnly) return;
       if (!this.editing) {
         this.editBody = this.bodyWithoutOutput;
         this.editing = true;
@@ -249,6 +263,10 @@ const TaskDetailPanel = {
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M tok';
       if (n >= 1000) return (n / 1000).toFixed(1) + 'k tok';
       return n + ' tok';
+    },
+    columnLabel(key) {
+      const col = (this.columns || []).find(c => c.key === key);
+      return col ? col.label : (key || '—');
     },
     openCommitDiff(hash) {
       if (!hash) return;

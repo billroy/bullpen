@@ -374,8 +374,8 @@ const KanbanTab = {
       this.$emit('move-task', { id: taskId, status: colKey });
     },
     onListRowClick(task) {
-      if ((this.listScope || 'live') !== 'live') return;
-      this.$emit('select-task', task.id);
+      if (!task?.id) return;
+      this.$emit('select-task', { id: task.id, readOnly: true });
     }
   }
 };

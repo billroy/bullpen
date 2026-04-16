@@ -2483,6 +2483,14 @@ body {
   text-decoration: underline dotted;
 }
 
+.detail-title-readonly {
+  cursor: default;
+}
+
+.detail-title-readonly:hover {
+  text-decoration: none;
+}
+
 .detail-title-edit {
   flex: 1;
   margin-right: 8px;
@@ -2518,6 +2526,19 @@ body {
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
+}
+
+.detail-readonly-value {
+  display: block;
+  margin-top: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.25;
+  text-transform: none;
 }
 
 .detail-id {

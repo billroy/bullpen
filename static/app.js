@@ -210,6 +210,7 @@ const app = createApp({
     const showCreateModal = ref(false);
     const showColumnManager = ref(false);
     const selectedTaskId = ref(null);
+    const selectedTaskMode = ref('edit'); // 'edit' | 'read'
     const configureSlot = ref(null);
     const transferSlot = ref(null);
     const transferMode = ref('copy');
@@ -285,7 +286,17 @@ const app = createApp({
 
     const selectedTask = computed(() => {
       if (!selectedTaskId.value) return null;
-      return state.tasks.find(t => t.id === selectedTaskId.value) || null;
+      const liveTask = state.tasks.find(t => t.id === selectedTaskId.value);
+      if (liveTask) return liveTask;
+      if (!activeWorkspaceId.value) return null;
+      const archived = _getWs(activeWorkspaceId.value).archivedTasks || [];
+      return archived.find(t => t.id === selectedTaskId.value) || null;
+    });
+
+    const selectedTaskReadOnly = computed(() => {
+      if (!selectedTask.value) return false;
+      if (selectedTaskMode.value === 'read') return true;
+      return !state.tasks.some(t => t.id === selectedTask.value.id);
     });
 
     const configureWorkerData = computed(() => {
@@ -374,7 +385,10 @@ const app = createApp({
       const ws = _getWs(wsId);
       ws.tasks = ws.tasks.filter(t => t.id !== data.id);
       if (_isActive(wsId)) state.tasks = ws.tasks;
-      if (selectedTaskId.value === data.id) selectedTaskId.value = null;
+      if (selectedTaskId.value === data.id) {
+        selectedTaskId.value = null;
+        selectedTaskMode.value = 'edit';
+      }
       if (_isActive(wsId) && ticketListScope.value === 'archived') {
         socket.emit('task:list', _wsData({ scope: 'archived' }));
       }
@@ -494,7 +508,21 @@ const app = createApp({
     }
     function clearTaskOutput(id) { socket.emit('task:clear_output', _wsData({ id })); }
     function moveTask({ id, status }) { socket.emit('task:update', _wsData({ id, status })); }
-    function selectTask(id) { selectedTaskId.value = id; }
+    function selectTask(payload, options = {}) {
+      if (!payload) {
+        selectedTaskId.value = null;
+        selectedTaskMode.value = 'edit';
+        return;
+      }
+      if (typeof payload === 'object') {
+        selectedTaskId.value = payload.id || null;
+        selectedTaskMode.value = payload.readOnly ? 'read' : 'edit';
+        return;
+      }
+      selectedTaskId.value = payload;
+      selectedTaskMode.value = options.readOnly ? 'read' : 'edit';
+    }
+
     function setTicketListScope(scope) {
       const normalized = String(scope || '').trim().toLowerCase() === 'archived' ? 'archived' : 'live';
       ticketListScope.value = normalized;
@@ -502,7 +530,10 @@ const app = createApp({
         socket.emit('task:list', _wsData({ scope: 'archived' }));
       } else if (selectedTaskId.value) {
         const isLiveTaskSelected = state.tasks.some(t => t.id === selectedTaskId.value);
-        if (!isLiveTaskSelected) selectedTaskId.value = null;
+        if (!isLiveTaskSelected) {
+          selectedTaskId.value = null;
+          selectedTaskMode.value = 'edit';
+        }
       }
     }
 
@@ -856,7 +887,7 @@ const app = createApp({
       state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded,
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
-      showCreateModal, showColumnManager, selectedTask, configureSlot, configureWorkerData,
+      showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker,
       saveWorkerConfig, assignTask, startWorkerSlot,
@@ -1018,6 +1049,7 @@ const app = createApp({
         <TaskDetailPanel
           :task="selectedTask"
           :columns="state.config.columns"
+          :read-only="selectedTaskReadOnly"
           @close="selectTask(null)"
           @update="updateTask"
           @delete="deleteTask"
