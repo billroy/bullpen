@@ -8,10 +8,13 @@ const WorkerCard = {
          @dragover="onDragOver"
          @dragleave="onDragLeave"
          @drop.prevent="onDrop"
+         @mousemove="onCardMouseMove"
+         @mouseleave="onCardMouseLeave"
 >
       <template v-for="dir in ['up','down','left','right']" :key="'handle-' + dir">
         <div v-if="canConnect(dir)"
-             class="connect-handle" :class="'connect-handle-' + dir"
+             class="connect-handle"
+             :class="['connect-handle-' + dir, { 'connect-handle-active': hoveredHandle === dir }]"
              draggable="true"
              @dragstart.stop="onHandleDragStart(dir, $event)"
              @dragend.stop="onHandleDragEnd"
@@ -65,7 +68,7 @@ const WorkerCard = {
     </div>
   `,
   data() {
-    return { dragOver: false, connectTarget: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null };
+    return { dragOver: false, connectTarget: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null, hoveredHandle: null };
   },
   mounted() {
     renderLucideIcons(this.$el);
@@ -170,6 +173,31 @@ const WorkerCard = {
     },
     canConnect(dir) {
       return !!(this.neighborSlots && this.neighborSlots[dir] != null);
+    },
+    onCardMouseMove(e) {
+      // Reveal at most one drag handle — whichever edge the cursor is closest
+      // to, within a small threshold. This keeps the card body free of drag
+      // affordances so ordinary clicks (e.g. to open the focus view) are
+      // unobstructed, and guarantees we never show all four handles at once.
+      const rect = this.$el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const threshold = 24;
+      const distances = { up: y, down: rect.height - y, left: x, right: rect.width - x };
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const dir of ['up', 'down', 'left', 'right']) {
+        if (!this.canConnect(dir)) continue;
+        const d = distances[dir];
+        if (d <= threshold && d < nearestDist) {
+          nearest = dir;
+          nearestDist = d;
+        }
+      }
+      if (this.hoveredHandle !== nearest) this.hoveredHandle = nearest;
+    },
+    onCardMouseLeave() {
+      this.hoveredHandle = null;
     },
     onDragStart(e) {
       e.dataTransfer.setData('application/x-worker-slot', String(this.slotIndex));

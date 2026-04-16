@@ -1425,10 +1425,11 @@ body {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  /* overflow: visible so drag handles and gutter connectors can render
-     outside the card footprint, into the grid gap. */
+  /* overflow: visible so pass-connected pills can render outside the card
+     footprint, into the grid gap. The drag handles themselves now sit
+     inside the card, but the pass-connected indicator pills still need to
+     reach into the gutter. */
   overflow: visible;
-  cursor: grab;
   transition: border-color 0.15s;
   display: flex;
   flex-direction: column;
@@ -1520,23 +1521,29 @@ body {
   right: -9px;
 }
 
-/* Draggable edge handles for creating pass-direction connections. */
+/* Draggable edge handles for creating pass-direction connections.
+   Each handle is a semicircle seated inside the card, flush with the edge
+   it represents. Handles are hidden by default and revealed one at a time
+   when the cursor approaches the matching edge (see .connect-handle-active).
+   pointer-events stays off while hidden so the handle never obstructs an
+   ordinary click on the card body. */
 .connect-handle {
   position: absolute;
   background: var(--accent);
-  border-radius: 3px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.12s;
   cursor: grab;
   z-index: 4;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-.worker-card:hover .connect-handle {
-  opacity: 0.75;
+.connect-handle.connect-handle-active {
+  opacity: 0.85;
+  pointer-events: auto;
 }
 
-.connect-handle:hover {
+.connect-handle.connect-handle-active:hover {
   opacity: 1;
 }
 
@@ -1544,32 +1551,39 @@ body {
   cursor: grabbing;
 }
 
+/* Semicircle dimensions: diameter 24px (matches the height of the old
+   right-hand handle). Flat edge sits flush with the card border; the
+   rounded edge points into the card interior. */
 .connect-handle-up {
-  top: -5px;
+  top: 0;
   left: calc(50% - 12px);
   width: 24px;
-  height: 6px;
+  height: 12px;
+  border-radius: 0 0 12px 12px;
 }
 
 .connect-handle-down {
-  bottom: -5px;
+  bottom: 0;
   left: calc(50% - 12px);
   width: 24px;
-  height: 6px;
+  height: 12px;
+  border-radius: 12px 12px 0 0;
 }
 
 .connect-handle-left {
-  left: -5px;
+  left: 0;
   top: calc(50% - 12px);
-  width: 6px;
+  width: 12px;
   height: 24px;
+  border-radius: 0 12px 12px 0;
 }
 
 .connect-handle-right {
-  right: -5px;
+  right: 0;
   top: calc(50% - 12px);
-  width: 6px;
+  width: 12px;
   height: 24px;
+  border-radius: 12px 0 0 12px;
 }
 
 .worker-card-header {

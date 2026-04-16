@@ -82,10 +82,50 @@ def test_connect_handle_and_target_styles_exist():
     assert ".connect-handle-down {" in text
     assert ".connect-handle-left {" in text
     assert ".connect-handle-right {" in text
-    # Hover-reveal: handles are invisible until the card is hovered
-    assert ".worker-card:hover .connect-handle" in text
+    # Handles are hidden by default (including pointer-events) so they
+    # never obstruct clicks on the card body, and are revealed one at a
+    # time via the .connect-handle-active class when the cursor is near
+    # the matching edge.
+    assert "pointer-events: none;" in text
+    assert ".connect-handle.connect-handle-active {" in text
     # Connect-target highlight on the adjacent card during drag
     assert ".worker-card.connect-target {" in text
+
+
+def test_connect_handles_are_semicircular_inside_the_card():
+    text = _read("static/style.css")
+    # Flush with the card edge (top/bottom/left/right: 0), not protruding
+    # into the gutter (-5px) like the previous square-ish handles.
+    assert "border-radius: 0 0 12px 12px" in text  # up handle
+    assert "border-radius: 12px 12px 0 0" in text  # down handle
+    assert "border-radius: 0 12px 12px 0" in text  # left handle
+    assert "border-radius: 12px 0 0 12px" in text  # right handle
+
+
+def test_worker_card_does_not_force_grab_cursor_on_body():
+    # The whole card previously carried cursor: grab, which made the body
+    # always look draggable even though clicking the body opens the focus
+    # view. The body should not display a drag cursor.
+    text = _read("static/style.css")
+    # Locate the .worker-card {...} block (first one after the section header)
+    start = text.index("/* === Worker Card === */")
+    end = text.index("}", start) + 1
+    block = text[start:end]
+    assert "cursor: grab;" not in block
+
+
+def test_worker_card_tracks_hovered_handle_for_edge_reveal():
+    text = _read("static/components/WorkerCard.js")
+    # Mouse tracking wires up per-edge reveal
+    assert "@mousemove=\"onCardMouseMove\"" in text
+    assert "@mouseleave=\"onCardMouseLeave\"" in text
+    assert "onCardMouseMove(e)" in text
+    assert "onCardMouseLeave()" in text
+    # Template binds the active class to the hovered direction only
+    assert "hoveredHandle === dir" in text
+    assert "'connect-handle-active'" in text or "connect-handle-active" in text
+    # Data property exists and starts null (nothing shown by default)
+    assert "hoveredHandle: null" in text
 
 
 def test_pass_connected_pill_renders_in_gutter():
