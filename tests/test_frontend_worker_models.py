@@ -16,6 +16,7 @@ def test_codex_model_options_include_current_gpt5_family():
 
 def test_claude_model_options_do_not_include_removed_haiku_slug():
     text = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
+    assert "'claude-opus-4-7'" in text
     assert "'claude-haiku-4-6'" not in text
     assert "'claude-haiku-4-5-20250414'" not in text
     assert "'claude-haiku-4-5-20251001'" in text
