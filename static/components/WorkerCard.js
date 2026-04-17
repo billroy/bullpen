@@ -224,6 +224,8 @@ const WorkerCard = {
       this.showExpertiseTooltip = false;
     },
     onDragStart(e) {
+      if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; }
+      this.showExpertiseTooltip = false;
       const singleton = !!e.shiftKey;
       const payload = typeof this.buildWorkerDragPayload === 'function'
         ? this.buildWorkerDragPayload(this.slotIndex, { singleton })
