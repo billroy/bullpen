@@ -161,18 +161,25 @@ def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None):
     return task
 
 
-def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None):
-    """Add task to worker's queue, update ticket status."""
+def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None, preserve_handoff_depth=False):
+    """Add task to worker's queue, update ticket status.
+
+    By default, assignment starts a fresh run chain and resets handoff depth.
+    Internal worker-to-worker handoffs should set preserve_handoff_depth=True.
+    """
     layout = _load_layout(bp_dir)
     worker = layout["slots"][slot_index]
     if not worker:
         raise ValueError(f"No worker in slot {slot_index}")
 
     # Update task ticket
-    task_mod.update_task(bp_dir, task_id, {
+    updates = {
         "assigned_to": str(slot_index),
         "status": "assigned",
-    })
+    }
+    if not preserve_handoff_depth:
+        updates["handoff_depth"] = 0
+    task_mod.update_task(bp_dir, task_id, updates)
 
     # Add to queue
     if task_id not in worker.get("task_queue", []):
@@ -1045,7 +1052,7 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
 
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     _save_layout(bp_dir, layout)
-    assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
+    assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
 
 
 def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None, usage=None):
@@ -1197,7 +1204,7 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     # Save layout before assign_task (which reloads it)
     _save_layout(bp_dir, layout)
-    assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
+    assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
 
 
 def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id):
@@ -1252,7 +1259,7 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
     target_slot = random.choice(candidates)
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     _save_layout(bp_dir, layout)
-    assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
+    assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
 
 
 def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="", ws_id=None, non_retryable=False):

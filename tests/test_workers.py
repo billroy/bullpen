@@ -806,17 +806,55 @@ class TestHandoff:
         write_json(os.path.join(bp_dir, "layout.json"), layout)
 
         task = create_task(bp_dir, "Loop task")
-        # Pre-set handoff_depth to max
+        # Pre-set handoff_depth to max after assignment; assignment starts a fresh chain.
         from server.tasks import update_task
-        update_task(bp_dir, task["id"], {"handoff_depth": MAX_HANDOFF_DEPTH})
-
         assign_task(bp_dir, 0, task["id"])
+        update_task(bp_dir, task["id"], {"handoff_depth": MAX_HANDOFF_DEPTH})
         start_worker(bp_dir, 0)
         time.sleep(0.5)
 
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "blocked"
         assert "max depth" in updated["body"].lower()
+
+    def test_handoff_depth_exceeded_task_can_run_again(self, bp_dir):
+        """A task that hit max handoff depth can be reassigned and run again."""
+        from server.workers import MAX_HANDOFF_DEPTH
+        from server.tasks import update_task
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "profile": "test",
+            "name": "Looper", "agent": "mock", "model": "mock-model",
+            "activation": "manual", "disposition": "worker:Looper",
+            "watch_column": None, "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Reusable loop task")
+
+        # First run exceeds max depth and blocks.
+        assign_task(bp_dir, 0, task["id"])
+        update_task(bp_dir, task["id"], {"handoff_depth": MAX_HANDOFF_DEPTH})
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        blocked = read_task(bp_dir, task["id"])
+        assert blocked["status"] == "blocked"
+
+        # Reassigning should reset depth so the task can execute again.
+        assign_task(bp_dir, 0, task["id"])
+        reassigned = read_task(bp_dir, task["id"])
+        assert reassigned["status"] == "assigned"
+        assert reassigned.get("handoff_depth", 0) == 0
+
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        rerun = read_task(bp_dir, task["id"])
+        assert rerun["status"] == "assigned"
+        assert rerun.get("handoff_depth", 0) == 1
 
     def test_handoff_depth_resets_on_column(self, bp_dir, two_workers):
         """When Worker B sends to a column, handoff_depth resets to 0."""
