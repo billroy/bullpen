@@ -808,6 +808,95 @@ class TestHandoff:
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "blocked"
 
+    def test_random_pass_by_name(self, bp_dir):
+        """random:<name> passes to a worker whose name matches."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "random:Reviewer",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Reviewer", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 2, "profile": "test",
+                "name": "Other", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random by name task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated_layout = _load_layout(bp_dir)
+        # Only "Reviewer" (slot 1) matches; "Other" must not receive it.
+        assert task["id"] in updated_layout["slots"][1]["task_queue"]
+        assert task["id"] not in updated_layout["slots"][2].get("task_queue", [])
+        updated_task = read_task(bp_dir, task["id"])
+        assert updated_task.get("handoff_depth", 0) == 1
+
+    def test_random_pass_blank_matches_any(self, bp_dir):
+        """random: (blank name) passes to any available worker except self."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "random:",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "OnlyOther", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random blank task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated_layout = _load_layout(bp_dir)
+        assert task["id"] in updated_layout["slots"][1]["task_queue"]
+
+    def test_random_pass_no_match_blocks(self, bp_dir):
+        """random:<name> with no matching worker → task moves to blocked."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "profile": "test",
+            "name": "Alone", "agent": "mock", "model": "mock-model",
+            "activation": "manual", "disposition": "random:Ghost",
+            "watch_column": None, "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "No match task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+
 
 class TestWatchColumn:
     """Tests for on_queue / watch_column task claiming."""

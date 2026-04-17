@@ -127,7 +127,9 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
 
         # disposition: worker:<name> may not resolve in destination
         disposition = clone.get("disposition", "")
-        if disposition.startswith("worker:") or disposition.startswith("pass:"):
+        if (disposition.startswith("worker:")
+                or disposition.startswith("pass:")
+                or disposition.startswith("random:")):
             warnings.append(
                 f"disposition '{disposition}' references a workspace-local "
                 f"target and may not resolve in the destination"

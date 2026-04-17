@@ -15,12 +15,19 @@ const WorkerConfigModal = {
           if (!oldW) {
             this.$nextTick(() => { if (this.$refs.overlay) this.$refs.overlay.focus(); });
           }
+          let disposition = w.disposition || 'review';
+          let randomName = '';
+          if (disposition.startsWith('random:')) {
+            randomName = disposition.substring('random:'.length);
+            disposition = 'random:';
+          }
           this.form = {
             name: w.name || '',
             agent: w.agent || 'claude',
             model: w.model || 'claude-sonnet-4-6',
             activation: w.activation || 'on_drop',
-            disposition: w.disposition || 'review',
+            disposition,
+            random_name: randomName,
             watch_column: w.watch_column || '',
             expertise_prompt: w.expertise_prompt || '',
             max_retries: w.max_retries ?? 1,
@@ -157,7 +164,11 @@ const WorkerConfigModal = {
                   <option value="pass:left" :disabled="!passAvailability.left">\u2190 Left</option>
                   <option value="pass:right" :disabled="!passAvailability.right">\u2192 Right</option>
                 </optgroup>
+                <optgroup label="Random">
+                  <option value="random:">? Random Worker</option>
+                </optgroup>
               </select>
+              <input v-if="form.disposition === 'random:'" class="form-input" v-model="form.random_name" placeholder="Worker name (blank matches all)" style="margin-top: 4px;">
             </label>
             <label class="form-label">
               Max Retries
@@ -218,7 +229,12 @@ const WorkerConfigModal = {
       this.overlayMouseDown = false;
     },
     onSave() {
-      this.$emit('save', { slot: this.slotIndex, fields: { ...this.form } });
+      const fields = { ...this.form };
+      if (fields.disposition === 'random:') {
+        fields.disposition = 'random:' + (fields.random_name || '').trim();
+      }
+      delete fields.random_name;
+      this.$emit('save', { slot: this.slotIndex, fields });
       this.$emit('close');
     },
     onRemove() {

@@ -2,6 +2,7 @@
 
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -1014,6 +1015,11 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
             worker["state"] = "idle"
             _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id)
             handed_off = True
+        elif disposition.startswith("random:"):
+            target_name = disposition[len("random:"):].strip()
+            worker["state"] = "idle"
+            _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id)
+            handed_off = True
         else:
             task_mod.update_task(bp_dir, task_id, {
                 "status": disposition,
@@ -1097,6 +1103,61 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
     # Increment depth and hand off
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     # Save layout before assign_task (which reloads it)
+    _save_layout(bp_dir, layout)
+    assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
+
+
+def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id):
+    """Pass a completed task to a random worker whose name matches target_name.
+
+    Blank target_name matches any worker. The sender is excluded from candidates.
+    If no candidate exists, the task moves to Blocked.
+    """
+    task = task_mod.read_task(bp_dir, task_id)
+    depth = task.get("handoff_depth", 0) if task else 0
+
+    if depth >= MAX_HANDOFF_DEPTH:
+        msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: handoff depth exceeded",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    candidates = []
+    for i, slot in enumerate(layout.get("slots", [])):
+        if not slot or i == slot_index:
+            continue
+        if not target_name or slot.get("name") == target_name:
+            candidates.append(i)
+
+    if not candidates:
+        label = f"matching \"{target_name}\"" if target_name else "available"
+        msg = f"\n\n**Random pass: no worker {label}.** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: no random worker {label}",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    target_slot = random.choice(candidates)
+    task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     _save_layout(bp_dir, layout)
     assign_task(bp_dir, target_slot, task_id, socketio, ws_id)
 
