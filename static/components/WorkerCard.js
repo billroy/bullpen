@@ -28,7 +28,7 @@ const WorkerCard = {
       <span v-if="passDir === 'right'" class="pass-indicator pass-right" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
       <span v-if="passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
       <div class="worker-card-header" :style="{ background: agentColor }" @mouseenter="onHeaderMouseEnter" @mouseleave="onHeaderMouseLeave" @dblclick="$emit('configure', slotIndex)">
-        <div v-if="showExpertiseTooltip && expertiseTooltip" class="worker-expertise-tooltip">{{ expertiseTooltip }}</div>
+        <div v-if="showExpertiseTooltip && expertiseTooltip" class="worker-expertise-tooltip" :style="{ '--worker-accent': agentColor }">{{ expertiseTooltip }}</div>
         <div class="worker-card-identity">
           <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
           <span class="worker-card-name">{{ workerNameLabel }}</span>
