@@ -135,6 +135,8 @@ const BullpenTab = {
           <div v-if="ghostCell && emptyMenuOpenFor(ghostCell)"
                class="worker-menu empty-slot-menu"
                :style="emptyMenuStyle"
+               ref="emptyMenu"
+               @keydown="onEmptyMenuKeydown"
                @click.stop>
             <button class="worker-menu-item" @click="openLibraryForCoord(ghostCell)"><i class="menu-item-icon" data-lucide="user-plus" aria-hidden="true"></i><span class="menu-item-label">Add Worker</span></button>
             <button class="worker-menu-item" :disabled="!canPasteAt(ghostCell)" @click="pasteWorker(ghostCell)"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Paste Worker</span></button>
@@ -631,7 +633,10 @@ const BullpenTab = {
         e.preventDefault();
         this.fitOccupied();
       } else if (e.key === 'Escape') {
-        if (this.emptyMenuCoord) this.emptyMenuCoord = null;
+        if (this.emptyMenuCoord) {
+          e.preventDefault();
+          this.closeEmptyMenu({ focusViewport: true });
+        }
       } else if (e.key === 'Enter' && this.selectedCell) {
         const item = this.itemAtCoord(this.selectedCell);
         if (item) {
@@ -679,6 +684,19 @@ const BullpenTab = {
     ariaColIndex(coord) {
       return Math.max(1, Math.floor(coord.col - this.visibleRange.colStart + 1));
     },
+    emptyMenuItems() {
+      const menu = this.$refs.emptyMenu;
+      if (!menu || typeof menu.querySelectorAll !== 'function') return [];
+      return Array.from(menu.querySelectorAll('.worker-menu-item:not([disabled])'));
+    },
+    closeEmptyMenu(options = {}) {
+      const focusViewport = options && options.focusViewport === true;
+      this.emptyMenuCoord = null;
+      this.emptyMenuPos = null;
+      if (focusViewport) {
+        this.$nextTick(() => this.$refs.viewport?.focus());
+      }
+    },
     openEmptyMenu(coord, e) {
       if (!this.isWritableCoord(coord) || this.itemAtCoord(coord)) return;
       this.selectedCell = { ...coord };
@@ -689,6 +707,40 @@ const BullpenTab = {
         this.emptyMenuPos = null;
       }
       this.liveMessage = `Empty cell at column ${coord.col}, row ${coord.row}`;
+      this.$nextTick(() => {
+        const [first] = this.emptyMenuItems();
+        if (first && typeof first.focus === 'function') first.focus();
+      });
+    },
+    onEmptyMenuKeydown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeEmptyMenu({ focusViewport: true });
+        return;
+      }
+      const items = this.emptyMenuItems();
+      if (!items.length) return;
+      const currentIdx = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[(currentIdx + 1) % items.length].focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[currentIdx <= 0 ? items.length - 1 : currentIdx - 1].focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[0].focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[items.length - 1].focus();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.stopPropagation();
+      }
     },
     emptyMenuOpenFor(coord) {
       return !!(this.emptyMenuCoord && coord && this.emptyMenuCoord.col === coord.col && this.emptyMenuCoord.row === coord.row);
