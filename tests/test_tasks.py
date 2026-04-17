@@ -16,8 +16,6 @@ from server.tasks import (
     list_tasks,
     generate_slug,
     slugify,
-    generate_order_key,
-    midpoint_key,
 )
 
 
@@ -46,42 +44,6 @@ class TestSlugGeneration:
     def test_generate_slug_unique(self):
         slugs = {generate_slug("Same Title") for _ in range(20)}
         assert len(slugs) == 20  # all unique
-
-
-class TestOrderKeys:
-    def test_initial_key(self):
-        key = generate_order_key()
-        assert key == "V"
-
-    def test_midpoint_basic(self):
-        mid = midpoint_key("A", "Z")
-        assert "A" < mid < "Z"
-
-    def test_midpoint_close(self):
-        mid = midpoint_key("A", "B")
-        assert "A" < mid < "B"
-
-    def test_midpoint_generates_sequence(self):
-        """Insert several keys in sequence, verify they sort correctly."""
-        keys = ["V"]
-        # Insert before first
-        keys.insert(0, midpoint_key("", keys[0]))
-        # Insert after last
-        keys.append(midpoint_key(keys[-1], ""))
-        # Insert between first two
-        keys.insert(1, midpoint_key(keys[0], keys[2]))
-
-        assert keys == sorted(keys)
-
-    def test_midpoint_many_insertions(self):
-        """Many insertions at the same position should not fail."""
-        key = "V"
-        keys = [key]
-        for _ in range(20):
-            new_key = midpoint_key("", keys[0])
-            assert new_key < keys[0]
-            keys.insert(0, new_key)
-        assert keys == sorted(keys)
 
 
 class TestTaskCRUD:
@@ -129,17 +91,15 @@ class TestTaskCRUD:
         tasks = list_tasks(bp_dir)
         assert len(tasks) == 3
 
-    def test_list_tasks_sorted_by_order(self, bp_dir):
-        t1 = create_task(bp_dir, "First")
-        update_task(bp_dir, t1["id"], {"order": "A"})
-        t2 = create_task(bp_dir, "Second")
-        update_task(bp_dir, t2["id"], {"order": "M"})
-        t3 = create_task(bp_dir, "Third")
-        update_task(bp_dir, t3["id"], {"order": "Z"})
+    def test_list_tasks_sorted_by_priority(self, bp_dir):
+        create_task(bp_dir, "Normal", priority="normal")
+        create_task(bp_dir, "Urgent", priority="urgent")
+        create_task(bp_dir, "Low", priority="low")
+        create_task(bp_dir, "High", priority="high")
 
         tasks = list_tasks(bp_dir)
         titles = [t["title"] for t in tasks]
-        assert titles == ["First", "Second", "Third"]
+        assert titles == ["Urgent", "High", "Normal", "Low"]
 
     def test_read_nonexistent(self, bp_dir):
         assert read_task(bp_dir, "nonexistent-1234") is None

@@ -137,8 +137,6 @@ def validate_task_update(data):
         fields["tags"] = _tags(data["tags"])
     if "status" in data:
         fields["status"] = str(data["status"])
-    if "order" in data:
-        fields["order"] = str(data["order"])
     if "assigned_to" in data:
         fields["assigned_to"] = data["assigned_to"]
     if "body" in data:

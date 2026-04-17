@@ -251,7 +251,7 @@ const KanbanTab = {
             cmp = (a.tokens || 0) - (b.tokens || 0);
             break;
         }
-        if (cmp === 0) cmp = (a.order || '').localeCompare(b.order || '');
+        if (cmp === 0) cmp = (a.created_at || '').localeCompare(b.created_at || '');
         return cmp * dir;
       });
     }
@@ -298,7 +298,7 @@ const KanbanTab = {
           const pa = weight[a.priority] ?? weight.normal;
           const pb = weight[b.priority] ?? weight.normal;
           if (pa !== pb) return pa - pb;
-          return (a.order || '').localeCompare(b.order || '');
+          return (a.created_at || '').localeCompare(b.created_at || '');
         });
     },
     columnIcon(col) {

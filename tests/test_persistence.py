@@ -95,7 +95,6 @@ priority: normal
 assigned_to:
 created_at: 2026-04-07T14:30:22Z
 updated_at: 2026-04-07T14:30:22Z
-order: V
 tags: [backend, auth]
 ---
 
@@ -112,7 +111,6 @@ Add JWT auth to API routes.
         assert meta["type"] == "task"
         assert meta["priority"] == "normal"
         assert meta["assigned_to"] == ""
-        assert meta["order"] == "V"
         assert meta["tags"] == ["backend", "auth"]
         assert "## Description" in body
         assert "Add JWT auth" in body
@@ -127,7 +125,6 @@ Add JWT auth to API routes.
             "assigned_to": "",
             "created_at": "2026-04-07T14:30:22Z",
             "updated_at": "2026-04-07T14:30:22Z",
-            "order": "V",
             "tags": ["backend", "auth"],
         }
         body = "\n## Description\n\nSome description.\n"
