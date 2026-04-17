@@ -21,7 +21,7 @@
   --radius: 6px;
   --radius-lg: 10px;
   --left-pane-width: 280px;
-  --toolbar-height: 44px;
+  --toolbar-height: 50px;
 }
 
 /* === Light Theme === */
@@ -431,7 +431,7 @@ body {
   min-width: 0;
 }
 
-.toolbar-quick-create-input {
+.top-toolbar .toolbar-quick-create-input {
   width: 100%;
   max-width: 640px;
   height: 38px;
