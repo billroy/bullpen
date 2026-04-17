@@ -613,7 +613,6 @@ const BullpenTab = {
         this.fitOccupied();
       } else if (e.key === 'Escape') {
         if (this.emptyMenuCoord) this.emptyMenuCoord = null;
-        else this.selectedCell = null;
       } else if (e.key === 'Enter' && this.selectedCell) {
         const item = this.itemAtCoord(this.selectedCell);
         if (item) {
