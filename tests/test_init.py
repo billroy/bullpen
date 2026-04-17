@@ -58,6 +58,20 @@ class TestInitWorkspace:
             config2 = json.load(f)
         assert config2["name"] == "Modified"  # not overwritten
 
+    def test_backfills_required_profiles_in_nonempty_profile_dir(self, tmp_workspace):
+        bp = init_workspace(tmp_workspace)
+        profiles_dir = os.path.join(bp, "profiles")
+        required = os.path.join(profiles_dir, "unconfigured-worker.json")
+        assert os.path.exists(required)
+        os.remove(required)
+        # Keep directory non-empty to simulate legacy workspaces that have
+        # custom profiles but predate required defaults.
+        assert os.listdir(profiles_dir)
+
+        init_workspace(tmp_workspace)
+
+        assert os.path.exists(required)
+
     def test_config_has_expected_columns(self, tmp_workspace):
         bp = init_workspace(tmp_workspace)
         with open(os.path.join(bp, "config.json")) as f:

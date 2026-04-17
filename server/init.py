@@ -25,6 +25,20 @@ DEFAULT_CONFIG = {
 }
 
 DEFAULT_LAYOUT = {"slots": []}
+REQUIRED_DEFAULT_PROFILES = ("unconfigured-worker.json",)
+
+
+def _default_profiles_dir():
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
+
+
+def _copy_profile_if_missing(src_dir, dst_dir, filename):
+    src = os.path.join(src_dir, filename)
+    dst = os.path.join(dst_dir, filename)
+    if os.path.exists(dst) or not os.path.isfile(src):
+        return False
+    shutil.copy2(src, dst)
+    return True
 
 
 def init_workspace(workspace):
@@ -56,13 +70,18 @@ def init_workspace(workspace):
         if not os.path.exists(path):
             atomic_write(path, "")
 
-    # Copy default profiles if profiles dir is empty
+    # Copy default profiles if profiles dir is empty.
+    # If this is an older workspace with custom/partial profiles, backfill
+    # required defaults introduced by newer Bullpen versions.
     profiles_dir = os.path.join(bp, "profiles")
-    if not os.listdir(profiles_dir):
-        src_profiles = os.path.join(os.path.dirname(os.path.dirname(__file__)), "profiles")
-        if os.path.isdir(src_profiles):
+    src_profiles = _default_profiles_dir()
+    if os.path.isdir(src_profiles):
+        if not os.listdir(profiles_dir):
             for f in os.listdir(src_profiles):
                 if f.endswith(".json"):
                     shutil.copy2(os.path.join(src_profiles, f), profiles_dir)
+        else:
+            for filename in REQUIRED_DEFAULT_PROFILES:
+                _copy_profile_if_missing(src_profiles, profiles_dir, filename)
 
     return bp
