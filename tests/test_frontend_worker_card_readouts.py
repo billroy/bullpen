@@ -15,7 +15,8 @@ def test_worker_card_shows_elapsed_and_tokens_for_current_task():
     assert 'statusLabel()' in text
     assert 'return `WORKING ${this.elapsed}`' in text
     assert 'class="worker-card-token-meta"' in text
-    assert '<span class="worker-card-agent">{{ worker.model }}</span>' in text
+    assert 'worker-card-agent' not in text
+    assert '{{ worker.model }}' not in text
     assert '{{ worker.agent }}/{{ worker.model }}' not in text
     assert 'title="Total tokens so far for current task"' in text
     assert 'currentTaskTokens' in text

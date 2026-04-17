@@ -2008,13 +2008,6 @@ body {
   overflow: hidden;
 }
 
-.worker-card-status {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
 .status-pill {
   font-size: 9px;
   padding: 2px 5px;
@@ -2031,16 +2024,6 @@ body {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
-}
-
-.worker-card-agent {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-left: auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .worker-card-token-meta {

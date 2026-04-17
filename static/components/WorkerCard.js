@@ -54,9 +54,6 @@ const WorkerCard = {
         </div>
       </div>
       <div v-if="layoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
-        <div class="worker-card-status">
-          <span class="worker-card-agent">{{ worker.model }}</span>
-        </div>
         <div class="worker-card-queue" v-if="layoutMode !== 'small' && queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
                @click.stop="$emit('select-task', t.id)">
