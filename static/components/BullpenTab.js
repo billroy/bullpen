@@ -381,11 +381,17 @@ const BullpenTab = {
         });
       },
     },
+    workspace: {
+      handler() {
+        this.selectA1();
+      },
+    },
   },
   mounted() {
     this.updateViewportSize();
     this._resizeObserver = new ResizeObserver(() => this.updateViewportSize());
     if (this.$refs.viewport) this._resizeObserver.observe(this.$refs.viewport);
+    this.selectA1();
   },
   beforeUnmount() {
     this._resizeObserver?.disconnect();
@@ -528,6 +534,12 @@ const BullpenTab = {
       this.selectedCell = item.coord;
       this.emptyMenuCoord = null;
       this.liveMessage = `Selected worker ${item.worker.name} at column ${item.coord.col}, row ${item.coord.row}`;
+    },
+    selectA1() {
+      this.selectedCell = { col: 0, row: 0 };
+      this.emptyMenuCoord = null;
+      this.emptyMenuPos = null;
+      this.$nextTick(() => this.$refs.viewport?.focus());
     },
     onWorkerClick(e, item) {
       if (e.target.closest('.connect-handle, .status-pill, .worker-card-token-meta, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
