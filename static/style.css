@@ -1979,27 +1979,6 @@ body {
   position: relative;
 }
 
-.worker-expertise-tooltip {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  width: 260px;
-  max-width: 90vw;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--worker-accent, var(--accent));
-  border-radius: var(--radius);
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-  pointer-events: none;
-}
-
 .worker-card-name {
   white-space: nowrap;
   overflow: hidden;
