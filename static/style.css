@@ -1646,14 +1646,6 @@ body {
   background: var(--text-muted);
 }
 
-.worker-minimap-dot.status-working {
-  background: #60a5fa;
-}
-
-.worker-minimap-dot.status-queued {
-  background: #a78bfa;
-}
-
 .worker-minimap-viewport {
   border: 1px solid rgba(255, 255, 255, 0.8);
   background: rgba(255, 255, 255, 0.12);

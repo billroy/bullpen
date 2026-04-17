@@ -145,7 +145,7 @@ const BullpenTab = {
           <button class="worker-minimap-toggle" @click="minimapCollapsed = !minimapCollapsed" title="Toggle minimap">▣</button>
           <template v-if="!minimapCollapsed">
             <div class="worker-minimap-map" ref="minimap" @click="onMinimapClick">
-              <div v-for="dot in minimapDots" :key="dot.key" class="worker-minimap-dot" :class="'status-' + dot.state" :style="dot.style"></div>
+              <div v-for="dot in minimapDots" :key="dot.key" class="worker-minimap-dot" :style="dot.style"></div>
               <div class="worker-minimap-viewport" :style="minimapViewportStyle"></div>
             </div>
             <div class="worker-minimap-arrows" aria-label="Pan worker grid">
@@ -372,14 +372,15 @@ const BullpenTab = {
     minimapDots() {
       const b = this.minimapBounds;
       const scale = this.minimapScale;
+      const dotSize = Math.max(1, Math.min(3, scale)) + 'px';
       return this.workerItems.map(item => ({
         key: item.slotIndex,
-        state: item.worker.state || 'idle',
         style: {
           left: ((item.coord.col - b.colMin) * scale) + 'px',
           top: ((item.coord.row - b.rowMin) * scale) + 'px',
-          width: Math.max(1, Math.min(3, scale)) + 'px',
-          height: Math.max(1, Math.min(3, scale)) + 'px',
+          width: dotSize,
+          height: dotSize,
+          background: agentColor(item.worker?.agent),
         },
       }));
     },

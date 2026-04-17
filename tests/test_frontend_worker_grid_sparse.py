@@ -108,3 +108,13 @@ def test_minimap_arrows_use_explicit_compass_layout():
     assert '". down ."' in css
     assert ".worker-minimap-arrows .minimap-arrow-up {" in css
     assert ".worker-minimap-arrows .minimap-arrow-down {" in css
+
+
+def test_minimap_nodes_use_worker_header_colors():
+    tab = _read("static/components/BullpenTab.js")
+    css = _read("static/style.css")
+
+    assert "class=\"worker-minimap-dot\" :style=\"dot.style\"" in tab
+    assert "background: agentColor(item.worker?.agent)" in tab
+    assert "worker-minimap-dot.status-working" not in css
+    assert "worker-minimap-dot.status-queued" not in css
