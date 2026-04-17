@@ -24,6 +24,7 @@ const BullpenTab = {
       draggingColumnWidth: null,
       rowResize: null,
       draggingRowHeight: null,
+      resizeTooltip: null,
     };
   },
   template: `
@@ -148,6 +149,12 @@ const BullpenTab = {
         </div>
 
         <div class="sr-only" aria-live="polite">{{ liveMessage }}</div>
+      </div>
+
+      <div v-if="resizeTooltip"
+           class="worker-grid-resize-tooltip"
+           :style="{ left: resizeTooltip.x + 'px', top: resizeTooltip.y + 'px' }">
+        {{ resizeTooltip.text }}
       </div>
 
       <div
@@ -762,12 +769,14 @@ const BullpenTab = {
         pointerId: e.pointerId,
       };
       this.draggingColumnWidth = this.columnWidth;
+      this.updateResizeTooltip(e, `${this.columnWidth}px wide`);
     },
     onColumnResizeMove(e) {
       if (!this.columnResize) return;
       const dx = e.clientX - this.columnResize.startX;
       const next = this.columnResize.startWidth + dx;
       this.draggingColumnWidth = Math.max(140, Math.min(480, Math.round(next)));
+      this.updateResizeTooltip(e, `${this.draggingColumnWidth}px wide`);
     },
     onColumnResizeUp(e) {
       if (!this.columnResize) return;
@@ -775,6 +784,7 @@ const BullpenTab = {
       const dragged = this.draggingColumnWidth;
       this.columnResize = null;
       this.draggingColumnWidth = null;
+      this.resizeTooltip = null;
       if (dragged != null) {
         const final = Math.max(140, Math.min(480, Math.round(dragged / 20) * 20));
         this.persistGrid({ columnWidth: final });
@@ -783,6 +793,7 @@ const BullpenTab = {
     resetColumnWidth() {
       this.columnResize = null;
       this.draggingColumnWidth = null;
+      this.resizeTooltip = null;
       this.persistGrid({ columnWidth: 220 });
     },
     onRowResizeDown(e) {
@@ -796,12 +807,14 @@ const BullpenTab = {
         pointerId: e.pointerId,
       };
       this.draggingRowHeight = this.rowHeight;
+      this.updateResizeTooltip(e, `${this.rowHeight}px tall`);
     },
     onRowResizeMove(e) {
       if (!this.rowResize) return;
       const dy = e.clientY - this.rowResize.startY;
       const next = this.rowResize.startHeight + dy;
       this.draggingRowHeight = Math.max(32, Math.min(480, Math.round(next)));
+      this.updateResizeTooltip(e, `${this.draggingRowHeight}px tall`);
     },
     onRowResizeUp(e) {
       if (!this.rowResize) return;
@@ -809,6 +822,7 @@ const BullpenTab = {
       const dragged = this.draggingRowHeight;
       this.rowResize = null;
       this.draggingRowHeight = null;
+      this.resizeTooltip = null;
       if (dragged != null) {
         const final = Math.max(32, Math.min(480, Math.round(dragged)));
         this.persistGrid({ rowHeight: final });
@@ -817,7 +831,11 @@ const BullpenTab = {
     resetRowHeight() {
       this.rowResize = null;
       this.draggingRowHeight = null;
+      this.resizeTooltip = null;
       this.persistGrid({ rowHeight: 140 });
+    },
+    updateResizeTooltip(e, text) {
+      this.resizeTooltip = { x: e.clientX + 14, y: e.clientY + 14, text };
     },
     onMinimapClick(e) {
       const rect = e.currentTarget.getBoundingClientRect();
