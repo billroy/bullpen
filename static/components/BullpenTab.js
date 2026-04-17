@@ -1100,7 +1100,10 @@ const BullpenTab = {
       if (!Number.isInteger(src) || !coord) return;
       this.moveWorkerGroupToCoord(src, coord);
     },
-    onCanvasDragLeave() {
+    onCanvasDragLeave(e) {
+      const related = e && e.relatedTarget;
+      const canvas = e && e.currentTarget;
+      if (related && canvas && typeof canvas.contains === 'function' && canvas.contains(related)) return;
       this.dragOverCoord = null;
     },
     colLabel(col) {

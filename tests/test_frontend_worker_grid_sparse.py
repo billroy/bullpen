@@ -44,7 +44,8 @@ def test_worker_drag_over_empty_cell_tracks_valid_drop_target_for_ghost_highligh
     assert "this.dragOverCoord = { ...coord };" in text
     assert "this.dragOverCoord = null;" in text
     assert "@dragleave=\"onCanvasDragLeave\"" in text
-    assert "onCanvasDragLeave()" in text
+    assert "onCanvasDragLeave(e)" in text
+    assert "canvas.contains(related)" in text
 
 
 def test_empty_cell_menu_supports_keyboard_navigation_when_opened_from_grid_selection():
