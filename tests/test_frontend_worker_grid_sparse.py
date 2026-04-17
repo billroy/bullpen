@@ -92,3 +92,19 @@ def test_minimap_bounds_clamp_to_a1_origin():
     tab = _read("static/components/BullpenTab.js")
     assert "const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);" in tab
     assert "const rowMin = Math.max(0, Math.min(b?.rowMin ?? 0, visible.rowStart) - 2);" in tab
+
+
+def test_minimap_arrows_use_explicit_compass_layout():
+    tab = _read("static/components/BullpenTab.js")
+    css = _read("static/style.css")
+
+    assert "minimap-arrow minimap-arrow-up" in tab
+    assert "minimap-arrow minimap-arrow-left" in tab
+    assert "minimap-arrow minimap-arrow-right" in tab
+    assert "minimap-arrow minimap-arrow-down" in tab
+    assert "grid-template-areas:" in css
+    assert '". up ."' in css
+    assert '"left . right"' in css
+    assert '". down ."' in css
+    assert ".worker-minimap-arrows .minimap-arrow-up {" in css
+    assert ".worker-minimap-arrows .minimap-arrow-down {" in css

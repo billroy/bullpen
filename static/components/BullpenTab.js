@@ -149,10 +149,10 @@ const BullpenTab = {
               <div class="worker-minimap-viewport" :style="minimapViewportStyle"></div>
             </div>
             <div class="worker-minimap-arrows" aria-label="Pan worker grid">
-              <button @click="nudge(0, -1)" title="Pan up">↑</button>
-              <button @click="nudge(-1, 0)" title="Pan left">←</button>
-              <button @click="nudge(1, 0)" title="Pan right">→</button>
-              <button @click="nudge(0, 1)" title="Pan down">↓</button>
+              <button class="minimap-arrow minimap-arrow-up" @click="nudge(0, -1)" title="Pan up">↑</button>
+              <button class="minimap-arrow minimap-arrow-left" @click="nudge(-1, 0)" title="Pan left">←</button>
+              <button class="minimap-arrow minimap-arrow-right" @click="nudge(1, 0)" title="Pan right">→</button>
+              <button class="minimap-arrow minimap-arrow-down" @click="nudge(0, 1)" title="Pan down">↓</button>
             </div>
           </template>
         </div>
