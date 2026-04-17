@@ -1435,11 +1435,101 @@ body {
 
 .worker-grid-canvas {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-image:
     linear-gradient(to right, color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px),
     linear-gradient(to bottom, color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px);
   background-size: var(--worker-col-width, 220px) var(--worker-row-height, 140px);
+}
+
+.worker-grid-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  z-index: 3;
+}
+
+.worker-grid-column-headers {
+  position: absolute;
+  top: 0;
+  right: 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  z-index: 2;
+  user-select: none;
+}
+
+.worker-grid-column-header {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-right: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.worker-grid-column-header.is-origin {
+  color: var(--accent);
+}
+
+.worker-grid-column-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 4;
+}
+
+.worker-grid-column-resize:hover,
+.worker-grid-column-resize.active {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.worker-grid-row-headers {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  z-index: 2;
+  user-select: none;
+}
+
+.worker-grid-row-header {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+.worker-grid-row-header.is-origin {
+  color: var(--accent);
+}
+
+.worker-grid-header-label {
+  pointer-events: none;
 }
 
 .grid-slot {

@@ -1,5 +1,7 @@
 const BullpenTab = {
   UNCONFIGURED_PROFILE_ID: 'unconfigured-worker',
+  HEADER_WIDTH: 40,
+  HEADER_HEIGHT: 24,
   props: ['layout', 'config', 'profiles', 'tasks', 'workspace', 'multipleWorkspaces'],
   emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker'],
   components: { WorkerCard },
@@ -18,6 +20,8 @@ const BullpenTab = {
       isPanning: false,
       minimapCollapsed: false,
       liveMessage: '',
+      columnResize: null,
+      draggingColumnWidth: null,
     };
   },
   template: `
@@ -55,6 +59,32 @@ const BullpenTab = {
            @pointerup="onViewportPointerUp"
            @pointercancel="onViewportPointerUp"
            @keydown="onKeydown">
+        <div class="worker-grid-corner" :style="cornerStyle"></div>
+        <div class="worker-grid-column-headers" :style="columnHeaderAreaStyle" @pointerdown.stop>
+          <div v-for="c in visibleColumns" :key="c.col"
+               class="worker-grid-column-header"
+               :class="{ 'is-origin': c.col === 0 }"
+               :style="{ left: c.x + 'px', width: columnWidth + 'px' }">
+            <span class="worker-grid-header-label">{{ c.label }}</span>
+            <div class="worker-grid-column-resize"
+                 :class="{ active: columnResize }"
+                 title="Drag to resize columns"
+                 @pointerdown="onColumnResizeDown"
+                 @pointermove="onColumnResizeMove"
+                 @pointerup="onColumnResizeUp"
+                 @pointercancel="onColumnResizeUp"
+                 @click.stop
+                 @dblclick.stop="resetColumnWidth"></div>
+          </div>
+        </div>
+        <div class="worker-grid-row-headers" :style="rowHeaderAreaStyle" @pointerdown.stop>
+          <div v-for="r in visibleRows" :key="r.row"
+               class="worker-grid-row-header"
+               :class="{ 'is-origin': r.row === 0 }"
+               :style="{ top: r.y + 'px', height: rowHeight + 'px' }">
+            <span class="worker-grid-header-label">{{ r.label }}</span>
+          </div>
+        </div>
         <div class="worker-grid-canvas" :style="canvasStyle"
              @dragover="onCanvasDragOver"
              @drop.prevent="onCanvasDrop">
@@ -158,10 +188,15 @@ const BullpenTab = {
       return ['small', 'medium', 'large'].includes(this.gridConfig.layout) ? this.gridConfig.layout : 'medium';
     },
     columnWidth() {
+      if (this.draggingColumnWidth !== null) {
+        return Math.max(140, Math.min(480, Math.round(this.draggingColumnWidth)));
+      }
       const raw = Number(this.gridConfig.columnWidth);
       const n = Number.isFinite(raw) ? raw : 220;
       return Math.max(140, Math.min(480, Math.round(n / 20) * 20));
     },
+    headerWidth() { return this.$options.HEADER_WIDTH; },
+    headerHeight() { return this.$options.HEADER_HEIGHT; },
     rowHeight() {
       return { small: 32, medium: 140, large: 280 }[this.layoutMode] || 140;
     },
@@ -197,8 +232,52 @@ const BullpenTab = {
       return {
         '--worker-col-width': this.columnWidth + 'px',
         '--worker-row-height': this.rowHeight + 'px',
+        left: this.headerWidth + 'px',
+        top: this.headerHeight + 'px',
         backgroundPosition: `${x}px ${y}px`,
       };
+    },
+    cornerStyle() {
+      return {
+        width: this.headerWidth + 'px',
+        height: this.headerHeight + 'px',
+      };
+    },
+    columnHeaderAreaStyle() {
+      return {
+        left: this.headerWidth + 'px',
+        height: this.headerHeight + 'px',
+      };
+    },
+    rowHeaderAreaStyle() {
+      return {
+        top: this.headerHeight + 'px',
+        width: this.headerWidth + 'px',
+      };
+    },
+    visibleColumns() {
+      const r = this.visibleRange;
+      const out = [];
+      for (let c = r.colStart; c <= r.colEnd; c++) {
+        out.push({
+          col: c,
+          label: this.colLabel(c),
+          x: (c - this.viewportOrigin.col) * this.columnWidth,
+        });
+      }
+      return out;
+    },
+    visibleRows() {
+      const r = this.visibleRange;
+      const out = [];
+      for (let rr = r.rowStart; rr <= r.rowEnd; rr++) {
+        out.push({
+          row: rr,
+          label: this.rowLabel(rr),
+          y: (rr - this.viewportOrigin.row) * this.rowHeight,
+        });
+      }
+      return out;
     },
     ghostCell() {
       const coord = this.emptyMenuCoord || this.selectedCell || this.hoveredCoord;
@@ -224,8 +303,8 @@ const BullpenTab = {
       if (!this.ghostCell) return {};
       const p = GridGeometry.coordToPixel(this.ghostCell.col, this.ghostCell.row, this.viewportOrigin, this.cardSize);
       const rect = this.$refs.viewport?.getBoundingClientRect();
-      const x = (rect?.left || 0) + p.x + this.columnWidth / 2;
-      const y = (rect?.top || 0) + p.y + this.rowHeight / 2;
+      const x = (rect?.left || 0) + this.headerWidth + p.x + this.columnWidth / 2;
+      const y = (rect?.top || 0) + this.headerHeight + p.y + this.rowHeight / 2;
       return { position: 'fixed', top: y + 'px', left: x + 'px' };
     },
     sortedProfiles() {
@@ -331,7 +410,10 @@ const BullpenTab = {
     updateViewportSize() {
       const el = this.$refs.viewport;
       if (!el) return;
-      this.viewportPx = { width: el.clientWidth, height: el.clientHeight };
+      this.viewportPx = {
+        width: Math.max(0, el.clientWidth - this.headerWidth),
+        height: Math.max(0, el.clientHeight - this.headerHeight),
+      };
       this.viewportOrigin = this.clampedOrigin(this.viewportOrigin);
     },
     persistGrid(partial = {}) {
@@ -397,7 +479,9 @@ const BullpenTab = {
     },
     coordFromEvent(e) {
       const rect = this.$refs.viewport.getBoundingClientRect();
-      return GridGeometry.pixelToCoord(e.clientX - rect.left, e.clientY - rect.top, this.viewportOrigin, this.cardSize);
+      const x = e.clientX - rect.left - this.headerWidth;
+      const y = e.clientY - rect.top - this.headerHeight;
+      return GridGeometry.pixelToCoord(x, y, this.viewportOrigin, this.cardSize);
     },
     onViewportMouseMove(e) {
       if (this.isPanning) return;
@@ -601,6 +685,56 @@ const BullpenTab = {
         return;
       }
       this.$root.moveWorker(src, coord);
+    },
+    colLabel(col) {
+      if (!Number.isFinite(col)) return '';
+      if (col < 0) return '-' + this.colLabel(-col - 1);
+      let s = '';
+      let n = Math.floor(col);
+      while (true) {
+        s = String.fromCharCode(65 + (n % 26)) + s;
+        n = Math.floor(n / 26) - 1;
+        if (n < 0) break;
+      }
+      return s;
+    },
+    rowLabel(row) {
+      if (!Number.isFinite(row)) return '';
+      return String(Math.floor(row) + 1);
+    },
+    onColumnResizeDown(e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      this.columnResize = {
+        startX: e.clientX,
+        startWidth: this.columnWidth,
+        pointerId: e.pointerId,
+      };
+      this.draggingColumnWidth = this.columnWidth;
+    },
+    onColumnResizeMove(e) {
+      if (!this.columnResize) return;
+      const dx = e.clientX - this.columnResize.startX;
+      const next = this.columnResize.startWidth + dx;
+      this.draggingColumnWidth = Math.max(140, Math.min(480, Math.round(next)));
+    },
+    onColumnResizeUp(e) {
+      if (!this.columnResize) return;
+      e.currentTarget.releasePointerCapture?.(this.columnResize.pointerId);
+      const dragged = this.draggingColumnWidth;
+      this.columnResize = null;
+      this.draggingColumnWidth = null;
+      if (dragged != null) {
+        const final = Math.max(140, Math.min(480, Math.round(dragged / 20) * 20));
+        this.persistGrid({ columnWidth: final });
+      }
+    },
+    resetColumnWidth() {
+      this.columnResize = null;
+      this.draggingColumnWidth = null;
+      this.persistGrid({ columnWidth: 220 });
     },
     onMinimapClick(e) {
       const rect = e.currentTarget.getBoundingClientRect();
