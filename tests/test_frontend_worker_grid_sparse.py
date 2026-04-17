@@ -39,8 +39,12 @@ def test_empty_cells_use_single_ghost_target_and_clipboard_does_not_materialize_
 def test_empty_cell_menu_supports_keyboard_navigation_when_opened_from_grid_selection():
     text = _read("static/components/BullpenTab.js")
     assert "ref=\"emptyMenu\"" in text
+    assert "tabindex=\"-1\"" in text
     assert "@keydown=\"onEmptyMenuKeydown\"" in text
-    assert "this.$nextTick(() => {\n        const [first] = this.emptyMenuItems();" in text
+    assert "if (this.emptyMenuCoord && !inTextInput && !e.metaKey && !e.ctrlKey && !e.altKey) {" in text
+    assert "this.onEmptyMenuKeydown(e);" in text
+    assert "const menu = this.$refs.emptyMenu;" in text
+    assert "const [first] = this.emptyMenuItems();" in text
     assert "onEmptyMenuKeydown(e)" in text
     assert "items[(currentIdx + 1) % items.length].focus();" in text
     assert "this.closeEmptyMenu({ focusViewport: true });" in text

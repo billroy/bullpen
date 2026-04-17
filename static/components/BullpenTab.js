@@ -136,6 +136,7 @@ const BullpenTab = {
                class="worker-menu empty-slot-menu"
                :style="emptyMenuStyle"
                ref="emptyMenu"
+               tabindex="-1"
                @keydown="onEmptyMenuKeydown"
                @click.stop>
             <button class="worker-menu-item" @click="openLibraryForCoord(ghostCell)"><i class="menu-item-icon" data-lucide="user-plus" aria-hidden="true"></i><span class="menu-item-label">Add Worker</span></button>
@@ -577,6 +578,12 @@ const BullpenTab = {
     onKeydown(e) {
       const t = e.target;
       const inTextInput = t && (t.isContentEditable || (typeof t.matches === 'function' && t.matches('input, textarea, select')));
+      if (this.emptyMenuCoord && !inTextInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (['ArrowUp', 'ArrowDown', 'Home', 'End', 'Escape'].includes(e.key)) {
+          this.onEmptyMenuKeydown(e);
+          return;
+        }
+      }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'c') {
         if (!this.selectedCell) return;
         const item = this.itemAtCoord(this.selectedCell);
@@ -712,6 +719,8 @@ const BullpenTab = {
       }
       this.liveMessage = `Empty cell at column ${coord.col}, row ${coord.row}`;
       this.$nextTick(() => {
+        const menu = this.$refs.emptyMenu;
+        if (menu && typeof menu.focus === 'function') menu.focus();
         const [first] = this.emptyMenuItems();
         if (first && typeof first.focus === 'function') first.focus();
       });
