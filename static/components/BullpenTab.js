@@ -551,6 +551,30 @@ const BullpenTab = {
       return !!(this.selectedCell && coord && this.selectedCell.col === coord.col && this.selectedCell.row === coord.row);
     },
     onKeydown(e) {
+      const t = e.target;
+      const inTextInput = t && (t.isContentEditable || (typeof t.matches === 'function' && t.matches('input, textarea, select')));
+      if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'c') {
+        if (!this.selectedCell) return;
+        const item = this.itemAtCoord(this.selectedCell);
+        if (!item) return;
+        e.preventDefault();
+        this.copyWorker(item.slotIndex);
+        return;
+      }
+      if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'v') {
+        if (!this.selectedCell || !this.canPasteAt(this.selectedCell)) return;
+        e.preventDefault();
+        this.pasteWorker(this.selectedCell);
+        return;
+      }
+      if (!inTextInput && !e.metaKey && !e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
+        if (!this.selectedCell) return;
+        const item = this.itemAtCoord(this.selectedCell);
+        if (!item) return;
+        e.preventDefault();
+        this.$root.removeWorker(item.slotIndex);
+        return;
+      }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         const step = {
           ArrowUp: { dc: 0, dr: -1, dir: 'up' },
