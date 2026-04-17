@@ -1,5 +1,5 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small' }"
@@ -63,7 +63,7 @@ const WorkerCard = {
           </div>
         </div>
         <div v-else class="worker-card-empty">No tasks queued</div>
-        <div v-if="layoutMode === 'large' && isWorking && lastOutput" class="worker-card-output">
+        <div v-if="showOutputPane && isWorking && lastOutput" class="worker-card-output">
           <pre>{{ lastOutput }}</pre>
         </div>
       </div>
@@ -100,6 +100,12 @@ const WorkerCard = {
     },
     workerState() { return this.worker.state || 'idle'; },
     isWorking() { return this.workerState === 'working'; },
+    showOutputPane() {
+      if (this.layoutMode === 'small') return false;
+      if (this.layoutMode === 'large') return true;
+      const h = Number(this.cardHeight);
+      return Number.isFinite(h) && h >= 200;
+    },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
       if (this.isWorking) return `BUSY ${this.elapsed}`;
