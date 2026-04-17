@@ -113,8 +113,8 @@
     const maxCol = limit - colsVisible + 1;
     const maxRow = limit - rowsVisible + 1;
     return {
-      col: Math.max(-limit, Math.min(maxCol, Number(viewportOrigin?.col) || 0)),
-      row: Math.max(-limit, Math.min(maxRow, Number(viewportOrigin?.row) || 0)),
+      col: Math.max(0, Math.min(maxCol, Number(viewportOrigin?.col) || 0)),
+      row: Math.max(0, Math.min(maxRow, Number(viewportOrigin?.row) || 0)),
     };
   }
 

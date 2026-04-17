@@ -403,7 +403,7 @@ const BullpenTab = {
     },
     isWritableCoord(coord) {
       const limit = GridGeometry.DEFAULT_COORD_LIMIT;
-      return coord && coord.col >= -limit && coord.col <= limit && coord.row >= -limit && coord.row <= limit;
+      return coord && coord.col >= 0 && coord.col <= limit && coord.row >= 0 && coord.row <= limit;
     },
     clampedOrigin(origin) {
       return GridGeometry.clampOriginToBounds(origin, this.viewportPx, this.cardSize);
