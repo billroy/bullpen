@@ -46,6 +46,15 @@ def test_empty_cell_menu_supports_keyboard_navigation_when_opened_from_grid_sele
     assert "this.closeEmptyMenu({ focusViewport: true });" in text
 
 
+def test_empty_cell_click_is_selected_and_enter_targets_current_empty_cell():
+    text = _read("static/components/BullpenTab.js")
+    assert "if (!wasPanning && !this.itemAtCoord(coord) && this.isWritableCoord(coord)) {" in text
+    assert "this.selectedCell = { ...coord };" in text
+    assert "} else if (e.key === 'Enter') {" in text
+    assert "const coord = this.selectedCell || this.ghostCell;" in text
+    assert "this.openEmptyMenu(coord);" in text
+
+
 def test_grid_controls_replace_legacy_rows_cols_selector():
     app = _read("static/app.js")
     bullpen = _read("static/components/BullpenTab.js")

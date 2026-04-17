@@ -547,9 +547,11 @@ const BullpenTab = {
       this.dragStart = null;
       this.isPanning = false;
       this.$refs.viewport.releasePointerCapture?.(e.pointerId);
-      if (!wasPanning && !this.itemAtCoord(coord)) {
-        this.selectedCell = null;
+      if (!wasPanning && !this.itemAtCoord(coord) && this.isWritableCoord(coord)) {
+        this.selectedCell = { ...coord };
         this.emptyMenuCoord = null;
+        this.emptyMenuPos = null;
+        this.liveMessage = `Empty cell at column ${coord.col}, row ${coord.row}`;
       }
     },
     selectWorker(item) {
@@ -637,8 +639,10 @@ const BullpenTab = {
           e.preventDefault();
           this.closeEmptyMenu({ focusViewport: true });
         }
-      } else if (e.key === 'Enter' && this.selectedCell) {
-        const item = this.itemAtCoord(this.selectedCell);
+      } else if (e.key === 'Enter') {
+        const coord = this.selectedCell || this.ghostCell;
+        if (!coord) return;
+        const item = this.itemAtCoord(coord);
         if (item) {
           e.preventDefault();
           const card = this.workerRefs && this.workerRefs[item.slotIndex];
@@ -647,7 +651,7 @@ const BullpenTab = {
           }
         } else {
           e.preventDefault();
-          this.openEmptyMenu(this.selectedCell);
+          this.openEmptyMenu(coord);
         }
       }
     },
