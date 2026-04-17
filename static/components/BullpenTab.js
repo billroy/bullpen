@@ -2,6 +2,7 @@ const BullpenTab = {
   UNCONFIGURED_PROFILE_ID: 'unconfigured-worker',
   HEADER_WIDTH: 40,
   HEADER_HEIGHT: 24,
+  MINIMAP_HEADER_PX: 30,
   props: ['layout', 'config', 'profiles', 'tasks', 'workspace', 'multipleWorkspaces'],
   emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker'],
   components: { WorkerCard },
@@ -402,17 +403,22 @@ const BullpenTab = {
     },
     minimapScale() {
       const b = this.minimapBounds;
-      return Math.min(160 / Math.max(1, b.colMax - b.colMin + 1), 120 / Math.max(1, b.rowMax - b.rowMin + 1));
+      const cols = Math.max(1, b.colMax - b.colMin + 1);
+      const rows = Math.max(1, b.rowMax - b.rowMin + 1);
+      const headerFrac = this.$options.MINIMAP_HEADER_PX / Math.max(1, this.columnWidth);
+      const scaleX = Math.min(160 / cols, 120 / (rows * headerFrac));
+      const scaleY = scaleX * headerFrac;
+      return { x: scaleX, y: scaleY };
     },
     minimapDots() {
       const b = this.minimapBounds;
       const scale = this.minimapScale;
-      const dotSize = Math.max(1, Math.min(3, scale)) + 'px';
+      const dotSize = Math.max(1, Math.min(3, scale.x)) + 'px';
       return this.workerItems.map(item => ({
         key: item.slotIndex,
         style: {
-          left: ((item.coord.col - b.colMin) * scale) + 'px',
-          top: ((item.coord.row - b.rowMin) * scale) + 'px',
+          left: ((item.coord.col - b.colMin) * scale.x) + 'px',
+          top: ((item.coord.row - b.rowMin) * scale.y) + 'px',
           width: dotSize,
           height: dotSize,
           background: agentColor(item.worker?.agent),
@@ -423,10 +429,10 @@ const BullpenTab = {
       const b = this.minimapBounds;
       const scale = this.minimapScale;
       return {
-        left: ((this.viewportOrigin.col - b.colMin) * scale) + 'px',
-        top: ((this.viewportOrigin.row - b.rowMin) * scale) + 'px',
-        width: Math.max(2, (this.viewportPx.width / this.columnWidth) * scale) + 'px',
-        height: Math.max(2, (this.viewportPx.height / this.rowHeight) * scale) + 'px',
+        left: ((this.viewportOrigin.col - b.colMin) * scale.x) + 'px',
+        top: ((this.viewportOrigin.row - b.rowMin) * scale.y) + 'px',
+        width: Math.max(2, (this.viewportPx.width / this.columnWidth) * scale.x) + 'px',
+        height: Math.max(2, (this.viewportPx.height / this.rowHeight) * scale.y) + 'px',
       };
     },
   },
@@ -1248,8 +1254,8 @@ const BullpenTab = {
       const rect = e.currentTarget.getBoundingClientRect();
       const b = this.minimapBounds;
       const scale = this.minimapScale;
-      const col = b.colMin + (e.clientX - rect.left) / scale;
-      const row = b.rowMin + (e.clientY - rect.top) / scale;
+      const col = b.colMin + (e.clientX - rect.left) / scale.x;
+      const row = b.rowMin + (e.clientY - rect.top) / scale.y;
       this.setOrigin({
         col: col - (this.viewportPx.width / this.columnWidth) / 2,
         row: row - (this.viewportPx.height / this.rowHeight) / 2,
