@@ -31,5 +31,5 @@ def test_worker_card_readouts_have_styles():
     assert 'margin-left: auto;' in text
     assert 'text-overflow: ellipsis;' in text
     assert '.worker-card-output {' in text
-    assert 'flex: 1 1 auto;' in text
+    assert 'flex: 1 1 0;' in text
     assert 'max-height: none;' in text
