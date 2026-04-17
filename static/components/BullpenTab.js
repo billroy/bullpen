@@ -91,6 +91,7 @@ const BullpenTab = {
           <WorkerCard
             v-for="item in visibleWorkers"
             :key="item.slotIndex"
+            :ref="el => setWorkerRef(el, item.slotIndex)"
             :style="cardStyle(item)"
             :class="{ selected: isSelected(item.coord) }"
             :worker="item.worker"
@@ -576,8 +577,26 @@ const BullpenTab = {
       } else if (e.key === 'Escape') {
         if (this.emptyMenuCoord) this.emptyMenuCoord = null;
         else this.selectedCell = null;
-      } else if (e.key === 'Enter' && this.selectedCell && !this.itemAtCoord(this.selectedCell)) {
-        this.openEmptyMenu(this.selectedCell);
+      } else if (e.key === 'Enter' && this.selectedCell) {
+        const item = this.itemAtCoord(this.selectedCell);
+        if (item) {
+          e.preventDefault();
+          const card = this.workerRefs && this.workerRefs[item.slotIndex];
+          if (card && typeof card.openMenuAndFocus === 'function') {
+            card.openMenuAndFocus();
+          }
+        } else {
+          e.preventDefault();
+          this.openEmptyMenu(this.selectedCell);
+        }
+      }
+    },
+    setWorkerRef(el, slotIndex) {
+      if (!this.workerRefs) this.workerRefs = {};
+      if (el) {
+        this.workerRefs[slotIndex] = el;
+      } else {
+        delete this.workerRefs[slotIndex];
       }
     },
     ensureCoordVisible(coord) {

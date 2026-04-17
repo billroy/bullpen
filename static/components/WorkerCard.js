@@ -38,7 +38,7 @@ const WorkerCard = {
             <span v-if="isWorking && currentTaskTokens !== null" class="worker-card-token-meta" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
           </span>
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
-          <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop>
+          <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
             <button class="worker-menu-item" @click="menuEdit">Edit</button>
             <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun">Run</button>
             <button v-if="isWorking" class="worker-menu-item" @click="menuWatch">Watch</button>
@@ -289,6 +289,45 @@ const WorkerCard = {
         this.menuPos = { top: rect.bottom + 4, left };
       }
       this.showMenu = true;
+    },
+    openMenuAndFocus() {
+      if (!this.showMenu) this.toggleMenu();
+      this.$nextTick(() => {
+        const first = this.$el.querySelector('.worker-menu .worker-menu-item:not([disabled])');
+        if (first) first.focus();
+      });
+    },
+    onMenuKeydown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showMenu = false;
+        const viewport = document.querySelector('.worker-grid-viewport');
+        if (viewport) viewport.focus();
+        return;
+      }
+      const items = Array.from(this.$el.querySelectorAll('.worker-menu .worker-menu-item:not([disabled])'));
+      if (!items.length) return;
+      const currentIdx = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[(currentIdx + 1) % items.length].focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[currentIdx <= 0 ? items.length - 1 : currentIdx - 1].focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[0].focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[items.length - 1].focus();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.stopPropagation();
+      }
     },
     menuEdit() {
       this.showMenu = false;
