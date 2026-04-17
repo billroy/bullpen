@@ -473,6 +473,12 @@ def _assemble_prompt(bp_dir, worker, task):
 
     # Task body
     parts.append(f"## Task: {task.get('title', 'Untitled')}\n")
+    if task.get("id"):
+        parts.append(
+            f"Task ID: `{task['id']}` — use this ID directly with "
+            f"`mcp__bullpen__update_ticket` to update this ticket. "
+            f"Do not search for it by title."
+        )
     parts.append(f"Type: {task.get('type', 'task')}")
     parts.append(f"Priority: {task.get('priority', 'normal')}")
     if task.get("tags"):
