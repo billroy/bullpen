@@ -909,6 +909,7 @@ const app = createApp({
     <div class="app-container">
       <TopToolbar
         :project-name="activeProjectName"
+        :project-path="state.workspace"
         :connected="connected"
         :themes="themeOptions"
         :active-theme="currentTheme"
@@ -976,7 +977,6 @@ const app = createApp({
               </div>
             </div>
             <div v-if="activeTab === 'workers'" class="tab-bar-right">
-              <span class="bullpen-path" :title="state.workspace">{{ state.workspace ? state.workspace.split('/').slice(-2).join('/') : '' }}</span>
               <div id="worker-tab-toolbar-slot"></div>
             </div>
           </div>

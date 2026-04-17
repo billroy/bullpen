@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'quickCreateClearToken'],
+  props: ['projectName', 'projectPath', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'quickCreateClearToken'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -138,7 +138,7 @@ const TopToolbar = {
             @change="onImportAllSelected"
           >
         </div>
-        <span class="toolbar-name">Bullpen<span v-if="projectName"> / {{ projectName }}</span></span>
+        <span class="toolbar-name">Bullpen<span v-if="projectName" :title="projectPath || ''"> / {{ projectName }}</span></span>
       </div>
       <div class="toolbar-center">
         <input
