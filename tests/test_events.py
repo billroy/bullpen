@@ -308,6 +308,50 @@ class TestWorkerEvents:
         assert layout["slots"][3] is not None
         assert layout["slots"][3]["profile"] == "feature-architect"
 
+    def test_add_worker_at_coordinate(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": -2, "row": 5}, "profile": "feature-architect"})
+        layout = get_event(c, "layout:updated")
+        worker = next(s for s in layout["slots"] if s)
+        assert worker["profile"] == "feature-architect"
+        assert worker["col"] == -2
+        assert worker["row"] == 5
+
+    def test_move_worker_to_coordinate_rejects_collision(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:add", {"coord": {"col": 1, "row": 0}, "profile": "code-reviewer"})
+        c.get_received()
+
+        c.emit("worker:move", {"from": 0, "to_coord": {"col": 1, "row": 0}})
+        err = get_event(c, "error")
+        assert err is not None
+        assert err["code"] == "coordinate_collision"
+
+    def test_paste_worker_whitelists_runtime_state(self, client):
+        c, _ = client
+        c.emit("worker:paste", {
+            "coord": {"col": 4, "row": -1},
+            "worker": {
+                "name": "Copied",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+                "task_queue": ["secret-task"],
+                "state": "working",
+                "api_key": "do-not-copy",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        worker = next(s for s in layout["slots"] if s)
+        assert worker["name"] == "Copied"
+        assert worker["col"] == 4
+        assert worker["row"] == -1
+        assert worker["task_queue"] == []
+        assert worker["state"] == "idle"
+        assert "api_key" not in worker
+
     def test_configure_worker(self, client):
         c, _ = client
         c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})

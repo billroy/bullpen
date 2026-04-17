@@ -1,0 +1,66 @@
+"""Regression checks for sparse worker grid implementation."""
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _read(rel_path: str) -> str:
+    return (ROOT / rel_path).read_text(encoding="utf-8")
+
+
+def test_grid_geometry_loaded_before_bullpen_tab():
+    text = _read("static/index.html")
+    assert '<script src="/gridGeometry.js"></script>' in text
+    assert text.index('/gridGeometry.js') < text.index('/components/BullpenTab.js')
+
+
+def test_bullpen_tab_uses_sparse_coordinate_rendering():
+    text = _read("static/components/BullpenTab.js")
+    assert "v-for=\"item in visibleWorkers\"" in text
+    assert "coordForSlot(worker, slotIndex)" in text
+    assert "GridGeometry.coordToPixel" in text
+    assert "GridGeometry.visibleRange" in text
+    assert "GridGeometry.overscanRange(range, 2)" in text
+    assert "GridGeometry.coordKey(item.coord.col, item.coord.row)" in text
+
+
+def test_empty_cells_use_single_ghost_target_and_clipboard_does_not_materialize_all_cells():
+    text = _read("static/components/BullpenTab.js")
+    assert "v-if=\"ghostCell\"" in text
+    assert "worker-grid-ghost-cell" in text
+    assert "one reusable" not in text  # implementation should be structural, not comment-only
+    assert "this.clipboardWorker" in text
+    assert "canPasteAt(coord)" in text
+    assert "A non-empty pane clipboard" not in text
+
+
+def test_grid_controls_replace_legacy_rows_cols_selector():
+    app = _read("static/app.js")
+    bullpen = _read("static/components/BullpenTab.js")
+    assert "onTabBarGridResize" not in app
+    assert "gridOptions" not in app
+    assert "setLayoutMode(mode)" in bullpen
+    assert "onWidthChange(e)" in bullpen
+    assert "columnWidth" in bullpen
+
+
+def test_worker_card_has_header_status_and_copy_worker_menu():
+    text = _read("static/components/WorkerCard.js")
+    assert "worker-card-header-status" in text
+    assert "Copy Worker" in text
+    assert "menuCopyWorker()" in text
+    assert "$emit('copy-worker', this.slotIndex)" in text
+    assert "v-if=\"layoutMode !== 'small'\"" in text
+
+
+def test_worker_grid_styles_define_viewport_minimap_and_fixed_card_overflow():
+    text = _read("static/style.css")
+    assert ".worker-grid-viewport" in text
+    assert "touch-action: none;" in text
+    assert ".worker-minimap" in text
+    assert ".worker-grid-ghost-cell" in text
+    assert ".worker-card-header-status" in text
+    assert "contain: layout paint;" in text
+    assert "overflow: hidden;" in text

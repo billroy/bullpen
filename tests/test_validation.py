@@ -205,12 +205,19 @@ class TestConfigUpdate:
 
 class TestWorkerMove:
     def test_valid_move(self):
-        from_s, to_s = validate_worker_move({"from": 0, "to": 5})
+        from_s, to_s, to_coord = validate_worker_move({"from": 0, "to": 5})
         assert from_s == 0
         assert to_s == 5
+        assert to_coord is None
+
+    def test_valid_coordinate_move(self):
+        from_s, to_s, to_coord = validate_worker_move({"from": 0, "to_coord": {"col": -2, "row": 9}})
+        assert from_s == 0
+        assert to_s is None
+        assert to_coord == {"col": -2, "row": 9}
 
     def test_missing_from(self):
-        with pytest.raises(ValidationError, match="requires from and to"):
+        with pytest.raises(ValidationError, match="requires from"):
             validate_worker_move({"to": 5})
 
     def test_negative_slot(self):

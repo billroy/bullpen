@@ -11,7 +11,7 @@ DEFAULT_CONFIG = {
     "theme": "dark",
     "ambient_preset": None,
     "ambient_volume": 40,
-    "grid": {"rows": 4, "cols": 6},
+    "grid": {"layout": "medium", "columnWidth": 220, "viewportOrigin": {"col": 0, "row": 0}},
     "columns": [
         {"key": "inbox", "label": "Inbox", "color": "#6B7280"},
         {"key": "assigned", "label": "Assigned", "color": "#3B82F6"},

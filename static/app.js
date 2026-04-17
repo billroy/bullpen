@@ -64,7 +64,7 @@ const app = createApp({
     // Active view state — mirrors whichever workspace is active
     const state = reactive({
       workspace: '',
-      config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [], ambient_preset: null, ambient_volume: 40 },
+      config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40 },
       layout: { slots: [] },
       tasks: [],
       profiles: [],
@@ -79,7 +79,7 @@ const app = createApp({
     function _defaultWsData() {
       return {
         workspace: '',
-        config: { name: 'Bullpen', grid: { rows: 4, cols: 6 }, columns: [], ambient_preset: null, ambient_volume: 40 },
+        config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40 },
         layout: { slots: [] },
         tasks: [],
         archivedTasks: [],
@@ -109,6 +109,20 @@ const app = createApp({
 
     function _normalizeConfig(config) {
       const safe = { ...(config || {}) };
+      const grid = safe.grid || {};
+      const rawColumnWidth = Number(grid.columnWidth);
+      const columnWidth = Number.isFinite(rawColumnWidth) ? rawColumnWidth : 220;
+      safe.grid = {
+        layout: ['small', 'medium', 'large'].includes(grid.layout) ? grid.layout : 'medium',
+        columnWidth: Math.max(140, Math.min(480, Math.round(columnWidth / 20) * 20)),
+        viewportOrigin: {
+          col: Number.isFinite(Number(grid.viewportOrigin?.col)) ? Number(grid.viewportOrigin.col) : 0,
+          row: Number.isFinite(Number(grid.viewportOrigin?.row)) ? Number(grid.viewportOrigin.row) : 0,
+        },
+        // Legacy values are kept so old layouts can be migrated client/server side.
+        rows: Number.isFinite(Number(grid.rows)) ? Number(grid.rows) : undefined,
+        cols: Number.isFinite(Number(grid.cols)) ? Number(grid.cols) : undefined,
+      };
       safe.theme = _normalizeTheme(safe.theme || 'dark');
       safe.ambient_preset = _normalizeAmbientPreset(safe.ambient_preset);
       safe.ambient_volume = _normalizeAmbientVolume(safe.ambient_volume);
@@ -538,7 +552,7 @@ const app = createApp({
     }
 
     // Worker actions
-    function addWorker({ slot, profile }) { socket.emit('worker:add', _wsData({ slot, profile })); }
+    function addWorker({ slot, coord, profile }) { socket.emit('worker:add', _wsData({ slot, coord, profile })); }
     function removeWorker(slot) {
       const worker = state.layout?.slots?.[slot];
       const name = worker?.name || `Slot ${slot + 1}`;
@@ -549,7 +563,13 @@ const app = createApp({
       if (!confirm(confirmMessage)) return;
       socket.emit('worker:remove', _wsData({ slot }));
     }
-    function moveWorker(from, to) { socket.emit('worker:move', _wsData({ from, to })); }
+    function moveWorker(from, to) {
+      const payload = { from };
+      if (to && typeof to === 'object') payload.to_coord = to;
+      else payload.to = to;
+      socket.emit('worker:move', _wsData(payload));
+    }
+    function pasteWorkerConfig({ coord, worker }) { socket.emit('worker:paste', _wsData({ coord, worker })); }
     function duplicateWorker(slot) { socket.emit('worker:duplicate', _wsData({ slot })); }
     function openTransfer({ slot, mode }) {
       transferSlot.value = slot;
@@ -851,37 +871,7 @@ const app = createApp({
       }, 0);
     }
 
-    // Grid options for tab bar selector
     const multipleWorkspaces = computed(() => projects.length >= 2);
-
-    const gridOptions = computed(() => {
-      const opts = [];
-      for (let r = 2; r <= 7; r++) {
-        for (let c = 2; c <= 10; c++) {
-          opts.push(`${r}x${c}`);
-        }
-      }
-      return opts;
-    });
-
-    function onTabBarGridResize(e) {
-      const [rows, cols] = e.target.value.split('x').map(Number);
-      const layout = state.layout;
-      const slots = layout?.slots || [];
-      let maxOccupied = -1;
-      for (let i = 0; i < slots.length; i++) {
-        if (slots[i]) maxOccupied = i;
-      }
-      const newTotal = rows * cols;
-      if (maxOccupied >= newTotal) {
-        alert(`Cannot resize: worker in slot ${maxOccupied + 1} would be displaced. Move or remove workers first.`);
-        const curRows = state.config.grid?.rows || 4;
-        const curCols = state.config.grid?.cols || 6;
-        e.target.value = curRows + 'x' + curCols;
-        return;
-      }
-      updateConfig({ grid: { rows, cols } });
-    }
 
     return {
       state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded,
@@ -889,10 +879,10 @@ const app = createApp({
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
-      moveTask, selectTask, addWorker, removeWorker, moveWorker,
+      moveTask, selectTask, addWorker, removeWorker, moveWorker, pasteWorkerConfig,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
-      gridOptions, onTabBarGridResize, duplicateWorker, multipleWorkspaces,
+      duplicateWorker, multipleWorkspaces,
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
@@ -985,9 +975,7 @@ const app = createApp({
             </div>
             <div v-if="activeTab === 'workers'" class="tab-bar-right">
               <span class="bullpen-path" :title="state.workspace">{{ state.workspace ? state.workspace.split('/').slice(-2).join('/') : '' }}</span>
-              <select class="form-select" :value="(state.config.grid?.rows || 4) + 'x' + (state.config.grid?.cols || 6)" @change="onTabBarGridResize">
-                <option v-for="opt in gridOptions" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
+              <div id="worker-tab-toolbar-slot"></div>
             </div>
           </div>
           <div class="tab-content">

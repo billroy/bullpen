@@ -84,6 +84,10 @@ const WorkerConfigModal = {
             Name
             <input class="form-input" v-model="form.name">
           </label>
+          <label class="form-label">
+            Expertise Prompt
+            <textarea class="form-textarea" v-model="form.expertise_prompt" rows="5"></textarea>
+          </label>
           <div class="form-row">
             <label class="form-label">
               AI Provider
@@ -182,10 +186,6 @@ const WorkerConfigModal = {
               <span class="form-hint">(open PR after commit; requires worktree + auto-commit)</span>
             </label>
           </div>
-          <label class="form-label">
-            Expertise Prompt
-            <textarea class="form-textarea" v-model="form.expertise_prompt" rows="5"></textarea>
-          </label>
         </div>
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" @click="onRemove">Remove Worker</button>

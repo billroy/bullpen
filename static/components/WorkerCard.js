@@ -1,8 +1,9 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots'],
-  emits: ['configure', 'select-task', 'open-focus', 'transfer'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode'],
+  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker'],
   template: `
-    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget }"
+    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small' }"
+         :style="layoutMode === 'small' ? { background: agentColor } : null"
          draggable="true"
          @dragstart="onDragStart"
          @dragover="onDragOver"
@@ -30,6 +31,12 @@ const WorkerCard = {
           <span class="worker-card-name">{{ worker.name }}</span>
         </div>
         <div class="worker-card-actions">
+          <span class="worker-card-header-status">
+            <span class="status-pill" :class="'status-' + workerState">
+              {{ statusLabel }}
+            </span>
+            <span v-if="isWorking && currentTaskTokens !== null" class="worker-card-token-meta" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
+          </span>
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
           <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop>
             <button class="worker-menu-item" @click="menuEdit">Edit</button>
@@ -39,21 +46,18 @@ const WorkerCard = {
             <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause">Pause</button>
             <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause">Unpause</button>
             <button class="worker-menu-item" @click="menuDuplicate">Duplicate</button>
+            <button class="worker-menu-item" @click="menuCopyWorker">Copy Worker</button>
             <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo">Copy to workspace&hellip;</button>
             <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo">Move to workspace&hellip;</button>
             <button class="worker-menu-item worker-menu-danger" @click="menuDelete">Delete</button>
           </div>
         </div>
       </div>
-      <div class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
+      <div v-if="layoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
         <div class="worker-card-status">
-          <span class="status-pill" :class="'status-' + workerState">
-            {{ statusLabel }}
-          </span>
-          <span v-if="isWorking && currentTaskTokens !== null" class="worker-card-token-meta" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
           <span class="worker-card-agent">{{ worker.model }}</span>
         </div>
-        <div class="worker-card-queue" v-if="queuedTasks.length">
+        <div class="worker-card-queue" v-if="layoutMode !== 'small' && queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
                @click.stop="$emit('select-task', t.id)">
             <i class="ticket-type-icon ticket-type-icon--worker-queue" data-lucide="tag" aria-hidden="true"></i>
@@ -61,7 +65,7 @@ const WorkerCard = {
           </div>
         </div>
         <div v-else class="worker-card-empty">No tasks queued</div>
-        <div v-if="isWorking && lastOutput" class="worker-card-output">
+        <div v-if="layoutMode === 'large' && isWorking && lastOutput" class="worker-card-output">
           <pre>{{ lastOutput }}</pre>
         </div>
       </div>
@@ -309,6 +313,10 @@ const WorkerCard = {
     menuDuplicate() {
       this.showMenu = false;
       this.$root.duplicateWorker(this.slotIndex);
+    },
+    menuCopyWorker() {
+      this.showMenu = false;
+      this.$emit('copy-worker', this.slotIndex);
     },
     menuWatch() {
       this.showMenu = false;

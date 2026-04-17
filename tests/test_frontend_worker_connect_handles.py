@@ -13,13 +13,12 @@ def _read(rel_path: str) -> str:
 def test_bullpen_tab_computes_neighbor_slots_and_passes_them_to_card():
     text = _read("static/components/BullpenTab.js")
     assert "neighborSlotsMap()" in text
-    assert ":neighbor-slots=\"neighborSlotsMap[i - 1]\"" in text
-    # Edge and empty-cell detection logic must be present
-    assert "r > 0" in text and "r < rows - 1" in text
-    assert "c > 0" in text and "c < cols - 1" in text
-    # Neighbor is null when the cell is empty
-    assert "slots[up] ? up : null" in text
-    assert "slots[down] ? down : null" in text
+    assert ":neighbor-slots=\"neighborSlotsMap[item.slotIndex]\"" in text
+    # Neighbor detection is coordinate-based in the sparse grid.
+    assert "this.itemAtCoord({ col: c.col, row: c.row - 1 })?.slotIndex ?? null" in text
+    assert "this.itemAtCoord({ col: c.col, row: c.row + 1 })?.slotIndex ?? null" in text
+    assert "this.itemAtCoord({ col: c.col - 1, row: c.row })?.slotIndex ?? null" in text
+    assert "this.itemAtCoord({ col: c.col + 1, row: c.row })?.slotIndex ?? null" in text
 
 
 def test_worker_card_accepts_neighbor_slots_prop():

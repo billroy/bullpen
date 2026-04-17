@@ -163,6 +163,22 @@ def validate_slot(data, max_slots=100):
     return slot
 
 
+def validate_coord(data, field="coord", limit=100000, required=False):
+    """Validate a sparse grid coordinate object."""
+    coord = data.get(field)
+    if coord is None:
+        if required:
+            raise ValidationError(f"requires {field}")
+        return None
+    if not isinstance(coord, dict):
+        raise ValidationError(f"{field} must be an object")
+    col = _int(coord.get("col"), f"{field}.col", min_val=-limit, max_val=limit)
+    row = _int(coord.get("row"), f"{field}.row", min_val=-limit, max_val=limit)
+    if col is None or row is None:
+        raise ValidationError(f"{field} requires col and row")
+    return {"col": col, "row": row}
+
+
 def validate_worker_configure(data, max_slots=100):
     """Validate worker:configure payload. Returns (slot, sanitized_fields)."""
     validate_payload_size(data)
@@ -255,10 +271,13 @@ def validate_config_update(data):
 def validate_worker_move(data, max_slots=200):
     """Validate worker:move payload. Returns (from_slot, to_slot)."""
     from_slot = _int(data.get("from"), "from", min_val=0, max_val=max_slots - 1)
+    if from_slot is None:
+        raise ValidationError("worker:move requires from")
+    to_coord = validate_coord(data, "to_coord")
     to_slot = _int(data.get("to"), "to", min_val=0, max_val=max_slots - 1)
-    if from_slot is None or to_slot is None:
-        raise ValidationError("worker:move requires from and to")
-    return from_slot, to_slot
+    if to_coord is None and to_slot is None:
+        raise ValidationError("worker:move requires to or to_coord")
+    return from_slot, to_slot, to_coord
 
 
 def validate_layout_update(data):

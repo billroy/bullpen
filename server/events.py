@@ -27,7 +27,7 @@ from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
-    validate_id, validate_slot, validate_worker_configure,
+    validate_id, validate_slot, validate_coord, validate_worker_configure,
     validate_payload_size, validate_config_update, validate_worker_move,
     validate_layout_update, validate_team_name,
 )
@@ -130,6 +130,52 @@ def _load_layout(bp_dir):
 
 def _save_layout(bp_dir, layout):
     write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+
+def _safe_legacy_cols(config):
+    grid = config.get("grid", {}) if isinstance(config, dict) else {}
+    cols = grid.get("cols", 4)
+    try:
+        cols = int(cols)
+    except (TypeError, ValueError):
+        cols = 4
+    return cols if cols > 0 else 4
+
+
+def _slot_coord(worker, index, cols):
+    if isinstance(worker, dict) and "col" in worker and "row" in worker:
+        try:
+            return int(worker.get("col", 0)), int(worker.get("row", 0))
+        except (TypeError, ValueError):
+            pass
+    return index % cols, index // cols
+
+
+def _coord_occupied(layout, coord, ignore_slot=None, cols=4):
+    for i, worker in enumerate(layout.get("slots", [])):
+        if not worker or i == ignore_slot:
+            continue
+        col, row = _slot_coord(worker, i, cols)
+        if col == coord["col"] and row == coord["row"]:
+            return i
+    return None
+
+
+def _first_empty_slot(layout):
+    slots = layout.setdefault("slots", [])
+    for i, worker in enumerate(slots):
+        if worker is None:
+            return i
+    slots.append(None)
+    return len(slots) - 1
+
+
+def _nearest_empty_coord(layout, start_col, start_row, ignore_slot=None, cols=4):
+    col = int(start_col)
+    row = int(start_row)
+    while _coord_occupied(layout, {"col": col, "row": row}, ignore_slot, cols) is not None:
+        col += 1
+    return {"col": col, "row": row}
 
 
 def _write_runtime_mcp_config(app, bp_dir):
@@ -280,7 +326,8 @@ def register_events(socketio, app):
     def on_worker_add(data):
         ws_id, bp_dir = _resolve(data)
         layout = _load_layout(bp_dir)
-        slot_index = validate_slot(data, max_slots=200)
+        coord = validate_coord(data, "coord")
+        slot_index = validate_slot(data, max_slots=200) if coord is None else _first_empty_slot(layout)
         profile_id = data.get("profile")
 
         if profile_id is None:
@@ -295,9 +342,18 @@ def register_events(socketio, app):
             return
 
         config = read_json(os.path.join(bp_dir, "config.json"))
-        cols = config.get("grid", {}).get("cols", 6)
-        row = slot_index // cols
-        col = slot_index % cols
+        cols = _safe_legacy_cols(config)
+        if coord is None:
+            row = slot_index // cols
+            col = slot_index % cols
+            coord = {"col": col, "row": row}
+        else:
+            occupied_slot = _coord_occupied(layout, coord, cols=cols)
+            if occupied_slot is not None:
+                emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
+                return
+            row = coord["row"]
+            col = coord["col"]
 
         # Suggest a unique display name
         base_name = profile["name"]
@@ -359,16 +415,30 @@ def register_events(socketio, app):
     @with_lock
     def on_worker_move(data):
         ws_id, bp_dir = _resolve(data)
-        from_slot, to_slot = validate_worker_move(data)
+        from_slot, to_slot, to_coord = validate_worker_move(data)
         layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+
+        if from_slot >= len(layout["slots"]) or not layout["slots"][from_slot]:
+            emit("error", {"message": "worker:move requires occupied source slot"})
+            return
+
+        if to_coord is not None:
+            occupied_slot = _coord_occupied(layout, to_coord, ignore_slot=from_slot, cols=cols)
+            if occupied_slot is not None:
+                emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
+                return
+            layout["slots"][from_slot]["col"] = to_coord["col"]
+            layout["slots"][from_slot]["row"] = to_coord["row"]
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
+            return
 
         # Ensure slots list is large enough
         max_slot = max(from_slot, to_slot)
         while len(layout["slots"]) <= max_slot:
             layout["slots"].append(None)
-
-        config = read_json(os.path.join(bp_dir, "config.json"))
-        cols = config.get("grid", {}).get("cols", 6)
 
         # Swap
         layout["slots"][from_slot], layout["slots"][to_slot] = (
@@ -402,22 +472,10 @@ def register_events(socketio, app):
 
         # Find first empty slot
         config = read_json(os.path.join(bp_dir, "config.json"))
-        rows = config.get("grid", {}).get("rows", 4)
-        cols = config.get("grid", {}).get("cols", 6)
-        total = rows * cols
-
-        while len(layout["slots"]) < total:
-            layout["slots"].append(None)
-
-        target = None
-        for i in range(total):
-            if layout["slots"][i] is None:
-                target = i
-                break
-
-        if target is None:
-            emit("error", {"message": "No empty slot available"})
-            return
+        cols = _safe_legacy_cols(config)
+        target = _first_empty_slot(layout)
+        source_col, source_row = _slot_coord(source, slot_index, cols)
+        target_coord = _nearest_empty_coord(layout, source_col + 1, source_row, cols=cols)
 
         # Generate unique name
         base_name = source["name"]
@@ -430,8 +488,8 @@ def register_events(socketio, app):
 
         # Clone worker config, reset runtime state
         clone = {
-            "row": target // cols,
-            "col": target % cols,
+            "row": target_coord["row"],
+            "col": target_coord["col"],
             "profile": source.get("profile"),
             "name": candidate,
             "agent": source.get("agent", "claude"),
@@ -454,6 +512,63 @@ def register_events(socketio, app):
         }
 
         layout["slots"][target] = clone
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+
+    @socketio.on("worker:paste")
+    @with_lock
+    def on_worker_paste(data):
+        ws_id, bp_dir = _resolve(data)
+        coord = validate_coord(data, "coord", required=True)
+        source = data.get("worker") or {}
+        if not isinstance(source, dict):
+            emit("error", {"message": "worker:paste requires worker config"})
+            return
+
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+        if _coord_occupied(layout, coord, cols=cols) is not None:
+            emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
+            return
+
+        target = _first_empty_slot(layout)
+        existing_names = {s["name"] for s in layout["slots"] if s and s.get("name")}
+        base_name = str(source.get("name") or "Worker")
+        candidate = base_name
+        suffix = 2
+        while candidate in existing_names:
+            candidate = f"{base_name} {suffix}"
+            suffix += 1
+
+        worker = {
+            "row": coord["row"],
+            "col": coord["col"],
+            "profile": source.get("profile"),
+            "name": candidate,
+            "agent": source.get("agent", "claude"),
+            "model": normalize_model(source.get("agent", "claude"), source.get("model", "claude-sonnet-4-6")),
+            "activation": source.get("activation", "on_drop"),
+            "disposition": source.get("disposition", "review"),
+            "watch_column": source.get("watch_column"),
+            "expertise_prompt": source.get("expertise_prompt", ""),
+            "max_retries": source.get("max_retries", 1),
+            "use_worktree": bool(source.get("use_worktree", False)),
+            "auto_commit": bool(source.get("auto_commit", False)),
+            "auto_pr": bool(source.get("auto_pr", False)),
+            "trigger_time": source.get("trigger_time"),
+            "trigger_interval_minutes": source.get("trigger_interval_minutes"),
+            "trigger_every_day": bool(source.get("trigger_every_day", False)),
+            "last_trigger_time": None,
+            "paused": False,
+            "task_queue": [],
+            "state": "idle",
+        }
+        for key in ("icon", "color", "avatar"):
+            if key in source:
+                worker[key] = source[key]
+
+        layout["slots"][target] = worker
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
 

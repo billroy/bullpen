@@ -844,16 +844,30 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id):
     """Pass a task to the worker in the given direction (up/down/left/right).
 
-    If no worker occupies the target slot or the slot is out of bounds, the task
+    If no worker occupies the adjacent coordinate or the target is out of bounds, the task
     moves to Blocked.
     """
     config = read_json(os.path.join(bp_dir, "config.json"))
     grid = config.get("grid", {})
-    cols = grid.get("cols", 1)
-    rows = grid.get("rows", 1)
+    try:
+        cols = int(grid.get("cols", 4) or 4)
+    except (TypeError, ValueError):
+        cols = 4
+    if cols <= 0:
+        cols = 4
 
-    row = slot_index // cols
-    col = slot_index % cols
+    slots = layout.get("slots", [])
+    worker = slots[slot_index] if slot_index < len(slots) else None
+    if worker:
+        try:
+            row = int(worker.get("row", slot_index // cols))
+            col = int(worker.get("col", slot_index % cols))
+        except (TypeError, ValueError):
+            row = slot_index // cols
+            col = slot_index % cols
+    else:
+        row = slot_index // cols
+        col = slot_index % cols
 
     if direction == "up":
         target_row, target_col = row - 1, col
@@ -867,9 +881,8 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
         target_row, target_col = -1, -1
 
     task = task_mod.read_task(bp_dir, task_id)
-
-    # Out of bounds → blocked
-    if not (0 <= target_row < rows and 0 <= target_col < cols):
+    limit = 100000
+    if not (-limit <= target_row <= limit and -limit <= target_col <= limit):
         msg = f"\n\n**Pass {direction}: no slot in that direction.** Task moved to blocked.\n"
         body = (task.get("body", "") if task else "") + msg
         task_mod.update_task(bp_dir, task_id, {
@@ -885,9 +898,21 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
             }, ws_id)
         return
 
-    target_slot = target_row * cols + target_col
-    slots = layout.get("slots", [])
-    target_worker = slots[target_slot] if target_slot < len(slots) else None
+    target_slot = None
+    target_worker = None
+    for i, candidate in enumerate(slots):
+        if not candidate:
+            continue
+        try:
+            candidate_row = int(candidate.get("row", i // cols))
+            candidate_col = int(candidate.get("col", i % cols))
+        except (TypeError, ValueError):
+            candidate_row = i // cols
+            candidate_col = i % cols
+        if candidate_row == target_row and candidate_col == target_col:
+            target_slot = i
+            target_worker = candidate
+            break
 
     # Empty slot → blocked
     if not target_worker:
