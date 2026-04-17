@@ -74,3 +74,15 @@ def test_worker_grid_styles_define_viewport_minimap_and_fixed_card_overflow():
     # pass-connected indicator pills that render into the grid gutter.
     assert "contain: layout" not in text
     assert "contain: paint" not in text
+
+
+def test_grid_headers_highlight_selected_cell_not_fixed_origin():
+    tab = _read("static/components/BullpenTab.js")
+    css = _read("static/style.css")
+
+    assert "'is-selected': selectedCell && c.col === selectedCell.col" in tab
+    assert "'is-selected': selectedCell && r.row === selectedCell.row" in tab
+    assert ".worker-grid-column-header.is-selected {" in css
+    assert ".worker-grid-row-header.is-selected {" in css
+    assert ".worker-grid-column-header.is-origin {\n  color: var(--text-secondary);" in css
+    assert ".worker-grid-row-header.is-origin {\n  color: var(--text-secondary);" in css

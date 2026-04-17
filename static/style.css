@@ -1469,6 +1469,10 @@ body {
 }
 
 .worker-grid-column-header.is-origin {
+  color: var(--text-secondary);
+}
+
+.worker-grid-column-header.is-selected {
   color: var(--accent);
 }
 
@@ -1543,6 +1547,10 @@ body {
 }
 
 .worker-grid-row-header.is-origin {
+  color: var(--text-secondary);
+}
+
+.worker-grid-row-header.is-selected {
   color: var(--accent);
 }
 

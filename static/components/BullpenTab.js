@@ -51,7 +51,10 @@ const BullpenTab = {
         <div class="worker-grid-column-headers" :style="columnHeaderAreaStyle" @pointerdown.stop>
           <div v-for="c in visibleColumns" :key="c.col"
                class="worker-grid-column-header"
-               :class="{ 'is-origin': c.col === 0 }"
+               :class="{
+                 'is-origin': c.col === 0,
+                 'is-selected': selectedCell && c.col === selectedCell.col,
+               }"
                :style="{ left: c.x + 'px', width: columnWidth + 'px' }">
             <span class="worker-grid-header-label">{{ c.label }}</span>
             <div class="worker-grid-column-resize"
@@ -68,7 +71,10 @@ const BullpenTab = {
         <div class="worker-grid-row-headers" :style="rowHeaderAreaStyle" @pointerdown.stop>
           <div v-for="r in visibleRows" :key="r.row"
                class="worker-grid-row-header"
-               :class="{ 'is-origin': r.row === 0 }"
+               :class="{
+                 'is-origin': r.row === 0,
+                 'is-selected': selectedCell && r.row === selectedCell.row,
+               }"
                :style="{ top: r.y + 'px', height: rowHeight + 'px' }">
             <span class="worker-grid-header-label">{{ r.label }}</span>
             <div class="worker-grid-row-resize"
