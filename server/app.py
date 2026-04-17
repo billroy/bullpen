@@ -162,10 +162,25 @@ def create_app(
         engineio_logger=websocket_debug,
     )
 
-    # Store server address and a per-run MCP token so the stdio MCP server
-    # (which has no session cookie) can authenticate via Socket.IO ``auth``.
+    # Store server address and an MCP token so the stdio MCP server (which
+    # has no session cookie) can authenticate via Socket.IO ``auth``. Reuse
+    # any existing token found in a workspace config; only generate a fresh
+    # one if none is present. Rotating the token on every startup breaks
+    # any Bullpen already running against the same workspace — its MCP
+    # stdio clients would read the new token from config and fail to auth
+    # against the original server's in-memory token.
     import secrets as _secrets
-    mcp_token = _secrets.token_urlsafe(32)
+    mcp_token = None
+    for ws in manager.all_workspaces():
+        try:
+            existing = read_json(os.path.join(ws.bp_dir, "config.json")).get("mcp_token")
+        except Exception:
+            existing = None
+        if existing:
+            mcp_token = existing
+            break
+    if not mcp_token:
+        mcp_token = _secrets.token_urlsafe(32)
     app.config["host"] = host
     app.config["port"] = port
     app.config["mcp_token"] = mcp_token
