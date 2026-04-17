@@ -46,6 +46,61 @@ def parse_args(argv=None):
         type=int,
         help="Bullpen Socket.IO port (default: read from .bullpen/config.json)",
     )
+    ticket_parser = subparsers.add_parser(
+        "ticket",
+        help="Manage Bullpen tickets through the running server",
+        description=(
+            "Create, update, and list tickets from shell-based agents. Writes use "
+            "the same Socket.IO path as the MCP tools so browser clients receive "
+            "live board updates. Place --workspace/--bp-dir before the ticket "
+            "action, for example: bullpen ticket --workspace /project create ..."
+        ),
+    )
+    ticket_parser.add_argument(
+        "--workspace",
+        dest="ticket_workspace",
+        default=None,
+        help="Path to the workspace directory (default: current directory)",
+    )
+    ticket_parser.add_argument(
+        "--bp-dir",
+        dest="ticket_bp_dir",
+        help="Path to .bullpen directory (default: --workspace/.bullpen)",
+    )
+    ticket_parser.add_argument(
+        "--host",
+        dest="ticket_host",
+        help="Bullpen Socket.IO host (default: read from .bullpen/config.json)",
+    )
+    ticket_parser.add_argument(
+        "--port",
+        dest="ticket_port",
+        type=int,
+        help="Bullpen Socket.IO port (default: read from .bullpen/config.json)",
+    )
+    ticket_subparsers = ticket_parser.add_subparsers(dest="ticket_action", required=True)
+
+    ticket_create = ticket_subparsers.add_parser("create", help="Create a ticket")
+    ticket_create.add_argument("--title", required=True, help="Ticket title")
+    ticket_create.add_argument("--description", default="", help="Markdown description")
+    ticket_create.add_argument("--description-file", help="Read markdown description from file")
+    ticket_create.add_argument("--type", default="task", choices=["task", "bug", "feature", "chore"])
+    ticket_create.add_argument("--priority", default="normal", choices=["low", "normal", "high", "urgent"])
+    ticket_create.add_argument("--status", help="Initial ticket status")
+    ticket_create.add_argument("--tag", action="append", default=[], dest="tags", help="Ticket tag; repeatable")
+
+    ticket_update = ticket_subparsers.add_parser("update", help="Update a ticket")
+    ticket_update.add_argument("--id", required=True, help="Ticket id")
+    ticket_update.add_argument("--title", help="New ticket title")
+    ticket_update.add_argument("--body", help="Full markdown body")
+    ticket_update.add_argument("--body-file", help="Read full markdown body from file")
+    ticket_update.add_argument("--type", choices=["task", "bug", "feature", "chore"])
+    ticket_update.add_argument("--priority", choices=["low", "normal", "high", "urgent"])
+    ticket_update.add_argument("--status", help="New ticket status")
+    ticket_update.add_argument("--tag", action="append", dest="tags", help="Replace tags; repeatable")
+
+    ticket_list = ticket_subparsers.add_parser("list", help="List tickets")
+    ticket_list.add_argument("--status", help="Optional status filter")
     parser.add_argument(
         "--workspace",
         default=os.getcwd(),
@@ -117,6 +172,11 @@ def parse_args(argv=None):
         args.bp_dir = args.mcp_bp_dir
         args.host = args.mcp_host
         args.port = args.mcp_port
+    elif args.command == "ticket":
+        args.workspace = args.ticket_workspace or args.workspace
+        args.bp_dir = args.ticket_bp_dir
+        args.host = args.ticket_host
+        args.port = args.ticket_port
     return args
 
 
@@ -136,6 +196,108 @@ def run_mcp_cli(args):
         return 1
 
     mcp_tools.main(bp_dir, host, port)
+    return 0
+
+
+def _read_cli_text(value, file_path, field_name):
+    """Read optional CLI text from either a flag value or a file."""
+    if value is not None and file_path:
+        raise ValueError(f"--{field_name} and --{field_name}-file are mutually exclusive")
+    if file_path:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    return value
+
+
+def _ticket_client(host, port, bp_dir):
+    from server.mcp_tools import BullpenClient
+    return BullpenClient(host, port, bp_dir=bp_dir)
+
+
+def _ticket_summary(ticket):
+    return {
+        "id": ticket.get("id"),
+        "title": ticket.get("title"),
+        "status": ticket.get("status"),
+        "type": ticket.get("type"),
+        "priority": ticket.get("priority"),
+    }
+
+
+def run_ticket_cli(args):
+    """Run server-backed ticket operations for shell-based agent sessions."""
+    import json
+
+    from server import tasks as task_store
+    from server import mcp_tools
+
+    try:
+        bp_dir, host, port = mcp_tools.resolve_runtime_args(
+            bp_dir=args.bp_dir,
+            workspace=args.workspace,
+            host=args.host,
+            port=args.port,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.ticket_action == "list":
+        tickets = task_store.list_tasks(bp_dir)
+        if args.status:
+            tickets = [ticket for ticket in tickets if ticket.get("status") == args.status]
+        print(json.dumps([_ticket_summary(ticket) for ticket in tickets], indent=2))
+        return 0
+
+    try:
+        description = _read_cli_text(
+            getattr(args, "description", None),
+            getattr(args, "description_file", None),
+            "description",
+        )
+        body = _read_cli_text(
+            getattr(args, "body", None),
+            getattr(args, "body_file", None),
+            "body",
+        )
+    except (OSError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    client = _ticket_client(host, port, bp_dir)
+    try:
+        if args.ticket_action == "create":
+            payload = {
+                "title": args.title,
+                "description": description or "",
+                "type": args.type,
+                "priority": args.priority,
+                "tags": args.tags or [],
+            }
+            if args.status:
+                payload["status"] = args.status
+            ticket, err = client.create_ticket(payload)
+        elif args.ticket_action == "update":
+            payload = {"id": args.id}
+            for key in ("title", "type", "priority", "status"):
+                value = getattr(args, key, None)
+                if value is not None:
+                    payload[key] = value
+            if body is not None:
+                payload["body"] = body
+            if args.tags is not None:
+                payload["tags"] = args.tags
+            ticket, err = client.update_ticket(payload)
+        else:
+            print(f"Error: unknown ticket action {args.ticket_action}", file=sys.stderr)
+            return 1
+    finally:
+        client.disconnect()
+
+    if err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 1
+    print(json.dumps(_ticket_summary(ticket or {}), indent=2))
     return 0
 
 
@@ -270,6 +432,8 @@ def main():
 
     if args.command == "mcp":
         sys.exit(run_mcp_cli(args))
+    if args.command == "ticket":
+        sys.exit(run_ticket_cli(args))
 
     if args.bootstrap_credentials:
         sys.exit(bootstrap_credentials())

@@ -228,6 +228,28 @@ When auth is enabled, the MCP server authenticates using a shared token that Bul
 
 The MCP server communicates exclusively over stdout. Any stray `print()` call or stdout write from a dependency will corrupt the JSON-RPC framing. Debug output must go to `sys.stderr`.
 
+### Shell Agent Fallback
+
+Codex sessions or other shell-based agents may not always receive native MCP
+tools from their host. For those sessions, use the server-backed ticket CLI
+instead of writing `.bullpen/tasks` files directly:
+
+```bash
+python3 bullpen.py ticket --workspace /path/to/project create \
+  --title "Ticket title" \
+  --status review \
+  --description "Markdown description"
+```
+
+```bash
+python3 bullpen.py ticket --workspace /path/to/project update \
+  --id ticket-id \
+  --status review
+```
+
+The ticket CLI uses the same Socket.IO-backed write path as the MCP tools, so
+the browser receives live board updates.
+
 ## Running Tests
 
 ```bash

@@ -123,6 +123,9 @@ Inside-Bullpen access must remain strict and project-scoped:
 External access should become easier without weakening those guarantees:
 
 - Prefer `bullpen mcp --workspace`.
+- For shell-based Codex sessions whose host does not expose MCP tools, use
+  `bullpen ticket --workspace <project> create/update`; it writes through the
+  same Socket.IO path and keeps browser boards live.
 - Keep write tools server-backed by default.
 - Provide explicit diagnostics instead of silent fallback behavior.
 - Do not perform implicit direct task-file writes when the server is unavailable.
@@ -176,4 +179,3 @@ python3 -m bullpen.mcp --workspace /path/to/project
 ```
 
 That would decouple external MCP configs from the source tree layout.
-

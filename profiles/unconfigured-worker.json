@@ -3,7 +3,7 @@
   "name": "Unconfigured Worker",
   "default_agent": "claude",
   "default_model": "claude-sonnet-4-6",
-  "default_activation": "manual",
+  "default_activation": "on_drop",
   "default_disposition": "review",
   "default_max_retries": 0,
   "color_hint": "gray",

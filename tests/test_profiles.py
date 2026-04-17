@@ -39,6 +39,11 @@ class TestProfiles:
         assert p is not None
         assert p["name"] == "Feature Architect"
 
+    def test_unconfigured_worker_uses_on_drop_activation(self, bp_dir):
+        p = get_profile(bp_dir, "unconfigured-worker")
+        assert p is not None
+        assert p["default_activation"] == "on_drop"
+
     def test_get_nonexistent(self, bp_dir):
         assert get_profile(bp_dir, "nonexistent") is None
 
