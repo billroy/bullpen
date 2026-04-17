@@ -13,14 +13,29 @@ def _read(rel_path: str) -> str:
 def test_toolbar_menu_contains_export_import_actions():
     text = _read("static/components/TopToolbar.js")
     assert "@click=\"toggleMainMenu\"" in text
-    assert "class=\"project-menu-item\" @click=\"onExportWorkspace\">Export Project</button>" in text
-    assert "class=\"project-menu-item\" @click=\"onExportWorkers\">Export Workers</button>" in text
-    assert "class=\"project-menu-item\" @click=\"onExportAll\">Export All</button>" in text
-    assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\">Import Project</button>" in text
-    assert "class=\"project-menu-item\" @click=\"triggerImportWorkers\">Import Workers</button>" in text
-    assert "class=\"project-menu-item\" @click=\"triggerImportAll\">Import All</button>" in text
-    assert "class=\"project-menu-item\" @click=\"onOpenGitHub\">Bullpen on GitHub</button>" in text
+    assert "class=\"project-menu-item\" @click=\"onExportWorkspace\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
+    assert "class=\"project-menu-item\" @click=\"onExportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
+    assert "class=\"project-menu-item\" @click=\"onExportAll\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
+    assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
+    assert "class=\"project-menu-item\" @click=\"triggerImportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
+    assert "class=\"project-menu-item\" @click=\"triggerImportAll\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
+    assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"github\"" in text
+    assert "<span class=\"menu-item-label\">Toggle Left Pane</span></button>" in text
+    assert "<span class=\"menu-item-label\">Export Project</span></button>" in text
+    assert "<span class=\"menu-item-label\">Export Workers</span></button>" in text
+    assert "<span class=\"menu-item-label\">Export All</span></button>" in text
+    assert "<span class=\"menu-item-label\">Import Project</span></button>" in text
+    assert "<span class=\"menu-item-label\">Import Workers</span></button>" in text
+    assert "<span class=\"menu-item-label\">Import All</span></button>" in text
+    assert "<span class=\"menu-item-label\">Bullpen on GitHub</span></button>" in text
     assert "window.open('https://github.com/billroy/bullpen', '_blank', 'noopener,noreferrer');" in text
+
+
+def test_toolbar_menu_renders_lucide_icons_after_updates():
+    text = _read("static/components/TopToolbar.js")
+    assert "mounted() {" in text
+    assert "updated() {" in text
+    assert "renderLucideIcons(this.$el);" in text
 
 
 def test_app_wires_toolbar_export_import_events():

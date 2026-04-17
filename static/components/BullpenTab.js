@@ -136,8 +136,8 @@ const BullpenTab = {
                class="worker-menu empty-slot-menu"
                :style="emptyMenuStyle"
                @click.stop>
-            <button class="worker-menu-item" @click="openLibraryForCoord(ghostCell)">Add Worker</button>
-            <button class="worker-menu-item" :disabled="!canPasteAt(ghostCell)" @click="pasteWorker(ghostCell)">Paste Worker</button>
+            <button class="worker-menu-item" @click="openLibraryForCoord(ghostCell)"><i class="menu-item-icon" data-lucide="user-plus" aria-hidden="true"></i><span class="menu-item-label">Add Worker</span></button>
+            <button class="worker-menu-item" :disabled="!canPasteAt(ghostCell)" @click="pasteWorker(ghostCell)"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Paste Worker</span></button>
           </div>
         </div>
 
@@ -417,6 +417,10 @@ const BullpenTab = {
     this._resizeObserver = new ResizeObserver(() => this.updateViewportSize());
     if (this.$refs.viewport) this._resizeObserver.observe(this.$refs.viewport);
     this.selectA1();
+    renderLucideIcons(this.$el);
+  },
+  updated() {
+    renderLucideIcons(this.$el);
   },
   beforeUnmount() {
     this._resizeObserver?.disconnect();

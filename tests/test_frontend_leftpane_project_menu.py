@@ -13,8 +13,12 @@ def _read(rel_path: str) -> str:
 def test_leftpane_projects_header_uses_menu_button_with_add_and_new_options():
     text = _read("static/components/LeftPane.js")
     assert "@click=\"toggleProjectMenu\">...</button>" in text
-    assert "class=\"project-menu-item\" @click=\"promptAddProject\">Add Project</button>" in text
-    assert "class=\"project-menu-item\" @click=\"promptNewProject\">New Project</button>" in text
+    assert "class=\"project-menu-item\" @click=\"promptAddProject\"><i class=\"menu-item-icon\" data-lucide=\"folder-open\"" in text
+    assert "class=\"project-menu-item\" @click=\"promptNewProject\"><i class=\"menu-item-icon\" data-lucide=\"folder-plus\"" in text
+    assert "class=\"project-menu-item\" @click=\"promptCloneProject\"><i class=\"menu-item-icon\" data-lucide=\"git-branch-plus\"" in text
+    assert "<span class=\"menu-item-label\">Add Project</span></button>" in text
+    assert "<span class=\"menu-item-label\">New Project</span></button>" in text
+    assert "<span class=\"menu-item-label\">Clone from Git</span></button>" in text
 
 
 def test_leftpane_empty_project_hint_tooltip_is_wired():
@@ -72,6 +76,8 @@ def test_project_menu_styles_exist():
     assert ".project-menu-tooltip::after {" in text
     assert ".project-menu {" in text
     assert ".project-menu-item {" in text
+    assert ".menu-item-icon {" in text
+    assert ".menu-item-label {" in text
 
 
 def test_project_remove_button_wiring_exists():

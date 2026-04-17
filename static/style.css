@@ -771,6 +771,9 @@ body {
 }
 
 .project-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   border: none;
   background: transparent;
   color: var(--text-primary);
@@ -783,6 +786,20 @@ body {
 
 .project-menu-item:hover {
   background: var(--bg-hover);
+}
+
+.menu-item-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.menu-item-label {
+  min-width: 0;
+  flex: 1;
 }
 
 .section-header {
@@ -2006,7 +2023,9 @@ body {
 }
 
 .worker-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   background: none;
   border: none;

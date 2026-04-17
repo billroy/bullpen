@@ -23,6 +23,10 @@ const TopToolbar = {
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
+    renderLucideIcons(this.$el);
+  },
+  updated() {
+    renderLucideIcons(this.$el);
   },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
@@ -107,14 +111,14 @@ const TopToolbar = {
         <div class="toolbar-menu-wrap" @click.stop>
           <button class="btn btn-icon" @click="toggleMainMenu" title="Main menu">&#9776;</button>
           <div v-if="showMainMenu" class="project-menu toolbar-menu">
-            <button class="project-menu-item" @click="onToggleLeftPane">Toggle Left Pane</button>
-            <button class="project-menu-item" @click="onExportWorkspace">Export Project</button>
-            <button class="project-menu-item" @click="onExportWorkers">Export Workers</button>
-            <button class="project-menu-item" @click="onExportAll">Export All</button>
-            <button class="project-menu-item" @click="triggerImportWorkspace">Import Project</button>
-            <button class="project-menu-item" @click="triggerImportWorkers">Import Workers</button>
-            <button class="project-menu-item" @click="triggerImportAll">Import All</button>
-            <button class="project-menu-item" @click="onOpenGitHub">Bullpen on GitHub</button>
+            <button class="project-menu-item" @click="onToggleLeftPane"><i class="menu-item-icon" data-lucide="panel-left" aria-hidden="true"></i><span class="menu-item-label">Toggle Left Pane</span></button>
+            <button class="project-menu-item" @click="onExportWorkspace"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Project</span></button>
+            <button class="project-menu-item" @click="onExportWorkers"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Workers</span></button>
+            <button class="project-menu-item" @click="onExportAll"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export All</span></button>
+            <button class="project-menu-item" @click="triggerImportWorkspace"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Project</span></button>
+            <button class="project-menu-item" @click="triggerImportWorkers"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Workers</span></button>
+            <button class="project-menu-item" @click="triggerImportAll"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import All</span></button>
+            <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="github" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
           </div>
           <input
             ref="workersImportInput"

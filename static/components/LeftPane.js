@@ -12,9 +12,9 @@ const LeftPane = {
               Open the menu to add or create your first project.
             </div>
             <div v-if="showProjectMenu" class="project-menu">
-              <button class="project-menu-item" @click="promptAddProject">Add Project</button>
-              <button class="project-menu-item" @click="promptNewProject">New Project</button>
-              <button class="project-menu-item" @click="promptCloneProject">Clone from Git</button>
+              <button class="project-menu-item" @click="promptAddProject"><i class="menu-item-icon" data-lucide="folder-open" aria-hidden="true"></i><span class="menu-item-label">Add Project</span></button>
+              <button class="project-menu-item" @click="promptNewProject"><i class="menu-item-icon" data-lucide="folder-plus" aria-hidden="true"></i><span class="menu-item-label">New Project</span></button>
+              <button class="project-menu-item" @click="promptCloneProject"><i class="menu-item-icon" data-lucide="git-branch-plus" aria-hidden="true"></i><span class="menu-item-label">Clone from Git</span></button>
             </div>
           </div>
         </div>

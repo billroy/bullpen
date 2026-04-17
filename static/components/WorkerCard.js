@@ -41,17 +41,17 @@ const WorkerCard = {
           </span>
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
           <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
-            <button class="worker-menu-item" @click="menuEdit">Edit</button>
-            <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun">Run</button>
-            <button v-if="isWorking" class="worker-menu-item" @click="menuWatch">Watch</button>
-            <button v-if="isWorking" class="worker-menu-item" @click="menuStop">Stop</button>
-            <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause">Pause</button>
-            <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause">Unpause</button>
-            <button class="worker-menu-item" @click="menuDuplicate">Duplicate</button>
-            <button class="worker-menu-item" @click="menuCopyWorker">Copy Worker</button>
-            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo">Copy to workspace&hellip;</button>
-            <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo">Move to workspace&hellip;</button>
-            <button class="worker-menu-item worker-menu-danger" @click="menuDelete">Delete</button>
+            <button class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
+            <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Run</span></button>
+            <button v-if="isWorking" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
+            <button v-if="isWorking" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
+            <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
+            <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
+            <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
+            <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
+            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
+            <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
+            <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete</span></button>
           </div>
         </div>
       </div>
