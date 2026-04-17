@@ -41,9 +41,13 @@ def test_grid_controls_replace_legacy_rows_cols_selector():
     bullpen = _read("static/components/BullpenTab.js")
     assert "onTabBarGridResize" not in app
     assert "gridOptions" not in app
-    assert "setLayoutMode(mode)" in bullpen
-    assert "onWidthChange(e)" in bullpen
     assert "columnWidth" in bullpen
+    # SML layout buttons and Width box were removed from the toolbar; row
+    # height is now driven solely by dragging the row resize handle.
+    assert "worker-layout-buttons" not in bullpen
+    assert "worker-width-control" not in bullpen
+    assert "setLayoutMode" not in bullpen
+    assert "onWidthChange" not in bullpen
 
 
 def test_worker_card_has_header_status_and_copy_worker_menu():

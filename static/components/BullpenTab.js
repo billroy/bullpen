@@ -29,21 +29,6 @@ const BullpenTab = {
   template: `
     <div class="bullpen-grid-container">
       <Teleport to="#worker-tab-toolbar-slot">
-        <div class="worker-layout-buttons" aria-label="Worker card layout">
-          <button v-for="mode in ['small', 'medium', 'large']"
-                  :key="mode"
-                  class="btn btn-sm worker-layout-btn"
-                  :class="{ active: layoutMode === mode }"
-                  :title="'Use ' + mode + ' worker cards'"
-                  @click="setLayoutMode(mode)">
-            {{ mode.charAt(0).toUpperCase() }}
-          </button>
-        </div>
-        <label class="worker-width-control">
-          <span>Width</span>
-          <input type="number" min="140" max="480" step="20" :value="columnWidth" @change="onWidthChange">
-          <span>px</span>
-        </label>
         <button class="btn btn-sm" @click="jumpHome">Home</button>
         <button class="btn btn-sm" @click="fitOccupied">Fit</button>
       </Teleport>
@@ -198,7 +183,7 @@ const BullpenTab = {
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : 4;
     },
     layoutMode() {
-      return ['small', 'medium', 'large'].includes(this.gridConfig.layout) ? this.gridConfig.layout : 'medium';
+      return this.rowHeight < 80 ? 'small' : 'medium';
     },
     columnWidth() {
       if (this.draggingColumnWidth !== null) {
@@ -218,7 +203,7 @@ const BullpenTab = {
       if (Number.isFinite(raw)) {
         return Math.max(32, Math.min(480, Math.round(raw)));
       }
-      return { small: 32, medium: 140, large: 280 }[this.layoutMode] || 140;
+      return 140;
     },
     cardSize() {
       return { width: this.columnWidth, height: this.rowHeight };
@@ -445,7 +430,6 @@ const BullpenTab = {
     persistGrid(partial = {}) {
       const grid = {
         ...(this.config?.grid || {}),
-        layout: this.layoutMode,
         columnWidth: this.columnWidth,
         rowHeight: this.rowHeight,
         viewportOrigin: this.viewportOrigin,
@@ -466,16 +450,6 @@ const BullpenTab = {
         width: this.columnWidth + 'px',
         height: this.rowHeight + 'px',
       };
-    },
-    setLayoutMode(mode) {
-      const rowHeight = { small: 32, medium: 140, large: 280 }[mode] || 140;
-      this.persistGrid({ layout: mode, rowHeight });
-    },
-    onWidthChange(e) {
-      const raw = Number(e.target.value);
-      const width = Math.max(140, Math.min(480, Math.round((Number.isFinite(raw) ? raw : 220) / 20) * 20));
-      e.target.value = width;
-      this.persistGrid({ columnWidth: width });
     },
     setOrigin(origin, persist = true) {
       this.viewportOrigin = this.clampedOrigin(origin);

@@ -1407,28 +1407,6 @@ body {
   display: contents;
 }
 
-.worker-layout-buttons {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.worker-layout-btn.active {
-  background: var(--accent);
-  color: white;
-}
-
-.worker-width-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.worker-width-control input {
-  width: 72px;
-}
-
 .worker-grid-viewport {
   position: relative;
   flex: 1;

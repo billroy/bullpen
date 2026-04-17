@@ -112,9 +112,13 @@ const app = createApp({
       const grid = safe.grid || {};
       const rawColumnWidth = Number(grid.columnWidth);
       const columnWidth = Number.isFinite(rawColumnWidth) ? rawColumnWidth : 220;
+      const rawRowHeight = Number(grid.rowHeight);
+      const rowHeight = Number.isFinite(rawRowHeight)
+        ? Math.max(32, Math.min(480, Math.round(rawRowHeight)))
+        : undefined;
       safe.grid = {
-        layout: ['small', 'medium', 'large'].includes(grid.layout) ? grid.layout : 'medium',
         columnWidth: Math.max(140, Math.min(480, Math.round(columnWidth / 20) * 20)),
+        rowHeight,
         viewportOrigin: {
           col: Number.isFinite(Number(grid.viewportOrigin?.col)) ? Number(grid.viewportOrigin.col) : 0,
           row: Number.isFinite(Number(grid.viewportOrigin?.row)) ? Number(grid.viewportOrigin.row) : 0,
