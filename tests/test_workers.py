@@ -808,6 +808,59 @@ class TestHandoff:
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "blocked"
 
+    def test_pass_random_direction_picks_occupied_neighbor(self, bp_dir):
+        """pass:random picks from occupied neighbor directions; isolated neighbor wins."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        # Sender at (0,0); only right neighbor (0,1) is occupied.
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "pass:random",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Only Neighbor", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random direction task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated_layout = _load_layout(bp_dir)
+        assert task["id"] in updated_layout["slots"][1]["task_queue"]
+        assert updated_layout["slots"][0]["state"] == "idle"
+        updated_task = read_task(bp_dir, task["id"])
+        assert updated_task.get("handoff_depth", 0) == 1
+
+    def test_pass_random_direction_no_neighbor_blocks(self, bp_dir):
+        """pass:random with no occupied neighbor in any direction → blocked."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "profile": "test",
+            "name": "Alone", "agent": "mock", "model": "mock-model",
+            "activation": "manual", "disposition": "pass:random",
+            "watch_column": None, "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random direction alone task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+
     def test_random_pass_by_name(self, bp_dir):
         """random:<name> passes to a worker whose name matches."""
         layout = read_json(os.path.join(bp_dir, "layout.json"))

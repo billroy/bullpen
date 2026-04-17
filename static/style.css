@@ -1515,6 +1515,21 @@ body {
   background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
+.worker-grid-row-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 6px;
+  cursor: row-resize;
+  z-index: 4;
+}
+
+.worker-grid-row-resize:hover,
+.worker-grid-row-resize.active {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
 .worker-grid-row-headers {
   position: absolute;
   left: 0;
@@ -1783,6 +1798,13 @@ body {
   transform: translateY(-50%);
 }
 
+.pass-random {
+  top: 1px;
+  right: 2px;
+  font-size: 10px;
+  font-weight: bold;
+}
+
 /* When a pass disposition has a live neighbor, the indicator becomes a
    prominent pill straddling the gutter between the two cards to visualize
    the connection. Direction is encoded in the unicode arrow character. */
@@ -1886,10 +1908,7 @@ body {
   color: white;
   font-weight: 600;
   font-size: 12px;
-  /* Round the top corners so the colored header aligns with the card's
-     rounded corners now that the card no longer uses overflow:hidden. */
-  border-top-left-radius: calc(var(--radius-lg) - 1px);
-  border-top-right-radius: calc(var(--radius-lg) - 1px);
+  border-radius: calc(var(--radius-lg) - 1px);
 }
 
 .worker-card-name {

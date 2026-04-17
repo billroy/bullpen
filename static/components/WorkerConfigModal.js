@@ -65,12 +65,11 @@ const WorkerConfigModal = {
       const r = Math.floor(idx / cols);
       const c = idx % cols;
       const occupied = (targetIdx) => targetIdx >= 0 && targetIdx < slots.length && !!slots[targetIdx];
-      return {
-        up: r > 0 && occupied((r - 1) * cols + c),
-        down: r < rows - 1 && occupied((r + 1) * cols + c),
-        left: c > 0 && occupied(r * cols + (c - 1)),
-        right: c < cols - 1 && occupied(r * cols + (c + 1)),
-      };
+      const up = r > 0 && occupied((r - 1) * cols + c);
+      const down = r < rows - 1 && occupied((r + 1) * cols + c);
+      const left = c > 0 && occupied(r * cols + (c - 1));
+      const right = c < cols - 1 && occupied(r * cols + (c + 1));
+      return { up, down, left, right, any: up || down || left || right };
     },
     showCustomModel() {
       return !this.modelOptions.includes(this.form.model);
@@ -163,6 +162,7 @@ const WorkerConfigModal = {
                   <option value="pass:down" :disabled="!passAvailability.down">\u2193 Down</option>
                   <option value="pass:left" :disabled="!passAvailability.left">\u2190 Left</option>
                   <option value="pass:right" :disabled="!passAvailability.right">\u2192 Right</option>
+                  <option value="pass:random" :disabled="!passAvailability.any">? Random Direction</option>
                 </optgroup>
                 <optgroup label="Random">
                   <option value="random:">? Random Worker</option>

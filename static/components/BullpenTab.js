@@ -22,6 +22,8 @@ const BullpenTab = {
       liveMessage: '',
       columnResize: null,
       draggingColumnWidth: null,
+      rowResize: null,
+      draggingRowHeight: null,
     };
   },
   template: `
@@ -83,6 +85,15 @@ const BullpenTab = {
                :class="{ 'is-origin': r.row === 0 }"
                :style="{ top: r.y + 'px', height: rowHeight + 'px' }">
             <span class="worker-grid-header-label">{{ r.label }}</span>
+            <div class="worker-grid-row-resize"
+                 :class="{ active: rowResize }"
+                 title="Drag to resize rows"
+                 @pointerdown="onRowResizeDown"
+                 @pointermove="onRowResizeMove"
+                 @pointerup="onRowResizeUp"
+                 @pointercancel="onRowResizeUp"
+                 @click.stop
+                 @dblclick.stop="resetRowHeight"></div>
           </div>
         </div>
         <div class="worker-grid-canvas" :style="canvasStyle"
@@ -199,6 +210,13 @@ const BullpenTab = {
     headerWidth() { return this.$options.HEADER_WIDTH; },
     headerHeight() { return this.$options.HEADER_HEIGHT; },
     rowHeight() {
+      if (this.draggingRowHeight !== null) {
+        return Math.max(32, Math.min(480, Math.round(this.draggingRowHeight)));
+      }
+      const raw = Number(this.gridConfig.rowHeight);
+      if (Number.isFinite(raw)) {
+        return Math.max(32, Math.min(480, Math.round(raw)));
+      }
       return { small: 32, medium: 140, large: 280 }[this.layoutMode] || 140;
     },
     cardSize() {
@@ -428,6 +446,7 @@ const BullpenTab = {
         ...(this.config?.grid || {}),
         layout: this.layoutMode,
         columnWidth: this.columnWidth,
+        rowHeight: this.rowHeight,
         viewportOrigin: this.viewportOrigin,
         ...partial,
       };
@@ -448,7 +467,8 @@ const BullpenTab = {
       };
     },
     setLayoutMode(mode) {
-      this.persistGrid({ layout: mode });
+      const rowHeight = { small: 32, medium: 140, large: 280 }[mode] || 140;
+      this.persistGrid({ layout: mode, rowHeight });
     },
     onWidthChange(e) {
       const raw = Number(e.target.value);
@@ -790,6 +810,40 @@ const BullpenTab = {
       this.columnResize = null;
       this.draggingColumnWidth = null;
       this.persistGrid({ columnWidth: 220 });
+    },
+    onRowResizeDown(e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      this.rowResize = {
+        startY: e.clientY,
+        startHeight: this.rowHeight,
+        pointerId: e.pointerId,
+      };
+      this.draggingRowHeight = this.rowHeight;
+    },
+    onRowResizeMove(e) {
+      if (!this.rowResize) return;
+      const dy = e.clientY - this.rowResize.startY;
+      const next = this.rowResize.startHeight + dy;
+      this.draggingRowHeight = Math.max(32, Math.min(480, Math.round(next)));
+    },
+    onRowResizeUp(e) {
+      if (!this.rowResize) return;
+      e.currentTarget.releasePointerCapture?.(this.rowResize.pointerId);
+      const dragged = this.draggingRowHeight;
+      this.rowResize = null;
+      this.draggingRowHeight = null;
+      if (dragged != null) {
+        const final = Math.max(32, Math.min(480, Math.round(dragged)));
+        this.persistGrid({ rowHeight: final });
+      }
+    },
+    resetRowHeight() {
+      this.rowResize = null;
+      this.draggingRowHeight = null;
+      this.persistGrid({ rowHeight: 140 });
     },
     onMinimapClick(e) {
       const rect = e.currentTarget.getBoundingClientRect();

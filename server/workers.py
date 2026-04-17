@@ -845,8 +845,9 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id):
     """Pass a task to the worker in the given direction (up/down/left/right).
 
-    If no worker occupies the adjacent coordinate or the target is out of bounds, the task
-    moves to Blocked.
+    Direction "random" picks uniformly from the four directions that have a worker
+    neighbor; if none exist the task moves to Blocked. If no worker occupies the
+    adjacent coordinate or the target is out of bounds, the task moves to Blocked.
     """
     config = read_json(os.path.join(bp_dir, "config.json"))
     grid = config.get("grid", {})
@@ -869,6 +870,45 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
     else:
         row = slot_index // cols
         col = slot_index % cols
+
+    if direction == "random":
+        def _neighbor_has_worker(tr, tc):
+            for i, candidate in enumerate(slots):
+                if not candidate:
+                    continue
+                try:
+                    cr = int(candidate.get("row", i // cols))
+                    cc = int(candidate.get("col", i % cols))
+                except (TypeError, ValueError):
+                    cr = i // cols
+                    cc = i % cols
+                if cr == tr and cc == tc:
+                    return True
+            return False
+
+        candidates = []
+        for d, (dr, dc) in (("up", (-1, 0)), ("down", (1, 0)), ("left", (0, -1)), ("right", (0, 1))):
+            if _neighbor_has_worker(row + dr, col + dc):
+                candidates.append(d)
+
+        if not candidates:
+            task = task_mod.read_task(bp_dir, task_id)
+            msg = "\n\n**Pass random direction: no worker in any direction.** Task moved to blocked.\n"
+            body = (task.get("body", "") if task else "") + msg
+            task_mod.update_task(bp_dir, task_id, {
+                "status": "blocked",
+                "assigned_to": "",
+                "body": body,
+            })
+            _save_layout(bp_dir, layout)
+            if socketio:
+                _ws_emit(socketio, "toast", {
+                    "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: no neighbor worker in any direction",
+                    "level": "warning",
+                }, ws_id)
+            return
+
+        direction = random.choice(candidates)
 
     if direction == "up":
         target_row, target_col = row - 1, col
