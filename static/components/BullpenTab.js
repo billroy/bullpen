@@ -876,16 +876,17 @@ const BullpenTab = {
       }
       return group;
     },
-    buildWorkerDragPayload(slotIndex) {
+    buildWorkerDragPayload(slotIndex, options = {}) {
       const source = Number(slotIndex);
+      if (options.singleton) return { source, group: [source] };
       const group = this.workerGroupSlots(source);
       return { source, group: group.length ? group : [source] };
     },
-    buildWorkerDragImage(slotIndex, pointer = {}) {
+    buildWorkerDragImage(slotIndex, pointer = {}, options = {}) {
       const source = Number(slotIndex);
       const sourceItem = this.workerItemBySlot[source];
       if (!sourceItem) return null;
-      const slots = this.workerGroupSlots(source);
+      const slots = options.singleton ? [source] : this.workerGroupSlots(source);
       if (!slots.length) return null;
       const items = slots.map(slot => this.workerItemBySlot[slot]).filter(Boolean);
       if (!items.length) return null;

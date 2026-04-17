@@ -224,8 +224,9 @@ const WorkerCard = {
       this.showExpertiseTooltip = false;
     },
     onDragStart(e) {
+      const singleton = !!e.shiftKey;
       const payload = typeof this.buildWorkerDragPayload === 'function'
-        ? this.buildWorkerDragPayload(this.slotIndex)
+        ? this.buildWorkerDragPayload(this.slotIndex, { singleton })
         : { source: this.slotIndex, group: [this.slotIndex] };
       e.dataTransfer.setData('application/x-worker-slot', String(this.slotIndex));
       try {
@@ -238,7 +239,7 @@ const WorkerCard = {
         const dragImage = this.buildWorkerDragImage(this.slotIndex, {
           clientX: e.clientX,
           clientY: e.clientY,
-        });
+        }, { singleton });
         if (dragImage?.element && typeof e.dataTransfer.setDragImage === 'function') {
           const offsetX = Number.isFinite(Number(dragImage.offsetX)) ? Number(dragImage.offsetX) : 0;
           const offsetY = Number.isFinite(Number(dragImage.offsetY)) ? Number(dragImage.offsetY) : 0;
