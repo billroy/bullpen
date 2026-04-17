@@ -86,3 +86,9 @@ def test_grid_headers_highlight_selected_cell_not_fixed_origin():
     assert ".worker-grid-row-header.is-selected {" in css
     assert ".worker-grid-column-header.is-origin {\n  color: var(--text-secondary);" in css
     assert ".worker-grid-row-header.is-origin {\n  color: var(--text-secondary);" in css
+
+
+def test_minimap_bounds_clamp_to_a1_origin():
+    tab = _read("static/components/BullpenTab.js")
+    assert "const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);" in tab
+    assert "const rowMin = Math.max(0, Math.min(b?.rowMin ?? 0, visible.rowStart) - 2);" in tab

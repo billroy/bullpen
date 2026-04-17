@@ -359,9 +359,9 @@ const BullpenTab = {
     minimapBounds() {
       const b = this.occupiedBounds;
       const visible = GridGeometry.visibleRange(this.viewportOrigin, this.viewportPx, this.cardSize);
-      const colMin = Math.min(b?.colMin ?? 0, visible.colStart) - 2;
+      const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);
       const colMax = Math.max(b?.colMax ?? 3, visible.colEnd) + 2;
-      const rowMin = Math.min(b?.rowMin ?? 0, visible.rowStart) - 2;
+      const rowMin = Math.max(0, Math.min(b?.rowMin ?? 0, visible.rowStart) - 2);
       const rowMax = Math.max(b?.rowMax ?? 4, visible.rowEnd) + 2;
       return { colMin, colMax, rowMin, rowMax };
     },
