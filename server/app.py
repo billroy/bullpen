@@ -447,7 +447,7 @@ def create_app(
             return jsonify({"error": str(e)}), e.status
 
         # Notify destination workspace clients
-        dst_ws = manager.get(data["dest_workspace_id"])
+        dst_ws = manager.get(data.get("dest_workspace_id"))
         if dst_ws:
             dst_layout = read_json(os.path.join(dst_ws.bp_dir, "layout.json"))
             dst_layout["workspaceId"] = dst_ws.id
@@ -455,7 +455,7 @@ def create_app(
 
         # On move, also notify source workspace clients
         if data.get("mode") == "move":
-            src_ws = manager.get(data["source_workspace_id"])
+            src_ws = manager.get(data.get("source_workspace_id"))
             if src_ws:
                 src_layout = read_json(os.path.join(src_ws.bp_dir, "layout.json"))
                 src_layout["workspaceId"] = src_ws.id
