@@ -173,8 +173,8 @@ const WorkerCard = {
       const idx = task.body.indexOf(marker);
       if (idx < 0) return '';
       const output = task.body.substring(idx + marker.length).trim();
-      const lines = output.split('\\n');
-      return lines.slice(-5).join('\\n');
+      const lines = output.split('\n');
+      return lines.slice(-5).join('\n');
     }
   },
   methods: {
