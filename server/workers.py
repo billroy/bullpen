@@ -24,6 +24,13 @@ from server import tasks as task_mod
 from server.model_aliases import normalize_model
 
 MAX_HANDOFF_DEPTH = 10
+# Feature switch: keep depth-limit logic available, but disable enforcement by default.
+ENFORCE_HANDOFF_CHAIN_LIMIT = False
+
+
+def _handoff_depth_limit_reached(depth):
+    """Return True when handoff depth should be blocked."""
+    return ENFORCE_HANDOFF_CHAIN_LIMIT and depth >= MAX_HANDOFF_DEPTH
 
 
 def _terminate_proc(proc):
@@ -1034,7 +1041,7 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
 
     # Hand off to the target worker
     depth = task.get("handoff_depth", 0) if task else 0
-    if depth >= MAX_HANDOFF_DEPTH:
+    if _handoff_depth_limit_reached(depth):
         msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
         body = (task.get("body", "") if task else "") + msg
         task_mod.update_task(bp_dir, task_id, {
@@ -1161,7 +1168,7 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
     task = task_mod.read_task(bp_dir, task_id)
     depth = task.get("handoff_depth", 0) if task else 0
 
-    if depth >= MAX_HANDOFF_DEPTH:
+    if _handoff_depth_limit_reached(depth):
         msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
         body = (task.get("body", "") if task else "") + msg
         task_mod.update_task(bp_dir, task_id, {
@@ -1216,7 +1223,7 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
     task = task_mod.read_task(bp_dir, task_id)
     depth = task.get("handoff_depth", 0) if task else 0
 
-    if depth >= MAX_HANDOFF_DEPTH:
+    if _handoff_depth_limit_reached(depth):
         msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
         body = (task.get("body", "") if task else "") + msg
         task_mod.update_task(bp_dir, task_id, {

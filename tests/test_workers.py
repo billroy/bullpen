@@ -6,6 +6,7 @@ import sys
 import time
 
 import pytest
+import server.workers as workers_mod
 
 from server.init import init_workspace
 from server.persistence import read_json, write_json
@@ -792,9 +793,9 @@ class TestHandoff:
         updated = read_task(bp_dir, task["id"])
         assert updated.get("handoff_depth", 0) == 1
 
-    def test_handoff_depth_exceeded(self, bp_dir):
-        """Task with handoff_depth at max → moves to blocked."""
-        from server.workers import MAX_HANDOFF_DEPTH
+    def test_handoff_depth_limit_disabled_by_default(self, bp_dir):
+        """Default mode does not block handoff chains at max depth."""
+        max_depth = workers_mod.MAX_HANDOFF_DEPTH
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{
             "row": 0, "col": 0, "profile": "test",
@@ -807,9 +808,32 @@ class TestHandoff:
 
         task = create_task(bp_dir, "Loop task")
         # Pre-set handoff_depth to max after assignment; assignment starts a fresh chain.
-        from server.tasks import update_task
         assign_task(bp_dir, 0, task["id"])
-        update_task(bp_dir, task["id"], {"handoff_depth": MAX_HANDOFF_DEPTH})
+        update_task(bp_dir, task["id"], {"handoff_depth": max_depth})
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "assigned"
+        assert updated.get("handoff_depth", 0) == max_depth + 1
+
+    def test_handoff_depth_exceeded(self, bp_dir, monkeypatch):
+        """When enabled, task with handoff_depth at max moves to blocked."""
+        monkeypatch.setattr(workers_mod, "ENFORCE_HANDOFF_CHAIN_LIMIT", True)
+        max_depth = workers_mod.MAX_HANDOFF_DEPTH
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "profile": "test",
+            "name": "Looper", "agent": "mock", "model": "mock-model",
+            "activation": "manual", "disposition": "worker:Looper",
+            "watch_column": None, "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Loop task")
+        assign_task(bp_dir, 0, task["id"])
+        update_task(bp_dir, task["id"], {"handoff_depth": max_depth})
         start_worker(bp_dir, 0)
         time.sleep(0.5)
 
@@ -817,10 +841,10 @@ class TestHandoff:
         assert updated["status"] == "blocked"
         assert "max depth" in updated["body"].lower()
 
-    def test_handoff_depth_exceeded_task_can_run_again(self, bp_dir):
+    def test_handoff_depth_exceeded_task_can_run_again(self, bp_dir, monkeypatch):
         """A task that hit max handoff depth can be reassigned and run again."""
-        from server.workers import MAX_HANDOFF_DEPTH
-        from server.tasks import update_task
+        monkeypatch.setattr(workers_mod, "ENFORCE_HANDOFF_CHAIN_LIMIT", True)
+        max_depth = workers_mod.MAX_HANDOFF_DEPTH
 
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{
@@ -836,7 +860,7 @@ class TestHandoff:
 
         # First run exceeds max depth and blocks.
         assign_task(bp_dir, 0, task["id"])
-        update_task(bp_dir, task["id"], {"handoff_depth": MAX_HANDOFF_DEPTH})
+        update_task(bp_dir, task["id"], {"handoff_depth": max_depth})
         start_worker(bp_dir, 0)
         time.sleep(0.5)
 
