@@ -97,7 +97,6 @@ const BullpenTab = {
             :multiple-workspaces="multipleWorkspaces"
             :neighbor-slots="neighborSlotsMap[item.slotIndex]"
             :layout-mode="layoutMode"
-            :card-height="rowHeight"
             :aria-rowindex="ariaRowIndex(item.coord)"
             :aria-colindex="ariaColIndex(item.coord)"
             :aria-label="'Worker ' + item.worker.name + ' at column ' + item.coord.col + ', row ' + item.coord.row"

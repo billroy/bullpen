@@ -1,5 +1,5 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small' }"
@@ -101,10 +101,7 @@ const WorkerCard = {
     workerState() { return this.worker.state || 'idle'; },
     isWorking() { return this.workerState === 'working'; },
     showOutputPane() {
-      if (this.layoutMode === 'small') return false;
-      if (this.layoutMode === 'large') return true;
-      const h = Number(this.cardHeight);
-      return Number.isFinite(h) && h >= 200;
+      return this.layoutMode !== 'small';
     },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
