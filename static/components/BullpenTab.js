@@ -259,7 +259,7 @@ const BullpenTab = {
     visibleColumns() {
       const r = this.visibleRange;
       const out = [];
-      for (let c = r.colStart; c <= r.colEnd; c++) {
+      for (let c = Math.max(0, r.colStart); c <= r.colEnd; c++) {
         out.push({
           col: c,
           label: this.colLabel(c),
@@ -271,7 +271,7 @@ const BullpenTab = {
     visibleRows() {
       const r = this.visibleRange;
       const out = [];
-      for (let rr = r.rowStart; rr <= r.rowEnd; rr++) {
+      for (let rr = Math.max(0, r.rowStart); rr <= r.rowEnd; rr++) {
         out.push({
           row: rr,
           label: this.rowLabel(rr),
