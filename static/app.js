@@ -915,6 +915,7 @@ const app = createApp({
         :ambient-presets="ambientPresets"
         :ambient-preset="currentAmbientPreset"
         :ambient-volume="currentAmbientVolume"
+        :quick-create-clear-token="quickCreateClearToken"
         @toggle-left-pane="toggleLeftPane"
         @export-workspace="exportWorkspace"
         @export-workers="exportWorkers"
@@ -925,6 +926,7 @@ const app = createApp({
         @set-theme="setTheme"
         @set-ambient-preset="setAmbientPreset"
         @set-ambient-volume="setAmbientVolume"
+        @quick-create-task="quickCreateTask"
       />
       <div class="app-body">
         <LeftPane

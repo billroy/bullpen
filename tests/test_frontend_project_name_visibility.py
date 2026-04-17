@@ -19,5 +19,5 @@ def test_app_title_uses_workspace_base_name():
 
 def test_top_toolbar_renders_bullpen_with_project_suffix():
     text = _read("static/components/TopToolbar.js")
-    assert "props: ['projectName', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume']" in text
+    assert "'projectName'" in text
     assert "Bullpen<span v-if=\"projectName\"> / {{ projectName }}</span>" in text

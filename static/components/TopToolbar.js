@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume'],
+  props: ['projectName', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'quickCreateClearToken'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -11,9 +11,15 @@ const TopToolbar = {
     'import-workers',
     'import-workspace',
     'import-all',
+    'quick-create-task',
   ],
   data() {
-    return { showMainMenu: false };
+    return { showMainMenu: false, quickCreateText: '' };
+  },
+  watch: {
+    quickCreateClearToken() {
+      this.quickCreateText = '';
+    },
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
@@ -81,6 +87,19 @@ const TopToolbar = {
       if (!file) return;
       this.$emit('import-all', file);
     },
+    submitQuickCreate() {
+      const text = this.quickCreateText.trim();
+      if (!text) return;
+      const slashIdx = text.indexOf('/');
+      const payload = slashIdx >= 0
+        ? {
+            title: text.slice(0, slashIdx).trim(),
+            description: text.slice(slashIdx + 1).trim(),
+          }
+        : { title: text, description: '' };
+      if (!payload.title) return;
+      this.$emit('quick-create-task', payload);
+    },
   },
   template: `
     <div class="top-toolbar">
@@ -122,6 +141,12 @@ const TopToolbar = {
         <span class="toolbar-name">Bullpen<span v-if="projectName"> / {{ projectName }}</span></span>
       </div>
       <div class="toolbar-center">
+        <input
+          class="quick-create-input toolbar-quick-create-input"
+          v-model="quickCreateText"
+          placeholder="Enter ticket title/description"
+          @keyup.enter="submitQuickCreate"
+        />
       </div>
       <div class="toolbar-right">
         <div class="toolbar-audio">

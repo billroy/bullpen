@@ -422,6 +422,22 @@ body {
   display: none;
 }
 
+.toolbar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  min-width: 0;
+}
+
+.toolbar-quick-create-input {
+  width: 100%;
+  max-width: 640px;
+  font-size: 14px;
+  padding: 8px 12px;
+  margin-bottom: 0;
+}
+
 .toolbar-right {
   display: flex;
   align-items: center;
