@@ -1,5 +1,5 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'canDropWorkerAtSlot', 'dropWorkerOnSlot'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small' }"
@@ -90,6 +90,7 @@ const WorkerCard = {
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
     document.removeEventListener('click', this._closeMenu);
+    this.removeDragImage();
   },
   computed: {
     passDir() {
@@ -222,9 +223,23 @@ const WorkerCard = {
       } catch (_err) { /* ignore */ }
       e.dataTransfer.effectAllowed = 'move';
       window._bullpenWorkerDrag = payload;
+      this.removeDragImage();
+      if (typeof this.buildWorkerDragImage === 'function') {
+        const dragImage = this.buildWorkerDragImage(this.slotIndex, {
+          clientX: e.clientX,
+          clientY: e.clientY,
+        });
+        if (dragImage?.element && typeof e.dataTransfer.setDragImage === 'function') {
+          const offsetX = Number.isFinite(Number(dragImage.offsetX)) ? Number(dragImage.offsetX) : 0;
+          const offsetY = Number.isFinite(Number(dragImage.offsetY)) ? Number(dragImage.offsetY) : 0;
+          e.dataTransfer.setDragImage(dragImage.element, offsetX, offsetY);
+          this._dragImageEl = dragImage.element;
+        }
+      }
     },
     onDragEnd() {
       window._bullpenWorkerDrag = null;
+      this.removeDragImage();
     },
     onHandleDragStart(dir, e) {
       if (!this.canConnect(dir)) {
@@ -416,6 +431,12 @@ const WorkerCard = {
     menuDelete() {
       this.showMenu = false;
       this.$root.removeWorker(this.slotIndex);
+    },
+    removeDragImage() {
+      if (this._dragImageEl && this._dragImageEl.parentNode) {
+        this._dragImageEl.parentNode.removeChild(this._dragImageEl);
+      }
+      this._dragImageEl = null;
     },
     updateElapsed() {
       if (!this.isWorking || !this.worker?.started_at) {

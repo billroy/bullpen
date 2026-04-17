@@ -46,9 +46,22 @@ def test_bullpen_tab_pastes_group_workers_with_relative_offsets():
 def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
     text = _read("static/components/WorkerCard.js")
     assert "'buildWorkerDragPayload'" in text
+    assert "'buildWorkerDragImage'" in text
     assert "'canDropWorkerAtSlot'" in text
     assert "'dropWorkerOnSlot'" in text
     assert "'application/x-worker-group'" in text
     assert "window._bullpenWorkerDrag = payload" in text
+    assert "this.buildWorkerDragImage(this.slotIndex" in text
+    assert "e.dataTransfer.setDragImage(dragImage.element, offsetX, offsetY)" in text
+    assert "removeDragImage()" in text
     assert "this.canDropWorkerAtSlot(source, this.slotIndex)" in text
     assert "this.dropWorkerOnSlot(dragSource, this.slotIndex)" in text
+
+
+def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():
+    text = _read("static/components/BullpenTab.js")
+    assert ":build-worker-drag-image=\"buildWorkerDragImage\"" in text
+    assert "buildWorkerDragImage(slotIndex, pointer = {})" in text
+    assert "worker-group-drag-image" in text
+    assert "workerElementForSlot(slotIndex)" in text
+    assert "cardEl ? cardEl.cloneNode(true)" in text

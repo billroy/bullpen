@@ -1751,6 +1751,33 @@ body {
   outline-offset: -2px;
 }
 
+.worker-group-drag-image {
+  position: fixed;
+  left: -10000px;
+  top: -10000px;
+  pointer-events: none;
+  z-index: 10000;
+  opacity: 0.96;
+}
+
+.worker-card-drag-clone {
+  pointer-events: none;
+  transition: none !important;
+}
+
+.worker-card-drag-clone .worker-menu {
+  display: none !important;
+}
+
+.worker-card-drag-placeholder {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-style: solid;
+}
+
 .worker-card.connect-target {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

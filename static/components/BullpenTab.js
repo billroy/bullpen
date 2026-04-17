@@ -105,6 +105,7 @@ const BullpenTab = {
             :neighbor-slots="neighborSlotsMap[item.slotIndex]"
             :layout-mode="layoutMode"
             :build-worker-drag-payload="buildWorkerDragPayload"
+            :build-worker-drag-image="buildWorkerDragImage"
             :can-drop-worker-at-slot="canDropWorkerAtSlot"
             :drop-worker-on-slot="dropWorkerOnSlot"
             :aria-rowindex="ariaRowIndex(item.coord)"
@@ -837,6 +838,68 @@ const BullpenTab = {
       const source = Number(slotIndex);
       const group = this.workerGroupSlots(source);
       return { source, group: group.length ? group : [source] };
+    },
+    buildWorkerDragImage(slotIndex, pointer = {}) {
+      const source = Number(slotIndex);
+      const sourceItem = this.workerItemBySlot[source];
+      if (!sourceItem) return null;
+      const slots = this.workerGroupSlots(source);
+      if (!slots.length) return null;
+      const items = slots.map(slot => this.workerItemBySlot[slot]).filter(Boolean);
+      if (!items.length) return null;
+      const cols = items.map(item => item.coord.col);
+      const rows = items.map(item => item.coord.row);
+      const minCol = Math.min(...cols);
+      const maxCol = Math.max(...cols);
+      const minRow = Math.min(...rows);
+      const maxRow = Math.max(...rows);
+      const width = (maxCol - minCol + 1) * this.columnWidth;
+      const height = (maxRow - minRow + 1) * this.rowHeight;
+      const root = document.createElement('div');
+      root.className = 'worker-group-drag-image';
+      root.style.width = `${width}px`;
+      root.style.height = `${height}px`;
+      const sourceDx = (sourceItem.coord.col - minCol) * this.columnWidth;
+      const sourceDy = (sourceItem.coord.row - minRow) * this.rowHeight;
+      for (const item of items) {
+        const slot = item.slotIndex;
+        const left = (item.coord.col - minCol) * this.columnWidth;
+        const top = (item.coord.row - minRow) * this.rowHeight;
+        const cardEl = this.workerElementForSlot(slot);
+        const node = cardEl ? cardEl.cloneNode(true) : document.createElement('div');
+        if (!cardEl) {
+          node.className = 'worker-card worker-card-drag-placeholder';
+          node.textContent = item.worker?.name || `Slot ${slot + 1}`;
+        }
+        node.classList.add('worker-card-drag-clone');
+        node.style.position = 'absolute';
+        node.style.left = `${left}px`;
+        node.style.top = `${top}px`;
+        node.style.width = `${this.columnWidth}px`;
+        node.style.height = `${this.rowHeight}px`;
+        node.style.margin = '0';
+        root.appendChild(node);
+      }
+      document.body.appendChild(root);
+      const sourceEl = this.workerElementForSlot(source);
+      let pointerDx = this.columnWidth / 2;
+      let pointerDy = this.rowHeight / 2;
+      if (sourceEl && Number.isFinite(Number(pointer.clientX)) && Number.isFinite(Number(pointer.clientY))) {
+        const rect = sourceEl.getBoundingClientRect();
+        pointerDx = Math.max(0, Math.min(rect.width, Number(pointer.clientX) - rect.left));
+        pointerDy = Math.max(0, Math.min(rect.height, Number(pointer.clientY) - rect.top));
+      }
+      return {
+        element: root,
+        offsetX: sourceDx + pointerDx,
+        offsetY: sourceDy + pointerDy,
+      };
+    },
+    workerElementForSlot(slotIndex) {
+      const ref = this.workerRefs?.[slotIndex];
+      if (!ref) return null;
+      if (ref.$el) return ref.$el;
+      return typeof ref.getBoundingClientRect === 'function' ? ref : null;
     },
     _workerDragSource(e) {
       const raw = e?.dataTransfer?.getData?.('application/x-worker-slot');
