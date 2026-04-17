@@ -29,6 +29,7 @@ from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_coord, validate_worker_configure,
     validate_payload_size, validate_config_update, validate_worker_move,
+    validate_worker_move_group, validate_worker_paste_group,
     validate_layout_update, validate_team_name,
 )
 
@@ -176,6 +177,44 @@ def _nearest_empty_coord(layout, start_col, start_row, ignore_slot=None, cols=4)
     while _coord_occupied(layout, {"col": col, "row": row}, ignore_slot, cols) is not None:
         col += 1
     return {"col": col, "row": row}
+
+
+def _build_pasted_worker(source, coord, existing_names):
+    base_name = str(source.get("name") or "Worker")
+    candidate = base_name
+    suffix = 2
+    while candidate in existing_names:
+        candidate = f"{base_name} {suffix}"
+        suffix += 1
+    existing_names.add(candidate)
+
+    worker = {
+        "row": coord["row"],
+        "col": coord["col"],
+        "profile": source.get("profile"),
+        "name": candidate,
+        "agent": source.get("agent", "claude"),
+        "model": normalize_model(source.get("agent", "claude"), source.get("model", "claude-sonnet-4-6")),
+        "activation": source.get("activation", "on_drop"),
+        "disposition": source.get("disposition", "review"),
+        "watch_column": source.get("watch_column"),
+        "expertise_prompt": source.get("expertise_prompt", ""),
+        "max_retries": source.get("max_retries", 1),
+        "use_worktree": bool(source.get("use_worktree", False)),
+        "auto_commit": bool(source.get("auto_commit", False)),
+        "auto_pr": bool(source.get("auto_pr", False)),
+        "trigger_time": source.get("trigger_time"),
+        "trigger_interval_minutes": source.get("trigger_interval_minutes"),
+        "trigger_every_day": bool(source.get("trigger_every_day", False)),
+        "last_trigger_time": None,
+        "paused": False,
+        "task_queue": [],
+        "state": "idle",
+    }
+    for key in ("icon", "color", "avatar"):
+        if key in source:
+            worker[key] = source[key]
+    return worker
 
 
 def _write_runtime_mcp_config(app, bp_dir):
@@ -464,6 +503,36 @@ def register_events(socketio, app):
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
 
+    @socketio.on("worker:move_group")
+    @with_lock
+    def on_worker_move_group(data):
+        ws_id, bp_dir = _resolve(data)
+        moves = validate_worker_move_group(data)
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+
+        moving_slots = {move["slot"] for move in moves}
+        for slot in moving_slots:
+            if slot >= len(layout["slots"]) or not layout["slots"][slot]:
+                emit("error", {"message": "worker:move_group requires occupied source slots"})
+                return
+
+        for move in moves:
+            occupied_slot = _coord_occupied(layout, move["to_coord"], cols=cols)
+            if occupied_slot is not None and occupied_slot not in moving_slots:
+                emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
+                return
+
+        for move in moves:
+            slot = move["slot"]
+            coord = move["to_coord"]
+            layout["slots"][slot]["col"] = coord["col"]
+            layout["slots"][slot]["row"] = coord["row"]
+
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+
     @socketio.on("worker:duplicate")
     @with_lock
     def on_worker_duplicate(data):
@@ -548,41 +617,32 @@ def register_events(socketio, app):
 
         target = _first_empty_slot(layout)
         existing_names = {s["name"] for s in layout["slots"] if s and s.get("name")}
-        base_name = str(source.get("name") or "Worker")
-        candidate = base_name
-        suffix = 2
-        while candidate in existing_names:
-            candidate = f"{base_name} {suffix}"
-            suffix += 1
-
-        worker = {
-            "row": coord["row"],
-            "col": coord["col"],
-            "profile": source.get("profile"),
-            "name": candidate,
-            "agent": source.get("agent", "claude"),
-            "model": normalize_model(source.get("agent", "claude"), source.get("model", "claude-sonnet-4-6")),
-            "activation": source.get("activation", "on_drop"),
-            "disposition": source.get("disposition", "review"),
-            "watch_column": source.get("watch_column"),
-            "expertise_prompt": source.get("expertise_prompt", ""),
-            "max_retries": source.get("max_retries", 1),
-            "use_worktree": bool(source.get("use_worktree", False)),
-            "auto_commit": bool(source.get("auto_commit", False)),
-            "auto_pr": bool(source.get("auto_pr", False)),
-            "trigger_time": source.get("trigger_time"),
-            "trigger_interval_minutes": source.get("trigger_interval_minutes"),
-            "trigger_every_day": bool(source.get("trigger_every_day", False)),
-            "last_trigger_time": None,
-            "paused": False,
-            "task_queue": [],
-            "state": "idle",
-        }
-        for key in ("icon", "color", "avatar"):
-            if key in source:
-                worker[key] = source[key]
-
+        worker = _build_pasted_worker(source, coord, existing_names)
         layout["slots"][target] = worker
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+
+    @socketio.on("worker:paste_group")
+    @with_lock
+    def on_worker_paste_group(data):
+        ws_id, bp_dir = _resolve(data)
+        items = validate_worker_paste_group(data)
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+
+        for item in items:
+            occupied_slot = _coord_occupied(layout, item["coord"], cols=cols)
+            if occupied_slot is not None:
+                emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
+                return
+
+        existing_names = {s["name"] for s in layout["slots"] if s and s.get("name")}
+        workers_to_add = [_build_pasted_worker(item["worker"], item["coord"], existing_names) for item in items]
+        for worker in workers_to_add:
+            target = _first_empty_slot(layout)
+            layout["slots"][target] = worker
+
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
 

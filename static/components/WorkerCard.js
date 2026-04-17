@@ -1,11 +1,12 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'canDropWorkerAtSlot', 'dropWorkerOnSlot'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small' }"
          :style="layoutMode === 'small' ? { background: agentColor } : null"
          draggable="true"
          @dragstart="onDragStart"
+         @dragend="onDragEnd"
          @dragover="onDragOver"
          @dragleave="onDragLeave"
          @drop.prevent="onDrop"
@@ -212,8 +213,18 @@ const WorkerCard = {
       this.hoveredHandle = null;
     },
     onDragStart(e) {
+      const payload = typeof this.buildWorkerDragPayload === 'function'
+        ? this.buildWorkerDragPayload(this.slotIndex)
+        : { source: this.slotIndex, group: [this.slotIndex] };
       e.dataTransfer.setData('application/x-worker-slot', String(this.slotIndex));
+      try {
+        e.dataTransfer.setData('application/x-worker-group', JSON.stringify(payload));
+      } catch (_err) { /* ignore */ }
       e.dataTransfer.effectAllowed = 'move';
+      window._bullpenWorkerDrag = payload;
+    },
+    onDragEnd() {
+      window._bullpenWorkerDrag = null;
     },
     onHandleDragStart(dir, e) {
       if (!this.canConnect(dir)) {
@@ -250,8 +261,25 @@ const WorkerCard = {
       if (
         types.includes(window.BULLPEN_TASK_DND_MIME) ||
         types.includes('text/plain') ||
-        types.includes('application/x-worker-slot')
+        types.includes('application/x-worker-slot') ||
+        types.includes('application/x-worker-group')
       ) {
+        if (types.includes('application/x-worker-slot') || types.includes('application/x-worker-group')) {
+          const drag = window._bullpenWorkerDrag;
+          const source = Number(drag?.source);
+          const canDrop = Number.isInteger(source)
+            ? (typeof this.canDropWorkerAtSlot === 'function' ? !!this.canDropWorkerAtSlot(source, this.slotIndex) : true)
+            : false;
+          if (canDrop) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            this.dragOver = true;
+          } else {
+            e.dataTransfer.dropEffect = 'none';
+            this.dragOver = false;
+          }
+          return;
+        }
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         this.dragOver = true;
@@ -275,9 +303,14 @@ const WorkerCard = {
         return;
       }
       const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
-      if (fromSlot !== '' && Number(fromSlot) !== this.slotIndex) {
+      const dragSource = fromSlot !== '' ? Number(fromSlot) : Number(window._bullpenWorkerDrag?.source);
+      if (Number.isInteger(dragSource)) {
         e.stopPropagation();
-        this.$root.moveWorker(Number(fromSlot), this.slotIndex);
+        if (typeof this.dropWorkerOnSlot === 'function') {
+          this.dropWorkerOnSlot(dragSource, this.slotIndex);
+        } else if (dragSource !== this.slotIndex) {
+          this.$root.moveWorker(dragSource, this.slotIndex);
+        }
         return;
       }
       const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');

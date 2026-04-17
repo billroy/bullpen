@@ -280,6 +280,66 @@ def validate_worker_move(data, max_slots=200):
     return from_slot, to_slot, to_coord
 
 
+def validate_worker_move_group(data, max_slots=200, max_moves=200):
+    """Validate worker:move_group payload. Returns sanitized move list."""
+    validate_payload_size(data)
+    moves = data.get("moves")
+    if not isinstance(moves, list) or not moves:
+        raise ValidationError("worker:move_group requires non-empty moves")
+    if len(moves) > max_moves:
+        raise ValidationError(f"worker:move_group moves exceeds max length ({len(moves)} > {max_moves})")
+
+    seen_slots = set()
+    seen_coords = set()
+    sanitized = []
+    for idx, move in enumerate(moves):
+        if not isinstance(move, dict):
+            raise ValidationError(f"moves[{idx}] must be an object")
+        slot = _int(move.get("slot"), f"moves[{idx}].slot", min_val=0, max_val=max_slots - 1)
+        if slot is None:
+            raise ValidationError(f"moves[{idx}] requires slot")
+        to_coord = validate_coord(move, "to_coord", required=True)
+        coord_key = (to_coord["col"], to_coord["row"])
+        if slot in seen_slots:
+            raise ValidationError(f"Duplicate slot in moves: {slot}")
+        if coord_key in seen_coords:
+            raise ValidationError(
+                f"Duplicate target coordinate in moves: ({to_coord['col']}, {to_coord['row']})"
+            )
+        seen_slots.add(slot)
+        seen_coords.add(coord_key)
+        sanitized.append({"slot": slot, "to_coord": to_coord})
+    return sanitized
+
+
+def validate_worker_paste_group(data, max_items=200):
+    """Validate worker:paste_group payload. Returns sanitized item list."""
+    validate_payload_size(data)
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValidationError("worker:paste_group requires non-empty items")
+    if len(items) > max_items:
+        raise ValidationError(f"worker:paste_group items exceeds max length ({len(items)} > {max_items})")
+
+    seen_coords = set()
+    sanitized = []
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValidationError(f"items[{idx}] must be an object")
+        coord = validate_coord(item, "coord", required=True)
+        worker = item.get("worker")
+        if not isinstance(worker, dict):
+            raise ValidationError(f"items[{idx}].worker must be an object")
+        coord_key = (coord["col"], coord["row"])
+        if coord_key in seen_coords:
+            raise ValidationError(
+                f"Duplicate target coordinate in items: ({coord['col']}, {coord['row']})"
+            )
+        seen_coords.add(coord_key)
+        sanitized.append({"coord": coord, "worker": worker})
+    return sanitized
+
+
 def validate_layout_update(data):
     """Validate layout:update payload. Returns validated grid dict or None."""
     validate_payload_size(data)

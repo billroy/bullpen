@@ -329,6 +329,41 @@ class TestWorkerEvents:
         assert err is not None
         assert err["code"] == "coordinate_collision"
 
+    def test_move_worker_group_updates_all_members_atomically(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:add", {"coord": {"col": 1, "row": 0}, "profile": "code-reviewer"})
+        c.get_received()
+
+        c.emit("worker:move_group", {"moves": [
+            {"slot": 0, "to_coord": {"col": 4, "row": 2}},
+            {"slot": 1, "to_coord": {"col": 5, "row": 2}},
+        ]})
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        assert layout["slots"][0]["col"] == 4
+        assert layout["slots"][0]["row"] == 2
+        assert layout["slots"][1]["col"] == 5
+        assert layout["slots"][1]["row"] == 2
+
+    def test_move_worker_group_rejects_external_coordinate_collision(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:add", {"coord": {"col": 1, "row": 0}, "profile": "code-reviewer"})
+        c.get_received()
+        c.emit("worker:add", {"coord": {"col": 6, "row": 2}, "profile": "test-writer"})
+        c.get_received()
+
+        c.emit("worker:move_group", {"moves": [
+            {"slot": 0, "to_coord": {"col": 5, "row": 2}},
+            {"slot": 1, "to_coord": {"col": 6, "row": 2}},
+        ]})
+        err = get_event(c, "error")
+        assert err is not None
+        assert err["code"] == "coordinate_collision"
+
     def test_paste_worker_rejects_occupied_coord_without_replace(self, client):
         c, _ = client
         c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
@@ -380,6 +415,55 @@ class TestWorkerEvents:
         assert worker["task_queue"] == []
         assert worker["state"] == "idle"
         assert "api_key" not in worker
+
+    def test_paste_worker_group_pastes_all_members(self, client):
+        c, _ = client
+        c.emit("worker:paste_group", {"items": [
+            {"coord": {"col": 10, "row": 10}, "worker": {
+                "name": "Copy",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+            }},
+            {"coord": {"col": 11, "row": 10}, "worker": {
+                "name": "Copy",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+            }},
+        ]})
+        layout = get_event(c, "layout:updated")
+        workers = [s for s in layout["slots"] if s and s.get("row") == 10 and s.get("col") in (10, 11)]
+        assert len(workers) == 2
+        names = sorted(w["name"] for w in workers)
+        assert names[0] == "Copy"
+        assert names[1].startswith("Copy")
+
+    def test_paste_worker_group_rejects_on_any_collision(self, client):
+        c, app = client
+        c.emit("worker:add", {"coord": {"col": 1, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:paste_group", {"items": [
+            {"coord": {"col": 0, "row": 0}, "worker": {
+                "name": "A",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+            }},
+            {"coord": {"col": 1, "row": 0}, "worker": {
+                "name": "B",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+            }},
+        ]})
+        err = get_event(c, "error")
+        assert err is not None
+        assert err["code"] == "coordinate_collision"
+
+        from server.persistence import read_json
+        layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert len([s for s in layout["slots"] if s]) == 1
 
     def test_configure_worker(self, client):
         c, _ = client

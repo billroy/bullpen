@@ -573,7 +573,13 @@ const app = createApp({
       else payload.to = to;
       socket.emit('worker:move', _wsData(payload));
     }
+    function moveWorkerGroup(moves) {
+      socket.emit('worker:move_group', _wsData({ moves }));
+    }
     function pasteWorkerConfig({ coord, worker, replace }) { socket.emit('worker:paste', _wsData({ coord, worker, replace: !!replace })); }
+    function pasteWorkerGroup(items) {
+      socket.emit('worker:paste_group', _wsData({ items }));
+    }
     function duplicateWorker(slot) { socket.emit('worker:duplicate', _wsData({ slot })); }
     function openTransfer({ slot, mode }) {
       transferSlot.value = slot;
@@ -883,7 +889,7 @@ const app = createApp({
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
-      moveTask, selectTask, addWorker, removeWorker, moveWorker, pasteWorkerConfig,
+      moveTask, selectTask, addWorker, removeWorker, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, multipleWorkspaces,

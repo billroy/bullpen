@@ -104,6 +104,9 @@ const BullpenTab = {
             :multiple-workspaces="multipleWorkspaces"
             :neighbor-slots="neighborSlotsMap[item.slotIndex]"
             :layout-mode="layoutMode"
+            :build-worker-drag-payload="buildWorkerDragPayload"
+            :can-drop-worker-at-slot="canDropWorkerAtSlot"
+            :drop-worker-on-slot="dropWorkerOnSlot"
             :aria-rowindex="ariaRowIndex(item.coord)"
             :aria-colindex="ariaColIndex(item.coord)"
             :aria-label="'Worker ' + item.worker.name + ' at column ' + item.coord.col + ', row ' + item.coord.row"
@@ -125,7 +128,7 @@ const BullpenTab = {
                :aria-colindex="ariaColIndex(ghostCell)"
                :aria-label="'Empty cell at column ' + ghostCell.col + ', row ' + ghostCell.row"
                @click.stop="openEmptyMenu(ghostCell, $event)"
-               @dragover.prevent
+               @dragover="onEmptyDragOver($event, ghostCell)"
                @drop.stop.prevent="onDropOnEmpty($event, ghostCell)">
             <button class="empty-slot-menu-btn" title="Empty cell actions" @click.stop="openEmptyMenu(ghostCell, $event)">&hellip;</button>
           </div>
@@ -226,6 +229,11 @@ const BullpenTab = {
         if (!worker) return null;
         return { worker, slotIndex, coord: this.coordForSlot(worker, slotIndex) };
       }).filter(Boolean);
+    },
+    workerItemBySlot() {
+      const map = {};
+      for (const item of this.workerItems) map[item.slotIndex] = item;
+      return map;
     },
     occupiedMap() {
       const map = {};
@@ -571,7 +579,7 @@ const BullpenTab = {
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'v') {
         if (!this.selectedCell || !this.clipboardWorker || !this.isWritableCoord(this.selectedCell)) return;
         e.preventDefault();
-        this.pasteWorker(this.selectedCell);
+        this.pasteWorker(this.selectedCell, { allowReplaceSingle: true });
         return;
       }
       if (!inTextInput && !e.metaKey && !e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
@@ -694,9 +702,7 @@ const BullpenTab = {
       this.$emit('add-worker', { coord: this.selectedAddCoord, profile: profileId });
       this.closeLibrary();
     },
-    copyWorker(slot) {
-      const worker = this.layout?.slots?.[slot];
-      if (!worker) return;
+    workerFieldsForClipboard(worker) {
       const fields = ['profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt',
         'max_retries', 'use_worktree', 'auto_commit', 'auto_pr', 'trigger_time', 'trigger_interval_minutes',
         'trigger_every_day', 'icon', 'color', 'avatar'];
@@ -704,56 +710,237 @@ const BullpenTab = {
       for (const key of fields) {
         if (worker[key] !== undefined) copy[key] = worker[key];
       }
-      this.clipboardWorker = copy;
-      this.liveMessage = `Copied worker ${worker.name}`;
+      return copy;
+    },
+    passTargetsForSlot(slotIndex) {
+      const item = this.workerItemBySlot[slotIndex];
+      if (!item) return [];
+      const disposition = String(item.worker?.disposition || '');
+      if (!disposition.startsWith('pass:')) return [];
+      const passDir = disposition.slice(5);
+      const neighbors = this.neighborSlotsMap[slotIndex] || {};
+      if (['up', 'down', 'left', 'right'].includes(passDir)) {
+        const target = neighbors[passDir];
+        return Number.isInteger(target) ? [target] : [];
+      }
+      if (passDir === 'random') {
+        const out = [];
+        for (const dir of ['up', 'down', 'left', 'right']) {
+          const target = neighbors[dir];
+          if (Number.isInteger(target) && !out.includes(target)) out.push(target);
+        }
+        return out;
+      }
+      return [];
+    },
+    workerGroupSlots(startSlot) {
+      const root = Number(startSlot);
+      if (!Number.isInteger(root) || !this.workerItemBySlot[root]) return [];
+      const visited = new Set();
+      const stack = [root];
+      const group = [];
+      while (stack.length) {
+        const slot = stack.pop();
+        if (visited.has(slot)) continue;
+        if (!this.workerItemBySlot[slot]) continue;
+        visited.add(slot);
+        group.push(slot);
+        for (const next of this.passTargetsForSlot(slot)) {
+          if (!visited.has(next)) stack.push(next);
+        }
+      }
+      return group;
+    },
+    buildWorkerDragPayload(slotIndex) {
+      const source = Number(slotIndex);
+      const group = this.workerGroupSlots(source);
+      return { source, group: group.length ? group : [source] };
+    },
+    _workerDragSource(e) {
+      const raw = e?.dataTransfer?.getData?.('application/x-worker-slot');
+      if (raw !== '' && raw != null) {
+        const source = Number(raw);
+        if (Number.isInteger(source)) return source;
+      }
+      const fallback = Number(window._bullpenWorkerDrag?.source);
+      return Number.isInteger(fallback) ? fallback : null;
+    },
+    _isWorkerDrag(e) {
+      const types = Array.from(e?.dataTransfer?.types || []);
+      return types.includes('application/x-worker-slot') || types.includes('application/x-worker-group');
+    },
+    buildGroupMovePlan(sourceSlot, destinationCoord) {
+      const source = Number(sourceSlot);
+      if (!Number.isInteger(source) || !destinationCoord || !this.isWritableCoord(destinationCoord)) return null;
+      const anchor = this.workerItemBySlot[source];
+      if (!anchor) return null;
+      const slots = this.workerGroupSlots(source);
+      if (!slots.length) return null;
+      const groupSet = new Set(slots);
+      const deltaCol = destinationCoord.col - anchor.coord.col;
+      const deltaRow = destinationCoord.row - anchor.coord.row;
+      const coordKeys = new Set();
+      const moves = [];
+      for (const slot of slots) {
+        const item = this.workerItemBySlot[slot];
+        if (!item) return null;
+        const target = { col: item.coord.col + deltaCol, row: item.coord.row + deltaRow };
+        if (!this.isWritableCoord(target)) return null;
+        const key = GridGeometry.coordKey(target.col, target.row);
+        if (coordKeys.has(key)) return null;
+        coordKeys.add(key);
+        const occupied = this.itemAtCoord(target);
+        if (occupied && !groupSet.has(occupied.slotIndex)) return null;
+        moves.push({ slot, to_coord: target });
+      }
+      return { source, slots, moves };
+    },
+    canDropWorkerAtSlot(sourceSlot, targetSlot) {
+      const target = this.workerItemBySlot[targetSlot];
+      if (!target) return false;
+      return !!this.buildGroupMovePlan(sourceSlot, target.coord);
+    },
+    canDropWorkerAtCoord(sourceSlot, coord) {
+      return !!this.buildGroupMovePlan(sourceSlot, coord);
+    },
+    dropWorkerOnSlot(sourceSlot, targetSlot) {
+      const target = this.workerItemBySlot[targetSlot];
+      if (!target) return;
+      this.moveWorkerGroupToCoord(sourceSlot, target.coord);
+    },
+    moveWorkerGroupToCoord(sourceSlot, coord) {
+      const plan = this.buildGroupMovePlan(sourceSlot, coord);
+      if (!plan || !plan.moves.length) return false;
+      const changed = plan.moves.some(move => {
+        const item = this.workerItemBySlot[move.slot];
+        return item && (item.coord.col !== move.to_coord.col || item.coord.row !== move.to_coord.row);
+      });
+      if (!changed) return true;
+      if (typeof this.$root.moveWorkerGroup === 'function') {
+        this.$root.moveWorkerGroup(plan.moves);
+      } else if (plan.moves.length === 1) {
+        this.$root.moveWorker(plan.moves[0].slot, plan.moves[0].to_coord);
+      } else {
+        for (const move of plan.moves) this.$root.moveWorker(move.slot, move.to_coord);
+      }
+      this.hoveredCoord = null;
+      this.emptyMenuCoord = null;
+      return true;
+    },
+    copyWorker(slot) {
+      const source = this.workerItemBySlot[slot];
+      if (!source) return;
+      const workers = this.workerGroupSlots(slot).map(memberSlot => {
+        const item = this.workerItemBySlot[memberSlot];
+        if (!item) return null;
+        return {
+          offset: {
+            col: item.coord.col - source.coord.col,
+            row: item.coord.row - source.coord.row,
+          },
+          worker: this.workerFieldsForClipboard(item.worker),
+        };
+      }).filter(Boolean);
+      if (!workers.length) return;
+      this.clipboardWorker = {
+        anchor: { ...source.coord },
+        workers,
+      };
+      this.liveMessage = workers.length > 1
+        ? `Copied worker group (${workers.length}) from ${source.worker.name}`
+        : `Copied worker ${source.worker.name}`;
+    },
+    clipboardTargetsForCoord(coord) {
+      if (!this.clipboardWorker || !Array.isArray(this.clipboardWorker.workers)) return [];
+      return this.clipboardWorker.workers.map(entry => ({
+        coord: {
+          col: coord.col + Number(entry?.offset?.col || 0),
+          row: coord.row + Number(entry?.offset?.row || 0),
+        },
+        worker: entry?.worker || {},
+      }));
     },
     canPasteAt(coord) {
-      return !!(this.clipboardWorker && coord && !this.itemAtCoord(coord) && this.isWritableCoord(coord));
+      if (!this.clipboardWorker || !coord || !this.isWritableCoord(coord)) return false;
+      const targets = this.clipboardTargetsForCoord(coord);
+      if (!targets.length) return false;
+      const seen = new Set();
+      for (const target of targets) {
+        if (!this.isWritableCoord(target.coord)) return false;
+        const key = GridGeometry.coordKey(target.coord.col, target.coord.row);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        if (this.itemAtCoord(target.coord)) return false;
+      }
+      return true;
     },
-    pasteWorker(coord) {
+    pasteWorker(coord, options = {}) {
       if (!this.clipboardWorker || !coord || !this.isWritableCoord(coord)) return;
-      const existing = this.itemAtCoord(coord);
-      if (existing) {
-        const existingName = existing.worker?.name || `Slot ${existing.slotIndex + 1}`;
-        const pasteName = this.clipboardWorker?.name || 'pasted worker';
-        if (!confirm(`Replace worker "${existingName}" with "${pasteName}"?`)) return;
-        this.$root.pasteWorkerConfig({ coord, worker: this.clipboardWorker, replace: true });
+      const targets = this.clipboardTargetsForCoord(coord);
+      if (!targets.length) return;
+      const single = targets.length === 1 ? targets[0] : null;
+      if (single && options.allowReplaceSingle) {
+        const existing = this.itemAtCoord(single.coord);
+        if (existing) {
+          const existingName = existing.worker?.name || `Slot ${existing.slotIndex + 1}`;
+          const pasteName = single.worker?.name || 'pasted worker';
+          if (!confirm(`Replace worker "${existingName}" with "${pasteName}"?`)) return;
+          this.$root.pasteWorkerConfig({ coord: single.coord, worker: single.worker, replace: true });
+          this.emptyMenuCoord = null;
+          return;
+        }
+      }
+      const blocked = targets.find(target => !this.isWritableCoord(target.coord) || this.itemAtCoord(target.coord));
+      if (blocked) {
+        this.liveMessage = 'Cannot paste worker group here';
+        return;
+      }
+      if (targets.length === 1) {
+        this.$root.pasteWorkerConfig({ coord: targets[0].coord, worker: targets[0].worker });
+      } else if (typeof this.$root.pasteWorkerGroup === 'function') {
+        this.$root.pasteWorkerGroup(targets);
       } else {
-        this.$root.pasteWorkerConfig({ coord, worker: this.clipboardWorker });
+        for (const target of targets) {
+          this.$root.pasteWorkerConfig({ coord: target.coord, worker: target.worker });
+        }
       }
       this.emptyMenuCoord = null;
     },
-    onDropOnEmpty(e, coord) {
-      const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
-      if (fromSlot !== '') {
-        this.$root.moveWorker(Number(fromSlot), coord);
+    onEmptyDragOver(e, coord) {
+      if (!this._isWorkerDrag(e)) return;
+      const source = this._workerDragSource(e);
+      if (Number.isInteger(source) && this.canDropWorkerAtCoord(source, coord)) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      } else {
+        e.dataTransfer.dropEffect = 'none';
       }
     },
+    onDropOnEmpty(e, coord) {
+      const source = this._workerDragSource(e);
+      if (!Number.isInteger(source)) return;
+      this.moveWorkerGroupToCoord(source, coord);
+    },
     onCanvasDragOver(e) {
-      if (!e.dataTransfer.types.includes('application/x-worker-slot')) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      if (!this._isWorkerDrag(e)) return;
+      const source = this._workerDragSource(e);
       const coord = this.coordFromEvent(e);
-      if (coord && this.isWritableCoord(coord) && !this.itemAtCoord(coord)) {
+      if (Number.isInteger(source) && coord && this.canDropWorkerAtCoord(source, coord)) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
         this.hoveredCoord = coord;
       } else {
+        e.dataTransfer.dropEffect = 'none';
         this.hoveredCoord = null;
       }
     },
     onCanvasDrop(e) {
-      const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
-      if (fromSlot === '') return;
-      const src = Number(fromSlot);
+      if (!this._isWorkerDrag(e)) return;
+      const src = this._workerDragSource(e);
       const coord = this.coordFromEvent(e);
       this.hoveredCoord = null;
-      if (!coord || !this.isWritableCoord(coord)) return;
-      const existing = this.itemAtCoord(coord);
-      if (existing) {
-        if (existing.slotIndex === src) return;
-        this.$root.moveWorker(src, existing.slotIndex);
-        return;
-      }
-      this.$root.moveWorker(src, coord);
+      if (!Number.isInteger(src) || !coord) return;
+      this.moveWorkerGroupToCoord(src, coord);
     },
     colLabel(col) {
       if (!Number.isFinite(col)) return '';
