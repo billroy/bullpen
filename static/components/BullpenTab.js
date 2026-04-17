@@ -12,6 +12,7 @@ const BullpenTab = {
       hoveredCoord: null,
       selectedCell: null,
       dragOverCoord: null,
+      dropTargetCoords: [],
       emptyMenuCoord: null,
       emptyMenuPos: null,
       clipboardWorker: null,
@@ -120,6 +121,12 @@ const BullpenTab = {
             @transfer="$emit('transfer-worker', $event)"
             @copy-worker="copyWorker"
           />
+
+          <div v-for="cell in visibleDropTargetOverlays"
+               :key="'drop-' + cell.col + '-' + cell.row"
+               class="worker-grid-drop-target-overlay"
+               :style="cell.style"
+               aria-hidden="true"></div>
 
           <div v-if="ghostCell"
                class="grid-slot empty-slot worker-grid-ghost-cell"
@@ -326,6 +333,28 @@ const BullpenTab = {
         width: this.columnWidth + 'px',
         height: this.rowHeight + 'px',
       };
+    },
+    visibleDropTargetOverlays() {
+      const coords = this.dropTargetCoords;
+      if (!coords || !coords.length) return [];
+      const r = this.visibleRange;
+      const out = [];
+      for (const c of coords) {
+        if (!c) continue;
+        if (c.col < r.colStart || c.col > r.colEnd || c.row < r.rowStart || c.row > r.rowEnd) continue;
+        const p = GridGeometry.coordToPixel(c.col, c.row, this.viewportOrigin, this.cardSize);
+        out.push({
+          col: c.col,
+          row: c.row,
+          style: {
+            left: p.x + 'px',
+            top: p.y + 'px',
+            width: this.columnWidth + 'px',
+            height: this.rowHeight + 'px',
+          },
+        });
+      }
+      return out;
     },
     emptyMenuStyle() {
       if (this.emptyMenuPos) {
@@ -956,6 +985,7 @@ const BullpenTab = {
       return !!this.buildGroupMovePlan(sourceSlot, coord);
     },
     dropWorkerOnSlot(sourceSlot, targetSlot) {
+      this._clearDropTarget();
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return;
       this.moveWorkerGroupToCoord(sourceSlot, target.coord);
@@ -1058,21 +1088,35 @@ const BullpenTab = {
       }
       this.emptyMenuCoord = null;
     },
+    _setDropTarget(source, coord) {
+      const plan = this.buildGroupMovePlan(source, coord);
+      if (!plan) {
+        this.dragOverCoord = null;
+        this.dropTargetCoords = [];
+        return false;
+      }
+      this.dragOverCoord = { ...coord };
+      this.dropTargetCoords = plan.moves.map(m => ({ col: m.to_coord.col, row: m.to_coord.row }));
+      return true;
+    },
+    _clearDropTarget() {
+      this.dragOverCoord = null;
+      this.dropTargetCoords = [];
+    },
     onEmptyDragOver(e, coord) {
       if (!this._isWorkerDrag(e)) return;
       const source = this._workerDragSource(e);
-      if (Number.isInteger(source) && this.canDropWorkerAtCoord(source, coord)) {
+      if (Number.isInteger(source) && this._setDropTarget(source, coord)) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        this.dragOverCoord = { ...coord };
       } else {
         e.dataTransfer.dropEffect = 'none';
-        this.dragOverCoord = null;
+        this._clearDropTarget();
       }
     },
     onDropOnEmpty(e, coord) {
       const source = this._workerDragSource(e);
-      this.dragOverCoord = null;
+      this._clearDropTarget();
       if (!Number.isInteger(source)) return;
       this.moveWorkerGroupToCoord(source, coord);
     },
@@ -1080,15 +1124,14 @@ const BullpenTab = {
       if (!this._isWorkerDrag(e)) return;
       const source = this._workerDragSource(e);
       const coord = this.coordFromEvent(e);
-      if (Number.isInteger(source) && coord && this.canDropWorkerAtCoord(source, coord)) {
+      if (Number.isInteger(source) && coord && this._setDropTarget(source, coord)) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         this.hoveredCoord = coord;
-        this.dragOverCoord = { ...coord };
       } else {
         e.dataTransfer.dropEffect = 'none';
         this.hoveredCoord = null;
-        this.dragOverCoord = null;
+        this._clearDropTarget();
       }
     },
     onCanvasDrop(e) {
@@ -1096,7 +1139,7 @@ const BullpenTab = {
       const src = this._workerDragSource(e);
       const coord = this.coordFromEvent(e);
       this.hoveredCoord = null;
-      this.dragOverCoord = null;
+      this._clearDropTarget();
       if (!Number.isInteger(src) || !coord) return;
       this.moveWorkerGroupToCoord(src, coord);
     },
@@ -1104,7 +1147,7 @@ const BullpenTab = {
       const related = e && e.relatedTarget;
       const canvas = e && e.currentTarget;
       if (related && canvas && typeof canvas.contains === 'function' && canvas.contains(related)) return;
-      this.dragOverCoord = null;
+      this._clearDropTarget();
     },
     colLabel(col) {
       if (!Number.isFinite(col)) return '';
