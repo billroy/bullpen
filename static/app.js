@@ -836,6 +836,160 @@ const app = createApp({
       }
       updateConfig({ ambient_volume: next });
     }
+
+    function _splitQuickCreateText(text) {
+      const raw = String(text || '').trim();
+      if (!raw) return { title: '', description: '' };
+      const slashIdx = raw.indexOf('/');
+      return slashIdx >= 0
+        ? {
+            title: raw.slice(0, slashIdx).trim(),
+            description: raw.slice(slashIdx + 1).trim(),
+          }
+        : { title: raw, description: '' };
+    }
+
+    function _activateChatTabFromCommand() {
+      const wsId = activeWorkspaceId.value;
+      if (!wsId) {
+        addToast('No active workspace to open chat', 'error');
+        return;
+      }
+      const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);
+      const existing = preferred || chatTabs.find(t => t.workspaceId === wsId);
+      if (existing) {
+        setActiveTab(existing.id);
+        return;
+      }
+      addLiveAgentTab({ activate: true });
+    }
+
+    function _activateStandardTabFromCommand(name) {
+      const key = String(name || '').trim().toLowerCase();
+      if (key === 'tasks' || key === 'tickets') {
+        setActiveTab('tasks');
+        return true;
+      }
+      if (key === 'workers' || key === 'bullpen') {
+        setActiveTab('workers');
+        return true;
+      }
+      if (key === 'files') {
+        setActiveTab('files');
+        return true;
+      }
+      if (key === 'commits') {
+        setActiveTab('commits');
+        return true;
+      }
+      if (key === 'chat' || key === 'live') {
+        _activateChatTabFromCommand();
+        return true;
+      }
+      return false;
+    }
+
+    function runCommandBar(input) {
+      const raw = String(input || '').trim();
+      if (!raw) return;
+      const text = raw.startsWith('/') ? raw.slice(1).trim() : raw;
+      if (!text) return;
+      const spaceIdx = text.indexOf(' ');
+      const command = (spaceIdx >= 0 ? text.slice(0, spaceIdx) : text).toLowerCase();
+      const args = spaceIdx >= 0 ? text.slice(spaceIdx + 1).trim() : '';
+      if (command === 'help') {
+        addToast('Commands: /new, /ticket, /tab, /view, /scope, /left, /theme, /ambient, /volume');
+        return;
+      }
+      if (command === 'new' || command === 'ticket' || command === 'create') {
+        if (!args) {
+          showCreateModal.value = true;
+          return;
+        }
+        const payload = _splitQuickCreateText(args);
+        if (!payload.title) {
+          addToast('Ticket title cannot be empty', 'error');
+          return;
+        }
+        quickCreateTask(payload);
+        return;
+      }
+      if (command === 'left' || command === 'pane' || command === 'toggle-left-pane') {
+        toggleLeftPane();
+        return;
+      }
+      if (command === 'tab') {
+        if (!args) {
+          addToast('Usage: /tab tickets|workers|files|commits|chat', 'error');
+          return;
+        }
+        if (!_activateStandardTabFromCommand(args)) {
+          addToast(`Unknown tab "${args}"`, 'error');
+        }
+        return;
+      }
+      if (_activateStandardTabFromCommand(command)) return;
+      if (command === 'view') {
+        const mode = args.toLowerCase();
+        if (mode !== 'kanban' && mode !== 'list') {
+          addToast('Usage: /view kanban|list', 'error');
+          return;
+        }
+        ticketsViewMode.value = mode;
+        setActiveTab('tasks');
+        return;
+      }
+      if (command === 'scope') {
+        const scope = args.toLowerCase();
+        if (scope !== 'live' && scope !== 'archived') {
+          addToast('Usage: /scope live|archived', 'error');
+          return;
+        }
+        setTicketListScope(scope);
+        setActiveTab('tasks');
+        return;
+      }
+      if (command === 'theme') {
+        if (!args) {
+          addToast(`Themes: ${THEME_CATALOG.map(t => t.id).join(', ')}`);
+          return;
+        }
+        const query = args.toLowerCase();
+        const match = THEME_CATALOG.find(t => t.id.toLowerCase() === query || t.label.toLowerCase() === query);
+        if (!match) {
+          addToast(`Unknown theme "${args}"`, 'error');
+          return;
+        }
+        setTheme(match.id);
+        return;
+      }
+      if (command === 'ambient') {
+        if (!args || args.toLowerCase() === 'off' || args.toLowerCase() === 'none') {
+          setAmbientPreset('');
+          return;
+        }
+        const query = args.toLowerCase();
+        const match = AMBIENT_PRESETS.find(p => p.key.toLowerCase() === query || p.label.toLowerCase() === query);
+        if (!match) {
+          const options = AMBIENT_PRESETS.map(p => p.key).join(', ');
+          addToast(`Unknown ambient preset "${args}". Available: ${options}`, 'error');
+          return;
+        }
+        setAmbientPreset(match.key);
+        return;
+      }
+      if (command === 'volume') {
+        const value = Number(args);
+        if (!Number.isFinite(value)) {
+          addToast('Usage: /volume 0-100', 'error');
+          return;
+        }
+        setAmbientVolume(value);
+        return;
+      }
+      addToast(`Unknown command "/${command}". Try /help`, 'error');
+    }
+
     const themeOptions = computed(() => THEME_CATALOG.map(t => ({ id: t.id, label: t.label })));
     const currentTheme = computed(() => _normalizeTheme(state.config?.theme || 'dark'));
     const ambientPresets = computed(() => AMBIENT_PRESETS);
@@ -889,6 +1043,7 @@ const app = createApp({
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
+      runCommandBar,
       moveTask, selectTask, addWorker, removeWorker, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
@@ -938,6 +1093,7 @@ const app = createApp({
         @set-ambient-preset="setAmbientPreset"
         @set-ambient-volume="setAmbientVolume"
         @quick-create-task="quickCreateTask"
+        @run-command-bar="runCommandBar"
       />
       <div class="app-body">
         <LeftPane

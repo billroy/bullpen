@@ -12,6 +12,7 @@ const TopToolbar = {
     'import-workspace',
     'import-all',
     'quick-create-task',
+    'run-command-bar',
   ],
   data() {
     return { showMainMenu: false, quickCreateText: '' };
@@ -94,6 +95,11 @@ const TopToolbar = {
     submitQuickCreate() {
       const text = this.quickCreateText.trim();
       if (!text) return;
+      if (text.startsWith('/')) {
+        this.$emit('run-command-bar', text);
+        this.quickCreateText = '';
+        return;
+      }
       const slashIdx = text.indexOf('/');
       const payload = slashIdx >= 0
         ? {
