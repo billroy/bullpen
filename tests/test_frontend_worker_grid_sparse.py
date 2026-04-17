@@ -36,6 +36,17 @@ def test_empty_cells_use_single_ghost_target_and_clipboard_does_not_materialize_
     assert "A non-empty pane clipboard" not in text
 
 
+def test_worker_drag_over_empty_cell_tracks_valid_drop_target_for_ghost_highlight():
+    text = _read("static/components/BullpenTab.js")
+    assert "dragOverCoord: null" in text
+    assert ":class=\"{ selected: isSelected(ghostCell), 'drag-over': isDragOverGhost(ghostCell) }\"" in text
+    assert "const coord = this.dragOverCoord || this.emptyMenuCoord || this.selectedCell || this.hoveredCoord;" in text
+    assert "this.dragOverCoord = { ...coord };" in text
+    assert "this.dragOverCoord = null;" in text
+    assert "@dragleave=\"onCanvasDragLeave\"" in text
+    assert "onCanvasDragLeave()" in text
+
+
 def test_empty_cell_menu_supports_keyboard_navigation_when_opened_from_grid_selection():
     text = _read("static/components/BullpenTab.js")
     assert "ref=\"emptyMenu\"" in text
@@ -88,6 +99,7 @@ def test_worker_grid_styles_define_viewport_minimap_and_fixed_card_overflow():
     assert "touch-action: none;" in text
     assert ".worker-minimap" in text
     assert ".worker-grid-ghost-cell" in text
+    assert ".worker-grid-ghost-cell.drag-over {" in text
     assert ".worker-card-header-status" in text
     assert "overflow: hidden;" in text
     # .worker-card must NOT set `contain: layout` or `contain: paint` — both
