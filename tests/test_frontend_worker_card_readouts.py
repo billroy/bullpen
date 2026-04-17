@@ -13,7 +13,7 @@ def _read(rel_path: str) -> str:
 def test_worker_card_shows_elapsed_and_tokens_for_current_task():
     text = _read("static/components/WorkerCard.js")
     assert 'statusLabel()' in text
-    assert 'return `WORKING ${this.elapsed}`' in text
+    assert 'return `BUSY ${this.elapsed}`' in text
     assert 'class="worker-card-token-meta"' in text
     assert 'worker-card-agent' not in text
     assert '{{ worker.model }}' not in text

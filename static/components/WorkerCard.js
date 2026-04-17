@@ -28,11 +28,11 @@ const WorkerCard = {
       <div class="worker-card-header" :style="{ background: agentColor }" :title="expertiseTooltip || null" @dblclick="$emit('configure', slotIndex)">
         <div class="worker-card-identity">
           <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
-          <span class="worker-card-name">{{ worker.name }}</span>
+          <span class="worker-card-name">{{ workerNameLabel }}</span>
         </div>
         <div class="worker-card-actions">
           <span class="worker-card-header-status">
-            <span class="status-pill" :class="'status-' + workerState">
+            <span v-if="workerState !== 'idle' || isPaused" class="status-pill" :class="'status-' + workerState">
               {{ statusLabel }}
             </span>
             <span v-if="isWorking && currentTaskTokens !== null" class="worker-card-token-meta" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
@@ -101,8 +101,15 @@ const WorkerCard = {
     isWorking() { return this.workerState === 'working'; },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
-      if (this.isWorking) return `WORKING ${this.elapsed}`;
+      if (this.isWorking) return `BUSY ${this.elapsed}`;
       return this.workerState.toUpperCase();
+    },
+    taskQueueCount() {
+      return Array.isArray(this.worker?.task_queue) ? this.worker.task_queue.length : 0;
+    },
+    workerNameLabel() {
+      const name = this.worker?.name || '';
+      return this.taskQueueCount > 0 ? `${name} (${this.taskQueueCount})` : name;
     },
     canStart() {
       return this.workerState === 'idle';
