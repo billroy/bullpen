@@ -27,7 +27,8 @@ const WorkerCard = {
       <span v-if="passDir === 'left'" class="pass-indicator pass-left" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
       <span v-if="passDir === 'right'" class="pass-indicator pass-right" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
       <span v-if="passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
-      <div class="worker-card-header" :style="{ background: agentColor }" :title="expertiseTooltip || null" @dblclick="$emit('configure', slotIndex)">
+      <div class="worker-card-header" :style="{ background: agentColor }" @mouseenter="onHeaderMouseEnter" @mouseleave="onHeaderMouseLeave" @dblclick="$emit('configure', slotIndex)">
+        <div v-if="showExpertiseTooltip && expertiseTooltip" class="worker-expertise-tooltip">{{ expertiseTooltip }}</div>
         <div class="worker-card-identity">
           <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
           <span class="worker-card-name">{{ workerNameLabel }}</span>
@@ -71,7 +72,7 @@ const WorkerCard = {
     </div>
   `,
   data() {
-    return { dragOver: false, connectTarget: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null, hoveredHandle: null };
+    return { dragOver: false, connectTarget: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null, hoveredHandle: null, showExpertiseTooltip: false };
   },
   mounted() {
     renderLucideIcons(this.$el);
@@ -89,6 +90,7 @@ const WorkerCard = {
   },
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
+    if (this._tooltipTimer) clearTimeout(this._tooltipTimer);
     document.removeEventListener('click', this._closeMenu);
     this.removeDragImage();
   },
@@ -212,6 +214,14 @@ const WorkerCard = {
     },
     onCardMouseLeave() {
       this.hoveredHandle = null;
+    },
+    onHeaderMouseEnter() {
+      if (this._tooltipTimer) clearTimeout(this._tooltipTimer);
+      this._tooltipTimer = setTimeout(() => { this.showExpertiseTooltip = true; }, 400);
+    },
+    onHeaderMouseLeave() {
+      if (this._tooltipTimer) { clearTimeout(this._tooltipTimer); this._tooltipTimer = null; }
+      this.showExpertiseTooltip = false;
     },
     onDragStart(e) {
       const payload = typeof this.buildWorkerDragPayload === 'function'
