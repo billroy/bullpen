@@ -573,7 +573,7 @@ const app = createApp({
       else payload.to = to;
       socket.emit('worker:move', _wsData(payload));
     }
-    function pasteWorkerConfig({ coord, worker }) { socket.emit('worker:paste', _wsData({ coord, worker })); }
+    function pasteWorkerConfig({ coord, worker, replace }) { socket.emit('worker:paste', _wsData({ coord, worker, replace: !!replace })); }
     function duplicateWorker(slot) { socket.emit('worker:duplicate', _wsData({ slot })); }
     function openTransfer({ slot, mode }) {
       transferSlot.value = slot;

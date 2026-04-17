@@ -563,7 +563,7 @@ const BullpenTab = {
         return;
       }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'v') {
-        if (!this.selectedCell || !this.canPasteAt(this.selectedCell)) return;
+        if (!this.selectedCell || !this.clipboardWorker || !this.isWritableCoord(this.selectedCell)) return;
         e.preventDefault();
         this.pasteWorker(this.selectedCell);
         return;
@@ -706,8 +706,16 @@ const BullpenTab = {
       return !!(this.clipboardWorker && coord && !this.itemAtCoord(coord) && this.isWritableCoord(coord));
     },
     pasteWorker(coord) {
-      if (!this.canPasteAt(coord)) return;
-      this.$root.pasteWorkerConfig({ coord, worker: this.clipboardWorker });
+      if (!this.clipboardWorker || !coord || !this.isWritableCoord(coord)) return;
+      const existing = this.itemAtCoord(coord);
+      if (existing) {
+        const existingName = existing.worker?.name || `Slot ${existing.slotIndex + 1}`;
+        const pasteName = this.clipboardWorker?.name || 'pasted worker';
+        if (!confirm(`Replace worker "${existingName}" with "${pasteName}"?`)) return;
+        this.$root.pasteWorkerConfig({ coord, worker: this.clipboardWorker, replace: true });
+      } else {
+        this.$root.pasteWorkerConfig({ coord, worker: this.clipboardWorker });
+      }
       this.emptyMenuCoord = null;
     },
     onDropOnEmpty(e, coord) {

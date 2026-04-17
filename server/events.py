@@ -538,9 +538,13 @@ def register_events(socketio, app):
         layout = _load_layout(bp_dir)
         config = read_json(os.path.join(bp_dir, "config.json"))
         cols = _safe_legacy_cols(config)
-        if _coord_occupied(layout, coord, cols=cols) is not None:
-            emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
-            return
+        occupied_slot = _coord_occupied(layout, coord, cols=cols)
+        if occupied_slot is not None:
+            if data.get("replace"):
+                layout["slots"][occupied_slot] = None
+            else:
+                emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
+                return
 
         target = _first_empty_slot(layout)
         existing_names = {s["name"] for s in layout["slots"] if s and s.get("name")}

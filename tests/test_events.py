@@ -329,6 +329,35 @@ class TestWorkerEvents:
         assert err is not None
         assert err["code"] == "coordinate_collision"
 
+    def test_paste_worker_rejects_occupied_coord_without_replace(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:paste", {
+            "coord": {"col": 0, "row": 0},
+            "worker": {"name": "Pasted", "profile": "feature-architect",
+                       "agent": "claude", "model": "claude-sonnet-4-6"},
+        })
+        err = get_event(c, "error")
+        assert err is not None
+        assert err["code"] == "coordinate_collision"
+
+    def test_paste_worker_replaces_existing_when_replace_flag_set(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 2, "row": 3}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:paste", {
+            "coord": {"col": 2, "row": 3},
+            "replace": True,
+            "worker": {"name": "Replacement", "profile": "feature-architect",
+                       "agent": "claude", "model": "claude-sonnet-4-6"},
+        })
+        layout = get_event(c, "layout:updated")
+        workers_here = [s for s in layout["slots"]
+                        if s and s.get("col") == 2 and s.get("row") == 3]
+        assert len(workers_here) == 1
+        assert workers_here[0]["name"] == "Replacement"
+
     def test_paste_worker_whitelists_runtime_state(self, client):
         c, _ = client
         c.emit("worker:paste", {
