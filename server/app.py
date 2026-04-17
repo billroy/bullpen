@@ -852,36 +852,116 @@ def build_file_tree(workspace):
 
 
 def reconcile(bp_dir):
-    """Startup reconciliation: reset workers, fix interrupted tasks."""
+    """Startup reconciliation: make ticket frontmatter canonical.
+
+    Worker queues are derived indexes. On startup, discard persisted queue
+    references, repair interrupted in-progress tasks, and rebuild queues from
+    assigned tickets so stale layout state cannot survive a restart.
+    """
     layout_path = os.path.join(bp_dir, "layout.json")
     if not os.path.exists(layout_path):
         return
 
     layout = read_json(layout_path)
-    changed = False
+    slots = layout.get("slots", [])
+    if not isinstance(slots, list):
+        slots = []
+        layout["slots"] = slots
 
-    for slot in layout.get("slots", []):
+    for slot in slots:
         if slot is None:
             continue
-        # Reset working workers to idle and release their tasks
+        if slot.get("task_queue"):
+            slot["task_queue"] = []
+        else:
+            slot.setdefault("task_queue", [])
         if slot.get("state") == "working":
             slot["state"] = "idle"
-            changed = True
-            for task_id in slot.get("task_queue", []):
-                task_path = os.path.join(bp_dir, "tasks", f"{task_id}.md")
-                if os.path.exists(task_path):
-                    from server.tasks import update_task
+
+    from server.tasks import update_task
+
+    def valid_assigned_slot(value):
+        if value in (None, ""):
+            return None
+        try:
+            slot_index = int(value)
+        except (TypeError, ValueError):
+            return None
+        if slot_index < 0 or slot_index >= len(slots):
+            return None
+        if not slots[slot_index]:
+            return None
+        return slot_index
+
+    def with_reconcile_note(body, note):
+        body = body or ""
+        if note in body:
+            return body
+        return body.rstrip() + "\n\n" + note + "\n"
+
+    queued = []
+    tasks_dir = os.path.join(bp_dir, "tasks")
+    if os.path.isdir(tasks_dir):
+        for fname in sorted(os.listdir(tasks_dir)):
+            if not fname.endswith(".md"):
+                continue
+            path = os.path.join(tasks_dir, fname)
+            try:
+                meta, body, slug = read_frontmatter(path)
+            except Exception:
+                continue
+            task_id = slug or fname[:-3]
+            status = meta.get("status")
+            assigned_slot = valid_assigned_slot(meta.get("assigned_to"))
+
+            if status == "in_progress":
+                note = (
+                    "**Interrupted run:** Bullpen restarted while this task was "
+                    "in progress. Task moved to blocked."
+                )
+                try:
+                    update_task(bp_dir, task_id, {
+                        "status": "blocked",
+                        "assigned_to": "",
+                        "handoff_depth": 0,
+                        "body": with_reconcile_note(body, note),
+                    })
+                except Exception:
+                    pass
+                continue
+
+            if status != "assigned":
+                continue
+
+            if assigned_slot is None:
+                if meta.get("assigned_to") not in (None, ""):
+                    note = (
+                        "**Assignment repair:** Assigned worker no longer exists. "
+                        "Task moved to blocked."
+                    )
                     try:
                         update_task(bp_dir, task_id, {
                             "status": "blocked",
                             "assigned_to": "",
+                            "handoff_depth": 0,
+                            "body": with_reconcile_note(body, note),
                         })
                     except Exception:
                         pass
-            slot["task_queue"] = []
+                continue
 
-    if changed:
-        write_json(layout_path, layout)
+            queued.append((
+                assigned_slot,
+                str(meta.get("order", "")),
+                str(meta.get("created_at", "")),
+                task_id,
+            ))
+
+    queued.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    for slot_index, _order, _created_at, task_id in queued:
+        slots[slot_index].setdefault("task_queue", []).append(task_id)
+
+    write_json(layout_path, layout)
 
     # Check watched columns for idle on_queue workers with unclaimed tasks
     from server import workers as worker_mod

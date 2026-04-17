@@ -189,6 +189,11 @@ def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None):
     activation = worker.get("activation", "on_drop")
     if activation in ("on_drop", "on_queue") and worker.get("state") == "idle":
         start_worker(bp_dir, slot_index, socketio, ws_id)
+    elif activation == "manual" and socketio:
+        _ws_emit(socketio, "toast", {
+            "message": f"Task queued on {worker.get('name', 'worker')}. Use Run to start this manual worker.",
+            "level": "info",
+        }, ws_id)
 
 
 def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
@@ -348,24 +353,57 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
     Returns True if the task was found in a worker queue, False otherwise.
     """
     layout = _load_layout(bp_dir)
-    slot_index = None
-    for i, slot in enumerate(layout.get("slots", [])):
-        if slot and task_id in slot.get("task_queue", []):
-            slot_index = i
-            break
+    slots = layout.get("slots", [])
+    task = task_mod.read_task(bp_dir, task_id)
 
+    queue_slots = []
+    for i, slot in enumerate(slots):
+        if slot and task_id in slot.get("task_queue", []):
+            queue_slots.append(i)
+
+    assigned_slot = None
+    if task and task.get("assigned_to") not in (None, ""):
+        try:
+            candidate = int(task.get("assigned_to"))
+        except (TypeError, ValueError):
+            candidate = None
+        if candidate is not None and 0 <= candidate < len(slots) and slots[candidate]:
+            assigned_slot = candidate
+
+    process_slot = None
+    with _process_lock:
+        for (proc_ws_id, proc_slot), entry in _processes.items():
+            if ws_id is not None and proc_ws_id != ws_id:
+                continue
+            if entry.get("task_id") == task_id:
+                process_slot = proc_slot
+                break
+
+    slot_index = queue_slots[0] if queue_slots else assigned_slot
     if slot_index is None:
+        slot_index = process_slot
+    if slot_index is None or slot_index >= len(slots) or not slots[slot_index]:
         return False
 
-    worker = layout["slots"][slot_index]
+    worker = slots[slot_index]
     queue = worker.get("task_queue", [])
     is_front = queue and queue[0] == task_id
-    is_running = worker.get("state") == "working" and is_front
+    is_running = (
+        (worker.get("state") == "working" and (is_front or assigned_slot == slot_index))
+        or process_slot == slot_index
+    )
 
     # Kill the subprocess if this task is actively running
     if is_running:
         with _process_lock:
             entry = _processes.get((ws_id, slot_index))
+            if entry is None:
+                entry = next((
+                    e for (proc_ws_id, proc_slot), e in _processes.items()
+                    if proc_slot == slot_index
+                    and (ws_id is None or proc_ws_id == ws_id)
+                    and e.get("task_id") == task_id
+                ), None)
             proc = entry["proc"] if entry else None
             if proc and proc.poll() is None:
                 _terminate_proc(proc)
@@ -376,8 +414,13 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
                     proc.wait()
         worker["state"] = "idle"
 
-    # Remove from queue
-    queue.remove(task_id)
+    # Remove every stale queue reference, not just the first one found.
+    for slot in slots:
+        if not slot:
+            continue
+        slot_queue = slot.get("task_queue", [])
+        while task_id in slot_queue:
+            slot_queue.remove(task_id)
 
     _save_layout(bp_dir, layout)
 
