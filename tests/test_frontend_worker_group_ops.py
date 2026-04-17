@@ -29,6 +29,13 @@ def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
     assert "Copied worker group (" in text
 
 
+def test_bullpen_tab_group_detection_includes_inbound_pass_links():
+    text = _read("static/components/BullpenTab.js")
+    assert "passSourcesForSlot(slotIndex)" in text
+    assert "this.passTargetsForSlot(item.slotIndex).includes(target)" in text
+    assert "new Set([...this.passTargetsForSlot(slot), ...this.passSourcesForSlot(slot)])" in text
+
+
 def test_bullpen_tab_pastes_group_workers_with_relative_offsets():
     text = _read("static/components/BullpenTab.js")
     assert "clipboardTargetsForCoord(coord)" in text

@@ -790,6 +790,17 @@ const BullpenTab = {
       }
       return [];
     },
+    passSourcesForSlot(slotIndex) {
+      const target = Number(slotIndex);
+      if (!Number.isInteger(target) || !this.workerItemBySlot[target]) return [];
+      const sources = [];
+      for (const item of this.workerItems) {
+        if (this.passTargetsForSlot(item.slotIndex).includes(target)) {
+          sources.push(item.slotIndex);
+        }
+      }
+      return sources;
+    },
     workerGroupSlots(startSlot) {
       const root = Number(startSlot);
       if (!Number.isInteger(root) || !this.workerItemBySlot[root]) return [];
@@ -802,7 +813,8 @@ const BullpenTab = {
         if (!this.workerItemBySlot[slot]) continue;
         visited.add(slot);
         group.push(slot);
-        for (const next of this.passTargetsForSlot(slot)) {
+        const neighbors = new Set([...this.passTargetsForSlot(slot), ...this.passSourcesForSlot(slot)]);
+        for (const next of neighbors) {
           if (!visited.has(next)) stack.push(next);
         }
       }
