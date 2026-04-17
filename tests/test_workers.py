@@ -16,10 +16,12 @@ from server.workers import (
     create_auto_task,
     start_worker,
     stop_worker,
+    yank_from_worker,
     _assemble_prompt,
     _auto_commit,
     _auto_pr,
     _load_layout,
+    _processes,
     _refill_from_watch_column,
     _setup_worktree,
     is_non_retryable_provider_error,
@@ -260,6 +262,49 @@ class TestStartWorker:
                                 _load_layout(bp_dir)["slots"][worker_slot])
         assert task["title"].startswith("[Auto] Test Worker")
         assert task["type"] == "chore"
+
+    def test_yank_kills_auto_task_on_on_drop_worker(self, bp_dir, worker_slot):
+        """Regression: yanking an auto-created task from an on_drop worker with
+        an empty queue must kill the running agent. Previously the process was
+        stored under (None, slot) because create_auto_task dropped ws_id, so
+        yank_from_worker (called with the real ws_id) could not find it."""
+        class SlowAdapter(MockAdapter):
+            @property
+            def name(self):
+                return "slow-mock"
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                return [sys.executable, "-c", "import time; time.sleep(30)"]
+
+        register_adapter("slow-mock", SlowAdapter())
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "slow-mock"
+        layout["slots"][worker_slot]["activation"] = "on_drop"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        ws_id = "test-workspace"
+        start_worker(bp_dir, worker_slot, None, ws_id)
+        # Give the agent subprocess time to start and register itself.
+        deadline = time.time() + 3.0
+        while time.time() < deadline and (ws_id, worker_slot) not in _processes:
+            time.sleep(0.05)
+
+        assert (ws_id, worker_slot) in _processes, "process not registered under real ws_id"
+        assert (None, worker_slot) not in _processes, "process leaked under ws_id=None"
+
+        from server.tasks import list_tasks
+        auto = next(t for t in list_tasks(bp_dir) if t["title"].startswith("[Auto]"))
+        proc = _processes[(ws_id, worker_slot)]["proc"]
+
+        assert yank_from_worker(bp_dir, auto["id"], None, ws_id) is True
+
+        # The subprocess should have been terminated by the yank.
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise AssertionError("yank_from_worker did not kill the agent subprocess")
+        assert proc.poll() is not None
 
     def test_unavailable_agent_blocks_with_clear_message(self, bp_dir, worker_slot):
         register_adapter("unavailable", UnavailableAdapter())

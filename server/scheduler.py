@@ -99,6 +99,6 @@ class Scheduler:
         for slot_index, worker in to_fire:
             if not worker.get("task_queue"):
                 # Auto-create an ephemeral task for self-directed workers
-                task = worker_mod.create_auto_task(self.bp_dir, slot_index, worker, self.socketio)
+                task = worker_mod.create_auto_task(self.bp_dir, slot_index, worker, self.socketio, self.ws_id)
                 log.info("Auto-created task %s for worker %s (slot %d)", task["id"], worker.get("name"), slot_index)
             worker_mod.start_worker(self.bp_dir, slot_index, self.socketio, self.ws_id)

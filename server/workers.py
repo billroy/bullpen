@@ -145,14 +145,19 @@ def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
     assign_task(bp_dir, slot_index, unclaimed[0]["id"], socketio, ws_id)
 
 
-def create_auto_task(bp_dir, slot_index, worker, socketio=None):
-    """Create an ephemeral task for a self-directed worker with no queue."""
+def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None):
+    """Create an ephemeral task for a self-directed worker with no queue.
+
+    ws_id must be propagated so the resulting agent process is registered
+    under the caller's workspace key; otherwise yank_from_worker cannot
+    find and kill the process when the task is pulled out of in_progress.
+    """
     worker_name = worker.get("name", "Worker")
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
     title = f"[Auto] {worker_name} — {timestamp}"
 
     task = task_mod.create_task(bp_dir, title, task_type="chore")
-    assign_task(bp_dir, slot_index, task["id"], socketio)
+    assign_task(bp_dir, slot_index, task["id"], socketio, ws_id)
     return task
 
 
@@ -196,10 +201,15 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     queue = worker.get("task_queue", [])
     if not queue:
         # Auto-create a task for manual start with empty queue
-        auto_task = create_auto_task(bp_dir, slot_index, worker, socketio)
+        auto_task = create_auto_task(bp_dir, slot_index, worker, socketio, ws_id)
         # Re-read layout since assign_task modified it
         layout = _load_layout(bp_dir)
         worker = layout["slots"][slot_index]
+        # For on_drop/on_queue workers, assign_task already recursively invoked
+        # start_worker and spawned the agent. Returning here avoids a duplicate
+        # _run_agent that would leak a second process on yank/stop.
+        if worker and worker.get("state") == "working":
+            return
         queue = worker.get("task_queue", [])
         if not queue:
             return
