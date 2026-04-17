@@ -440,16 +440,26 @@ def register_events(socketio, app):
         while len(layout["slots"]) <= max_slot:
             layout["slots"].append(None)
 
-        # Swap
-        layout["slots"][from_slot], layout["slots"][to_slot] = (
-            layout["slots"][to_slot], layout["slots"][from_slot]
-        )
+        # Capture pre-swap coords so workers trade visual positions.
+        # Without this, the swap recomputes col/row from slot index using the
+        # legacy grid formula, obliterating any sparse coordinates the workers
+        # were placed at.
+        src = layout["slots"][from_slot]
+        dst = layout["slots"][to_slot]
+        src_col, src_row = _slot_coord(src, from_slot, cols)
+        if dst:
+            dst_col, dst_row = _slot_coord(dst, to_slot, cols)
+        else:
+            dst_col, dst_row = to_slot % cols, to_slot // cols
 
-        # Update row/col
-        for i in [from_slot, to_slot]:
-            if layout["slots"][i]:
-                layout["slots"][i]["row"] = i // cols
-                layout["slots"][i]["col"] = i % cols
+        layout["slots"][from_slot], layout["slots"][to_slot] = dst, src
+
+        if layout["slots"][to_slot]:
+            layout["slots"][to_slot]["col"] = dst_col
+            layout["slots"][to_slot]["row"] = dst_row
+        if layout["slots"][from_slot]:
+            layout["slots"][from_slot]["col"] = src_col
+            layout["slots"][from_slot]["row"] = src_row
 
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)

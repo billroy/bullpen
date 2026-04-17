@@ -256,6 +256,7 @@ const WorkerCard = {
       this.connectTarget = false;
       const connectData = e.dataTransfer.getData('application/x-worker-connect');
       if (connectData) {
+        e.stopPropagation();
         try {
           const payload = JSON.parse(connectData);
           if (payload && payload.target === this.slotIndex) {
@@ -267,11 +268,13 @@ const WorkerCard = {
       }
       const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
       if (fromSlot !== '' && Number(fromSlot) !== this.slotIndex) {
+        e.stopPropagation();
         this.$root.moveWorker(Number(fromSlot), this.slotIndex);
         return;
       }
       const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
       if (taskId) {
+        e.stopPropagation();
         this.$root.assignTask(taskId, this.slotIndex);
       }
     },

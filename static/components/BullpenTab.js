@@ -55,7 +55,9 @@ const BullpenTab = {
            @pointerup="onViewportPointerUp"
            @pointercancel="onViewportPointerUp"
            @keydown="onKeydown">
-        <div class="worker-grid-canvas" :style="canvasStyle">
+        <div class="worker-grid-canvas" :style="canvasStyle"
+             @dragover="onCanvasDragOver"
+             @drop.prevent="onCanvasDrop">
           <WorkerCard
             v-for="item in visibleWorkers"
             :key="item.slotIndex"
@@ -90,7 +92,7 @@ const BullpenTab = {
                :aria-label="'Empty cell at column ' + ghostCell.col + ', row ' + ghostCell.row"
                @click.stop="openEmptyMenu(ghostCell, $event)"
                @dragover.prevent
-               @drop.prevent="onDropOnEmpty($event, ghostCell)">
+               @drop.stop.prevent="onDropOnEmpty($event, ghostCell)">
             <button class="empty-slot-menu-btn" title="Empty cell actions" @click.stop="openEmptyMenu(ghostCell, $event)">&hellip;</button>
           </div>
           <div v-if="ghostCell && emptyMenuOpenFor(ghostCell)"
@@ -573,6 +575,32 @@ const BullpenTab = {
       if (fromSlot !== '') {
         this.$root.moveWorker(Number(fromSlot), coord);
       }
+    },
+    onCanvasDragOver(e) {
+      if (!e.dataTransfer.types.includes('application/x-worker-slot')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      const coord = this.coordFromEvent(e);
+      if (coord && this.isWritableCoord(coord) && !this.itemAtCoord(coord)) {
+        this.hoveredCoord = coord;
+      } else {
+        this.hoveredCoord = null;
+      }
+    },
+    onCanvasDrop(e) {
+      const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
+      if (fromSlot === '') return;
+      const src = Number(fromSlot);
+      const coord = this.coordFromEvent(e);
+      this.hoveredCoord = null;
+      if (!coord || !this.isWritableCoord(coord)) return;
+      const existing = this.itemAtCoord(coord);
+      if (existing) {
+        if (existing.slotIndex === src) return;
+        this.$root.moveWorker(src, existing.slotIndex);
+        return;
+      }
+      this.$root.moveWorker(src, coord);
     },
     onMinimapClick(e) {
       const rect = e.currentTarget.getBoundingClientRect();
