@@ -62,5 +62,11 @@ def test_worker_grid_styles_define_viewport_minimap_and_fixed_card_overflow():
     assert ".worker-minimap" in text
     assert ".worker-grid-ghost-cell" in text
     assert ".worker-card-header-status" in text
-    assert "contain: layout paint;" in text
     assert "overflow: hidden;" in text
+    # .worker-card must NOT set `contain: layout` or `contain: paint` — both
+    # make the card a containing block for position:fixed descendants, which
+    # breaks the header kebab menu (positioned via viewport coords from
+    # getBoundingClientRect). `contain: paint` would also clip the
+    # pass-connected indicator pills that render into the grid gutter.
+    assert "contain: layout" not in text
+    assert "contain: paint" not in text

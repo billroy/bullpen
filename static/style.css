@@ -1592,7 +1592,10 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  contain: layout paint;
+  /* No CSS containment here: it would turn .worker-card into a containing
+     block for position:fixed descendants, which breaks the header kebab menu
+     (positioned via getBoundingClientRect — viewport coords). Paint
+     containment also clips pass-connected pills, defeating overflow:visible. */
 }
 
 .worker-card:hover {
