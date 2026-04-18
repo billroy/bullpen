@@ -9,6 +9,10 @@ const BullpenTab = {
   data() {
     return {
       showLibrary: false,
+      showGoTo: false,
+      goToInput: '',
+      goToError: '',
+      showHelp: false,
       selectedAddCoord: null,
       hoveredCoord: null,
       selectedCell: null,
@@ -181,6 +185,66 @@ const BullpenTab = {
       </div>
 
       <div
+        v-if="showGoTo"
+        class="modal-overlay"
+        @click.self="closeGoTo"
+        @keydown.escape="closeGoTo"
+        tabindex="0"
+      >
+        <div class="modal" style="min-width: 320px;">
+          <div class="modal-header">
+            <h2>Go to</h2>
+            <button class="btn btn-icon" @click="closeGoTo">&times;</button>
+          </div>
+          <div class="modal-body">
+            <form @submit.prevent="submitGoTo">
+              <input
+                ref="goToInputEl"
+                type="text"
+                v-model="goToInput"
+                placeholder="Worker name or cell (e.g. AA122)"
+                style="width: 100%; box-sizing: border-box; padding: 6px 8px;"
+                @keydown.escape.stop="closeGoTo"
+              />
+              <div v-if="goToError" style="color: var(--color-danger, #c33); margin-top: 6px; font-size: 12px;">
+                {{ goToError }}
+              </div>
+              <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end;">
+                <button type="button" class="btn btn-sm" @click="closeGoTo">Cancel</button>
+                <button type="submit" class="btn btn-sm btn-primary">Go</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="showHelp"
+        class="modal-overlay"
+        @click.self="closeHelp"
+        @keydown.escape="closeHelp"
+        tabindex="0"
+        ref="helpOverlay"
+      >
+        <div class="modal" style="min-width: 420px;">
+          <div class="modal-header">
+            <h2>Keyboard shortcuts</h2>
+            <button class="btn btn-icon" @click="closeHelp">&times;</button>
+          </div>
+          <div class="modal-body">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tbody>
+                <tr v-for="row in helpShortcuts" :key="row.keys">
+                  <td style="padding: 4px 12px 4px 0; white-space: nowrap; font-family: monospace;">{{ row.keys }}</td>
+                  <td style="padding: 4px 0;">{{ row.desc }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div
         v-if="showLibrary"
         class="modal-overlay"
         @click.self="closeLibrary"
@@ -206,6 +270,21 @@ const BullpenTab = {
     </div>
   `,
   computed: {
+    helpShortcuts() {
+      const mod = (navigator.platform || '').toLowerCase().includes('mac') ? '⌘' : 'Ctrl';
+      return [
+        { keys: '?', desc: 'Show this help' },
+        { keys: 'Arrow keys', desc: 'Move selection between cells' },
+        { keys: 'Enter', desc: 'Open worker menu (or empty-cell menu)' },
+        { keys: 'Delete / Backspace', desc: 'Remove selected worker' },
+        { keys: 'Home', desc: 'Jump to origin (A1)' },
+        { keys: 'F', desc: 'Fit view to occupied cells' },
+        { keys: `${mod}+G`, desc: 'Go to worker or cell (e.g. AA122)' },
+        { keys: `${mod}+C`, desc: 'Copy selected worker' },
+        { keys: `${mod}+V`, desc: 'Paste worker into selected cell' },
+        { keys: 'Escape', desc: 'Close open menu or modal' },
+      ];
+    },
     gridConfig() { return this.config?.grid || {}; },
     legacyCols() {
       const n = Number(this.gridConfig.cols);
@@ -627,6 +706,16 @@ const BullpenTab = {
           return;
         }
       }
+      if (!inTextInput && !e.metaKey && !e.ctrlKey && !e.altKey && e.key === '?') {
+        e.preventDefault();
+        this.openHelp();
+        return;
+      }
+      if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        this.openGoTo();
+        return;
+      }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'c') {
         if (!this.selectedCell) return;
         const item = this.itemAtCoord(this.selectedCell);
@@ -712,6 +801,79 @@ const BullpenTab = {
       } else {
         delete this.workerRefs[slotIndex];
       }
+    },
+    openGoTo() {
+      this.showGoTo = true;
+      this.goToInput = '';
+      this.goToError = '';
+      this.$nextTick(() => this.$refs.goToInputEl?.focus());
+    },
+    closeGoTo() {
+      this.showGoTo = false;
+      this.goToError = '';
+      this.$nextTick(() => this.$refs.viewport?.focus());
+    },
+    openHelp() {
+      this.showHelp = true;
+    },
+    closeHelp() {
+      this.showHelp = false;
+      this.$nextTick(() => this.$refs.viewport?.focus());
+    },
+    openHelp() {
+      this.showHelp = true;
+      this.$nextTick(() => this.$refs.helpOverlay?.focus());
+    },
+    closeHelp() {
+      this.showHelp = false;
+      this.$nextTick(() => this.$refs.viewport?.focus());
+    },
+    parseCellRef(text) {
+      const m = /^\s*([A-Za-z]+)\s*(\d+)\s*$/.exec(text);
+      if (!m) return null;
+      let col = 0;
+      for (const ch of m[1].toUpperCase()) {
+        col = col * 26 + (ch.charCodeAt(0) - 64);
+      }
+      col -= 1;
+      const row = parseInt(m[2], 10) - 1;
+      if (col < 0 || row < 0) return null;
+      return { col, row };
+    },
+    goToCoord(coord) {
+      this.setOrigin({ col: coord.col, row: coord.row });
+      const item = this.itemAtCoord(coord);
+      if (item) {
+        this.selectWorker(item);
+      } else {
+        this.selectedCell = { ...coord };
+        this.emptyMenuCoord = null;
+        this.emptyMenuPos = null;
+      }
+    },
+    submitGoTo() {
+      const text = (this.goToInput || '').trim();
+      if (!text) { this.closeGoTo(); return; }
+      const cellRef = this.parseCellRef(text);
+      if (cellRef && this.isWritableCoord(cellRef)) {
+        this.goToCoord(cellRef);
+        this.closeGoTo();
+        return;
+      }
+      const needle = text.toLowerCase();
+      let match = this.workerItems.find(it => (it.worker?.name || '').toLowerCase() === needle);
+      if (!match) {
+        match = this.workerItems.find(it => (it.worker?.name || '').toLowerCase().startsWith(needle));
+      }
+      if (!match) {
+        match = this.workerItems.find(it => (it.worker?.name || '').toLowerCase().includes(needle));
+      }
+      if (match) {
+        this.goToCoord(match.coord);
+        this.closeGoTo();
+        return;
+      }
+      this.goToError = `No worker or cell matches "${text}"`;
     },
     ensureCoordVisible(coord) {
       let col = this.viewportOrigin.col;
