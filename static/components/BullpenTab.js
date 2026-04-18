@@ -492,15 +492,18 @@ const BullpenTab = {
     },
     minimapDots() {
       const b = this.minimapBounds;
-      const scale = this.minimapScale;
-      const dotSize = Math.max(1, Math.min(3, scale.x)) + 'px';
+      const { x: sx, y: sy } = this.minimapScale;
+      const w = Math.max(2, sx - 0.5);
+      const h = Math.max(2, sy - 0.5);
+      const radius = Math.max(1, Math.min(2, Math.min(w, h) * 0.3));
       return this.workerItems.map(item => ({
         key: item.slotIndex,
         style: {
-          left: ((item.coord.col - b.colMin) * scale.x) + 'px',
-          top: ((item.coord.row - b.rowMin) * scale.y) + 'px',
-          width: dotSize,
-          height: dotSize,
+          left: ((item.coord.col - b.colMin) * sx) + 'px',
+          top: ((item.coord.row - b.rowMin) * sy) + 'px',
+          width: w + 'px',
+          height: h + 'px',
+          borderRadius: radius + 'px',
           background: agentColor(item.worker?.agent),
         },
       }));
