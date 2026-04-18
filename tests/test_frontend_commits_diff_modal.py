@@ -54,3 +54,12 @@ def test_commits_diff_line_styles_exist_for_dark_and_light_modes():
     assert ".commit-diff-line-hunk" in text
     assert "[data-theme=\"light\"] .commit-diff-line-add" in text
     assert "[data-theme=\"light\"] .commit-diff-line-remove" in text
+
+
+def test_commits_tab_refresh_auto_loads_all_todays_commits():
+    text = _read("static/components/CommitsTab.js")
+    assert "await this.loadUntilOlderThanToday();" in text
+    assert "async loadUntilOlderThanToday()" in text
+    assert "while (this.hasMore && this._lastLoadedCommitIsToday())" in text
+    assert "if (!loaded) break;" in text
+    assert "_isTodayCommit(commit)" in text

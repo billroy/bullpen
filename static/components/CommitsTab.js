@@ -69,11 +69,45 @@ const CommitsTab = {
       this.hasMore = false;
       this.error = null;
       await this.loadMore();
+      await this.loadUntilOlderThanToday();
+    },
+    _coerceCommitDate(dateStr) {
+      if (!dateStr) return null;
+      const parsed = new Date(dateStr);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+      // Fallback for git date strings if browser parsing is strict.
+      const dateOnly = String(dateStr).trim().slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+        const fallback = new Date(`${dateOnly}T00:00:00`);
+        if (!Number.isNaN(fallback.getTime())) return fallback;
+      }
+      return null;
+    },
+    _isTodayCommit(commit) {
+      const parsed = this._coerceCommitDate(commit?.date);
+      if (!parsed) return false;
+      const now = new Date();
+      return (
+        parsed.getFullYear() === now.getFullYear() &&
+        parsed.getMonth() === now.getMonth() &&
+        parsed.getDate() === now.getDate()
+      );
+    },
+    _lastLoadedCommitIsToday() {
+      if (!this.commits.length) return false;
+      return this._isTodayCommit(this.commits[this.commits.length - 1]);
+    },
+    async loadUntilOlderThanToday() {
+      while (this.hasMore && this._lastLoadedCommitIsToday()) {
+        const loaded = await this.loadMore();
+        if (!loaded) break;
+      }
     },
     async loadMore() {
       if (this.loading) return;
       this.loading = true;
       this.error = null;
+      let loaded = 0;
       try {
         const params = new URLSearchParams({
           offset: String(this.offset),
@@ -92,12 +126,14 @@ const CommitsTab = {
         }
         this.commits.push(...data.commits);
         this.hasMore = data.has_more;
-        this.offset += data.commits.length;
+        loaded = data.commits.length;
+        this.offset += loaded;
       } catch (e) {
         this.error = e.message;
       } finally {
         this.loading = false;
       }
+      return loaded;
     },
     formatDate(dateStr) {
       if (!dateStr) return '';
