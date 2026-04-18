@@ -36,6 +36,10 @@ def test_toolbar_menu_renders_lucide_icons_after_updates():
     assert "mounted() {" in text
     assert "updated() {" in text
     assert "renderLucideIcons(this.$el);" in text
+    assert "window.addEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);" in text
+    assert "window.removeEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);" in text
+    assert "window.dispatchEvent(new Event('bullpen:menu:close-projects'));" in text
+    assert "onExternalCloseMainMenu()" in text
 
 
 def test_app_wires_toolbar_export_import_events():

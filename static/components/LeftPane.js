@@ -157,10 +157,12 @@ const LeftPane = {
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
+    window.addEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);
     renderLucideIcons(this.$el);
   },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
+    window.removeEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);
   },
   updated() {
     renderLucideIcons(this.$el);
@@ -169,8 +171,15 @@ const LeftPane = {
     toggleProjectMenu() {
       this.showProjectMenu = !this.showProjectMenu;
       this.showEmptyProjectHint = false;
+      if (this.showProjectMenu) {
+        window.dispatchEvent(new Event('bullpen:menu:close-main'));
+      }
     },
     onGlobalClick() {
+      this.showProjectMenu = false;
+      this.showEmptyProjectHint = false;
+    },
+    onExternalCloseProjectMenu() {
       this.showProjectMenu = false;
       this.showEmptyProjectHint = false;
     },

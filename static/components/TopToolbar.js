@@ -24,6 +24,7 @@ const TopToolbar = {
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
+    window.addEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
     renderLucideIcons(this.$el);
   },
   updated() {
@@ -31,12 +32,19 @@ const TopToolbar = {
   },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
+    window.removeEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
   },
   methods: {
     toggleMainMenu() {
       this.showMainMenu = !this.showMainMenu;
+      if (this.showMainMenu) {
+        window.dispatchEvent(new Event('bullpen:menu:close-projects'));
+      }
     },
     onGlobalClick() {
+      this.showMainMenu = false;
+    },
+    onExternalCloseMainMenu() {
       this.showMainMenu = false;
     },
     onToggleLeftPane() {

@@ -61,6 +61,10 @@ def test_leftpane_emits_new_project_and_registers_menu_dismiss_listener():
     text = _read("static/components/LeftPane.js")
     assert "document.addEventListener('click', this.onGlobalClick);" in text
     assert "document.removeEventListener('click', this.onGlobalClick);" in text
+    assert "window.addEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);" in text
+    assert "window.removeEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);" in text
+    assert "window.dispatchEvent(new Event('bullpen:menu:close-main'));" in text
+    assert "onExternalCloseProjectMenu()" in text
     assert "this.$emit('new-project', path.trim());" in text
 
 
