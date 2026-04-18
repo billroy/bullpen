@@ -1,6 +1,6 @@
 const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot'],
-  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker'],
+  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small' }"
          :style="layoutMode === 'small' ? { background: agentColor } : null"
@@ -354,13 +354,15 @@ const WorkerCard = {
     openMenuAndFocus() {
       if (!this.showMenu) this.toggleMenu();
     },
+    closeMenuAndRestoreFocus() {
+      this.showMenu = false;
+      this.$emit('menu-closed');
+    },
     onMenuKeydown(e) {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        this.showMenu = false;
-        const viewport = document.querySelector('.worker-grid-viewport');
-        if (viewport) viewport.focus();
+        this.closeMenuAndRestoreFocus();
         return;
       }
       const items = Array.from(this.$el.querySelectorAll('.worker-menu .worker-menu-item:not([disabled])'));

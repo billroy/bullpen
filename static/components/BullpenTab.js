@@ -125,6 +125,7 @@ const BullpenTab = {
             @open-focus="$emit('open-focus', $event)"
             @transfer="$emit('transfer-worker', $event)"
             @copy-worker="copyWorker"
+            @menu-closed="focusViewport"
           />
 
           <div v-for="cell in visibleDropTargetOverlays"
@@ -670,6 +671,7 @@ const BullpenTab = {
         this.emptyMenuCoord = null;
         this.emptyMenuPos = null;
         this.liveMessage = `Empty cell at column ${coord.col}, row ${coord.row}`;
+        this.focusViewport();
       }
     },
     selectWorker(item) {
@@ -681,13 +683,20 @@ const BullpenTab = {
       this.selectedCell = { col: 0, row: 0 };
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
-      this.$nextTick(() => this.$refs.viewport?.focus());
+      this.focusViewport();
     },
     onWorkerClick(e, item) {
       if (e.target.closest('.connect-handle, .status-pill, .worker-card-token-meta, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
         return;
       }
       this.selectWorker(item);
+      this.focusViewport();
+    },
+    focusViewport() {
+      this.$nextTick(() => {
+        const el = this.$refs.viewport;
+        if (el && document.activeElement !== el) el.focus({ preventScroll: true });
+      });
     },
     isSelected(coord) {
       return !!(this.selectedCell && coord && this.selectedCell.col === coord.col && this.selectedCell.row === coord.row);
