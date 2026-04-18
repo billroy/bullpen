@@ -674,6 +674,39 @@ class TestChatEvents:
             c1.disconnect()
             c2.disconnect()
 
+    def test_chat_user_message_is_broadcast_to_other_clients(self):
+        with tempfile.TemporaryDirectory(prefix="bullpen_chat_user_broadcast_") as ws:
+            app = create_app(ws, no_browser=True)
+            c1 = socketio.test_client(app)
+            c2 = socketio.test_client(app)
+            c1.get_received()
+            c2.get_received()
+
+            register_adapter("chat-usage-mock", ChatUsageAdapter())
+
+            ws_id = app.config["startup_workspace_id"]
+            session_id = "shared-live-session"
+            message = "hello from window one"
+
+            c1.emit("chat:send", {
+                "workspaceId": ws_id,
+                "sessionId": session_id,
+                "provider": "chat-usage-mock",
+                "model": "mock-model",
+                "message": message,
+            })
+
+            user_evt = _wait_for_event(c2, "chat:user")
+            assert user_evt is not None
+            assert user_evt["workspaceId"] == ws_id
+            assert user_evt["sessionId"] == session_id
+            assert user_evt["message"] == message
+            assert user_evt["senderSid"]
+            assert _wait_for_event(c1, "chat:done")
+
+            c1.disconnect()
+            c2.disconnect()
+
     def test_chat_tabs_are_workspace_room_isolated(self):
         with tempfile.TemporaryDirectory(prefix="bullpen_chat_tabs_room_") as ws:
             app = create_app(ws, no_browser=True)

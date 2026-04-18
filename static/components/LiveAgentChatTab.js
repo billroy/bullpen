@@ -66,6 +66,15 @@ const LiveAgentChatTab = {
         }
         this._scrollToBottom();
       };
+      this._onUser = (data) => {
+        if (!_sameChatSession(data)) return;
+        if (data.senderSid && s.id && data.senderSid === s.id) return;
+        const text = String(data.message || '').trim();
+        if (!text) return;
+        this.messages.push({ role: 'user', content: text });
+        this.busy = true;
+        this._scrollToBottom();
+      };
       this._onDone = (data) => {
         if (!_sameChatSession(data)) return;
         const last = this.messages[this.messages.length - 1];
@@ -84,6 +93,7 @@ const LiveAgentChatTab = {
         this.messages = [];
         this.busy = false;
       };
+      s.on('chat:user', this._onUser);
       s.on('chat:output', this._onOutput);
       s.on('chat:done', this._onDone);
       s.on('chat:error', this._onError);
@@ -92,6 +102,7 @@ const LiveAgentChatTab = {
     _removeSocketHandlers() {
       const s = window._bullpenSocket;
       if (!s) return;
+      if (this._onUser) s.off('chat:user', this._onUser);
       if (this._onOutput) s.off('chat:output', this._onOutput);
       if (this._onDone) s.off('chat:done', this._onDone);
       if (this._onError) s.off('chat:error', this._onError);

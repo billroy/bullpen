@@ -42,6 +42,12 @@ def test_live_agent_provider_options_include_gemini():
     assert "['claude', 'codex', 'gemini']" in text
 
 
+def test_live_agent_component_syncs_user_messages_between_windows():
+    text = _read("static/components/LiveAgentChatTab.js")
+    assert "s.on('chat:user', this._onUser);" in text
+    assert "if (data.senderSid && s.id && data.senderSid === s.id) return;" in text
+
+
 def test_live_agent_project_switch_preserves_live_agent_mode():
     text = _read("static/app.js")
     assert "const wasLiveAgent = !!currentChatTab;" in text

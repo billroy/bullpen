@@ -1397,6 +1397,11 @@ def register_events(socketio, app):
         )
         if added:
             _emit_chat_tabs(ws_id)
+        _emit_chat(
+            "chat:user",
+            {"sessionId": session_id, "message": message, "senderSid": request.sid},
+            ws_id,
+        )
 
         # Build prompt with conversation history
         chat_key = _chat_key(ws_id, session_id)
