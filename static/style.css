@@ -93,6 +93,23 @@
   --terminal-fg: #312e26;
 }
 
+[data-theme="eyeshade"] {
+  --bg-primary: #e8ecd8;
+  --bg-secondary: #d6dbc2;
+  --bg-tertiary: #c5ccae;
+  --bg-hover: #b5be9c;
+  --ticket-bg: #f0f4e2;
+  --ticket-bg-hover: #e2e8ce;
+  --border: #8a9468;
+  --text-primary: #1a1e0e;
+  --text-secondary: #3a4020;
+  --text-muted: #5e6644;
+  --accent: #2e6b28;
+  --accent-hover: #1f4f1a;
+  --terminal-bg: #f2f6e0;
+  --terminal-fg: #1a1e0e;
+}
+
 [data-theme="dracula"] {
   --bg-primary: #282a36;
   --bg-secondary: #313445;
@@ -359,6 +376,18 @@
 [data-theme="light-ethereal"] .badge.type-chore,
 [data-theme="light-stone-teal"] .badge.type-chore,
 [data-theme="light-ivory-olive"] .badge.type-chore { background: #f6ddbf; color: #8f4e18; }
+
+[data-theme="eyeshade"] .priority-low { background: #c8e6c0; color: #1a4a12; }
+[data-theme="eyeshade"] .priority-normal { background: #dde0a8; color: #4a4c14; }
+[data-theme="eyeshade"] .priority-high { background: #f0e0a0; color: #6b5510; }
+[data-theme="eyeshade"] .priority-urgent { background: #e8c0b0; color: #7a2a1a; }
+[data-theme="eyeshade"] .status-pill.status-idle { background: #c8cead; color: #3a4020; }
+[data-theme="eyeshade"] .status-pill.status-working { background: #b0daa8; color: #1a4a12; }
+[data-theme="eyeshade"] .status-pill.status-queued { background: #e8dda0; color: #5a5010; }
+[data-theme="eyeshade"] .badge.type-task { background: #c8cead; color: #3a4020; }
+[data-theme="eyeshade"] .badge.type-bug { background: #e8c0b0; color: #7a2a1a; }
+[data-theme="eyeshade"] .badge.type-feature { background: #b0daa8; color: #1a4a12; }
+[data-theme="eyeshade"] .badge.type-chore { background: #dde0a8; color: #4a4c14; }
 
 /* === Reset === */
 *, *::before, *::after {
@@ -1373,7 +1402,8 @@ body {
 [data-theme="light"] .ticket-list-row,
 [data-theme="light-ethereal"] .ticket-list-row,
 [data-theme="light-stone-teal"] .ticket-list-row,
-[data-theme="light-ivory-olive"] .ticket-list-row {
+[data-theme="light-ivory-olive"] .ticket-list-row,
+[data-theme="eyeshade"] .ticket-list-row {
   background: var(--ticket-bg);
 }
 
@@ -2117,16 +2147,11 @@ body {
   border-radius: 3px;
   line-height: 1;
   letter-spacing: 1px;
-  visibility: hidden;
-  opacity: 0;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
+  display: none;
 }
 
-.worker-card:hover .worker-menu-btn,
-.worker-card:focus-within .worker-menu-btn,
-.worker-card.selected .worker-menu-btn {
-  visibility: visible;
-  opacity: 1;
+.worker-card:hover .worker-menu-btn {
+  display: inline-flex;
 }
 
 .worker-menu-btn:hover {
@@ -2213,11 +2238,6 @@ body {
   50% { opacity: 0.6; }
 }
 
-.worker-card-token-meta {
-  font-size: 10px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
 
 .worker-card-queue {
   display: flex;
@@ -3700,7 +3720,8 @@ body {
 [data-theme="light"] .commit-diff-line-hunk,
 [data-theme="light-ethereal"] .commit-diff-line-hunk,
 [data-theme="light-stone-teal"] .commit-diff-line-hunk,
-[data-theme="light-ivory-olive"] .commit-diff-line-hunk {
+[data-theme="light-ivory-olive"] .commit-diff-line-hunk,
+[data-theme="eyeshade"] .commit-diff-line-hunk {
   color: #2f4f7f;
   background: rgba(59, 130, 246, 0.14);
 }
@@ -3708,21 +3729,24 @@ body {
 [data-theme="light"] .commit-diff-line-file-old,
 [data-theme="light-ethereal"] .commit-diff-line-file-old,
 [data-theme="light-stone-teal"] .commit-diff-line-file-old,
-[data-theme="light-ivory-olive"] .commit-diff-line-file-old {
+[data-theme="light-ivory-olive"] .commit-diff-line-file-old,
+[data-theme="eyeshade"] .commit-diff-line-file-old {
   color: #8f2f2d;
 }
 
 [data-theme="light"] .commit-diff-line-file-new,
 [data-theme="light-ethereal"] .commit-diff-line-file-new,
 [data-theme="light-stone-teal"] .commit-diff-line-file-new,
-[data-theme="light-ivory-olive"] .commit-diff-line-file-new {
+[data-theme="light-ivory-olive"] .commit-diff-line-file-new,
+[data-theme="eyeshade"] .commit-diff-line-file-new {
   color: #1e5f33;
 }
 
 [data-theme="light"] .commit-diff-line-add,
 [data-theme="light-ethereal"] .commit-diff-line-add,
 [data-theme="light-stone-teal"] .commit-diff-line-add,
-[data-theme="light-ivory-olive"] .commit-diff-line-add {
+[data-theme="light-ivory-olive"] .commit-diff-line-add,
+[data-theme="eyeshade"] .commit-diff-line-add {
   color: #1e5f33;
   background: #e4f5ec;
 }
@@ -3730,7 +3754,8 @@ body {
 [data-theme="light"] .commit-diff-line-remove,
 [data-theme="light-ethereal"] .commit-diff-line-remove,
 [data-theme="light-stone-teal"] .commit-diff-line-remove,
-[data-theme="light-ivory-olive"] .commit-diff-line-remove {
+[data-theme="light-ivory-olive"] .commit-diff-line-remove,
+[data-theme="eyeshade"] .commit-diff-line-remove {
   color: #8f2f2d;
   background: #f7e3e0;
 }

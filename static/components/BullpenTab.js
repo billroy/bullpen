@@ -686,7 +686,7 @@ const BullpenTab = {
       this.focusViewport();
     },
     onWorkerClick(e, item) {
-      if (e.target.closest('.connect-handle, .status-pill, .worker-card-token-meta, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
+      if (e.target.closest('.connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
         return;
       }
       this.selectWorker(item);

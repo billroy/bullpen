@@ -37,7 +37,6 @@ const WorkerCard = {
             <span v-if="workerState !== 'idle' || isPaused" class="status-pill" :class="'status-' + workerState">
               {{ statusLabel }}
             </span>
-            <span v-if="isWorking && currentTaskTokens !== null" class="worker-card-token-meta" title="Total tokens so far for current task">{{ formatTokens(currentTaskTokens) }}</span>
           </span>
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
           <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
@@ -141,17 +140,6 @@ const WorkerCard = {
         const t = this.tasks.find(task => task.id === id);
         return t || { id, title: id };
       });
-    },
-    currentTask() {
-      if (!this.worker.task_queue?.length || !this.tasks) return null;
-      const currentTaskId = this.worker.task_queue[0];
-      return this.tasks.find(t => t.id === currentTaskId) || null;
-    },
-    currentTaskTokens() {
-      if (!this.currentTask) return null;
-      const n = Number(this.currentTask.tokens);
-      if (!Number.isFinite(n) || n < 0) return 0;
-      return Math.floor(n);
     },
     menuStyle() {
       return { top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
@@ -459,10 +447,5 @@ const WorkerCard = {
       }
       this.elapsed = m > 0 ? `${m}m ${s}s` : `${s}s`;
     },
-    formatTokens(n) {
-      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M tok';
-      if (n >= 1000) return (n / 1000).toFixed(1) + 'k tok';
-      return String(n) + ' tok';
-    }
   }
 };
