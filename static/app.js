@@ -364,6 +364,8 @@ const app = createApp({
     });
     window._bullpenSocket = socket;
 
+    if (window.EventSounds) window.EventSounds.init(socket);
+
     socket.on('connect', () => { connected.value = true; });
     socket.on('disconnect', () => { connected.value = false; });
     // If the server rejects the upgrade (e.g. unauthenticated session),

@@ -15,7 +15,14 @@ const TopToolbar = {
     'run-command-bar',
   ],
   data() {
-    return { showMainMenu: false, quickCreateText: '' };
+    return {
+      showMainMenu: false,
+      quickCreateText: '',
+      showEventSoundsMenu: false,
+      eventSoundFlags: (window.EventSounds && window.EventSounds.getFlags())
+        || { ...(window.EVENT_SOUND_FLAGS_DEFAULTS || {}) },
+      eventSoundLabels: window.EVENT_SOUND_LABELS || [],
+    };
   },
   watch: {
     quickCreateClearToken() {
@@ -38,11 +45,29 @@ const TopToolbar = {
     toggleMainMenu() {
       this.showMainMenu = !this.showMainMenu;
       if (this.showMainMenu) {
+        this.showEventSoundsMenu = false;
         window.dispatchEvent(new Event('bullpen:menu:close-projects'));
       }
     },
     onGlobalClick() {
       this.showMainMenu = false;
+      this.showEventSoundsMenu = false;
+    },
+    toggleEventSoundsMenu() {
+      this.showEventSoundsMenu = !this.showEventSoundsMenu;
+      if (this.showEventSoundsMenu) this.showMainMenu = false;
+    },
+    onToggleEventSoundFlag(key) {
+      if (!window.EventSounds) return;
+      const next = !this.eventSoundFlags[key];
+      window.EventSounds.setFlag(key, next);
+      this.eventSoundFlags = { ...this.eventSoundFlags, [key]: next };
+    },
+    onPreviewEventSound(previewMethod) {
+      if (window.ambientAudio && typeof window.ambientAudio[previewMethod] === 'function') {
+        window.ambientAudio.unlock();
+        window.ambientAudio[previewMethod]();
+      }
     },
     onExternalCloseMainMenu() {
       this.showMainMenu = false;
@@ -186,6 +211,47 @@ const TopToolbar = {
             title="Ambient volume"
           >
           <span class="toolbar-audio-value">{{ ambientVolume }}%</span>
+        </div>
+        <div class="toolbar-menu-wrap event-sounds-menu-wrap" @click.stop>
+          <button
+            class="btn btn-icon event-sounds-btn"
+            :class="{ 'is-disabled': !eventSoundFlags.enabled }"
+            @click="toggleEventSoundsMenu"
+            title="Event sounds"
+          >
+            <i data-lucide="bell" aria-hidden="true"></i>
+          </button>
+          <div v-if="showEventSoundsMenu" class="project-menu toolbar-menu event-sounds-menu">
+            <label class="event-sounds-row event-sounds-master">
+              <input
+                type="checkbox"
+                :checked="eventSoundFlags.enabled"
+                @change="onToggleEventSoundFlag('enabled')"
+              >
+              <span class="event-sounds-row-label">All event sounds</span>
+            </label>
+            <div class="event-sounds-divider"></div>
+            <div
+              v-for="item in eventSoundLabels"
+              :key="item.key"
+              class="event-sounds-row"
+            >
+              <label class="event-sounds-row-main">
+                <input
+                  type="checkbox"
+                  :checked="!!eventSoundFlags[item.key]"
+                  :disabled="!eventSoundFlags.enabled"
+                  @change="onToggleEventSoundFlag(item.key)"
+                >
+                <span class="event-sounds-row-label">{{ item.label }}</span>
+              </label>
+              <button
+                class="btn btn-sm event-sounds-preview"
+                @click="onPreviewEventSound(item.preview)"
+                title="Preview"
+              >▶</button>
+            </div>
+          </div>
         </div>
         <select class="form-select theme-select" :value="activeTheme" @change="$emit('set-theme', $event.target.value)" title="Theme">
           <option v-for="t in themes || []" :key="t.id" :value="t.id">{{ t.label }}</option>

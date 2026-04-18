@@ -226,6 +226,54 @@ class AudioEngine {
     this._tone(800, 300, 0.2, 'sine', 0.2);
   }
 
+  // ── Event sounds (task/worker lifecycle) ─────────────────────
+
+  /** Task started / worker picked up: two-note rising E5→B5 triangle */
+  playStart() {
+    this._init();
+    this._tone(659, 659, 0.09, 'triangle', 0.25);
+    setTimeout(() => this._tone(988, 988, 0.09, 'triangle', 0.25), 70);
+  }
+
+  /** Task done: three-note C-major arpeggio C5→E5→G5 */
+  playDone() {
+    this._init();
+    this._tone(523, 523, 0.09, 'sine', 0.25);
+    setTimeout(() => this._tone(659, 659, 0.09, 'sine', 0.25), 60);
+    setTimeout(() => this._tone(784, 784, 0.12, 'sine', 0.25), 120);
+  }
+
+  /** Task reverted to inbox: descending minor third A4→F4 */
+  playRevert() {
+    this._init();
+    this._tone(440, 349, 0.12, 'sine', 0.18);
+  }
+
+  /** Error: short noise burst + low sawtooth buzz */
+  playError() {
+    this._init();
+    this._noise(0.08, 0.10);
+    this._tone(180, 120, 0.15, 'sawtooth', 0.2);
+  }
+
+  /**
+   * Temporarily dip the ambient gain so an event sound is audible over it.
+   * @param {number} dBDepth  Attenuation in dB (positive value; e.g. 6 → −6 dB)
+   * @param {number} durationMs  How long to stay ducked before restoring
+   */
+  _duckAmbient(dBDepth = 6, durationMs = 300) {
+    if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
+    const now = this._ctx.currentTime;
+    const current = this._ambientGain.gain.value;
+    const factor = Math.pow(10, -Math.abs(dBDepth) / 20);
+    const ducked = current * factor;
+    this._ambientGain.gain.cancelScheduledValues(now);
+    this._ambientGain.gain.setValueAtTime(current, now);
+    this._ambientGain.gain.linearRampToValueAtTime(ducked, now + 0.04);
+    this._ambientGain.gain.setValueAtTime(ducked, now + durationMs / 1000);
+    this._ambientGain.gain.linearRampToValueAtTime(current, now + durationMs / 1000 + 0.15);
+  }
+
   // ── Channel join / leave sounds ────────────────────────────────
 
   playClientJoin() {
