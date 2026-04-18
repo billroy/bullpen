@@ -346,13 +346,13 @@ const WorkerCard = {
         this.menuPos = { top: rect.bottom + 4, left };
       }
       this.showMenu = true;
-    },
-    openMenuAndFocus() {
-      if (!this.showMenu) this.toggleMenu();
       this.$nextTick(() => {
         const first = this.$el.querySelector('.worker-menu .worker-menu-item:not([disabled])');
         if (first) first.focus();
       });
+    },
+    openMenuAndFocus() {
+      if (!this.showMenu) this.toggleMenu();
     },
     onMenuKeydown(e) {
       if (e.key === 'Escape') {
