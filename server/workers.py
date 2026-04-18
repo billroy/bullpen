@@ -1290,6 +1290,14 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="",
         if not worker:
             return
 
+        # If the task was removed from the queue externally (e.g. yanked
+        # because the agent's own MCP update changed the task status while
+        # still running), skip retry — otherwise start_worker would find an
+        # empty queue and create a spurious auto-task.
+        queue = worker.get("task_queue", [])
+        if task_id not in queue:
+            return
+
         max_retries = worker.get("max_retries", 1)
         task = task_mod.read_task(bp_dir, task_id)
         if not task:
