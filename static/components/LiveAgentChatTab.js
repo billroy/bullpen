@@ -45,8 +45,13 @@ const LiveAgentChatTab = {
     _registerSocketHandlers() {
       const s = window._bullpenSocket;
       if (!s) return;
+      const _sameChatSession = (data) => {
+        if (!data || data.sessionId !== this.activeSessionId) return false;
+        if (data.workspaceId && this.workspaceId && data.workspaceId !== this.workspaceId) return false;
+        return true;
+      };
       this._onOutput = (data) => {
-        if (data.sessionId !== this.activeSessionId) return;
+        if (!_sameChatSession(data)) return;
         const last = this.messages[this.messages.length - 1];
         if (!last || last.role !== 'assistant' || !last.streaming) {
           this.messages.push({ role: 'assistant', content: '', streaming: true });
@@ -62,21 +67,27 @@ const LiveAgentChatTab = {
         this._scrollToBottom();
       };
       this._onDone = (data) => {
-        if (data.sessionId !== this.activeSessionId) return;
+        if (!_sameChatSession(data)) return;
         const last = this.messages[this.messages.length - 1];
         if (last && last.streaming) last.streaming = false;
         this.busy = false;
         this._scrollToBottom();
       };
       this._onError = (data) => {
-        if (data.sessionId !== this.activeSessionId) return;
+        if (!_sameChatSession(data)) return;
         this.messages.push({ role: 'system', content: 'Error: ' + (data.message || 'Unknown error') });
         this.busy = false;
         this._scrollToBottom();
       };
+      this._onCleared = (data) => {
+        if (!_sameChatSession(data)) return;
+        this.messages = [];
+        this.busy = false;
+      };
       s.on('chat:output', this._onOutput);
       s.on('chat:done', this._onDone);
       s.on('chat:error', this._onError);
+      s.on('chat:cleared', this._onCleared);
     },
     _removeSocketHandlers() {
       const s = window._bullpenSocket;
@@ -84,6 +95,7 @@ const LiveAgentChatTab = {
       if (this._onOutput) s.off('chat:output', this._onOutput);
       if (this._onDone) s.off('chat:done', this._onDone);
       if (this._onError) s.off('chat:error', this._onError);
+      if (this._onCleared) s.off('chat:cleared', this._onCleared);
     },
     sendMessage() {
       const text = this.input.trim();
@@ -112,7 +124,6 @@ const LiveAgentChatTab = {
       this.busy = false;
       const s = window._bullpenSocket;
       if (s) s.emit('chat:clear', { sessionId: this.activeSessionId, workspaceId: this.workspaceId });
-      this.activeSessionId = _generateChatSessionId();
       this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
     },
     onKeydown(e) {

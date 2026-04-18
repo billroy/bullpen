@@ -632,6 +632,96 @@ class TestChatEvents:
         assert "Requested entity was not found" in error["message"]
         assert done is False
 
+    def test_chat_tab_open_is_broadcast_to_other_clients(self):
+        with tempfile.TemporaryDirectory(prefix="bullpen_chat_tabs_") as ws:
+            app = create_app(ws, no_browser=True)
+            c1 = socketio.test_client(app)
+            c2 = socketio.test_client(app)
+            c1.get_received()
+            c2.get_received()
+
+            ws_id = app.config["startup_workspace_id"]
+            session_id = "shared-live-session"
+
+            c1.emit("chat:tab:open", {
+                "workspaceId": ws_id,
+                "id": session_id,
+                "sessionId": session_id,
+                "label": "Live Agent",
+            })
+
+            deadline = time.time() + 3.0
+            seen_c1 = False
+            seen_c2 = False
+            while time.time() < deadline and not (seen_c1 and seen_c2):
+                for evt in c1.get_received():
+                    if evt["name"] != "chat:tabs":
+                        continue
+                    tabs = evt["args"][0].get("tabs") or []
+                    if any(t.get("sessionId") == session_id for t in tabs):
+                        seen_c1 = True
+                for evt in c2.get_received():
+                    if evt["name"] != "chat:tabs":
+                        continue
+                    tabs = evt["args"][0].get("tabs") or []
+                    if any(t.get("sessionId") == session_id for t in tabs):
+                        seen_c2 = True
+                if not (seen_c1 and seen_c2):
+                    time.sleep(0.05)
+
+            assert seen_c1
+            assert seen_c2
+            c1.disconnect()
+            c2.disconnect()
+
+    def test_chat_tabs_are_workspace_room_isolated(self):
+        with tempfile.TemporaryDirectory(prefix="bullpen_chat_tabs_room_") as ws:
+            app = create_app(ws, no_browser=True)
+            c1 = socketio.test_client(app)
+            c2 = socketio.test_client(app)
+            c1.get_received()
+            c2.get_received()
+
+            with tempfile.TemporaryDirectory(prefix="bullpen_chat_tabs_room_parent_") as parent:
+                path = os.path.join(parent, "room-isolated-project")
+                c1.emit("project:new", {"path": path})
+                events = c1.get_received()
+                project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+                listed = project_updates[-1]["args"][0]
+                ws_b = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+
+                c2.get_received()  # drain projects update
+
+                c1.emit("chat:tab:open", {
+                    "workspaceId": ws_b,
+                    "id": "ws-b-session",
+                    "sessionId": "ws-b-session",
+                    "label": "Live Agent",
+                })
+                c1.get_received()
+
+                leaked = False
+                deadline = time.time() + 0.4
+                while time.time() < deadline:
+                    for evt in c2.get_received():
+                        if evt["name"] == "chat:tabs" and evt["args"][0].get("workspaceId") == ws_b:
+                            leaked = True
+                    if leaked:
+                        break
+                    time.sleep(0.05)
+                assert leaked is False
+
+                c2.emit("project:join", {"workspaceId": ws_b})
+                c2.get_received()  # drain state:init
+                c2.emit("chat:tabs:request", {"workspaceId": ws_b})
+                tabs_evt = _wait_for_event(c2, "chat:tabs")
+                assert tabs_evt is not None
+                assert tabs_evt["workspaceId"] == ws_b
+                assert any(t.get("sessionId") == "ws-b-session" for t in (tabs_evt.get("tabs") or []))
+
+            c1.disconnect()
+            c2.disconnect()
+
 
 class TestConfigEvents:
     def test_config_update(self, client):

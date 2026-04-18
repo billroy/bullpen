@@ -240,11 +240,38 @@ const app = createApp({
     const focusTabs = reactive([]);      // [{slotIndex, workspaceId, label}]
     const chatTabs = reactive([]);
     const lastLiveAgentTabByWorkspace = reactive({});
-    let chatTabCounter = 0;
     let toastId = 0;
 
     function _newChatSessionId() {
       return 'chat-' + crypto.randomUUID();
+    }
+
+    function _defaultChatSessionId(wsId) {
+      return `chat-default-${wsId}`;
+    }
+
+    function _normalizeChatTab(tab, wsId) {
+      const sessionId = String(tab?.sessionId || '').trim();
+      if (!sessionId) return null;
+      const id = String(tab?.id || sessionId).trim() || sessionId;
+      const label = String(tab?.label || 'Live Agent').trim() || 'Live Agent';
+      return { id, label, sessionId, workspaceId: wsId };
+    }
+
+    function _upsertChatTab(rawTab, { activate = false } = {}) {
+      const wsId = rawTab?.workspaceId;
+      const normalized = _normalizeChatTab(rawTab, wsId);
+      if (!normalized) return null;
+      const existing = chatTabs.find(t => t.workspaceId === wsId && t.sessionId === normalized.sessionId);
+      if (existing) {
+        existing.id = normalized.id;
+        existing.label = normalized.label;
+        if (activate) setActiveTab(existing.id);
+        return existing;
+      }
+      chatTabs.push(normalized);
+      if (activate) setActiveTab(normalized.id);
+      return normalized;
     }
 
     function _rememberLiveAgentTab(tabId) {
@@ -260,19 +287,26 @@ const app = createApp({
     function addLiveAgentTab({ activate = true } = {}) {
       const wsId = activeWorkspaceId.value;
       if (!wsId) return null;  // chat tabs are strictly per-workspace
-      chatTabCounter += 1;
-      const id = 'chat-' + chatTabCounter;
+      const existingTabs = chatTabs.filter(t => t.workspaceId === wsId);
+      const shouldSeedDefault = !activate && existingTabs.length === 0;
+      const sessionId = shouldSeedDefault ? _defaultChatSessionId(wsId) : _newChatSessionId();
       const projectName = _workspaceBaseName(workspaces[wsId]?.workspace || '');
-      const perWsCount = chatTabs.filter(t => t.workspaceId === wsId).length + 1;
+      const perWsCount = existingTabs.length + 1;
       const suffix = perWsCount === 1 ? '' : ` ${perWsCount}`;
-      const tab = {
-        id,
+      const tab = _upsertChatTab({
+        id: sessionId,
         label: projectName ? `Live Agent${suffix} (${projectName})` : `Live Agent${suffix}`,
-        sessionId: _newChatSessionId(),
+        sessionId,
         workspaceId: wsId,
-      };
-      chatTabs.push(tab);
-      if (activate) setActiveTab(id);
+      }, { activate });
+      if (socket?.connected && tab) {
+        socket.emit('chat:tab:open', {
+          workspaceId: wsId,
+          id: tab.id,
+          sessionId: tab.sessionId,
+          label: tab.label,
+        });
+      }
       return tab;
     }
 
@@ -282,7 +316,9 @@ const app = createApp({
       const wsId = chatTabs[idx].workspaceId;
       const siblingCount = chatTabs.filter(t => t.workspaceId === wsId).length;
       if (siblingCount <= 1) return;  // keep at least one chat tab per workspace
+      const closedSessionId = chatTabs[idx].sessionId;
       chatTabs.splice(idx, 1);
+      if (socket?.connected) socket.emit('chat:tab:close', { workspaceId: wsId, sessionId: closedSessionId });
       if (lastLiveAgentTabByWorkspace[wsId] === tabId) {
         const fallback = chatTabs.find(t => t.workspaceId === wsId);
         if (fallback) lastLiveAgentTabByWorkspace[wsId] = fallback.id;
@@ -368,6 +404,7 @@ const app = createApp({
         _applyWorkspaceAmbient(wsId);
         _updateDocumentTitle();
       }
+      socket.emit('chat:tabs:request', { workspaceId: wsId });
     });
 
     socket.on('task:created', (task) => {
@@ -455,10 +492,47 @@ const app = createApp({
     socket.on('project:removed', (data) => {
       const removedId = data.workspaceId;
       delete workspaces[removedId];
+      for (let i = chatTabs.length - 1; i >= 0; i -= 1) {
+        if (chatTabs[i].workspaceId === removedId) chatTabs.splice(i, 1);
+      }
+      delete lastLiveAgentTabByWorkspace[removedId];
       if (activeWorkspaceId.value === removedId) {
         // Switch to first available
         const firstId = projects.find(p => p.id !== removedId)?.id;
         if (firstId) switchWorkspace(firstId);
+      }
+    });
+    socket.on('chat:tabs', (data) => {
+      const wsId = data?.workspaceId || activeWorkspaceId.value;
+      if (!wsId) return;
+      const prevActiveTabId = activeTab.value;
+      const prevActiveTab = chatTabs.find(t => t.id === prevActiveTabId);
+      const activeWasChatInWorkspace = !!(prevActiveTab && prevActiveTab.workspaceId === wsId);
+      const incoming = Array.isArray(data?.tabs) ? data.tabs : [];
+      const normalized = incoming.map(tab => _normalizeChatTab(tab, wsId)).filter(Boolean);
+
+      for (let i = chatTabs.length - 1; i >= 0; i -= 1) {
+        if (chatTabs[i].workspaceId === wsId) chatTabs.splice(i, 1);
+      }
+      for (const tab of normalized) {
+        chatTabs.push(tab);
+      }
+
+      if (!chatTabs.find(t => t.workspaceId === wsId)) {
+        if (_isActive(wsId)) addLiveAgentTab({ activate: false });
+        return;
+      }
+
+      if (!chatTabs.find(t => t.workspaceId === wsId && t.id === lastLiveAgentTabByWorkspace[wsId])) {
+        const fallback = chatTabs.find(t => t.workspaceId === wsId);
+        if (fallback) lastLiveAgentTabByWorkspace[wsId] = fallback.id;
+      }
+
+      if (activeWasChatInWorkspace && !chatTabs.find(t => t.workspaceId === wsId && t.id === prevActiveTabId)) {
+        const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);
+        const fallback = preferred || chatTabs.find(t => t.workspaceId === wsId);
+        if (fallback) setActiveTab(fallback.id);
+        else activeTab.value = 'tasks';
       }
     });
     socket.on('files:changed', (data) => {

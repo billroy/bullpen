@@ -845,6 +845,7 @@ def register_events(socketio, app):
         state = load_state(ws.bp_dir, ws.path)
         state["workspaceId"] = ws_id
         emit("state:init", state)
+        _emit_chat_tabs(ws_id, sid=request.sid)
 
     @socketio.on("project:add")
     @with_lock
@@ -966,6 +967,13 @@ def register_events(socketio, app):
             return
 
         manager.remove_project(ws_id)
+        with _chat_lock:
+            _chat_tabs.pop(ws_id, None)
+            stale_keys = [key for key in _chat_sessions if key[0] == ws_id]
+            for key in stale_keys:
+                _chat_sessions.pop(key, None)
+                _chat_session_ts.pop(key, None)
+                _chat_ticket_ids.pop(key, None)
         socketio.emit("project:removed", {"workspaceId": ws_id}, to="authenticated")
         socketio.emit("projects:updated", manager.list_projects(), to="authenticated")
 
@@ -973,6 +981,53 @@ def register_events(socketio, app):
     def on_project_list(data=None):
         manager = app.config["manager"]
         emit("projects:updated", manager.list_projects())
+
+    @socketio.on("chat:tabs:request")
+    def on_chat_tabs_request(data):
+        ws_id, _ = _resolve(data or {})
+        if ws_id not in rooms(request.sid):
+            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+            return
+        _evict_stale_chat_sessions()
+        if not _chat_tabs.get(ws_id):
+            default_session = f"chat-default-{ws_id}"
+            _upsert_chat_tab(ws_id, default_session, label="Live Agent", tab_id=default_session)
+        _emit_chat_tabs(ws_id, sid=request.sid)
+
+    @socketio.on("chat:tab:open")
+    def on_chat_tab_open(data):
+        ws_id, _ = _resolve(data or {})
+        if ws_id not in rooms(request.sid):
+            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+            return
+        session_id = (data or {}).get("sessionId")
+        if not str(session_id or "").strip():
+            emit("error", {"message": "chat:tab:open requires sessionId"})
+            return
+        _evict_stale_chat_sessions()
+        _upsert_chat_tab(
+            ws_id,
+            session_id,
+            label=(data or {}).get("label") or "Live Agent",
+            tab_id=(data or {}).get("id"),
+        )
+        _emit_chat_tabs(ws_id)
+
+    @socketio.on("chat:tab:close")
+    def on_chat_tab_close(data):
+        ws_id, _ = _resolve(data or {})
+        if ws_id not in rooms(request.sid):
+            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+            return
+        session_id = (data or {}).get("sessionId")
+        if not str(session_id or "").strip():
+            emit("error", {"message": "chat:tab:close requires sessionId"})
+            return
+        _remove_chat_tab(ws_id, session_id)
+        if not _chat_tabs.get(ws_id):
+            default_session = f"chat-default-{ws_id}"
+            _upsert_chat_tab(ws_id, default_session, label="Live Agent", tab_id=default_session)
+        _emit_chat_tabs(ws_id)
 
     # --- Chat events ---
 
@@ -984,9 +1039,69 @@ def register_events(socketio, app):
 
     # (workspaceId, sessionId) -> ticket ID (created lazily on first message)
     _chat_ticket_ids = {}
+    _chat_tabs = {}  # workspaceId -> list of {id, sessionId, label}
 
     def _chat_key(ws_id, session_id):
         return (ws_id, session_id)
+
+    def _chat_tab_payload(ws_id):
+        with _chat_lock:
+            tabs = [dict(tab) for tab in _chat_tabs.get(ws_id, [])]
+        return {"workspaceId": ws_id, "tabs": tabs}
+
+    def _emit_chat_tabs(ws_id, sid=None):
+        payload = _chat_tab_payload(ws_id)
+        if sid:
+            socketio.emit("chat:tabs", payload, to=sid)
+            return
+        socketio.emit("chat:tabs", payload, to=ws_id)
+
+    def _upsert_chat_tab(ws_id, session_id, label=None, tab_id=None):
+        session_id = str(session_id or "").strip()
+        if not ws_id or not session_id:
+            return False
+        safe_label = str(label or "Live Agent").strip() or "Live Agent"
+        safe_id = str(tab_id or session_id).strip() or session_id
+        now = time.time()
+        with _chat_lock:
+            tabs = _chat_tabs.setdefault(ws_id, [])
+            for tab in tabs:
+                if tab.get("sessionId") == session_id:
+                    if tab.get("label") != safe_label:
+                        tab["label"] = safe_label
+                    if tab.get("id") != safe_id:
+                        tab["id"] = safe_id
+                    _chat_session_ts[_chat_key(ws_id, session_id)] = now
+                    return False
+            tabs.append({"id": safe_id, "sessionId": session_id, "label": safe_label})
+            _chat_session_ts[_chat_key(ws_id, session_id)] = now
+        return True
+
+    def _remove_chat_tab(ws_id, session_id):
+        if not ws_id or not session_id:
+            return False
+        removed = False
+        with _chat_lock:
+            tabs = _chat_tabs.get(ws_id, [])
+            kept = [tab for tab in tabs if tab.get("sessionId") != session_id]
+            if len(kept) != len(tabs):
+                removed = True
+                if kept:
+                    _chat_tabs[ws_id] = kept
+                else:
+                    _chat_tabs.pop(ws_id, None)
+                key = _chat_key(ws_id, session_id)
+                _chat_sessions.pop(key, None)
+                _chat_session_ts.pop(key, None)
+                _chat_ticket_ids.pop(key, None)
+        return removed
+
+    def _emit_chat(event, payload, ws_id):
+        if not ws_id:
+            return
+        body = dict(payload or {})
+        body["workspaceId"] = ws_id
+        socketio.emit(event, body, to=ws_id)
 
     def _evict_stale_chat_sessions():
         cutoff = time.time() - _CHAT_SESSION_TTL
@@ -996,15 +1111,23 @@ def register_events(socketio, app):
                 _chat_sessions.pop(key, None)
                 _chat_session_ts.pop(key, None)
                 _chat_ticket_ids.pop(key, None)
+                ws_id, session_id = key
+                tabs = _chat_tabs.get(ws_id, [])
+                kept = [tab for tab in tabs if tab.get("sessionId") != session_id]
+                if len(kept) != len(tabs):
+                    if kept:
+                        _chat_tabs[ws_id] = kept
+                    else:
+                        _chat_tabs.pop(ws_id, None)
 
-    # Active chat subprocesses: sessionId -> proc
+    # Active chat subprocesses: (workspaceId, sessionId) -> proc
     _chat_processes = {}
     _chat_proc_lock = threading.Lock()
 
     def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None, ws_id=None, bp_dir=None, model=None):
         """Run chat agent subprocess, emit streaming lines, then emit done."""
         if not ws_id:
-            socketio.emit("chat:error", {"sessionId": session_id, "message": "No workspace context for chat session."})
+            logging.error("Chat run missing workspace context for session %s", session_id)
             return
         # Extract temp MCP config path for cleanup (written by adapter.build_argv)
         mcp_config_path = None
@@ -1033,7 +1156,7 @@ def register_events(socketio, app):
                     popen_kwargs["cwd"] = workspace
                 proc = subprocess.Popen(argv, **popen_kwargs)
                 with _chat_proc_lock:
-                    _chat_processes[session_id] = proc
+                    _chat_processes[_chat_key(ws_id, session_id)] = proc
                 prompt = response_collector["prompt"]
                 try:
                     if adapter.prompt_via_stdin():
@@ -1092,7 +1215,7 @@ def register_events(socketio, app):
                                     batch.clear()
                                     last_emit[0] = now
                             if to_emit:
-                                socketio.emit("chat:output", {"sessionId": session_id, "lines": to_emit}, to=ws_id)
+                                _emit_chat("chat:output", {"sessionId": session_id, "lines": to_emit}, ws_id)
 
                 def _drain_stderr():
                     try:
@@ -1120,7 +1243,7 @@ def register_events(socketio, app):
                 t_err.join(timeout=2)
 
                 if startup_error:
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": startup_error}, to=ws_id)
+                    _emit_chat("chat:error", {"sessionId": session_id, "message": startup_error}, ws_id)
                     return
 
                 if pending_startup and not saw_ready:
@@ -1134,7 +1257,7 @@ def register_events(socketio, app):
                 # Flush remaining batch
                 with batch_lock:
                     if batch:
-                        socketio.emit("chat:output", {"sessionId": session_id, "lines": list(batch)}, to=ws_id)
+                        _emit_chat("chat:output", {"sessionId": session_id, "lines": list(batch)}, ws_id)
                         batch.clear()
 
                 stdout = "".join(raw_stdout)
@@ -1142,7 +1265,7 @@ def register_events(socketio, app):
                 parsed = adapter.parse_output(stdout, stderr, proc.returncode)
                 parsed_output = (parsed.get("output") or "").strip()
                 if force_fail_message[0] and not collected and not parsed_output:
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": force_fail_message[0]}, to=ws_id)
+                    _emit_chat("chat:error", {"sessionId": session_id, "message": force_fail_message[0]}, ws_id)
                     return
                 if not parsed.get("success", False):
                     classified_error = _classify_chat_provider_error(
@@ -1153,14 +1276,14 @@ def register_events(socketio, app):
                         model=model,
                     )
                     error_message = classified_error or parsed.get("error") or "Agent run failed."
-                    socketio.emit("chat:error", {"sessionId": session_id, "message": error_message}, to=ws_id)
+                    _emit_chat("chat:error", {"sessionId": session_id, "message": error_message}, ws_id)
                     return
 
                 full_response = "\n".join(collected).strip()
                 if not full_response:
                     if parsed_output:
                         parsed_lines = parsed_output.splitlines() or [parsed_output]
-                        socketio.emit("chat:output", {"sessionId": session_id, "lines": parsed_lines}, to=ws_id)
+                        _emit_chat("chat:output", {"sessionId": session_id, "lines": parsed_lines}, ws_id)
                         full_response = parsed_output
 
                 # Update session history
@@ -1218,15 +1341,15 @@ def register_events(socketio, app):
                     except Exception:
                         logging.exception("Failed to log chat to ticket for session %s", session_id)
 
-                socketio.emit("chat:done", {"sessionId": session_id}, to=ws_id)
+                _emit_chat("chat:done", {"sessionId": session_id}, ws_id)
                 return
 
         except Exception as e:
             logging.exception("Chat agent error for session %s", session_id)
-            socketio.emit("chat:error", {"sessionId": session_id, "message": str(e)}, to=ws_id)
+            _emit_chat("chat:error", {"sessionId": session_id, "message": str(e)}, ws_id)
         finally:
             with _chat_proc_lock:
-                _chat_processes.pop(session_id, None)
+                _chat_processes.pop(_chat_key(ws_id, session_id), None)
             if mcp_config_path:
                 try:
                     os.unlink(mcp_config_path)
@@ -1243,26 +1366,37 @@ def register_events(socketio, app):
         message = (data.get("message") or "").strip()
         ws_id, bp_dir = _resolve(data)
         manager = app.config["manager"]
+        if ws_id not in rooms(request.sid):
+            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": f"Not a member of workspace {ws_id}"})
+            return
         if not manager.get_bp_dir(ws_id):
-            emit("chat:error", {"sessionId": session_id, "message": f"Unknown workspace: {ws_id}"})
+            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": f"Unknown workspace: {ws_id}"})
             return
 
         if not session_id or not message:
-            emit("chat:error", {"sessionId": session_id, "message": "sessionId and message are required"})
+            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": "sessionId and message are required"})
             return
         if len(message) > 100_000:
-            emit("chat:error", {"sessionId": session_id, "message": "Message too long"})
+            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": "Message too long"})
             return
 
         adapter = _get_adapter(provider)
         if not adapter:
-            emit("chat:error", {"sessionId": session_id, "message": f"Unknown provider: {provider}"})
+            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": f"Unknown provider: {provider}"})
             return
         if not adapter.available():
-            emit("chat:error", {"sessionId": session_id, "message": adapter.unavailable_message()})
+            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": adapter.unavailable_message()})
             return
 
         _evict_stale_chat_sessions()
+        added = _upsert_chat_tab(
+            ws_id,
+            session_id,
+            label=(data or {}).get("label") or "Live Agent",
+            tab_id=(data or {}).get("id") or session_id,
+        )
+        if added:
+            _emit_chat_tabs(ws_id)
 
         # Build prompt with conversation history
         chat_key = _chat_key(ws_id, session_id)
@@ -1312,24 +1446,45 @@ def register_events(socketio, app):
     def on_chat_clear(data):
         session_id = data.get("sessionId", "")
         ws_id = data.get("workspaceId") if isinstance(data, dict) else None
+        if ws_id and ws_id not in rooms(request.sid):
+            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+            return
+        touched = set()
         with _chat_lock:
             if ws_id:
                 chat_key = _chat_key(ws_id, session_id)
                 _chat_sessions.pop(chat_key, None)
                 _chat_session_ts.pop(chat_key, None)
                 _chat_ticket_ids.pop(chat_key, None)
+                touched.add(ws_id)
             else:
                 for key in [key for key in _chat_sessions if key[1] == session_id]:
                     _chat_sessions.pop(key, None)
                     _chat_session_ts.pop(key, None)
                     _chat_ticket_ids.pop(key, None)
-        emit("chat:cleared", {"sessionId": session_id})
+                    touched.add(key[0])
+        if ws_id:
+            _emit_chat("chat:cleared", {"sessionId": session_id}, ws_id)
+            return
+        for touched_ws_id in touched:
+            _emit_chat("chat:cleared", {"sessionId": session_id}, touched_ws_id)
+        if not touched:
+            emit("chat:cleared", {"sessionId": session_id})
 
     @socketio.on("chat:stop")
     def on_chat_stop(data):
         session_id = data.get("sessionId", "")
+        ws_id = data.get("workspaceId") if isinstance(data, dict) else None
+        if ws_id and ws_id not in rooms(request.sid):
+            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+            return
+        proc_key = _chat_key(ws_id, session_id) if ws_id else None
         with _chat_proc_lock:
-            proc = _chat_processes.get(session_id)
+            proc = _chat_processes.get(proc_key) if proc_key else next(
+                (p for (k_ws_id, k_session_id), p in _chat_processes.items()
+                 if k_session_id == session_id),
+                None,
+            )
         if proc and proc.poll() is None:
             try:
                 _terminate_proc(proc)
