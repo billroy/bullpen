@@ -33,6 +33,11 @@ def _handoff_depth_limit_reached(depth):
     return ENFORCE_HANDOFF_CHAIN_LIMIT and depth >= MAX_HANDOFF_DEPTH
 
 
+def _normalize_worker_name(name):
+    """Normalize a worker name for case- and whitespace-insensitive matching."""
+    return (name or "").strip().casefold()
+
+
 def _terminate_proc(proc):
     """Terminate a subprocess, killing the full process tree on Windows."""
     if sys.platform == "win32":
@@ -1118,7 +1123,7 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
         disposition = worker.get("disposition", "review")
         handed_off = False
         if disposition.startswith("worker:"):
-            target_name = disposition[len("worker:"):]
+            target_name = disposition[len("worker:"):].strip()
             # Set worker idle BEFORE handoff (which saves its own layout)
             worker["state"] = "idle"
             _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id)
@@ -1190,10 +1195,11 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
             }, ws_id)
         return
 
-    # Find target worker by name
+    # Find target worker by name (case-insensitive, whitespace-insensitive)
     target_slot = None
+    normalized_target = _normalize_worker_name(target_name)
     for i, slot in enumerate(layout.get("slots", [])):
-        if slot and slot.get("name") == target_name:
+        if slot and _normalize_worker_name(slot.get("name")) == normalized_target:
             target_slot = i
             break
 
@@ -1246,10 +1252,11 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
         return
 
     candidates = []
+    normalized_target = _normalize_worker_name(target_name)
     for i, slot in enumerate(layout.get("slots", [])):
         if not slot or i == slot_index:
             continue
-        if not target_name or slot.get("name") == target_name:
+        if not normalized_target or _normalize_worker_name(slot.get("name")) == normalized_target:
             candidates.append(i)
 
     if not candidates:
