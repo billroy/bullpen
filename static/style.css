@@ -1669,13 +1669,15 @@ body {
   font-size: 14px;
   line-height: 1;
   z-index: 2;
+  visibility: hidden;
   opacity: 0;
-  transition: opacity 0.1s ease-in-out;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
 .worker-grid-ghost-cell:hover .empty-slot-menu-btn,
 .worker-grid-ghost-cell:focus-within .empty-slot-menu-btn,
 .worker-grid-ghost-cell.selected .empty-slot-menu-btn {
+  visibility: visible;
   opacity: 1;
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -1844,15 +1846,20 @@ body {
 }
 
 .worker-card.connect-target {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+  z-index: 3;
 }
 
 .worker-card.selected,
 .worker-grid-ghost-cell.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--accent);
+  z-index: 3;
+}
+
+.worker-card.selected:hover {
+  border-color: var(--border);
 }
 
 .worker-grid-ghost-cell.drag-over {
@@ -2110,13 +2117,15 @@ body {
   border-radius: 3px;
   line-height: 1;
   letter-spacing: 1px;
+  visibility: hidden;
   opacity: 0;
-  transition: opacity 0.1s ease-in-out;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
 }
 
 .worker-card:hover .worker-menu-btn,
 .worker-card:focus-within .worker-menu-btn,
 .worker-card.selected .worker-menu-btn {
+  visibility: visible;
   opacity: 1;
 }
 
