@@ -1669,10 +1669,14 @@ body {
   font-size: 14px;
   line-height: 1;
   z-index: 2;
+  opacity: 0;
+  transition: opacity 0.1s ease-in-out;
 }
 
 .worker-grid-ghost-cell:hover .empty-slot-menu-btn,
+.worker-grid-ghost-cell:focus-within .empty-slot-menu-btn,
 .worker-grid-ghost-cell.selected .empty-slot-menu-btn {
+  opacity: 1;
   background: var(--bg-hover);
   color: var(--text-primary);
 }
@@ -2106,6 +2110,14 @@ body {
   border-radius: 3px;
   line-height: 1;
   letter-spacing: 1px;
+  opacity: 0;
+  transition: opacity 0.1s ease-in-out;
+}
+
+.worker-card:hover .worker-menu-btn,
+.worker-card:focus-within .worker-menu-btn,
+.worker-card.selected .worker-menu-btn {
+  opacity: 1;
 }
 
 .worker-menu-btn:hover {
