@@ -161,7 +161,7 @@ const BullpenTab = {
                @keydown="onEmptyMenuKeydown"
                @click.stop>
             <button class="worker-menu-item" @click="openLibraryForCoord(ghostCell)"><i class="menu-item-icon" data-lucide="user-plus" aria-hidden="true"></i><span class="menu-item-label">Add Worker</span></button>
-            <button class="worker-menu-item" :disabled="!canPasteAt(ghostCell)" @click="pasteWorker(ghostCell)"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Paste Worker</span></button>
+            <button class="worker-menu-item" :disabled="!canPasteAt(ghostCell)" @click="pasteWorkerFromMenu(ghostCell)"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Paste Worker</span></button>
           </div>
         </div>
 
@@ -1042,6 +1042,7 @@ const BullpenTab = {
       this.selectedAddCoord = { ...coord };
       this.showLibrary = true;
       this.emptyMenuCoord = null;
+      this.emptyMenuPos = null;
       this.$nextTick(() => this.$refs.libraryOverlay?.focus());
     },
     closeLibrary() {
@@ -1376,6 +1377,10 @@ const BullpenTab = {
         if (this.itemAtCoord(target.coord)) return false;
       }
       return true;
+    },
+    pasteWorkerFromMenu(coord) {
+      this.pasteWorker(coord);
+      this.closeEmptyMenu({ focusViewport: true });
     },
     pasteWorker(coord, options = {}) {
       if (!this.clipboardWorker || !coord || !this.isWritableCoord(coord)) return;

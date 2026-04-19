@@ -29,7 +29,7 @@ def test_worker_card_menu_commands_render_icons_before_labels():
 def test_empty_slot_menu_commands_render_icons_before_labels():
     text = _read("static/components/BullpenTab.js")
     assert "class=\"worker-menu-item\" @click=\"openLibraryForCoord(ghostCell)\"><i class=\"menu-item-icon\" data-lucide=\"user-plus\"" in text
-    assert "class=\"worker-menu-item\" :disabled=\"!canPasteAt(ghostCell)\" @click=\"pasteWorker(ghostCell)\"><i class=\"menu-item-icon\" data-lucide=\"clipboard\"" in text
+    assert "class=\"worker-menu-item\" :disabled=\"!canPasteAt(ghostCell)\" @click=\"pasteWorkerFromMenu(ghostCell)\"><i class=\"menu-item-icon\" data-lucide=\"clipboard\"" in text
     assert "<span class=\"menu-item-label\">Add Worker</span></button>" in text
     assert "<span class=\"menu-item-label\">Paste Worker</span></button>" in text
 

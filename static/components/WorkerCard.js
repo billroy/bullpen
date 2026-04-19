@@ -482,47 +482,47 @@ const WorkerCard = {
       }
     },
     menuEdit() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$emit('configure', this.slotIndex);
     },
     menuRun() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$root.startWorkerSlot(this.slotIndex);
     },
     menuStop() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$root.stopWorkerSlot(this.slotIndex);
     },
     menuPause() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: true } });
     },
     menuUnpause() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: false } });
     },
     menuDuplicate() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$root.duplicateWorker(this.slotIndex);
     },
     menuCopyWorker() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$emit('copy-worker', this.slotIndex);
     },
     menuWatch() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$emit('open-focus', this.slotIndex);
     },
     menuCopyTo() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$emit('transfer', { slot: this.slotIndex, mode: 'copy' });
     },
     menuMoveTo() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$emit('transfer', { slot: this.slotIndex, mode: 'move' });
     },
     menuDelete() {
-      this.showMenu = false;
+      this.closeMenuAndRestoreFocus();
       this.$root.removeWorker(this.slotIndex);
     },
     removeDragImage() {
