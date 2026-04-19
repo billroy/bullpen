@@ -1,4 +1,4 @@
-"""Regression checks for slash-splitting in left-pane quick ticket create."""
+"""Regression checks for slash-splitting in the toolbar quick ticket create."""
 
 from pathlib import Path
 
@@ -10,13 +10,12 @@ def _read(rel_path: str) -> str:
     return (ROOT / rel_path).read_text(encoding="utf-8")
 
 
-def test_leftpane_quick_create_splits_title_and_description_at_first_slash():
-    text = _read("static/components/LeftPane.js")
-    assert "const slashIdx = text.indexOf('/');" in text
-    assert "title: text.slice(0, slashIdx).trim()," in text
-    assert "description: text.slice(slashIdx + 1).trim()," in text
-    assert "this.$emit('quick-create-task', payload);" in text
-    assert "this.$emit('quick-create-task', payload);\n      this.quickCreateText = '';" not in text
+def test_commands_split_quick_create_text_splits_at_first_slash():
+    text = _read("static/commands.js")
+    assert "function splitQuickCreateText(text)" in text
+    assert "const slashIdx = raw.indexOf('/');" in text
+    assert "title: raw.slice(0, slashIdx).trim()," in text
+    assert "description: raw.slice(slashIdx + 1).trim()," in text
 
 
 def test_app_quick_create_accepts_payload_with_description():
@@ -30,14 +29,14 @@ def test_app_quick_create_accepts_payload_with_description():
 
 def test_quick_create_input_clears_only_after_create_ack():
     app = _read("static/app.js")
-    left = _read("static/components/LeftPane.js")
+    toolbar = _read("static/components/TopToolbar.js")
     assert "const quickCreateClearToken = ref(0);" in app
     assert "quickCreateClearToken.value++;" in app
     assert ':quick-create-clear-token="quickCreateClearToken"' in app
-    assert "quickCreateClearToken() {" in left
-    assert "this.quickCreateText = '';" in left
+    assert "quickCreateClearToken() {" in toolbar
+    assert "this.quickCreateText = '';" in toolbar
 
 
-def test_leftpane_quick_create_placeholder_uses_ticket_title_description_prompt_text():
-    text = _read("static/components/LeftPane.js")
-    assert 'placeholder="Enter ticket title/description"' in text
+def test_toolbar_quick_create_placeholder_mentions_ticket_and_description():
+    text = _read("static/components/TopToolbar.js")
+    assert 'placeholder="New ticket / description, or > commands"' in text
