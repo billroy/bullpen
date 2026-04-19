@@ -1,6 +1,7 @@
 """Tests for server/workers.py."""
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -155,6 +156,74 @@ class CapturingSocket:
 
     def emit(self, event, payload, to=None):
         self.events.append((event, payload, to))
+
+
+class ProcessTreeAdapter(MockAdapter):
+    def __init__(self, pid_file, term_file, output="process tree"):
+        super().__init__(output=output)
+        self.pid_file = str(pid_file)
+        self.term_file = str(term_file)
+
+    @property
+    def name(self):
+        return "process-tree"
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        child_code = (
+            "import os,signal,sys,time\n"
+            "pid_file,term_file=sys.argv[1:3]\n"
+            "open(pid_file,'w').write(str(os.getpid()))\n"
+            "def term(signum,frame):\n"
+            "    open(term_file,'w').write('terminated')\n"
+            "    sys.exit(0)\n"
+            "signal.signal(signal.SIGTERM, term)\n"
+            "time.sleep(30)"
+        )
+        parent_code = (
+            "import subprocess,sys,time;"
+            "subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2],sys.argv[3]]);"
+            "print('parent ready', flush=True);"
+            "time.sleep(30)"
+        )
+        return [sys.executable, "-c", parent_code, child_code, self.pid_file, self.term_file]
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {
+            "success": exit_code == 0,
+            "output": stdout.strip(),
+            "error": stderr.strip() or f"Exit code {exit_code}",
+        }
+
+
+def _wait_for_path(path, timeout=3.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if os.path.exists(path):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def _cleanup_child_pid(path):
+    try:
+        pid = int(open(path).read().strip())
+    except Exception:
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    try:
+        deadline = time.time() + 1.0
+        while time.time() < deadline:
+            os.kill(pid, 0)
+            time.sleep(0.05)
+    except OSError:
+        return
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
 
 
 @pytest.fixture
@@ -565,6 +634,61 @@ class TestStopWorker:
 
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "assigned"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process-group behavior")
+class TestWorkerProcessTree:
+    def _start_process_tree_worker(self, bp_dir, worker_slot, tmp_path, *, max_retries=0):
+        pid_file = tmp_path / "child.pid"
+        term_file = tmp_path / "child.term"
+        register_adapter("process-tree", ProcessTreeAdapter(pid_file, term_file))
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "process-tree"
+        layout["slots"][worker_slot]["max_retries"] = max_retries
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+        task = create_task(bp_dir, "Process tree task")
+        assign_task(bp_dir, worker_slot, task["id"])
+        start_worker(bp_dir, worker_slot, ws_id="tree-ws")
+        assert _wait_for_path(pid_file), "child process did not start"
+        return task, pid_file, term_file
+
+    def test_stop_terminates_process_tree(self, bp_dir, worker_slot, tmp_path):
+        task, pid_file, term_file = self._start_process_tree_worker(bp_dir, worker_slot, tmp_path)
+        try:
+            stop_worker(bp_dir, worker_slot, ws_id="tree-ws")
+            assert _wait_for_path(term_file), "child process did not receive SIGTERM"
+            updated = read_task(bp_dir, task["id"])
+            assert updated["status"] == "assigned"
+        finally:
+            _cleanup_child_pid(pid_file)
+
+    def test_yank_terminates_process_tree(self, bp_dir, worker_slot, tmp_path):
+        task, pid_file, term_file = self._start_process_tree_worker(bp_dir, worker_slot, tmp_path)
+        try:
+            assert yank_from_worker(bp_dir, task["id"], ws_id="tree-ws") is True
+            assert _wait_for_path(term_file), "child process did not receive SIGTERM"
+            layout = _load_layout(bp_dir)
+            assert task["id"] not in layout["slots"][worker_slot]["task_queue"]
+        finally:
+            _cleanup_child_pid(pid_file)
+
+    def test_timeout_terminates_process_tree_and_blocks_task(self, bp_dir, worker_slot, tmp_path):
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        config["agent_timeout_seconds"] = 1
+        write_json(os.path.join(bp_dir, "config.json"), config)
+
+        task, pid_file, term_file = self._start_process_tree_worker(bp_dir, worker_slot, tmp_path)
+        try:
+            assert _wait_for_path(term_file, timeout=5.0), "child process did not receive SIGTERM"
+            deadline = time.time() + 5.0
+            updated = read_task(bp_dir, task["id"])
+            while time.time() < deadline and updated["status"] != "blocked":
+                time.sleep(0.05)
+                updated = read_task(bp_dir, task["id"])
+            assert updated["status"] == "blocked"
+            assert "Agent timed out" in updated["body"]
+        finally:
+            _cleanup_child_pid(pid_file)
 
 
 class TestPromptAssembly:

@@ -183,43 +183,74 @@ def validate_worker_configure(data, max_slots=100):
     validate_payload_size(data)
     slot = validate_slot(data, max_slots)
     fields = data.get("fields", {})
+    if not isinstance(fields, dict):
+        raise ValidationError("fields must be an object")
 
     sanitized = {}
+    consumed = set()
     if "name" in fields:
         sanitized["name"] = _str(fields["name"], MAX_TITLE, "name")
+        consumed.add("name")
+    if "type" in fields:
+        sanitized["type"] = _str(fields["type"], 80, "type").strip() or "ai"
+        consumed.add("type")
     if "agent" in fields:
         sanitized["agent"] = _enum(fields["agent"], VALID_AGENTS, "agent")
+        consumed.add("agent")
     if "model" in fields:
         sanitized["model"] = _str(fields["model"], 50, "model")
+        consumed.add("model")
     if "activation" in fields:
         sanitized["activation"] = _enum(fields["activation"], VALID_ACTIVATIONS, "activation")
+        consumed.add("activation")
     if "disposition" in fields:
         sanitized["disposition"] = _str(fields["disposition"], 200, "disposition")
+        consumed.add("disposition")
     if "watch_column" in fields:
         sanitized["watch_column"] = fields["watch_column"]
+        consumed.add("watch_column")
     if "expertise_prompt" in fields:
         sanitized["expertise_prompt"] = _str(fields["expertise_prompt"], MAX_EXPERTISE_PROMPT, "expertise_prompt")
+        consumed.add("expertise_prompt")
     if "max_retries" in fields:
         sanitized["max_retries"] = _int(fields["max_retries"], "max_retries", min_val=0, max_val=10)
+        consumed.add("max_retries")
     if "use_worktree" in fields:
         sanitized["use_worktree"] = bool(fields["use_worktree"])
+        consumed.add("use_worktree")
     if "auto_commit" in fields:
         sanitized["auto_commit"] = bool(fields["auto_commit"])
+        consumed.add("auto_commit")
     if "auto_pr" in fields:
         sanitized["auto_pr"] = bool(fields["auto_pr"])
+        consumed.add("auto_pr")
     if "trigger_time" in fields:
         val = str(fields["trigger_time"] or "")
         if val and not re.match(r'^\d{2}:\d{2}$', val):
             raise ValidationError("trigger_time must be HH:MM format")
         sanitized["trigger_time"] = val or None
+        consumed.add("trigger_time")
     if "trigger_interval_minutes" in fields:
         sanitized["trigger_interval_minutes"] = _int(
             fields["trigger_interval_minutes"], "trigger_interval_minutes", min_val=1, max_val=1440
         )
+        consumed.add("trigger_interval_minutes")
     if "trigger_every_day" in fields:
         sanitized["trigger_every_day"] = bool(fields["trigger_every_day"])
+        consumed.add("trigger_every_day")
     if "paused" in fields:
         sanitized["paused"] = bool(fields["paused"])
+        consumed.add("paused")
+
+    # Type-specific and unknown-type fields are admitted here and canonicalized
+    # by the worker type normalization layer. Runtime ownership stays server-only.
+    disallowed_runtime = {"task_queue", "state", "started_at"}
+    for key, value in fields.items():
+        if key in consumed or key in disallowed_runtime:
+            continue
+        if not isinstance(key, str):
+            continue
+        sanitized[key] = value
 
     return slot, sanitized
 

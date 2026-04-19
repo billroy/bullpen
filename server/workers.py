@@ -3,6 +3,7 @@
 import json
 import os
 import random
+import signal
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from server.usage import (
 )
 from server import tasks as task_mod
 from server.model_aliases import normalize_model
+from server.worker_types import get_worker_type, normalize_layout
 
 MAX_HANDOFF_DEPTH = 10
 # Feature switch: keep depth-limit logic available, but disable enforcement by default.
@@ -39,14 +41,24 @@ def _normalize_worker_name(name):
 
 
 def _terminate_proc(proc):
-    """Terminate a subprocess, killing the full process tree on Windows."""
+    """Terminate a subprocess, killing the full process tree where possible."""
     if sys.platform == "win32":
         subprocess.run(
             ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
             capture_output=True,
         )
     else:
-        proc.terminate()
+        try:
+            pgid = os.getpgid(proc.pid)
+            if pgid != os.getpgrp():
+                os.killpg(pgid, signal.SIGTERM)
+            else:
+                proc.terminate()
+        except (ProcessLookupError, PermissionError, OSError):
+            try:
+                proc.terminate()
+            except OSError:
+                pass
 
 
 # Active subprocesses keyed by (workspace_id, slot_index)
@@ -66,10 +78,22 @@ def _now_iso():
 
 
 def _load_layout(bp_dir):
-    return read_json(os.path.join(bp_dir, "layout.json"))
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    return normalize_layout(layout, config=config)
 
 
 def _save_layout(bp_dir, layout):
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    normalized = normalize_layout(layout, config=config)
+    layout.clear()
+    layout.update(normalized)
     write_json(os.path.join(bp_dir, "layout.json"), layout)
 
 
@@ -229,6 +253,16 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         return
     worker = layout["slots"][slot_index]
     if not worker:
+        return
+    worker_type = get_worker_type(worker.get("type", "ai"))
+    if worker_type.type_id != "ai":
+        if socketio:
+            errors = worker_type.validate_config(worker)
+            message = errors[0] if errors else f"{worker_type.type_id} workers are not implemented yet."
+            _ws_emit(socketio, "toast", {
+                "message": f"{worker.get('name', 'Worker')} cannot run yet: {message}",
+                "level": "warning",
+            }, ws_id)
         return
 
     queue = worker.get("task_queue", [])
@@ -610,6 +644,182 @@ MAX_LINE_LEN = 10_000  # 10KB per line cap
 LIVE_TOKEN_EMIT_INTERVAL_SECONDS = 0.5
 
 
+class CompletedProcessCapture:
+    """Captured subprocess result used by worker-type adapters."""
+
+    def __init__(self, *, stdout, stderr, returncode, timed_out, combined_lines):
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = returncode
+        self.timed_out = timed_out
+        self.combined_lines = combined_lines
+
+
+class SubprocessRunner:
+    """Launch, stream, capture, timeout, and register a worker subprocess."""
+
+    def __init__(
+        self,
+        *,
+        bp_dir,
+        slot_index,
+        task_id,
+        argv,
+        cwd,
+        stdin_text,
+        timeout,
+        socketio=None,
+        ws_id=None,
+        line_formatter=None,
+        line_observer=None,
+    ):
+        self.bp_dir = bp_dir
+        self.slot_index = slot_index
+        self.task_id = task_id
+        self.argv = argv
+        self.cwd = cwd
+        self.stdin_text = stdin_text
+        self.timeout = timeout
+        self.socketio = socketio
+        self.ws_id = ws_id
+        self.line_formatter = line_formatter or (lambda line: line.rstrip("\n"))
+        self.line_observer = line_observer
+        self.timed_out = False
+
+    def run(self):
+        popen_kwargs = {}
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        proc = subprocess.Popen(
+            self.argv,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.cwd,
+            text=True,
+            bufsize=1,
+            **popen_kwargs,
+        )
+
+        entry = {"proc": proc, "buffer": [], "task_id": self.task_id, "buffer_size": 0}
+        with _process_lock:
+            _processes[(self.ws_id, self.slot_index)] = entry
+
+        try:
+            if self.stdin_text is not None:
+                proc.stdin.write(self.stdin_text)
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+        def _watchdog():
+            self.timed_out = True
+            if proc.poll() is None:
+                _terminate_proc(proc)
+
+        timer = threading.Timer(self.timeout, _watchdog)
+        timer.daemon = True
+        timer.start()
+
+        stdout_lines = []
+        stderr_lines = []
+        combined_lines = []
+        batch = []
+        batch_lock = threading.Lock()
+        last_emit = [time.time()]
+
+        def _append_stream_line(line, sink, stream_name):
+            sink.append(line)
+            if self.line_observer:
+                self.line_observer(line, stream_name, proc)
+
+            display_line = line
+            if len(display_line) > MAX_LINE_LEN:
+                display_line = display_line[:MAX_LINE_LEN] + "[line truncated]\n"
+
+            display = self.line_formatter(display_line)
+            if display is None:
+                return
+
+            for display_line in display.split("\n"):
+                combined_lines.append(display_line)
+
+                with _process_lock:
+                    entry = _processes.get((self.ws_id, self.slot_index))
+                    if entry:
+                        entry["buffer"].append(display_line)
+                        entry["buffer_size"] += len(display_line) + 1
+                        while entry["buffer_size"] > MAX_OUTPUT_BUFFER and entry["buffer"]:
+                            removed = entry["buffer"].pop(0)
+                            entry["buffer_size"] -= len(removed) + 1
+
+                to_emit = None
+                with batch_lock:
+                    batch.append(display_line)
+                    now = time.time()
+                    if self.socketio and now - last_emit[0] >= 0.2:
+                        to_emit = list(batch)
+                        batch.clear()
+                        last_emit[0] = now
+                if self.socketio and to_emit:
+                    _ws_emit(self.socketio, "worker:output", {
+                        "slot": self.slot_index,
+                        "lines": to_emit,
+                    }, self.ws_id)
+
+        def _drain_stderr():
+            try:
+                while True:
+                    line = proc.stderr.readline()
+                    if not line:
+                        break
+                    _append_stream_line(line, stderr_lines, "stderr")
+            except (ValueError, OSError):
+                pass
+
+        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+        stderr_thread.start()
+
+        try:
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    break
+                _append_stream_line(line, stdout_lines, "stdout")
+        except (ValueError, OSError):
+            pass
+
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            _terminate_proc(proc)
+            proc.wait()
+        timer.cancel()
+        stderr_thread.join(timeout=2)
+
+        to_emit = None
+        with batch_lock:
+            if self.socketio and batch:
+                to_emit = list(batch)
+                batch.clear()
+        if self.socketio and to_emit:
+            _ws_emit(self.socketio, "worker:output", {
+                "slot": self.slot_index,
+                "lines": to_emit,
+            }, self.ws_id)
+
+        return CompletedProcessCapture(
+            stdout="".join(stdout_lines),
+            stderr="".join(stderr_lines),
+            returncode=proc.returncode,
+            timed_out=self.timed_out,
+            combined_lines=combined_lines,
+        )
+
+
 def is_non_retryable_provider_error(provider, *texts):
     """Return True when provider output indicates retrying will not help."""
     provider = (provider or "").strip().lower()
@@ -666,106 +876,30 @@ def _merge_live_usage_max(base, extra):
     return merged
 
 
+def _observe_provider_failure(adapter, line, proc, force_fail_message):
+    if force_fail_message[0] is not None:
+        return
+    if not is_non_retryable_provider_error(adapter.name, line):
+        return
+    force_fail_message[0] = (
+        "Gemini model capacity exhausted. "
+        "Try gemini-2.5-flash or wait and retry later."
+    )
+    if proc.poll() is None:
+        try:
+            _terminate_proc(proc)
+        except OSError:
+            pass
+
+
 def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None):
     """Run agent subprocess with streaming stdout and handle completion."""
-    timed_out = False
-
     try:
-        try:
-            proc = subprocess.Popen(
-                argv,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=workspace,
-                text=True,
-                bufsize=1,  # Line-buffered for streaming
-            )
-        except FileNotFoundError:
-            _block_agent_start_failure(
-                bp_dir, slot_index, task_id, adapter.unavailable_message(), socketio, ws_id,
-            )
-            return
-
-        entry = {"proc": proc, "buffer": [], "task_id": task_id, "buffer_size": 0}
-        with _process_lock:
-            _processes[(ws_id, slot_index)] = entry
-
-        # Write prompt to stdin, then close so agent can begin
-        try:
-            if adapter.prompt_via_stdin():
-                proc.stdin.write(prompt)
-            proc.stdin.close()
-        except (BrokenPipeError, OSError):
-            pass  # Agent may have exited immediately
-
-        # Watchdog timer to kill process on timeout
-        def _watchdog():
-            nonlocal timed_out
-            timed_out = True
-            if proc.poll() is None:
-                _terminate_proc(proc)
-
-        timer = threading.Timer(timeout, _watchdog)
-        timer.daemon = True
-        timer.start()
-
-        # Stream stdout and stderr line by line.
-        # Codex CLI emits live output on stderr, so both streams must be drained.
-        stdout_lines = []
-        stderr_lines = []
-        combined_lines = []
-        batch = []
-        batch_lock = threading.Lock()
-        last_emit = [time.time()]
         force_fail_message = [None]
         live_usage = [{}]
         last_live_tokens = [None]
         last_live_emit_at = [0.0]
         _deferred_timer = [None]
-
-        def _append_stream_line(line, sink):
-            # Always store the full line for parse_output (e.g. the result
-            # JSON can be very large and truncating it would break parsing
-            # of the usage/token fields).
-            sink.append(line)
-            _maybe_emit_live_usage(line)
-
-            display_line = line
-            if len(display_line) > MAX_LINE_LEN:
-                display_line = display_line[:MAX_LINE_LEN] + "[line truncated]\n"
-
-            # Format for display (adapter may extract text from JSON, etc.)
-            display = adapter.format_stream_line(display_line)
-            if display is None:
-                return  # Adapter says skip this line
-
-            # Split multi-line display text into individual lines
-            display_lines = display.split("\n")
-            for dl in display_lines:
-                combined_lines.append(dl)
-
-                # Append to server-side buffer (cap at MAX_OUTPUT_BUFFER)
-                with _process_lock:
-                    e = _processes.get((ws_id, slot_index))
-                    if e:
-                        e["buffer"].append(dl)
-                        e["buffer_size"] += len(dl) + 1
-                        while e["buffer_size"] > MAX_OUTPUT_BUFFER and e["buffer"]:
-                            removed = e["buffer"].pop(0)
-                            e["buffer_size"] -= len(removed) + 1
-
-                # Batch emit every 200ms
-                to_emit = None
-                with batch_lock:
-                    batch.append(dl)
-                    now = time.time()
-                    if socketio and now - last_emit[0] >= 0.2:
-                        to_emit = list(batch)
-                        batch.clear()
-                        last_emit[0] = now
-                if socketio and to_emit:
-                    _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
 
         def _emit_token_update(tokens):
             """Emit a task:updated event with the given token count."""
@@ -825,64 +959,40 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 
             _emit_token_update(tokens)
 
-        def _drain_stderr():
-            try:
-                while True:
-                    line = proc.stderr.readline()
-                    if not line:
-                        break
-                    _append_stream_line(line, stderr_lines)
-                    if force_fail_message[0] is None and is_non_retryable_provider_error(adapter.name, line):
-                        force_fail_message[0] = (
-                            "Gemini model capacity exhausted. "
-                            "Try gemini-2.5-flash or wait and retry later."
-                        )
-                        if not combined_lines:
-                            try:
-                                _terminate_proc(proc)
-                            except OSError:
-                                pass
-            except (ValueError, OSError):
-                pass  # stderr closed
-
-        stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
-        stderr_thread.start()
-
         try:
-            while True:
-                line = proc.stdout.readline()
-                if not line:
-                    break
-                _append_stream_line(line, stdout_lines)
-        except (ValueError, OSError):
-            pass  # stdout closed
+            stdin_text = prompt if adapter.prompt_via_stdin() else None
+            def _observe_agent_line(line, stream, proc):
+                _maybe_emit_live_usage(line)
+                _observe_provider_failure(adapter, line, proc, force_fail_message)
 
-        # Wait for process to finish and read stderr
-        try:
-            proc.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            _terminate_proc(proc)
-            proc.wait()
-        timer.cancel()
-        stderr_thread.join(timeout=2)
+            runner = SubprocessRunner(
+                bp_dir=bp_dir,
+                slot_index=slot_index,
+                task_id=task_id,
+                argv=argv,
+                cwd=workspace,
+                stdin_text=stdin_text,
+                timeout=timeout,
+                socketio=socketio,
+                ws_id=ws_id,
+                line_formatter=adapter.format_stream_line,
+                line_observer=_observe_agent_line,
+            )
+            completed = runner.run()
+        except FileNotFoundError:
+            _block_agent_start_failure(
+                bp_dir, slot_index, task_id, adapter.unavailable_message(), socketio, ws_id,
+            )
+            return
 
-        # Flush remaining batch
-        to_emit = None
-        with batch_lock:
-            if socketio and batch:
-                to_emit = list(batch)
-                batch.clear()
-        if socketio and to_emit:
-            _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": to_emit}, ws_id)
+        stderr = completed.stderr
 
-        stderr = "".join(stderr_lines)
-
-        if timed_out:
+        if completed.timed_out:
             _on_agent_error(bp_dir, slot_index, task_id, "Agent timed out", socketio, ws_id=ws_id)
             return
 
-        stdout = "".join(stdout_lines)
-        exit_code = proc.returncode
+        stdout = completed.stdout
+        exit_code = completed.returncode
         result = adapter.parse_output(stdout, stderr, exit_code)
         if force_fail_message[0] and not result.get("output"):
             result = {
@@ -897,7 +1007,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
 
         # Emit final output so focus view always has complete data
         if socketio:
-            final_lines = [l.rstrip("\n") for l in combined_lines]
+            final_lines = [l.rstrip("\n") for l in completed.combined_lines]
             _ws_emit(socketio, "worker:output:done", {"slot": slot_index, "lines": final_lines}, ws_id)
 
         if result["success"]:

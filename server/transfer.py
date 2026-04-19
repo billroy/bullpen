@@ -5,15 +5,14 @@ import os
 from server.locks import write_lock
 from server.persistence import read_json, write_json
 from server.profiles import get_profile, create_profile
+from server.worker_types import copy_worker_slot, normalize_layout
 
-
-# Fields to copy from source worker to destination.
-_TRANSFERABLE_FIELDS = (
-    "profile", "name", "agent", "model", "activation", "disposition",
+_AI_TRANSFER_FIELDS = {
+    "type", "profile", "name", "agent", "model", "activation", "disposition",
     "watch_column", "expertise_prompt", "max_retries", "use_worktree",
     "auto_commit", "auto_pr", "trigger_time", "trigger_interval_minutes",
-    "trigger_every_day",
-)
+    "trigger_every_day", "icon", "color", "avatar",
+}
 
 
 class TransferError(Exception):
@@ -50,7 +49,11 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
 
     with write_lock:
         # Load source layout
-        src_layout = read_json(os.path.join(src_ws.bp_dir, "layout.json"))
+        src_config = read_json(os.path.join(src_ws.bp_dir, "config.json"))
+        src_layout = normalize_layout(
+            read_json(os.path.join(src_ws.bp_dir, "layout.json")),
+            config=src_config,
+        )
         src_slots = src_layout.get("slots", [])
 
         # Validate source slot
@@ -67,8 +70,11 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
                 "worker is busy; copy it instead or wait for it to finish", 409)
 
         # Load destination layout and config
-        dst_layout = read_json(os.path.join(dst_ws.bp_dir, "layout.json"))
         dst_config = read_json(os.path.join(dst_ws.bp_dir, "config.json"))
+        dst_layout = normalize_layout(
+            read_json(os.path.join(dst_ws.bp_dir, "layout.json")),
+            config=dst_config,
+        )
         dst_slots = dst_layout.get("slots", [])
         dst_rows = dst_config.get("grid", {}).get("rows", 4)
         dst_cols = dst_config.get("grid", {}).get("cols", 6)
@@ -97,8 +103,8 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
                 raise TransferError("destination grid is full", 409)
 
         # Generate unique name in destination
-        existing_names = {s["name"] for s in dst_slots if s}
-        candidate = source_worker["name"]
+        existing_names = {s.get("name") for s in dst_slots if s and s.get("name")}
+        candidate = source_worker.get("name") or "Worker"
         if candidate in existing_names:
             base = candidate
             suffix = 2
@@ -107,21 +113,16 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
                 candidate = f"{base} copy {suffix}"
                 suffix += 1
 
-        # Build the cloned worker with runtime fields reset
-        clone = {
-            "row": target_slot // dst_cols,
-            "col": target_slot % dst_cols,
-            "state": "idle",
-            "task_queue": [],
-            "last_trigger_time": None,
-            "paused": False,
-            "name": candidate,
-        }
-        for field in _TRANSFERABLE_FIELDS:
-            if field == "name":
-                continue  # already set with dedup
-            if field in source_worker:
-                clone[field] = source_worker[field]
+        # Build the cloned worker with runtime fields reset while preserving
+        # type-specific fields for shell and soft-open unknown worker types.
+        if str(source_worker.get("type") or "ai") == "ai":
+            clone_source = {k: v for k, v in source_worker.items() if k in _AI_TRANSFER_FIELDS}
+        else:
+            clone_source = source_worker
+        clone = copy_worker_slot(clone_source, reset_runtime=True)
+        clone["row"] = target_slot // dst_cols
+        clone["col"] = target_slot % dst_cols
+        clone["name"] = candidate
 
         # --- Warnings for workspace-local references ---
 
@@ -178,12 +179,12 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
 
         # --- Write destination first (atomic move safety) ---
         dst_slots[target_slot] = clone
-        write_json(os.path.join(dst_ws.bp_dir, "layout.json"), dst_layout)
+        write_json(os.path.join(dst_ws.bp_dir, "layout.json"), normalize_layout(dst_layout, config=dst_config))
 
         # --- Clear source on move ---
         if mode == "move":
             src_slots[source_slot] = None
-            write_json(os.path.join(src_ws.bp_dir, "layout.json"), src_layout)
+            write_json(os.path.join(src_ws.bp_dir, "layout.json"), normalize_layout(src_layout, config=src_config))
 
     return {
         "ok": True,

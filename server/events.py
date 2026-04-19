@@ -32,6 +32,7 @@ from server.validation import (
     validate_worker_move_group, validate_worker_paste_group,
     validate_layout_update, validate_team_name,
 )
+from server.worker_types import copy_worker_slot, normalize_layout, normalize_worker_slot
 
 
 _CLAUDE_FS_FALLBACK_TOOLS = "Bash,Read,Glob,Grep,Edit,Write,NotebookEdit"
@@ -39,6 +40,13 @@ _CLAUDE_MCP_READY_STATES = {"connected", "ready", "ok"}
 _CLAUDE_MCP_PENDING_STATES = {"pending", "connecting", "initializing", "starting"}
 _CLAUDE_MCP_STARTUP_RETRIES = 3
 _CLAUDE_MCP_STARTUP_RETRY_BASE_DELAY = 0.75
+_AI_COPY_FIELDS = {
+    "type", "row", "col", "profile", "name", "agent", "model", "activation",
+    "disposition", "watch_column", "expertise_prompt", "max_retries",
+    "use_worktree", "auto_commit", "auto_pr", "trigger_time",
+    "trigger_interval_minutes", "trigger_every_day", "last_trigger_time",
+    "paused", "task_queue", "state", "icon", "color", "avatar",
+}
 
 
 def _harden_live_agent_argv(provider, argv):
@@ -126,10 +134,22 @@ def _classify_chat_provider_error(provider, *texts, model=None):
 
 
 def _load_layout(bp_dir):
-    return read_json(os.path.join(bp_dir, "layout.json"))
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    return normalize_layout(layout, config=config)
 
 
 def _save_layout(bp_dir, layout):
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    normalized = normalize_layout(layout, config=config)
+    layout.clear()
+    layout.update(normalized)
     write_json(os.path.join(bp_dir, "layout.json"), layout)
 
 
@@ -188,32 +208,14 @@ def _build_pasted_worker(source, coord, existing_names):
         suffix += 1
     existing_names.add(candidate)
 
-    worker = {
-        "row": coord["row"],
-        "col": coord["col"],
-        "profile": source.get("profile"),
-        "name": candidate,
-        "agent": source.get("agent", "claude"),
-        "model": normalize_model(source.get("agent", "claude"), source.get("model", "claude-sonnet-4-6")),
-        "activation": source.get("activation", "on_drop"),
-        "disposition": source.get("disposition", "review"),
-        "watch_column": source.get("watch_column"),
-        "expertise_prompt": source.get("expertise_prompt", ""),
-        "max_retries": source.get("max_retries", 1),
-        "use_worktree": bool(source.get("use_worktree", False)),
-        "auto_commit": bool(source.get("auto_commit", False)),
-        "auto_pr": bool(source.get("auto_pr", False)),
-        "trigger_time": source.get("trigger_time"),
-        "trigger_interval_minutes": source.get("trigger_interval_minutes"),
-        "trigger_every_day": bool(source.get("trigger_every_day", False)),
-        "last_trigger_time": None,
-        "paused": False,
-        "task_queue": [],
-        "state": "idle",
-    }
-    for key in ("icon", "color", "avatar"):
-        if key in source:
-            worker[key] = source[key]
+    if str(source.get("type") or "ai") == "ai":
+        worker = {k: v for k, v in source.items() if k in _AI_COPY_FIELDS}
+    else:
+        worker = copy_worker_slot(source, reset_runtime=True)
+    worker = copy_worker_slot(worker, reset_runtime=True)
+    worker["row"] = coord["row"]
+    worker["col"] = coord["col"]
+    worker["name"] = candidate
     return worker
 
 
@@ -418,6 +420,7 @@ def register_events(socketio, app):
             suffix += 1
 
         worker = {
+            "type": "ai",
             "row": row,
             "col": col,
             "profile": profile_id,
@@ -580,29 +583,14 @@ def register_events(socketio, app):
             suffix += 1
 
         # Clone worker config, reset runtime state
-        clone = {
-            "row": target_coord["row"],
-            "col": target_coord["col"],
-            "profile": source.get("profile"),
-            "name": candidate,
-            "agent": source.get("agent", "claude"),
-            "model": source.get("model", "claude-sonnet-4-6"),
-            "activation": source.get("activation", "on_drop"),
-            "disposition": source.get("disposition", "review"),
-            "watch_column": source.get("watch_column"),
-            "expertise_prompt": source.get("expertise_prompt", ""),
-            "max_retries": source.get("max_retries", 1),
-            "use_worktree": source.get("use_worktree", False),
-            "auto_commit": source.get("auto_commit", False),
-            "auto_pr": source.get("auto_pr", False),
-            "trigger_time": source.get("trigger_time"),
-            "trigger_interval_minutes": source.get("trigger_interval_minutes"),
-            "trigger_every_day": source.get("trigger_every_day", False),
-            "last_trigger_time": None,
-            "paused": False,
-            "task_queue": [],
-            "state": "idle",
-        }
+        if str(source.get("type") or "ai") == "ai":
+            clone = {k: v for k, v in source.items() if k in _AI_COPY_FIELDS}
+        else:
+            clone = source
+        clone = copy_worker_slot(clone, reset_runtime=True)
+        clone["row"] = target_coord["row"]
+        clone["col"] = target_coord["col"]
+        clone["name"] = candidate
 
         layout["slots"][target] = clone
         _save_layout(bp_dir, layout)
@@ -679,8 +667,9 @@ def register_events(socketio, app):
         for k, v in fields.items():
             if k not in ("task_queue", "state"):
                 worker[k] = v
-        if "model" in fields:
-            worker["model"] = normalize_model(worker.get("agent", "claude"), worker.get("model"))
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        layout["slots"][slot_index] = normalize_worker_slot(worker, index=slot_index, config=config)
+        worker = layout["slots"][slot_index]
 
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)

@@ -9,11 +9,12 @@ Worker types covered by this spec:
 
 1. **AI** - the existing agent worker, preserved for backward compatibility.
 2. **Shell** - runs a configured shell command in the project workspace against
-   a queued ticket.
+   either a queued ticket or a synthetic ticket created for manual/scheduled
+   runs.
 3. **Eval** - reserved as a disabled/stub type only; implementation deferred.
 
-Goal: every runnable worker type consumes a ticket from its queue and produces
-exactly one of three outcomes:
+Goal: every runnable worker type runs against exactly one queued or synthetic
+ticket and produces exactly one of three outcomes:
 
 - **success** - the ticket moves to this worker's configured `disposition`
   (`review`, `done`, `worker:NAME`, `pass:DIRECTION`, `random:PATTERN`, or a
@@ -41,24 +42,51 @@ parsing, and config validation.
 
 ### 1.1 Ticket Acquisition
 
-All runnable worker types consume **queued tickets only**.
+All runnable worker types run against a ticket. The ticket may already be queued
+or may be synthesized by the server when a non-queue trigger needs a durable run
+record.
 
-This is a deliberate v1 rule. AI workers currently auto-create a synthetic
-self-directed task when manually started with an empty queue. That behavior is
-AI-specific and remains for `type: "ai"` for backward compatibility. It does
-not apply to Shell or Eval.
+Current AI workers already auto-create a self-directed ticket when manually
+started with an empty queue. Generalize that behavior into the shared lifecycle
+instead of keeping it AI-specific. Synthetic tickets are required for Shell
+manual and scheduled runs so every run has an auditable ticket, captured output,
+history, status transitions, and disposition.
 
-For Shell and Eval:
+Ticket sources:
 
-- `on_drop` starts the worker only after a ticket is dropped onto the worker
-  and queued.
-- `on_queue` claims tickets from its watched column, queues them, then starts.
-- `manual` starts the next queued ticket. The Run action is disabled when the
-  queue is empty; the server also rejects an empty-queue start with a user
-  visible error.
-- `at_time` and `on_interval` start the next queued ticket when the schedule
-  fires. If the queue is empty, no task is created, no command is run, and a
-  short scheduler event is logged server-side.
+- `on_drop` starts after a human drops a ticket onto the worker and queues it.
+- `on_queue` claims a ticket from its watched column, queues it, then starts.
+- `manual` starts the next queued ticket when one exists. If the queue is empty,
+  the server synthesizes a ticket that explicitly records it was created for a
+  manual worker run.
+- `at_time` and `on_interval` start the next queued ticket when one exists. If
+  the queue is empty, the scheduler synthesizes a ticket that records the
+  schedule trigger name/time and then starts the run.
+
+Synthetic ticket rules:
+
+- Create through the same task creation path as AI auto-tasks so browser boards
+  receive normal `task:created` events.
+- Title format: `[Auto] {worker_name} - {trigger_label} - {timestamp}`.
+- Type: `chore`.
+- Priority: `normal`.
+- Tags: `["synthetic", "worker-run"]`, plus `manual` or `scheduled`.
+- Frontmatter includes `synthetic_run: true`, `trigger_kind`, and
+  `synthetic_run_key`.
+- Scheduled run key format:
+  `{worker_slot}:{trigger_kind}:{scheduled_at}`. Before creating a scheduled
+  synthetic ticket, the scheduler must check live and archived tickets for the
+  same key and skip creation when one already exists.
+- `scheduled_at` is the nominal trigger boundary, not the time the scheduler
+  happens to wake up. `at_time` uses that day's configured wall-clock time in
+  the workspace timezone. `on_interval` floors to the configured interval
+  boundary from the worker's schedule anchor, so a late tick after restart
+  produces the same key as the original intended run.
+- Body includes the worker name, worker type, trigger kind, workspace path, and
+  schedule details when applicable.
+- Immediately assign the ticket to the worker, then move it through
+  `Assigned -> In Progress` using the same lifecycle path as queued tickets.
+- The normal disposition pipeline still decides where the completed ticket goes.
 
 Non-AI workers never run against the "currently selected" browser ticket. That
 would make scheduled runs ambiguous and would couple server execution to a
@@ -66,10 +94,17 @@ client-only selection state.
 
 Tests required:
 
-- Shell manual start with empty queue is rejected and does not create a ticket.
-- Shell `at_time` / `on_interval` with empty queue do not create tickets.
+- Shell manual start with empty queue creates a synthetic ticket, assigns it,
+  moves it to In Progress, captures output, and applies disposition.
+- Shell `at_time` / `on_interval` with empty queue create synthetic tickets
+  with scheduled-run metadata and enter the shared lifecycle.
+- Re-running a scheduler tick after restart does not create duplicate
+  synthetic tickets for the same scheduled run key, including when an
+  `on_interval` tick fires late and must use the nominal interval boundary.
 - Shell `on_drop`, `on_queue`, and manual-with-queued-ticket all consume the
-  queued ticket and enter the shared lifecycle.
+  queued ticket without creating a synthetic ticket.
+- AI empty-queue manual start remains behaviorally compatible after synthetic
+  ticket creation moves into the shared lifecycle.
 
 ### 1.2 Shared Interfaces
 
@@ -107,9 +142,10 @@ Shared helpers:
   subprocesses for both AI and Shell workers.
 
 The existing AI code should be migrated behind `AIWorkerType` without changing
-observable behavior. Do this incrementally: first introduce the shared runner
-for Shell, then move AI onto it once tests prove process-group cancellation and
-focus output remain compatible.
+observable behavior. Shell may land first while the shared controller is still
+forming, but the Shell feature flag is a disaster-recovery kill switch rather
+than the normal rollout gate. AI and Shell still must both run through the
+shared lifecycle controller described in the implementation plan.
 
 ### 1.3 Process Ownership, Cancellation, and Timeouts
 
@@ -126,10 +162,31 @@ Requirements:
 - On Windows, launch with `CREATE_NEW_PROCESS_GROUP`; use the existing
   `taskkill /T /F /PID` behavior for tree cleanup.
 - Timeout handling must use the same process-tree kill path as explicit stop.
+- Keep a bounded live output tail buffer of at least 64 KiB per in-flight slot
+  so a browser opening focus mode mid-run receives partial output for Shell and
+  AI workers through the same catch-up path.
 - Server shutdown should attempt best-effort cleanup of registered subprocesses.
 
 This is a shared correctness fix, not Shell-only. Shell commands are more
 likely to spawn children, but AI CLIs can do it too.
+
+### 1.4 Disposition Grammar
+
+Worker results and worker configuration use the same disposition grammar:
+
+- `review`, `done`, `blocked`, or any configured custom column key moves the
+  ticket to that column and clears `assigned_to`.
+- `worker:NAME` hands the ticket to the worker whose name matches `NAME` after
+  trimming whitespace and case-folding.
+- `pass:LEFT`, `pass:RIGHT`, `pass:UP`, and `pass:DOWN` hand the ticket to the
+  worker occupying the adjacent grid cell in that direction. Direction matching
+  is case-insensitive.
+- `pass:RANDOM` selects one occupied adjacent cell at random.
+- `random:PATTERN` selects a non-self worker at random. Blank `PATTERN` matches
+  any other worker. Nonblank `PATTERN` is currently an exact normalized worker
+  name match, not a glob or regular expression.
+
+Invalid disposition values fail validation before mutating the ticket.
 
 ---
 
@@ -146,7 +203,9 @@ ai | shell | eval
 The registry is **soft-open**. Unknown type strings are accepted on load and
 preserved on save. Unknown workers render as disabled cards with a "Worker type
 not installed" badge. They count as occupied cells for layout, minimap,
-keyboard navigation, export/import, transfer, and team save/load.
+keyboard navigation, export/import, transfer, and team save/load. Disabled
+unknown-type cards still support remove, move, duplicate, export, transfer, and
+copy operations; only configure and run actions are disabled.
 
 Backward compatibility:
 
@@ -189,6 +248,7 @@ Tests required:
 
 - Unknown worker type with unknown fields round-trips through configure,
   duplicate, team save/load, transfer copy, export/import, and app restart.
+- Unknown worker type cards can be removed without installing that type.
 - Shell worker fields round-trip through those same paths.
 - Older AI slots without `type` load as AI and save back with `type: "ai"`.
 
@@ -306,6 +366,12 @@ Rules:
 - The config modal hides AI-only fields for Shell and Shell-only fields for AI.
 - Saving a Shell worker with an empty command is rejected server-side and
   displayed inline in the modal.
+- A manual Shell worker with an empty queue is runnable. The button copy must
+  make that explicit, using "Run once" plus helper text such as "Creates a
+  worker-run ticket when the queue is empty." The corresponding synthetic
+  ticket is the landing zone for commands that import external tickets, restart
+  test servers, or otherwise do useful work without first receiving a user
+  ticket.
 
 ### 3.3 Input Contract
 
@@ -323,13 +389,18 @@ The ticket payload is serialized as JSON:
   "tags": [],
   "body": "<free-text portion of the ticket>",
   "history": [],
-  "handoff_depth": 2,
   "worker": {
     "name": "my-shell-worker",
-    "slot": {"row": 1, "col": 3}
+    "slot_index": 3,
+    "coord": {"row": 1, "col": 3}
   }
 }
 ```
+
+`worker.slot_index` and `worker.coord` are snapshots captured at run start.
+Commands that need a durable worker identifier should prefer `slot_index`;
+`coord` is included for human-readable context and may no longer reflect the
+worker's current grid position if the worker is moved later.
 
 Delivery modes:
 
@@ -337,10 +408,18 @@ Delivery modes:
   Recommended default.
 - `env-vars` - scalar fields become environment variables:
   `BULLPEN_TICKET_ID`, `BULLPEN_TICKET_TITLE`, `BULLPEN_TICKET_FILENAME`,
-  `BULLPEN_PROJECT`, `BULLPEN_TICKET_STATUS`, `BULLPEN_TICKET_PRIORITY`.
-  The ticket body is written to a tempfile and exposed as
+  `BULLPEN_PROJECT`, `BULLPEN_TICKET_STATUS`, `BULLPEN_TICKET_PRIORITY`, and
+  `BULLPEN_TICKET_TAGS`. Tags are encoded as a JSON array string, not a
+  comma-separated list, so tags containing punctuation round-trip safely. The
+  ticket body is written to a tempfile and exposed as
   `BULLPEN_TICKET_BODY_FILE`.
 - `argv-json` - pass the JSON blob as one positional argument.
+
+Ticket data is serialized as UTF-8. Bullpen ticket storage is expected to
+normalize ticket bodies to valid UTF-8 before worker execution. If a malformed
+ticket body is encountered, the lifecycle rejects the run before launching the
+Shell command, records the reason `invalid_ticket_encoding`, and moves the
+ticket through the normal error/retry path.
 
 `argv-json` length check:
 
@@ -351,6 +430,9 @@ Delivery modes:
 - If the payload exceeds the limit, fall back to `stdin-json`. The run record
   must include `delivery: "stdin-json"` and
   `delivery_fallback_from: "argv-json"` so the fallback is visible in the UI.
+  The live output stream must also emit a line such as
+  `[bullpen] payload 28KiB > argv limit, using stdin-json` before the child
+  command starts so a command author can diagnose why `sys.argv[1]` was empty.
 
 Body tempfile lifecycle:
 
@@ -361,22 +443,27 @@ Body tempfile lifecycle:
 
 ### 3.4 Output Contract
 
-Exit code is the primary signal; stdout optionally refines it.
+Exit code is the primary signal. JSON stdout may refine a successful result,
+but it must not contradict the process outcome.
 
 | Exit code | stdout                  | Outcome |
 |-----------|-------------------------|---------|
 | 0         | empty / non-JSON        | success using configured disposition |
-| 0         | JSON object             | success/reroute/error as directed by JSON |
-| 2         | any                     | reroute to Blocked, no retry |
+| 0         | JSON object             | success using JSON disposition and ticket updates |
+| 78        | any                     | reroute to Blocked, no retry |
 | non-0     | any                     | error, retry per `max_retries`, then Blocked |
-| timeout   | n/a                     | error with reason `timeout` |
+| timeout   | n/a                     | error with reason `timeout`, retry per `max_retries`, then Blocked |
+
+Exit code 78 is reserved for an intentional terminal block, matching the
+traditional `EX_CONFIG` meaning closely enough to be memorable while avoiding
+common collisions such as Python `argparse`, `grep`, and linters that use exit
+code 2. Exit code 2 has no special meaning in Bullpen.
 
 When stdout is a JSON object, recognized keys are:
 
 ```json
 {
-  "status": "success|blocked|error",
-  "disposition": "review|done|worker:NAME|pass:LEFT|pass:RIGHT|pass:UP|pass:DOWN|random:PATTERN",
+  "disposition": "review|done|blocked|worker:NAME|pass:LEFT|pass:RIGHT|pass:UP|pass:DOWN|pass:RANDOM|random:PATTERN",
   "reason": "free text shown on the ticket",
   "ticket_updates": {
     "title": "...",
@@ -391,6 +478,16 @@ Validation policy:
 
 - Unknown top-level keys are ignored.
 - Known top-level keys with invalid values fail the run.
+- `status` is not a recognized key. If present, it is ignored like any other
+  unknown key. Outcome comes from the exit code only.
+- For exit code 0, `disposition` may override the configured worker
+  disposition and `ticket_updates` may mutate whitelisted ticket fields.
+- For exit code 78 or any other nonzero exit, `disposition` and
+  `ticket_updates` are ignored. If stdout is JSON and contains a valid `reason`,
+  Bullpen uses that reason in addition to stderr/output excerpts.
+- For nonzero exits, malformed JSON stdout is ignored. The exit code, stderr,
+  timeout state, and captured output are already the failure signal, and a
+  malformed diagnostic payload must not mask that signal.
 - `ticket_updates` is fail-closed: any disallowed field or invalid value fails
   the run and applies no updates.
 - `ticket_updates.status` is not allowed. Status changes go through
@@ -402,13 +499,28 @@ Validation policy:
 - Partial update application is forbidden. Validate the entire JSON result
   before mutating the ticket.
 
+Reason surfacing:
+
+- The selected reason is stored in the `worker_run` history row.
+- The reason is written into the corresponding Markdown output block.
+- If the run fails, times out, or exits 78, the same reason is included in the
+  Socket.IO completion/error payload so the board can show a toast or inline
+  error without reparsing the ticket body.
+- Timeout uses the exact canonical reason string `timeout`.
+
 stderr is always captured, capped, and persisted with the run record regardless
 of outcome.
 
 ### 3.5 Run Record Storage
 
-Shell runs produce both a structured frontmatter history row and a Markdown
-output block in the ticket body.
+Shell runs produce three records:
+
+1. A structured frontmatter history row.
+2. A Markdown output block in the ticket body.
+3. Plaintext sidecar artifacts for captured stdout/stderr.
+
+The ticket body must remain at or below 1 MiB after appending worker output.
+This cap includes all Markdown content, not frontmatter.
 
 Structured frontmatter history entry:
 
@@ -422,21 +534,63 @@ history:
     task_id: "review-and-fluff-7dhd"
     outcome: "success|reroute|error"
     disposition: "review"
+    reason: null
     exit_code: 0
     duration_ms: 1234
     delivery: "stdin-json"
     delivery_fallback_from: null
     stdout_bytes: 120
     stderr_bytes: 44
+    stdout_observed_bytes: 120
+    stderr_observed_bytes: 44
     stdout_truncated: false
     stderr_truncated: false
-    command: "<redacted>"
+    stdout_artifact: ".bullpen/logs/worker-runs/review-and-fluff-7dhd/shell-run-20260418T153000Z-slot3.stdout.log"
+    stderr_artifact: ".bullpen/logs/worker-runs/review-and-fluff-7dhd/shell-run-20260418T153000Z-slot3.stderr.log"
+    body_excerpt_truncated: false
     output_block_id: "shell-run-20260418T153000Z-slot3"
 ```
 
-The structured row is intentionally metadata only. Full stdout/stderr belongs
-in the Markdown body to avoid very large YAML frontmatter and to match the
-current AI output convention.
+The structured row is intentionally metadata only. Command text is never
+persisted in history rows or output blocks. Viewers with edit permission may see
+the current command from the serialized layout on the worker card/config modal,
+not from run history.
+
+Sidecar artifacts:
+
+- Store stdout/stderr under
+  `.bullpen/logs/worker-runs/{task_id}/{output_block_id}.stdout.log` and
+  `.bullpen/logs/worker-runs/{task_id}/{output_block_id}.stderr.log`.
+  `output_block_id` must include enough precision to avoid same-slot rapid
+  rerun collisions, using either millisecond timestamp precision or a short
+  monotonic suffix after the timestamp.
+- Capture at most 1 MiB per stream. Truncate with visible markers and set the
+  `*_truncated` flags in history.
+- `stdout_bytes` and `stderr_bytes` record the stored artifact bytes after
+  capping. `stdout_observed_bytes` and `stderr_observed_bytes` record the total
+  stream bytes observed before capping when the platform can measure them
+  cheaply; otherwise they equal the stored byte counts.
+- The artifacts are plaintext server-managed logs. They are not scrubbed,
+  encrypted, or automatically committed.
+
+Markdown output block:
+
+- Always write sidecar artifacts first.
+- Build the newest run's output block with full stdout/stderr when the new
+  ticket body would remain at or below 1 MiB.
+- If the newest run's full block would exceed the ticket cap, reduce that block
+  to maximally useful
+  excerpts: the first 64 KiB and last 64 KiB of each overlarge stream, plus the
+  sidecar artifact path and byte/truncation metadata.
+- If the body would still exceed the cap after excerpting the newest run,
+  compact the oldest existing Worker Output blocks into summary stubs until the
+  body fits. A compacted stub preserves timestamp, worker name/type, outcome,
+  disposition, reason, duration, delivery mode, output byte counts, and sidecar
+  artifact paths. Compaction must not delete sidecar artifacts.
+- If the newest run's metadata-only stub would itself push the ticket body over
+  1 MiB after older blocks have been compacted, keep the sidecar artifacts and
+  fail the run-record write with a visible server error. Do not write a partial
+  or malformed ticket body.
 
 Markdown body block:
 
@@ -447,10 +601,12 @@ Markdown body block:
 
 Outcome: success
 Disposition: review
+Reason: none
 Exit code: 0
 Duration: 1.234s
 Delivery: stdin-json
-Command: <redacted>
+stdout artifact: .bullpen/logs/worker-runs/review-and-fluff-7dhd/shell-run-20260418T153000Z-slot3.stdout.log
+stderr artifact: .bullpen/logs/worker-runs/review-and-fluff-7dhd/shell-run-20260418T153000Z-slot3.stderr.log
 
 #### stdout
 
@@ -466,9 +622,7 @@ Command: <redacted>
 ````
 
 The frontend renders history rows from frontmatter and links each row to the
-corresponding body block. Command text is never persisted in history or output
-blocks. Viewers with edit permission may see the current command from the
-serialized layout on the worker card/config modal, not from run history.
+corresponding body block.
 
 Retry entries remain in the same `history` list with their existing event names.
 They are not merged into `worker_run` entries.
@@ -486,14 +640,26 @@ It is not a sandbox. Baseline guardrails:
 - **Minimal inherited env.** Start with an allowlist and then apply configured
   env values.
 - **Secret env filtering.** Never inherit `BULLPEN_MCP_TOKEN`,
-  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or anything matching
-  `*_TOKEN`, `*_SECRET`, or `*_KEY` unless the user explicitly re-adds it in
-  the Shell worker env.
-- **Output caps.** Capture at most 256 KiB each for stdout and stderr. Truncate
-  with visible markers and set the `*_truncated` flags in history.
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or any variable whose
+  name case-insensitively contains `TOKEN`, `SECRET`, `KEY`, `PASSWORD`,
+  `CREDENTIAL`, or `PASSPHRASE` unless the user explicitly re-adds it in the
+  Shell worker env. `BULLPEN_MCP_TOKEN` is the exception: it is always rejected
+  for Shell workers in v1. This catches names such as `AWS_ACCESS_KEY_ID`,
+  `DATABASE_PASSWORD`, `GITHUB_TOKEN`, and `SERVICE_CREDENTIAL_FILE`.
+  The modal copy must explain the broad filter: "Common-name variables
+  containing TOKEN, KEY, SECRET, PASSWORD, CREDENTIAL, or PASSPHRASE are
+  filtered by default. Add non-sensitive variables back explicitly if needed."
+- **No MCP access in v1.** Shell workers cannot call Bullpen MCP tools by
+  inheriting the host session. `BULLPEN_MCP_TOKEN` is neither inherited nor
+  accepted as configured Shell env, even when another env rule would otherwise
+  allow it. Opt-in MCP access is a deferred feature.
+- **Output caps.** Capture at most 1 MiB each for stdout and stderr into
+  sidecar artifacts, then keep the ticket body under 1 MiB using full output,
+  head/tail excerpts, or compacted output summaries as described in §3.5.
 - **Plaintext warnings.** The config modal must warn that command/env are
   stored in plaintext in workspace data and stdout/stderr are stored in task
-  history in plaintext. No automatic secret scrubbing in v1.
+  history and `.bullpen/logs/worker-runs/` in plaintext. No automatic secret
+  scrubbing in v1.
 - **Permission checks.** Creating or editing Shell workers requires workspace
   write access. Until Bullpen has read-only roles, all authenticated users are
   treated as workspace editors; when read-only roles arrive, server-side
@@ -514,6 +680,8 @@ Secondary feature exposure:
 - Worker transfer includes raw Shell config in v1. The transfer modal must
   warn when copying/moving a Shell worker to another workspace.
 - Logs and ticket bodies include captured stdout/stderr. They are not scrubbed.
+- `.bullpen/logs/` must be covered by Bullpen's default `.bullpen/.gitignore`
+  so worker-run artifacts are not accidentally committed.
 - Backups contain both raw Shell config and captured output.
 
 ### 3.7 Testability
@@ -522,22 +690,49 @@ Add `tests/test_shell_worker.py` covering:
 
 - exit code to outcome mapping
 - JSON stdout parsing and validation
+- exit code 78 reroutes to Blocked without retry
+- exit code 2 retries like any other nonzero error
+- JSON `status` is ignored and cannot override the exit-code outcome
+- malformed JSON stdout is ignored on nonzero exits
 - unknown top-level JSON keys ignored
 - disallowed `ticket_updates` keys fail closed with no partial updates
+- `reason` lands in history, the output block, and failure completion payloads
+- timeout records the canonical reason `timeout`
 - timeout path
 - process group cancellation
 - output truncation
+- ticket body stays below 1 MiB using sidecar artifacts, head/tail excerpts, and
+  old output-block compaction
+- newest-run excerpting happens before old-block compaction; artifact write
+  still succeeds when the body block cannot be appended
+- rapid same-slot reruns produce unique artifact paths
 - env allowlist and explicit env overrides
+- secret env filtering for realistic names including `AWS_ACCESS_KEY_ID`,
+  `DATABASE_PASSWORD`, `GITHUB_TOKEN`, `SERVICE_CREDENTIAL_FILE`, and
+  lowercase variants
+- `BULLPEN_MCP_TOKEN` is never inherited and is rejected as configured Shell env
 - cwd confinement and symlink escape rejection
 - argv length fallback on POSIX and Windows
+- argv fallback emits a visible output line before command execution
 - no command interpolation
 - structured history row plus Markdown output block
 - command/env redaction in serialized layout for read-only viewer contexts
+- unknown worker type removal
+- live focus buffer catch-up for Shell output
+- invalid ticket-body encoding fails before subprocess launch
 
 Use real small commands where possible (`python3 -c ...`, `/bin/true`,
 `/bin/false`) rather than mocking `subprocess`, because quoting and shell
 semantics are part of the feature. POSIX-only command tests must be skipped on
 Windows.
+
+Shared lifecycle/controller tests cover:
+
+- synthetic-ticket idempotency across scheduler restart, including late
+  `on_interval` ticks that must reuse the nominal interval boundary
+- default `.bullpen/.gitignore` includes `logs/`
+- feature flag behavior defaults Shell on and can disable it as a
+  disaster-recovery contingency
 
 E2E coverage:
 
@@ -546,7 +741,7 @@ E2E coverage:
 - assign a ticket
 - assert final ticket status/disposition
 - assert captured stderr appears in the output block
-- assert history command is redacted
+- assert command text is absent from history and output blocks
 - assert read-only layout serialization hides command/env values
 
 ### 3.8 Example Shell Workers
@@ -566,6 +761,7 @@ Each example must include:
 - `command`
 - `ticket_delivery`
 - default `disposition`
+- optional `max_retries`
 - optional `env`
 - `platforms`: `["posix"]`, `["windows"]`, or `["posix", "windows"]`
 
@@ -576,12 +772,12 @@ Seed examples:
    Command:
 
    ```text
-   python3 -c 'import json,sys; t=json.load(sys.stdin); sys.exit(0 if "bug" in t.get("tags", []) else 2)'
+   python3 -c 'import json,sys; t=json.load(sys.stdin); sys.exit(0 if "bug" in t.get("tags", []) else 78)'
    ```
 
    Delivery: `stdin-json`. Disposition: `worker:triage-bugs`.
 
-   Bug tickets continue; non-bug tickets exit 2 and move to Blocked without
+   Bug tickets continue; non-bug tickets exit 78 and move to Blocked without
    retry. Users can change disposition to a pass direction for a board flow.
 
 2. **Title length gate** - POSIX.
@@ -589,7 +785,7 @@ Seed examples:
    Command:
 
    ```text
-   [ ${#BULLPEN_TICKET_TITLE} -ge 10 ] || { echo "title too short" >&2; exit 2; }
+   [ ${#BULLPEN_TICKET_TITLE} -ge 10 ] || { echo "title too short" >&2; exit 78; }
    ```
 
    Delivery: `env-vars`. Disposition: `pass:RIGHT`.
@@ -599,13 +795,14 @@ Seed examples:
    Command:
 
    ```text
-   grep -q -i "security" "$BULLPEN_TICKET_BODY_FILE" || exit 2
+   grep -q -i "security" "$BULLPEN_TICKET_BODY_FILE" || { code=$?; [ "$code" -eq 1 ] && exit 78; exit "$code"; }
    ```
 
    Delivery: `env-vars`. Disposition: `worker:security-review`.
 
-   Non-match exits 2 so it blocks/reroutes without retry rather than using
-   `grep`'s ordinary exit 1 error path.
+   Non-match exits 78 so it blocks/reroutes without retry rather than using
+   `grep`'s ordinary exit 1 error path. Real `grep` errors, including exit 2,
+   still flow through the retry path.
 
 4. **Priority auto-bumper** - POSIX/Windows, requires Python.
 
@@ -625,15 +822,16 @@ Seed examples:
    curl -fsS -X POST -H 'Content-Type: application/json' --data-binary @- https://example.com/hook
    ```
 
-   Delivery: `stdin-json`. Disposition: `pass:RIGHT`. Env must include any
-   auth token the user wants to send.
+   Delivery: `stdin-json`. Disposition: `pass:RIGHT`. Default
+   `max_retries: 0` to avoid duplicate webhook posts. Env must include any auth
+   token the user wants to send.
 
 6. **Ticket-to-file archiver** - POSIX.
 
    Command:
 
    ```text
-   printf "=== %s ===\n%s\n\n" "$BULLPEN_TICKET_ID" "$(cat "$BULLPEN_TICKET_BODY_FILE")" >> .bullpen/archive.log
+   printf "=== %s ===\n%s\n\n" "$BULLPEN_TICKET_ID" "$(cat "$BULLPEN_TICKET_BODY_FILE")" >> .bullpen/logs/shell-archive.log
    ```
 
    Delivery: `env-vars`. Disposition: `review`.
@@ -679,15 +877,103 @@ Eval language selection does not block the Shell MVP.
 - Keep AI behavior stable.
 - Add process-tree stop/yank/timeout tests.
 
-### Phase 3 - Shell Worker Backend
+### Phase 3 - Shell Backend Validation With Kill Switch
+
+Shell lands first to validate Shell-specific requirements. It is enabled by
+default, while the feature flag remains available as a disaster-recovery kill
+switch if Shell behavior destabilizes the board during implementation or early
+use. The goal is to prove the command, payload, output, artifact, and
+synthetic-ticket contracts before migrating the current AI backend.
+
+Feature flag:
+
+- Default is enabled.
+- Operators can disable Shell globally with `BULLPEN_ENABLE_SHELL_WORKERS=0`.
+- Workspace config may also disable it with
+  `features.shell_workers_enabled: false` in `.bullpen/config.json`.
+- The environment variable takes precedence over workspace config so automated
+  tests can force the feature on or off without mutating workspace files.
+
+Process:
 
 - Implement Shell config validation.
 - Implement ticket payload construction and delivery modes.
 - Implement JSON stdout parser and validation.
-- Implement run record metadata plus Markdown output blocks.
-- Implement Shell result dispatch through existing disposition machinery.
+- Implement run record metadata, sidecar artifacts, Markdown output blocks, and
+  ticket-body compaction.
+- Implement Shell result parsing as an adapter that feeds the same disposition
+  grammar as AI.
+- Validate manual empty-queue use cases, including importing an external ticket
+  into Bullpen and restarting a test server.
+- Keep the flagged implementation small and explicitly temporary. It may call
+  adapter shims while the shared controller is still forming, but it must not
+  introduce a second long-lived queue runner, retry handler, process registry,
+  output stream path, or disposition implementation.
+- Keep the kill switch wired throughout this phase so Shell can be disabled
+  without reverting code if a serious regression appears.
 
-### Phase 4 - Shell Worker Frontend
+Done when:
+
+- Shell-specific adapter behavior passes the §3.7 tests.
+- Synthetic tickets, output artifacts, and disposition results are observable in
+  the board through normal task events.
+- Any temporary Shell-only lifecycle shim is named, isolated, and listed for
+  removal in Phase 4.
+
+### Phase 4 - Backend Rationalization and Merge
+
+This phase exists to prevent AI and Shell from becoming two separate worker
+backends with similar-but-divergent lifecycle behavior. The temporary Phase 3
+Shell path must be reconciled here before the feature is considered stable.
+
+Process:
+
+- Characterize the current AI backend before moving code: queue mutation,
+  synthetic ticket creation, `Assigned -> In Progress` transition, output
+  streaming, retries, timeout, stop, yank, pass/handoff/random disposition,
+  watch-column refill, Socket.IO events, and focus output catch-up.
+- Introduce a shared `WorkerRunController` that owns task acquisition,
+  synthetic ticket creation, status transitions, retry/backoff, queue advance,
+  disposition dispatch, process registration, and emits.
+- Move the current AI worker onto the shared controller behind an `AIWorkerType`
+  adapter. The old AI-specific entry point may remain as a compatibility
+  wrapper, but it must delegate immediately to the shared controller.
+- Move Shell onto the same controller. The Shell adapter may provide argv, env,
+  cwd, input delivery, artifact storage, and result parsing only.
+- Remove or quarantine duplicate lifecycle helpers after both AI and Shell pass
+  parity tests. No second queue runner, retry handler, process registry, output
+  stream path, or disposition implementation may remain.
+- Keep the Shell kill switch wired until the shared controller runs both AI and
+  Shell and the parity suite is green. After that, keep it only if it remains
+  useful as an operator-facing recovery control.
+
+Regression-minimizing tests:
+
+- AI characterization tests for the current happy path, error/retry path,
+  timeout path, manual empty-queue synthetic ticket, stop, yank, process-tree
+  cleanup, watch-column refill, and each disposition form.
+- Event-order tests asserting `task:created`, `task:updated`, `layout:updated`,
+  `worker:output`, and `worker:output:done` are emitted in the same observable
+  order for AI before and after migration.
+- Golden ticket tests comparing final ticket frontmatter/body for AI runs before
+  and after migration, including output blocks and retry history.
+- Shared-controller tests that run the same lifecycle cases with an AI test
+  adapter and a Shell test adapter.
+- No-duplication tests or static checks proving Shell does not call a separate
+  process registry, retry implementation, queue advancement path, or
+  disposition dispatcher.
+- End-to-end smoke tests that run one AI worker and one Shell worker through the
+  same board flow in a single workspace.
+
+Done when:
+
+- `start_worker()` is a worker-type dispatch wrapper, not an AI backend.
+- AI and Shell both call the same controller for lifecycle transitions.
+- Existing AI tests pass without weakening assertions.
+- New Shell tests cover only Shell-specific adapter behavior plus shared
+  lifecycle parity.
+
+### Phase 5 - Shell Worker Frontend
 
 - Add worker type selection to Create Worker.
 - Add Shell-specific config fields.
@@ -696,7 +982,7 @@ Eval language selection does not block the Shell MVP.
 - Render Shell run history/output blocks.
 - Render unknown types as disabled occupied cards.
 
-### Phase 5 - Hardening and E2E
+### Phase 6 - Hardening and E2E
 
 - Add full unit and E2E coverage from §3.7.
 - Add Windows smoke tests where CI supports Windows; otherwise mark POSIX-only
@@ -713,32 +999,30 @@ Eval language selection does not block the Shell MVP.
    and ensure viewer contexts are available outside request handlers, including
    Socket.IO background emits.
 
-2. **AI migration timing.** The shared subprocess runner should eventually own
-   AI process cancellation too. Decide whether Shell ships with the new runner
-   first and AI migrates after, or whether process-group behavior changes for
-   AI in the same release. Safer proposal: introduce shared runner for Shell,
-   add equivalent tests for AI, then migrate AI in a follow-up patch before
-   enabling Shell by default.
+2. **Synthetic ticket visibility.** The spec defines generated titles, tags,
+   body metadata, and run keys. Design still needs to settle the visual
+   treatment and short copy that makes synthetic tickets obvious on the board
+   without making them feel like user-authored work.
 
-3. **Workspace export warning UX.** The spec requires warnings for Shell config
+3. **Artifact retention policy.** Sidecar stdout/stderr artifacts keep ticket
+   bodies bounded, but the spec does not yet define retention age, maximum
+   workspace log size, pruning behavior, or whether export should include
+   worker-run artifacts. Pick defaults before enabling high-frequency scheduled
+   Shell workers.
+
+4. **Workspace export warning UX.** The spec requires warnings for Shell config
    exposure in export/team/transfer flows. The exact UI copy and confirmation
    mechanics need design, especially for bulk "export all" flows.
 
-4. **History growth.** Capturing 256 KiB each for stdout and stderr per run can
-   grow ticket files quickly. The cap is acceptable for v1, but implementation
-   should add a future migration note for external log files or per-run log
-   artifacts if ticket files become unwieldy.
-
-5. **Column vs. Blocked semantics for exit 2.** This spec maps exit 2 to
-   Blocked without retry. Some example "filter" workers might prefer "no match,
-   pass along" rather than Blocked. Users can express that by outputting JSON
-   with a disposition override, but the examples should be reviewed against
-   real board workflows before seeding.
-
-6. **Shell availability on minimal systems.** POSIX assumes `/bin/sh`; Windows
+5. **Shell availability on minimal systems.** POSIX assumes `/bin/sh`; Windows
    assumes `cmd.exe`. If Bullpen later runs in restricted containers, expose a
    startup health check that marks Shell worker creation unavailable when no
    shell can be launched.
+
+6. **Windows parity for examples.** The v1 examples are mostly POSIX-oriented.
+   Before calling the example set complete, add at least one Windows-native
+   example or document why Python-based examples are the supported cross-platform
+   path.
 
 ---
 
@@ -748,5 +1032,26 @@ Eval language selection does not block the Shell MVP.
 - Auto-commit / auto-PR on Shell worker success.
 - Per-workspace capability controls beyond the current auth/write model.
 - Secret env vars backed by OS keychain or a server-side secret store.
+- Opt-in Shell access to Bullpen MCP tools or a short-lived MCP token.
 - Long-lived Tool worker type that speaks MCP/JSON-RPC to a subprocess.
 - Eval worker implementation.
+
+---
+
+## 8. Deferred Feedback
+
+The review feedback was incorporated except for two recommendations that conflict
+with product direction. The second-pass feedback was incorporated in full.
+
+1. **Make manual empty-queue Shell runs a no-op.** Not accepted. Manual Shell
+   runs intentionally use the same rules as AI workers and synthesize a ticket
+   when no queued ticket exists. This supports commands that import an external
+   ticket into Bullpen and commands such as restarting a test server. The UX must
+   make ticket creation explicit instead of disabling the action.
+
+2. **Require AI migration before any Shell backend work lands.** Not accepted as
+   written. Shell may land first and be enabled by default so its requirements
+   can be validated in normal use. The backend rationalization phase remains
+   mandatory, and any temporary Shell-only lifecycle shim must be isolated and
+   removed during that phase. The feature flag is retained as a
+   disaster-recovery kill switch, not as the primary rollout mechanism.

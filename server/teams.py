@@ -4,6 +4,7 @@ import os
 
 from server.persistence import ensure_within, read_json, write_json
 from server.validation import _id
+from server.worker_types import copy_worker_slot, normalize_layout
 
 
 def _teams_dir(bp_dir):
@@ -12,13 +13,18 @@ def _teams_dir(bp_dir):
 
 def save_team(bp_dir, name, layout):
     """Save current layout as a named team. Strips task_queue from slots."""
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    layout = normalize_layout(layout, config=config)
     team_layout = {"slots": []}
     for slot in layout.get("slots", []):
         if slot is None:
             team_layout["slots"].append(None)
         else:
             # Copy slot but exclude runtime state
-            saved = {k: v for k, v in slot.items() if k not in ("task_queue", "state")}
+            saved = {
+                k: v for k, v in copy_worker_slot(slot, reset_runtime=False).items()
+                if k not in ("task_queue", "state")
+            }
             team_layout["slots"].append(saved)
 
     _id(name, "team name")
@@ -37,10 +43,14 @@ def load_team(bp_dir, name):
         return None
     team = read_json(path)
     # Re-add runtime fields
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    team = normalize_layout(team, config=config)
     for slot in team.get("slots", []):
         if slot is not None:
             slot.setdefault("task_queue", [])
             slot.setdefault("state", "idle")
+            slot["task_queue"] = []
+            slot["state"] = "idle"
     return team
 
 

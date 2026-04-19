@@ -33,6 +33,7 @@ from server.transfer import transfer_worker, TransferError
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
+from server.worker_types import ViewerContext, normalize_layout, serialize_layout
 from server.workspace_manager import WorkspaceManager
 
 
@@ -470,6 +471,8 @@ def create_app(
         dst_ws = manager.get(data.get("dest_workspace_id"))
         if dst_ws:
             dst_layout = read_json(os.path.join(dst_ws.bp_dir, "layout.json"))
+            dst_config = read_json(os.path.join(dst_ws.bp_dir, "config.json"))
+            dst_layout = serialize_layout(dst_layout, viewer=ViewerContext(can_edit=True), config=dst_config)
             dst_layout["workspaceId"] = dst_ws.id
             socketio.emit("layout:updated", dst_layout, to=dst_ws.id)
 
@@ -478,6 +481,8 @@ def create_app(
             src_ws = manager.get(data.get("source_workspace_id"))
             if src_ws:
                 src_layout = read_json(os.path.join(src_ws.bp_dir, "layout.json"))
+                src_config = read_json(os.path.join(src_ws.bp_dir, "config.json"))
+                src_layout = serialize_layout(src_layout, viewer=ViewerContext(can_edit=True), config=src_config)
                 src_layout["workspaceId"] = src_ws.id
                 socketio.emit("layout:updated", src_layout, to=src_ws.id)
 
@@ -504,6 +509,8 @@ def create_app(
         created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         layout_path = os.path.join(ws.bp_dir, "layout.json")
         layout = read_json(layout_path) if os.path.exists(layout_path) else {"slots": []}
+        config = read_json(os.path.join(ws.bp_dir, "config.json"))
+        layout = normalize_layout(layout, config=config)
         slots = layout.get("slots", []) if isinstance(layout, dict) else []
         workers_layout = {"slots": slots if isinstance(slots, list) else []}
 
@@ -613,7 +620,8 @@ def create_app(
 
         bp_dir = ws.bp_dir
         init_workspace(ws.path)
-        write_json(os.path.join(bp_dir, "layout.json"), {"slots": slots})
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        write_json(os.path.join(bp_dir, "layout.json"), normalize_layout({"slots": slots}, config=config))
 
         source_profiles_dir = os.path.join(source_bp_dir, "profiles")
         if os.path.isdir(source_profiles_dir):
@@ -889,7 +897,8 @@ def reconcile(bp_dir):
     if not os.path.exists(layout_path):
         return
 
-    layout = read_json(layout_path)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    layout = normalize_layout(read_json(layout_path), config=config)
     slots = layout.get("slots", [])
     if not isinstance(slots, list):
         slots = []
@@ -987,7 +996,7 @@ def reconcile(bp_dir):
     for slot_index, _created_at, task_id in queued:
         slots[slot_index].setdefault("task_queue", []).append(task_id)
 
-    write_json(layout_path, layout)
+    write_json(layout_path, normalize_layout(layout, config=config))
 
     # Check watched columns for idle on_queue workers with unclaimed tasks
     from server import workers as worker_mod
@@ -1018,6 +1027,7 @@ def load_state(bp_dir, workspace):
         ambient_volume = 40
     config["ambient_volume"] = max(0, min(100, ambient_volume))
     layout = read_json(os.path.join(bp_dir, "layout.json"))
+    layout = serialize_layout(layout, viewer=ViewerContext(can_edit=True), config=config)
 
     # Load all tasks
     tasks = []
