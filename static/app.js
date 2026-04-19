@@ -155,6 +155,8 @@ const app = createApp({
 
     const PRISM_DARK = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css';
     const PRISM_LIGHT = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css';
+    const PRISM_DARK_INTEGRITY = 'sha384-wFjoQjtV1y5jVHbt0p35Ui8aV8GVpEZkyF99OXWqP/eNJDU93D3Ugxkoyh6Y2I4A';
+    const PRISM_LIGHT_INTEGRITY = 'sha384-rCCjoCPCsizaAAYVoz1Q0CmCTvnctK0JkfCSjx7IIxexTBg+uCKtFYycedUjMyA2';
     function _normalizeTheme(themeId) {
       if (typeof themeId !== 'string') return 'dark';
       return THEME_IDS.has(themeId) ? themeId : 'dark';
@@ -166,7 +168,12 @@ const app = createApp({
       const next = _normalizeTheme(themeId);
       document.documentElement.setAttribute('data-theme', next);
       const prismLink = document.getElementById('prism-theme');
-      if (prismLink) prismLink.href = _themeMode(next) === 'light' ? PRISM_LIGHT : PRISM_DARK;
+      if (prismLink) {
+        const isLight = _themeMode(next) === 'light';
+        prismLink.href = isLight ? PRISM_LIGHT : PRISM_DARK;
+        prismLink.integrity = isLight ? PRISM_LIGHT_INTEGRITY : PRISM_DARK_INTEGRITY;
+        prismLink.setAttribute('crossorigin', 'anonymous');
+      }
     }
     function _applyWorkspaceTheme(wsId) {
       const ws = workspaces[wsId];
