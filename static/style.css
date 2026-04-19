@@ -1584,7 +1584,9 @@ body {
 }
 
 .worker-grid-column-header.is-selected {
-  color: var(--accent);
+  background: var(--text-primary);
+  color: var(--bg);
+  border-radius: 3px;
 }
 
 .worker-grid-column-resize {
@@ -1662,7 +1664,9 @@ body {
 }
 
 .worker-grid-row-header.is-selected {
-  color: var(--accent);
+  background: var(--text-primary);
+  color: var(--bg);
+  border-radius: 3px;
 }
 
 .worker-grid-header-label {

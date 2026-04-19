@@ -62,7 +62,7 @@ const WorkerCard = {
             <span class="worker-queue-title">{{ t.title }}</span>
           </div>
         </div>
-        <div v-else class="worker-card-empty">No tasks queued</div>
+        <div v-else class="worker-card-empty">Idle</div>
         <div v-if="showOutputPane && isWorking && lastOutput" class="worker-card-output">
           <pre>{{ lastOutput }}</pre>
         </div>
@@ -334,6 +334,7 @@ const WorkerCard = {
         this.menuPos = { top: rect.bottom + 4, left };
       }
       this.showMenu = true;
+      this.$emit('menu-opened');
       this.$nextTick(() => {
         const first = this.$el.querySelector('.worker-menu .worker-menu-item:not([disabled])');
         if (first) first.focus();

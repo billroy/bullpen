@@ -22,7 +22,7 @@ def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
     text = _read("static/components/BullpenTab.js")
     assert "workerGroupSlots(startSlot)" in text
     assert "passTargetsForSlot(slotIndex)" in text
-    assert "buildGroupMovePlan(sourceSlot, destinationCoord)" in text
+    assert "buildGroupMovePlan(sourceSlot, destinationCoord," in text
     assert "canDropWorkerAtSlot(sourceSlot, targetSlot)" in text
     assert "moveWorkerGroupToCoord(sourceSlot, coord)" in text
     assert "this.$root.moveWorkerGroup(plan.moves)" in text
@@ -61,7 +61,7 @@ def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():
     text = _read("static/components/BullpenTab.js")
     assert ":build-worker-drag-image=\"buildWorkerDragImage\"" in text
-    assert "buildWorkerDragImage(slotIndex, pointer = {})" in text
+    assert "buildWorkerDragImage(slotIndex, pointer = {}," in text
     assert "worker-group-drag-image" in text
     assert "workerElementForSlot(slotIndex)" in text
     assert "cardEl ? cardEl.cloneNode(true)" in text

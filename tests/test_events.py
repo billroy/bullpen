@@ -273,7 +273,7 @@ class TestWorkerEvents:
         assert layout is not None
         worker = layout["slots"][0]
         assert worker["profile"] == "unconfigured-worker"
-        assert worker["activation"] == "manual"
+        assert worker["activation"] == "on_drop"
         assert worker["max_retries"] == 0
         assert worker["task_queue"] == []
         assert worker["state"] == "idle"

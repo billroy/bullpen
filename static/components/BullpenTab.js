@@ -125,6 +125,7 @@ const BullpenTab = {
             @open-focus="$emit('open-focus', $event)"
             @transfer="$emit('transfer-worker', $event)"
             @copy-worker="copyWorker"
+            @menu-opened="selectWorker(item)"
             @menu-closed="focusViewport"
           />
 
@@ -1127,16 +1128,20 @@ const BullpenTab = {
       const fallback = Number(window._bullpenWorkerDrag?.source);
       return Number.isInteger(fallback) ? fallback : null;
     },
+    _dragGroupSlots() {
+      const payload = window._bullpenWorkerDrag;
+      return Array.isArray(payload?.group) ? payload.group : null;
+    },
     _isWorkerDrag(e) {
       const types = Array.from(e?.dataTransfer?.types || []);
       return types.includes('application/x-worker-slot') || types.includes('application/x-worker-group');
     },
-    buildGroupMovePlan(sourceSlot, destinationCoord) {
+    buildGroupMovePlan(sourceSlot, destinationCoord, overrideSlots) {
       const source = Number(sourceSlot);
       if (!Number.isInteger(source) || !destinationCoord || !this.isWritableCoord(destinationCoord)) return null;
       const anchor = this.workerItemBySlot[source];
       if (!anchor) return null;
-      const slots = this.workerGroupSlots(source);
+      const slots = overrideSlots || this.workerGroupSlots(source);
       if (!slots.length) return null;
       const groupSet = new Set(slots);
       const deltaCol = destinationCoord.col - anchor.coord.col;
@@ -1160,10 +1165,10 @@ const BullpenTab = {
     canDropWorkerAtSlot(sourceSlot, targetSlot) {
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return false;
-      return !!this.buildGroupMovePlan(sourceSlot, target.coord);
+      return !!this.buildGroupMovePlan(sourceSlot, target.coord, this._dragGroupSlots());
     },
     canDropWorkerAtCoord(sourceSlot, coord) {
-      return !!this.buildGroupMovePlan(sourceSlot, coord);
+      return !!this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
     },
     dropWorkerOnSlot(sourceSlot, targetSlot) {
       this._clearDropTarget();
@@ -1172,7 +1177,7 @@ const BullpenTab = {
       this.moveWorkerGroupToCoord(sourceSlot, target.coord);
     },
     moveWorkerGroupToCoord(sourceSlot, coord) {
-      const plan = this.buildGroupMovePlan(sourceSlot, coord);
+      const plan = this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
       if (!plan || !plan.moves.length) return false;
       const changed = plan.moves.some(move => {
         const item = this.workerItemBySlot[move.slot];
@@ -1270,7 +1275,7 @@ const BullpenTab = {
       this.emptyMenuCoord = null;
     },
     _setDropTarget(source, coord) {
-      const plan = this.buildGroupMovePlan(source, coord);
+      const plan = this.buildGroupMovePlan(source, coord, this._dragGroupSlots());
       if (!plan) {
         this.dragOverCoord = null;
         this.dropTargetCoords = [];
