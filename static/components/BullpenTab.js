@@ -69,9 +69,6 @@ const BullpenTab = {
                  :class="{ active: columnResize }"
                  title="Drag to resize columns"
                  @pointerdown="onColumnResizeDown"
-                 @pointermove="onColumnResizeMove"
-                 @pointerup="onColumnResizeUp"
-                 @pointercancel="onColumnResizeUp"
                  @click.stop
                  @dblclick.stop="resetColumnWidth"></div>
           </div>
@@ -89,9 +86,6 @@ const BullpenTab = {
                  :class="{ active: rowResize }"
                  title="Drag to resize rows"
                  @pointerdown="onRowResizeDown"
-                 @pointermove="onRowResizeMove"
-                 @pointerup="onRowResizeUp"
-                 @pointercancel="onRowResizeUp"
                  @click.stop
                  @dblclick.stop="resetRowHeight"></div>
           </div>
@@ -583,6 +577,8 @@ const BullpenTab = {
   beforeUnmount() {
     this._resizeObserver?.disconnect();
     if (this._persistTimer) clearTimeout(this._persistTimer);
+    this._teardownColumnResizeListeners?.();
+    this._teardownRowResizeListeners?.();
   },
   methods: {
     coordForSlot(worker, slotIndex) {
@@ -1505,9 +1501,9 @@ const BullpenTab = {
     },
     onColumnResizeDown(e) {
       if (e.button !== 0) return;
+      if (this.columnResize) return;
       e.preventDefault();
       e.stopPropagation();
-      e.currentTarget.setPointerCapture?.(e.pointerId);
       this.columnResize = {
         startX: e.clientX,
         startWidth: this.columnWidth,
@@ -1515,9 +1511,15 @@ const BullpenTab = {
       };
       this.draggingColumnWidth = this.columnWidth;
       this.updateResizeTooltip(e, `${this.columnWidth}px wide`);
+      this._colResizeMoveHandler = (ev) => this.onColumnResizeMove(ev);
+      this._colResizeUpHandler = (ev) => this.onColumnResizeUp(ev);
+      window.addEventListener('pointermove', this._colResizeMoveHandler);
+      window.addEventListener('pointerup', this._colResizeUpHandler);
+      window.addEventListener('pointercancel', this._colResizeUpHandler);
     },
     onColumnResizeMove(e) {
       if (!this.columnResize) return;
+      if (e.pointerId !== this.columnResize.pointerId) return;
       const dx = e.clientX - this.columnResize.startX;
       const next = this.columnResize.startWidth + dx;
       this.draggingColumnWidth = Math.max(140, Math.min(480, Math.round(next)));
@@ -1525,7 +1527,8 @@ const BullpenTab = {
     },
     onColumnResizeUp(e) {
       if (!this.columnResize) return;
-      e.currentTarget.releasePointerCapture?.(this.columnResize.pointerId);
+      if (e && e.pointerId !== this.columnResize.pointerId) return;
+      this._teardownColumnResizeListeners();
       const dragged = this.draggingColumnWidth;
       this.columnResize = null;
       this.draggingColumnWidth = null;
@@ -1535,7 +1538,17 @@ const BullpenTab = {
         this.persistGrid({ columnWidth: final });
       }
     },
+    _teardownColumnResizeListeners() {
+      if (this._colResizeMoveHandler) {
+        window.removeEventListener('pointermove', this._colResizeMoveHandler);
+        window.removeEventListener('pointerup', this._colResizeUpHandler);
+        window.removeEventListener('pointercancel', this._colResizeUpHandler);
+        this._colResizeMoveHandler = null;
+        this._colResizeUpHandler = null;
+      }
+    },
     resetColumnWidth() {
+      this._teardownColumnResizeListeners();
       this.columnResize = null;
       this.draggingColumnWidth = null;
       this.resizeTooltip = null;
@@ -1543,9 +1556,9 @@ const BullpenTab = {
     },
     onRowResizeDown(e) {
       if (e.button !== 0) return;
+      if (this.rowResize) return;
       e.preventDefault();
       e.stopPropagation();
-      e.currentTarget.setPointerCapture?.(e.pointerId);
       this.rowResize = {
         startY: e.clientY,
         startHeight: this.rowHeight,
@@ -1553,9 +1566,15 @@ const BullpenTab = {
       };
       this.draggingRowHeight = this.rowHeight;
       this.updateResizeTooltip(e, `${this.rowHeight}px tall`);
+      this._rowResizeMoveHandler = (ev) => this.onRowResizeMove(ev);
+      this._rowResizeUpHandler = (ev) => this.onRowResizeUp(ev);
+      window.addEventListener('pointermove', this._rowResizeMoveHandler);
+      window.addEventListener('pointerup', this._rowResizeUpHandler);
+      window.addEventListener('pointercancel', this._rowResizeUpHandler);
     },
     onRowResizeMove(e) {
       if (!this.rowResize) return;
+      if (e.pointerId !== this.rowResize.pointerId) return;
       const dy = e.clientY - this.rowResize.startY;
       const next = this.rowResize.startHeight + dy;
       this.draggingRowHeight = Math.max(32, Math.min(480, Math.round(next)));
@@ -1563,7 +1582,8 @@ const BullpenTab = {
     },
     onRowResizeUp(e) {
       if (!this.rowResize) return;
-      e.currentTarget.releasePointerCapture?.(this.rowResize.pointerId);
+      if (e && e.pointerId !== this.rowResize.pointerId) return;
+      this._teardownRowResizeListeners();
       const dragged = this.draggingRowHeight;
       this.rowResize = null;
       this.draggingRowHeight = null;
@@ -1573,7 +1593,17 @@ const BullpenTab = {
         this.persistGrid({ rowHeight: final });
       }
     },
+    _teardownRowResizeListeners() {
+      if (this._rowResizeMoveHandler) {
+        window.removeEventListener('pointermove', this._rowResizeMoveHandler);
+        window.removeEventListener('pointerup', this._rowResizeUpHandler);
+        window.removeEventListener('pointercancel', this._rowResizeUpHandler);
+        this._rowResizeMoveHandler = null;
+        this._rowResizeUpHandler = null;
+      }
+    },
     resetRowHeight() {
+      this._teardownRowResizeListeners();
       this.rowResize = null;
       this.draggingRowHeight = null;
       this.resizeTooltip = null;
