@@ -22,7 +22,7 @@ VALID_THEMES = {
     "github-dark", "monokai", "one-dark", "everforest", "ayu-dark",
     "material-ocean", "night-owl", "shades-of-purple", "solarized", "panda",
     "cobalt-2", "one-dark-pro", "light-ethereal", "light-stone-teal", "light-ivory-olive",
-    "eyeshade",
+    "eyeshade", "eyeshade-dark",
 }
 
 ID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')

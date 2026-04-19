@@ -25,6 +25,7 @@ const app = createApp({
       { id: 'light-stone-teal', label: 'Light Stone Teal', mode: 'light' },
       { id: 'light-ivory-olive', label: 'Light Ivory Olive', mode: 'light' },
       { id: 'eyeshade', label: 'Eyeshade', mode: 'light' },
+      { id: 'eyeshade-dark', label: 'Eyeshade Dark', mode: 'dark' },
       { id: 'dracula', label: 'Dracula', mode: 'dark' },
       { id: 'nord', label: 'Nord', mode: 'dark' },
       { id: 'gruvbox', label: 'Gruvbox Dark', mode: 'dark' },
