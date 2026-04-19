@@ -1392,6 +1392,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px;
+  position: relative;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   user-select: none;
@@ -1464,6 +1465,60 @@ body {
 .task-card-meta {
   display: flex;
   gap: 4px;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.task-card-bean-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.task-card-bean-btn {
+  border: none;
+  cursor: pointer;
+}
+
+.task-card-bean-open {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.task-card-popup {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 118px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 5px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+  z-index: 60;
+}
+
+.task-card-popup-item {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+
+.task-card-popup-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.task-card-popup-item.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text-primary);
 }
 
 .task-card-worker {

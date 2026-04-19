@@ -1216,6 +1216,7 @@ const app = createApp({
               :list-scope="ticketListScope"
               @select-task="selectTask"
               @move-task="moveTask"
+              @update-task="updateTask"
               @archive-done="archiveDone"
               @new-task="showCreateModal = true"
               @update-list-scope="setTicketListScope"

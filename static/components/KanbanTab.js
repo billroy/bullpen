@@ -1,6 +1,6 @@
 const KanbanTab = {
   props: ['tasks', 'columns', 'layout', 'viewMode', 'listScope'],
-  emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope'],
+  emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope', 'update-task'],
   components: { TaskCard },
   template: `
     <div v-if="viewMode !== 'list'" class="kanban-board">
@@ -27,6 +27,7 @@ const KanbanTab = {
             :task="task"
             :layout="layout"
             @select-task="$emit('select-task', $event)"
+            @update-task="$emit('update-task', $event)"
           />
         </div>
       </div>
