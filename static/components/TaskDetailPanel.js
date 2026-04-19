@@ -93,7 +93,7 @@ const TaskDetailPanel = {
             Type
             <select v-if="!readOnly" class="form-select" :value="task.type"
                     @change="$emit('update', { id: task.id, type: $event.target.value })">
-              <option value="task">Ticket</option>
+              <option value="task">Task</option>
               <option value="bug">Bug</option>
               <option value="feature">Feature</option>
               <option value="chore">Chore</option>

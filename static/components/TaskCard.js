@@ -30,7 +30,7 @@ const TaskCard = {
     },
     typeOptions() {
       return [
-        { value: 'task', label: 'Ticket' },
+        { value: 'task', label: 'Task' },
         { value: 'bug', label: 'Bug' },
         { value: 'feature', label: 'Feature' },
         { value: 'chore', label: 'Chore' },

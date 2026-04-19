@@ -27,7 +27,7 @@ const TaskCreateModal = {
             <label class="form-label">
               Type
               <select class="form-select" v-model="type">
-                <option value="task">Ticket</option>
+                <option value="task">Task</option>
                 <option value="bug">Bug</option>
                 <option value="feature">Feature</option>
                 <option value="chore">Chore</option>
