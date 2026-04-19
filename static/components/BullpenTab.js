@@ -1307,6 +1307,7 @@ const BullpenTab = {
       }
       this.hoveredCoord = null;
       this.emptyMenuCoord = null;
+      this.selectedCell = { ...coord };
       return true;
     },
     moveWorkerGroupToCoord(sourceSlot, coord) {
@@ -1326,6 +1327,12 @@ const BullpenTab = {
       }
       this.hoveredCoord = null;
       this.emptyMenuCoord = null;
+      const sourceMove = plan.moves.find(m => Number(m.slot) === Number(sourceSlot));
+      if (sourceMove && sourceMove.to_coord) {
+        this.selectedCell = { ...sourceMove.to_coord };
+      } else {
+        this.selectedCell = { ...coord };
+      }
       return true;
     },
     copyWorker(slot) {
