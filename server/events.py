@@ -297,16 +297,30 @@ def register_events(socketio, app):
 
         # If status is changing, check whether the task is owned by a worker
         # and needs to be yanked out of its queue (+ process killed).
+        #
+        # Exception: if the caller is the MCP stdio client (i.e. an agent
+        # updating its own ticket), do NOT yank. Otherwise the agent's own
+        # `status=done` update would kill its own process before
+        # _on_agent_success can run, skipping output logging and the
+        # worker's configured disposition. The agent's terminal status
+        # update is also discarded for the same reason — the worker owns
+        # the final status.
         if "status" in fields:
             old_task = task_mod.read_task(bp_dir, task_id)
             old_status = old_task.get("status") if old_task else None
             new_status = fields["status"]
+            from server.app import mcp_sids
+            is_mcp_caller = request.sid in mcp_sids
 
             if old_status in ("assigned", "in_progress") and new_status not in ("assigned", "in_progress"):
-                worker_mod.yank_from_worker(bp_dir, task_id, socketio, ws_id)
-                # Clear assignment since the task is leaving the worker system
-                fields["assigned_to"] = ""
-                fields["handoff_depth"] = 0
+                if is_mcp_caller:
+                    # Drop the status change; let the worker decide.
+                    fields.pop("status", None)
+                else:
+                    worker_mod.yank_from_worker(bp_dir, task_id, socketio, ws_id)
+                    # Clear assignment since the task is leaving the worker system
+                    fields["assigned_to"] = ""
+                    fields["handoff_depth"] = 0
 
         task = task_mod.update_task(bp_dir, task_id, fields)
         _emit("task:updated", task, ws_id)

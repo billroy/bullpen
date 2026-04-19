@@ -480,9 +480,11 @@ def _assemble_prompt(bp_dir, worker, task):
     parts.append(f"## Task: {task.get('title', 'Untitled')}\n")
     if task.get("id"):
         parts.append(
-            f"Task ID: `{task['id']}` — use this ID directly with "
-            f"`mcp__bullpen__update_ticket` to update this ticket. "
-            f"Do not search for it by title."
+            f"Task ID: `{task['id']}`. If you need to add notes or update "
+            f"the body of this ticket, call `mcp__bullpen__update_ticket` "
+            f"with this ID directly (do not search by title). "
+            f"Do NOT change the ticket's `status` — the worker will set the "
+            f"final status based on its configured output."
         )
     parts.append(f"Type: {task.get('type', 'task')}")
     parts.append(f"Priority: {task.get('priority', 'normal')}")
@@ -1297,10 +1299,11 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="",
         if not worker:
             return
 
-        # If the task was removed from the queue externally (e.g. yanked
-        # because the agent's own MCP update changed the task status while
-        # still running), skip retry — otherwise start_worker would find an
-        # empty queue and create a spurious auto-task.
+        # If the task was removed from the queue externally (e.g. a human
+        # dragged it out of in_progress mid-run), skip retry — otherwise
+        # start_worker would find an empty queue and create a spurious
+        # auto-task. Agent self-updates no longer trigger yank (see
+        # on_task_update in events.py), so this path is rare.
         queue = worker.get("task_queue", [])
         if task_id not in queue:
             return

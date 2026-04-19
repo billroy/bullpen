@@ -38,6 +38,11 @@ from server.workspace_manager import WorkspaceManager
 
 socketio = SocketIO()
 
+# Set of socket.io sids that authenticated via mcp_token (agent/MCP clients).
+# Used by event handlers to distinguish agent-originated updates from user
+# updates so the agent can't accidentally yank its own running task.
+mcp_sids = set()
+
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _TRUSTED_TUNNEL_SUFFIXES = (".ngrok-free.app", ".ngrok.app", ".ngrok.io", ".sprites.app")
 _MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
@@ -762,11 +767,14 @@ def create_app(
         # by passing {"mcp_token": "<token>"} via Socket.IO ``auth``.  The
         # token is written to .bullpen/config.json on startup and is only
         # readable by processes with local filesystem access.
+        expected = app.config.get("mcp_token")
+        token = (auth_data or {}).get("mcp_token") if isinstance(auth_data, dict) else None
+        is_mcp = bool(expected) and token == expected
         if auth.auth_enabled() and not session.get("authenticated"):
-            expected = app.config.get("mcp_token")
-            token = (auth_data or {}).get("mcp_token") if isinstance(auth_data, dict) else None
-            if not expected or not token or token != expected:
+            if not is_mcp:
                 return False
+        if is_mcp:
+            mcp_sids.add(request.sid)
         join_room("authenticated")
         # Join rooms for all active workspaces
         for ws in manager.all_workspaces():
@@ -779,6 +787,10 @@ def create_app(
             socketio.emit("state:init", state, to=sid)
         # Send project list (to this client only)
         socketio.emit("projects:updated", manager.list_projects(), to=sid)
+
+    @socketio.on("disconnect")
+    def on_disconnect():
+        mcp_sids.discard(request.sid)
 
     register_events(socketio, app)
 
