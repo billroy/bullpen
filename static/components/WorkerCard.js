@@ -2,9 +2,12 @@ const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed'],
   template: `
-    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small' }"
+    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small', 'is-dragging': isDragging }"
          :style="layoutMode === 'small' ? { background: agentColor } : null"
          draggable="true"
+         @pointerdown="onPointerDown"
+         @pointerup="onPointerUp"
+         @pointercancel="onPointerUp"
          @dragstart="onDragStart"
          @dragend="onDragEnd"
          @dragover="onDragOver"
@@ -70,7 +73,17 @@ const WorkerCard = {
     </div>
   `,
   data() {
-    return { dragOver: false, connectTarget: false, showMenu: false, menuPos: { top: 0, left: 0 }, elapsed: '0s', _timer: null, hoveredHandle: null };
+    return {
+      dragOver: false,
+      connectTarget: false,
+      showMenu: false,
+      menuPos: { top: 0, left: 0 },
+      elapsed: '0s',
+      _timer: null,
+      hoveredHandle: null,
+      shiftDragIntent: false,
+      isDragging: false,
+    };
   },
   mounted() {
     renderLucideIcons(this.$el);
@@ -198,8 +211,16 @@ const WorkerCard = {
     onCardMouseLeave() {
       this.hoveredHandle = null;
     },
+    onPointerDown(e) {
+      if (e.button !== 0) return;
+      if (e.target.closest('.connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) return;
+      this.shiftDragIntent = !!e.shiftKey;
+    },
+    onPointerUp() {
+      this.shiftDragIntent = false;
+    },
     onDragStart(e) {
-      const singleton = !!e.shiftKey;
+      const singleton = !!(e.shiftKey || this.shiftDragIntent);
       const payload = typeof this.buildWorkerDragPayload === 'function'
         ? this.buildWorkerDragPayload(this.slotIndex, {
           singleton,
@@ -213,6 +234,7 @@ const WorkerCard = {
       } catch (_err) { /* ignore */ }
       e.dataTransfer.effectAllowed = 'move';
       window._bullpenWorkerDrag = payload;
+      this.isDragging = true;
       this.removeDragImage();
       if (typeof this.buildWorkerDragImage === 'function') {
         const dragImage = this.buildWorkerDragImage(this.slotIndex, {
@@ -229,6 +251,8 @@ const WorkerCard = {
     },
     onDragEnd() {
       window._bullpenWorkerDrag = null;
+      this.shiftDragIntent = false;
+      this.isDragging = false;
       this.removeDragImage();
     },
     onHandleDragStart(dir, e) {
@@ -267,9 +291,10 @@ const WorkerCard = {
         types.includes(window.BULLPEN_TASK_DND_MIME) ||
         types.includes('text/plain') ||
         types.includes('application/x-worker-slot') ||
-        types.includes('application/x-worker-group')
+        types.includes('application/x-worker-group') ||
+        window._bullpenWorkerDrag
       ) {
-        if (types.includes('application/x-worker-slot') || types.includes('application/x-worker-group')) {
+        if (types.includes('application/x-worker-slot') || types.includes('application/x-worker-group') || window._bullpenWorkerDrag) {
           const drag = window._bullpenWorkerDrag;
           const source = Number(drag?.source);
           const canDrop = Number.isInteger(source)

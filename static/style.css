@@ -1842,6 +1842,16 @@ body {
      containment also clips pass-connected pills, defeating overflow:visible. */
 }
 
+.worker-card[draggable="true"] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.worker-card[draggable="true"]:active,
+.worker-card.is-dragging {
+  cursor: grabbing;
+}
+
 .worker-card:hover {
   border-color: var(--accent);
 }
@@ -2082,6 +2092,12 @@ body {
   font-size: 12px;
   border-radius: calc(var(--radius-lg) - 1px);
   position: relative;
+  cursor: grab;
+}
+
+.worker-card-header:active,
+.worker-card.is-dragging .worker-card-header {
+  cursor: grabbing;
 }
 
 .worker-card-name {

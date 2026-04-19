@@ -50,6 +50,9 @@ def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
     assert "'canDropWorkerAtSlot'" in text
     assert "'dropWorkerOnSlot'" in text
     assert "'application/x-worker-group'" in text
+    assert "@pointerdown=\"onPointerDown\"" in text
+    assert "shiftDragIntent" in text
+    assert "const singleton = !!(e.shiftKey || this.shiftDragIntent)" in text
     assert "window._bullpenWorkerDrag = payload" in text
     assert "this.buildWorkerDragPayload(this.slotIndex, {" in text
     assert "clientX: e.clientX" in text
@@ -74,6 +77,7 @@ def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():
 def test_worker_drag_uses_pointer_projected_drop_coordinates():
     text = _read("static/components/BullpenTab.js")
     assert "pointerOffset" in text
+    assert "singleton: true" in text
     assert "_workerDragPointerOffset(slotIndex, pointer = {})" in text
     assert "_workerDragCoordFromEvent(e)" in text
     assert "const x = e.clientX - rect.left - this.headerWidth - offsetX" in text
@@ -82,3 +86,14 @@ def test_worker_drag_uses_pointer_projected_drop_coordinates():
     assert "dropWorkerOnSlot(sourceSlot, targetSlot, e)" in text
     assert "const dropCoord = this._workerDragCoordFromEvent(e) || coord" in text
     assert "const coord = this._workerDragCoordFromEvent(e)" in text
+
+
+def test_shift_worker_drag_uses_single_card_move_or_swap_semantics():
+    text = _read("static/components/BullpenTab.js")
+    assert "_isSingletonWorkerDrag()" in text
+    assert "return !!window._bullpenWorkerDrag || types.includes('application/x-worker-slot')" in text
+    assert "moveWorkerDragToCoord(sourceSlot, coord)" in text
+    assert "moveSingleWorkerToCoord(sourceSlot, coord)" in text
+    assert "if (this._isSingletonWorkerDrag()) {" in text
+    assert "this.$root.moveWorker(source, occupied.slotIndex)" in text
+    assert "this.$root.moveWorker(source, coord)" in text

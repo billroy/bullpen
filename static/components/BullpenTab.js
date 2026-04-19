@@ -1054,9 +1054,9 @@ const BullpenTab = {
     buildWorkerDragPayload(slotIndex, options = {}) {
       const source = Number(slotIndex);
       const pointerOffset = this._workerDragPointerOffset(source, options);
-      if (options.singleton) return { source, group: [source], pointerOffset };
+      if (options.singleton) return { source, group: [source], pointerOffset, singleton: true };
       const group = this.workerGroupSlots(source);
-      return { source, group: group.length ? group : [source], pointerOffset };
+      return { source, group: group.length ? group : [source], pointerOffset, singleton: false };
     },
     buildWorkerDragImage(slotIndex, pointer = {}, options = {}) {
       const source = Number(slotIndex);
@@ -1140,9 +1140,12 @@ const BullpenTab = {
       const payload = window._bullpenWorkerDrag;
       return Array.isArray(payload?.group) ? payload.group : null;
     },
+    _isSingletonWorkerDrag() {
+      return window._bullpenWorkerDrag?.singleton === true;
+    },
     _isWorkerDrag(e) {
       const types = Array.from(e?.dataTransfer?.types || []);
-      return types.includes('application/x-worker-slot') || types.includes('application/x-worker-group');
+      return !!window._bullpenWorkerDrag || types.includes('application/x-worker-slot') || types.includes('application/x-worker-group');
     },
     _workerDragCoordFromEvent(e) {
       const offset = window._bullpenWorkerDrag?.pointerOffset;
@@ -1182,21 +1185,46 @@ const BullpenTab = {
     },
     canDropWorkerAtSlot(sourceSlot, targetSlot, e) {
       const coord = e ? this._workerDragCoordFromEvent(e) : null;
-      if (coord) return !!this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
+      if (coord) return this.canDropWorkerAtCoord(sourceSlot, coord);
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return false;
-      return !!this.buildGroupMovePlan(sourceSlot, target.coord, this._dragGroupSlots());
+      return this.canDropWorkerAtCoord(sourceSlot, target.coord);
     },
     canDropWorkerAtCoord(sourceSlot, coord) {
+      if (this._isSingletonWorkerDrag()) {
+        const source = Number(sourceSlot);
+        return Number.isInteger(source) && !!this.workerItemBySlot[source] && !!coord && this.isWritableCoord(coord);
+      }
       return !!this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
     },
     dropWorkerOnSlot(sourceSlot, targetSlot, e) {
       this._clearDropTarget();
       const coord = e ? this._workerDragCoordFromEvent(e) : null;
-      if (coord) return this.moveWorkerGroupToCoord(sourceSlot, coord);
+      if (coord) return this.moveWorkerDragToCoord(sourceSlot, coord);
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return false;
-      return this.moveWorkerGroupToCoord(sourceSlot, target.coord);
+      return this.moveWorkerDragToCoord(sourceSlot, target.coord);
+    },
+    moveWorkerDragToCoord(sourceSlot, coord) {
+      if (this._isSingletonWorkerDrag()) {
+        return this.moveSingleWorkerToCoord(sourceSlot, coord);
+      }
+      return this.moveWorkerGroupToCoord(sourceSlot, coord);
+    },
+    moveSingleWorkerToCoord(sourceSlot, coord) {
+      const source = Number(sourceSlot);
+      const sourceItem = this.workerItemBySlot[source];
+      if (!Number.isInteger(source) || !sourceItem || !coord || !this.isWritableCoord(coord)) return false;
+      const occupied = this.itemAtCoord(coord);
+      if (occupied && occupied.slotIndex === source) return true;
+      if (occupied) {
+        this.$root.moveWorker(source, occupied.slotIndex);
+      } else {
+        this.$root.moveWorker(source, coord);
+      }
+      this.hoveredCoord = null;
+      this.emptyMenuCoord = null;
+      return true;
     },
     moveWorkerGroupToCoord(sourceSlot, coord) {
       const plan = this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
@@ -1297,6 +1325,16 @@ const BullpenTab = {
       this.emptyMenuCoord = null;
     },
     _setDropTarget(source, coord) {
+      if (this._isSingletonWorkerDrag()) {
+        if (!this.canDropWorkerAtCoord(source, coord)) {
+          this.dragOverCoord = null;
+          this.dropTargetCoords = [];
+          return false;
+        }
+        this.dragOverCoord = { ...coord };
+        this.dropTargetCoords = [{ col: coord.col, row: coord.row }];
+        return true;
+      }
       const plan = this.buildGroupMovePlan(source, coord, this._dragGroupSlots());
       if (!plan) {
         this.dragOverCoord = null;
@@ -1328,7 +1366,7 @@ const BullpenTab = {
       const dropCoord = this._workerDragCoordFromEvent(e) || coord;
       this._clearDropTarget();
       if (!Number.isInteger(source)) return false;
-      return this.moveWorkerGroupToCoord(source, dropCoord);
+      return this.moveWorkerDragToCoord(source, dropCoord);
     },
     onCanvasDragOver(e) {
       if (!this._isWorkerDrag(e)) return;
@@ -1351,7 +1389,7 @@ const BullpenTab = {
       this.hoveredCoord = null;
       this._clearDropTarget();
       if (!Number.isInteger(src) || !coord) return;
-      this.moveWorkerGroupToCoord(src, coord);
+      this.moveWorkerDragToCoord(src, coord);
     },
     onCanvasDragLeave(e) {
       const related = e && e.relatedTarget;

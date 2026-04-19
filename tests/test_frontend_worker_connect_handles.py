@@ -104,13 +104,22 @@ def test_connect_handles_are_semicircular_inside_the_card():
 def test_worker_card_does_not_force_grab_cursor_on_body():
     # The whole card previously carried cursor: grab, which made the body
     # always look draggable even though clicking the body opens the focus
-    # view. The body should not display a drag cursor.
+    # view. The resting body should not display a grab cursor.
     text = _read("static/style.css")
     # Locate the .worker-card {...} block (first one after the section header)
     start = text.index("/* === Worker Card === */")
     end = text.index("}", start) + 1
     block = text[start:end]
     assert "cursor: grab;" not in block
+
+
+def test_worker_card_exposes_drag_feedback_while_initiating_drag():
+    text = _read("static/style.css")
+    assert ".worker-card[draggable=\"true\"]:active" in text
+    assert ".worker-card.is-dragging" in text
+    assert "cursor: grabbing;" in text
+    assert ".worker-card-header {" in text
+    assert "cursor: grab;" in text
 
 
 def test_worker_card_tracks_hovered_handle_for_edge_reveal():
