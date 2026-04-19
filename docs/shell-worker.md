@@ -199,7 +199,7 @@ emit site.
 
 ## Example library
 
-`static/shell_worker_examples.json` ships with six starters:
+`static/shell_worker_examples.json` ships with nine starters:
 
 1. **Tag router** — pass bug tickets forward; others exit 78 (block).
 2. **Title length gate** — reject titles shorter than 10 chars.
@@ -208,7 +208,13 @@ emit site.
 4. **Priority auto-bumper** — bump priority when the body contains "urgent".
 5. **External webhook notifier** — POST the ticket JSON to a webhook with
    `max_retries: 0` to avoid duplicates.
-6. **Ticket-to-file archiver** — append the ticket body to a workspace log.
+6. **Manual ls -als** — run `ls -als` in the workspace and capture the
+   listing under Worker Output (pair with Input Trigger = Manual).
+7. **Echo ticket title** — parse the ticket JSON from stdin and print its
+   title to stdout.
+8. **Create ticket with random number** — shell out to `bullpen ticket
+   create` to spawn a new ticket whose description is a random 1..10.
+9. **Ticket-to-file archiver** — append the ticket body to a workspace log.
 
 Pick one from the config modal's "Start from example" dropdown and click
 **Apply**. It overwrites Command, delivery mode, disposition defaults, and

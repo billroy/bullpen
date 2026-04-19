@@ -51,6 +51,36 @@
       "platforms": ["posix"]
     },
     {
+      "id": "manual-ls-als",
+      "name": "Manual ls -als",
+      "description": "Run `ls -als` in the workspace and capture the listing under Worker Output. Pair with Input Trigger = Manual.",
+      "command": "ls -als",
+      "ticket_delivery": "stdin-json",
+      "disposition": "review",
+      "max_retries": 0,
+      "platforms": ["posix"]
+    },
+    {
+      "id": "echo-ticket-title",
+      "name": "Echo ticket title",
+      "description": "Parse the ticket JSON from stdin and print its title to stdout (captured under Worker Output).",
+      "command": "python3 -c 'import json,sys; t=json.load(sys.stdin); print(t.get(\"title\",\"\"))'",
+      "ticket_delivery": "stdin-json",
+      "disposition": "review",
+      "max_retries": 0,
+      "platforms": ["posix", "windows"]
+    },
+    {
+      "id": "create-random-number-ticket",
+      "name": "Create ticket with random number",
+      "description": "Create a new ticket whose description is a random integer 1..10. Requires the `bullpen` CLI on PATH (swap for `python3 bullpen.py` if running from the repo).",
+      "command": "python3 -c 'import random,subprocess; n=random.randint(1,10); subprocess.run([\"bullpen\",\"ticket\",\"create\",\"--title\",f\"Random {n}\",\"--description\",str(n)],check=True)'",
+      "ticket_delivery": "stdin-json",
+      "disposition": "review",
+      "max_retries": 0,
+      "platforms": ["posix", "windows"]
+    },
+    {
       "id": "ticket-to-file-archiver",
       "name": "Ticket-to-file archiver",
       "description": "Append the ticket body to a workspace log file, then move to Review.",
