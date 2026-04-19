@@ -299,56 +299,125 @@ def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None, preserve
 
 
 def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
-    """Dequeue next task and invoke agent."""
+    """Dispatch the next run to the worker-type-specific backend.
+
+    This is the shared entry point for every runnable worker type. It reads
+    the slot, resolves its type, and delegates to the appropriate runner.
+    Both AI and Shell runners share the same lifecycle helpers
+    (`_begin_run` / `_commit_run_start`) and the same completion/retry
+    pipeline (`_on_agent_success` / `_on_agent_error`).
+    """
     try:
         layout = _load_layout(bp_dir)
     except FileNotFoundError:
         return
-    worker = layout["slots"][slot_index]
+    slots = layout.get("slots", [])
+    if slot_index >= len(slots):
+        return
+    worker = slots[slot_index]
     if not worker:
         return
     worker_type = get_worker_type(worker.get("type", "ai"))
+    if worker_type.type_id == "ai":
+        _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+        return
     if worker_type.type_id == "shell":
-        _start_shell_worker(bp_dir, slot_index, socketio, ws_id)
+        _run_shell_worker(bp_dir, slot_index, socketio, ws_id)
         return
-    if worker_type.type_id != "ai":
-        if socketio:
-            errors = worker_type.validate_config(worker)
-            message = errors[0] if errors else f"{worker_type.type_id} workers are not implemented yet."
-            _ws_emit(socketio, "toast", {
-                "message": f"{worker.get('name', 'Worker')} cannot run yet: {message}",
-                "level": "warning",
-            }, ws_id)
-        return
+    # Unknown or not-yet-runnable types (eval, unknown) surface a toast and
+    # never enter the lifecycle.
+    if socketio:
+        errors = worker_type.validate_config(worker)
+        message = errors[0] if errors else f"{worker_type.type_id} workers are not implemented yet."
+        _ws_emit(socketio, "toast", {
+            "message": f"{worker.get('name', 'Worker')} cannot run yet: {message}",
+            "level": "warning",
+        }, ws_id)
+
+
+def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manual",
+               socketio=None, ws_id=None):
+    """Shared lifecycle preamble for every runnable worker type.
+
+    Loads the layout, handles the empty-queue synthetic-ticket path, and
+    resolves the head task. Returns (layout, worker, task, task_id) when a
+    run should proceed, or None when it should not (no task, worker missing,
+    or a recursive start_worker already spawned the run via assign_task).
+
+    This does not transition state to `working`; callers do type-specific
+    preflight (adapter availability, command validation, payload prep) first
+    and then call `_commit_run_start` once they are committed to launching.
+    """
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return None
+    slots = layout.get("slots", [])
+    if slot_index >= len(slots):
+        return None
+    worker = slots[slot_index]
+    if not worker:
+        return None
 
     queue = worker.get("task_queue", [])
     if not queue:
-        # Auto-create a task for manual start with empty queue
-        auto_task = create_auto_task(bp_dir, slot_index, worker, socketio, ws_id)
-        # Re-read layout since assign_task modified it
+        create_auto_task(
+            bp_dir, slot_index, worker, socketio, ws_id,
+            trigger_kind=trigger_kind, trigger_label=trigger_label,
+        )
+        # Re-read layout since assign_task mutated it.
         layout = _load_layout(bp_dir)
-        worker = layout["slots"][slot_index]
-        # For on_drop/on_queue workers, assign_task already recursively invoked
-        # start_worker and spawned the agent. Returning here avoids a duplicate
-        # _run_agent that would leak a second process on yank/stop.
+        slots = layout.get("slots", [])
+        worker = slots[slot_index] if slot_index < len(slots) else None
+        # For on_drop/on_queue workers, assign_task already recursively
+        # invoked start_worker and spawned the run. Returning here avoids a
+        # duplicate launch that would leak a second process on yank/stop.
         if worker and worker.get("state") == "working":
-            return
-        queue = worker.get("task_queue", [])
+            return None
+        queue = worker.get("task_queue", []) if worker else []
         if not queue:
-            return
+            return None
 
     task_id = queue[0]
     task = task_mod.read_task(bp_dir, task_id)
     if not task:
-        # Task was deleted, remove from queue and try next
+        # Task was deleted, remove from queue and try the next one.
         queue.pop(0)
         _save_layout(bp_dir, layout)
         if queue:
             start_worker(bp_dir, slot_index, socketio, ws_id)
-        return
+        return None
 
-    # Get adapter before changing task/worker state so missing local CLIs fail
-    # with a clear setup message instead of a raw subprocess FileNotFoundError.
+    return layout, worker, task, task_id
+
+
+def _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id):
+    """Transition a run to `working` / `in_progress` and emit updates.
+
+    Called by type-specific runners after preflight succeeds and they are
+    committed to launching a subprocess.
+    """
+    worker["state"] = "working"
+    worker["started_at"] = _now_iso()
+    task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
+    _save_layout(bp_dir, layout)
+
+    if socketio:
+        updated_task = task_mod.read_task(bp_dir, task_id)
+        _ws_emit(socketio, "task:updated", updated_task, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id)
+
+
+def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
+    """AI worker backend: resolves adapter, assembles prompt, launches agent."""
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    if begun is None:
+        return
+    layout, worker, task, task_id = begun
+
+    # Resolve adapter before committing state so a missing local CLI surfaces a
+    # clean setup error instead of a raw FileNotFoundError and does not leave
+    # the task stuck in `in_progress`.
     agent_name = worker.get("agent", "claude")
     adapter = get_adapter(agent_name)
     if not adapter:
@@ -365,22 +434,11 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     model = normalize_model(worker.get("agent", "claude"), worker.get("model", "claude-sonnet-4-6"))
     worker["model"] = model
 
-    # Update state
-    worker["state"] = "working"
-    worker["started_at"] = _now_iso()
-    task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
-    _save_layout(bp_dir, layout)
+    _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id)
 
-    if socketio:
-        updated_task = task_mod.read_task(bp_dir, task_id)
-        _ws_emit(socketio, "task:updated", updated_task, ws_id)
-        _ws_emit(socketio, "layout:updated", layout, ws_id)
-
-    # Build prompt
     prompt = _assemble_prompt(bp_dir, worker, task)
     workspace = os.path.dirname(bp_dir)  # workspace is parent of .bullpen
 
-    # Worktree setup
     agent_cwd = workspace
     if worker.get("use_worktree"):
         try:
@@ -391,7 +449,6 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
 
     argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
 
-    # Launch subprocess in background thread
     config = read_json(os.path.join(bp_dir, "config.json"))
     timeout = config.get("agent_timeout_seconds", 600)
 
@@ -424,13 +481,16 @@ class ShellResult:
     ticket_updates: dict | None = None
 
 
-def _start_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
-    """Dequeue next task and run a configured Shell worker."""
+def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+    """Shell worker backend: validates config, prepares payload, launches shell."""
     try:
         layout = _load_layout(bp_dir)
     except FileNotFoundError:
         return
-    worker = layout["slots"][slot_index]
+    slots = layout.get("slots", [])
+    if slot_index >= len(slots):
+        return
+    worker = slots[slot_index]
     if not worker:
         return
 
@@ -442,6 +502,9 @@ def _start_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
             }, ws_id)
         return
 
+    # Shell preflight runs before the empty-queue auto-task path so a
+    # misconfigured worker does not pull in a synthetic ticket just to block
+    # it on the same missing-command error.
     errors = _validate_shell_worker(worker, bp_dir)
     if errors:
         queue = worker.get("task_queue", [])
@@ -455,25 +518,10 @@ def _start_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         _block_agent_start_failure(bp_dir, slot_index, queue[0], errors[0], socketio, ws_id)
         return
 
-    queue = worker.get("task_queue", [])
-    if not queue:
-        create_auto_task(bp_dir, slot_index, worker, socketio, ws_id, trigger_kind="manual", trigger_label="manual")
-        layout = _load_layout(bp_dir)
-        worker = layout["slots"][slot_index]
-        if worker and worker.get("state") == "working":
-            return
-        queue = worker.get("task_queue", []) if worker else []
-        if not queue:
-            return
-
-    task_id = queue[0]
-    task = task_mod.read_task(bp_dir, task_id)
-    if not task:
-        queue.pop(0)
-        _save_layout(bp_dir, layout)
-        if queue:
-            start_worker(bp_dir, slot_index, socketio, ws_id)
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    if begun is None:
         return
+    layout, worker, task, task_id = begun
 
     workspace = os.path.dirname(bp_dir)
     try:
@@ -482,15 +530,7 @@ def _start_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         _on_agent_error(bp_dir, slot_index, task_id, str(exc), socketio, ws_id=ws_id, non_retryable=True)
         return
 
-    worker["state"] = "working"
-    worker["started_at"] = _now_iso()
-    task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
-    _save_layout(bp_dir, layout)
-
-    if socketio:
-        updated_task = task_mod.read_task(bp_dir, task_id)
-        _ws_emit(socketio, "task:updated", updated_task, ws_id)
-        _ws_emit(socketio, "layout:updated", layout, ws_id)
+    _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id)
 
     thread = threading.Thread(
         target=_run_shell,
