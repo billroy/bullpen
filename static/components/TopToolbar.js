@@ -121,6 +121,9 @@ const TopToolbar = {
       this.selectedPaletteIndex = 0;
       if (this.paletteOverlayOpen) this.showPalette = true;
     },
+    selectedPaletteIndex() {
+      this.$nextTick(() => this.scrollSelectedPaletteResultIntoView());
+    },
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
@@ -282,6 +285,16 @@ const TopToolbar = {
           return;
         }
         this.showPalette = false;
+      }
+    },
+    scrollSelectedPaletteResultIntoView() {
+      const container = this.paletteOverlayOpen
+        ? this.$el.querySelector('.command-palette-overlay-results')
+        : this.$el.querySelector('.command-palette-menu');
+      if (!container) return;
+      const selected = container.children[this.selectedPaletteIndex];
+      if (selected && typeof selected.scrollIntoView === 'function') {
+        selected.scrollIntoView({ block: 'nearest' });
       }
     },
     focusActiveInput() {
