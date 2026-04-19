@@ -5,19 +5,19 @@ An AI agent team manager. Configure workers on a grid, create task tickets, assi
 ## Screenshots
 
 ### Tickets
-![Tickets](screenshots/ticket-tab.png)
+![Tickets](./screenshots/ticket-tab.png)
 
 ### Workers
-![Workers](screenshots/worker-tab.png)
+![Workers](./screenshots/worker-tab.png)
 
 ### Files
-![Files](screenshots/file-tab.png)
+![Files](./screenshots/file-tab.png)
 
 ### Commits
-![Commits](screenshots/commit-tab.png)
+![Commits](./screenshots/commit-tab.png)
 
 ### Live Agent
-![Live Agent](screenshots/live-agent-tab.png)
+![Live Agent](./screenshots/live-agent-tab.png)
 
 ## Quick Start
 
