@@ -1467,7 +1467,6 @@ body {
   gap: 4px;
   align-items: center;
   position: relative;
-  z-index: 1;
 }
 
 .task-card-bean-wrap {
