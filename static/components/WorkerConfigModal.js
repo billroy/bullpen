@@ -329,7 +329,7 @@ const WorkerConfigModal = {
     async loadShellExamples() {
       if (this.shellExamples.length) return;
       try {
-        const res = await fetch('/static/shell_worker_examples.json', { credentials: 'same-origin' });
+        const res = await fetch('/shell_worker_examples.json', { credentials: 'same-origin' });
         if (!res.ok) return;
         const data = await res.json();
         this.shellExamples = Array.isArray(data?.examples) ? data.examples : [];
