@@ -10,6 +10,8 @@ const BullpenTab = {
     return {
       showLibrary: false,
       libraryMode: 'ai',
+      shellExamples: [],
+      shellExamplesLoaded: false,
       showGoTo: false,
       goToInput: '',
       goToWorkerSlot: '',
@@ -309,23 +311,19 @@ const BullpenTab = {
               <span class="profile-agent">{{ p.default_agent }}/{{ p.default_model }}</span>
             </div>
           </div>
-          <div v-else-if="libraryMode === 'shell'" class="modal-body shell-library">
-            <p class="shell-library-intro">
-              Shell workers run a configured command against the current ticket.
-              They are powerful but executed verbatim with workspace access.
-            </p>
-            <div class="shell-warning">
-              <strong>Heads-up:</strong> command and env values are stored in
-              plaintext in <code>layout.json</code>. Do not commit real secrets
-              here. Pick variables already in the server environment instead.
+          <div v-else-if="libraryMode === 'shell'" class="modal-body profile-library">
+            <div class="profile-item profile-item--blank"
+                 @click="addShellWorker()">
+              <span class="profile-name">Blank shell worker</span>
+              <span class="profile-agent">configure from scratch</span>
             </div>
-            <button class="btn btn-primary" @click="addShellWorker">
-              Create Shell worker
-            </button>
-            <p class="shell-library-hint">
-              You'll configure the command, delivery mode, and optional
-              examples in the next dialog.
-            </p>
+            <div v-for="ex in platformShellExamples" :key="ex.id"
+                 class="profile-item"
+                 :title="ex.description"
+                 @click="addShellWorker(ex)">
+              <span class="profile-name">{{ ex.name }}</span>
+              <span class="profile-agent">{{ ex.description }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -522,6 +520,11 @@ const BullpenTab = {
         if (b?.id === pin && a?.id !== pin) return 1;
         return (a?.name || '').localeCompare(b?.name || '');
       });
+    },
+    platformShellExamples() {
+      const isWin = (navigator.platform || '').toLowerCase().includes('win');
+      const current = isWin ? 'windows' : 'posix';
+      return (this.shellExamples || []).filter(ex => !ex.platforms || ex.platforms.includes(current));
     },
     neighborSlotsMap() {
       const map = {};
@@ -1079,7 +1082,20 @@ const BullpenTab = {
       this.showLibrary = true;
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
+      this.loadShellExamples();
       this.$nextTick(() => this.$refs.libraryOverlay?.focus());
+    },
+    async loadShellExamples() {
+      if (this.shellExamplesLoaded) return;
+      this.shellExamplesLoaded = true;
+      try {
+        const res = await fetch('/static/shell_worker_examples.json', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const data = await res.json();
+        this.shellExamples = Array.isArray(data?.examples) ? data.examples : [];
+      } catch (_err) {
+        this.shellExamplesLoaded = false;
+      }
     },
     closeLibrary() {
       this.showLibrary = false;
@@ -1090,11 +1106,24 @@ const BullpenTab = {
       this.$emit('add-worker', { coord: this.selectedAddCoord, profile: profileId, type: 'ai' });
       this.closeLibrary();
     },
-    addShellWorker() {
+    addShellWorker(example) {
+      const fields = { name: 'Shell worker' };
+      if (example && typeof example === 'object') {
+        if (example.name) fields.name = example.name;
+        if (example.command) fields.command = example.command;
+        if (example.ticket_delivery) fields.ticket_delivery = example.ticket_delivery;
+        if (example.disposition) fields.disposition = example.disposition;
+        if (Number.isFinite(example.max_retries)) fields.max_retries = example.max_retries;
+        if (Array.isArray(example.env)) {
+          fields.env = example.env
+            .filter(e => e && e.key)
+            .map(e => ({ key: String(e.key), value: String(e.value || '') }));
+        }
+      }
       this.$emit('add-worker', {
         coord: this.selectedAddCoord,
         type: 'shell',
-        fields: { name: 'Shell worker' },
+        fields,
       });
       this.closeLibrary();
     },
