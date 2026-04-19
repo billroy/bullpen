@@ -26,8 +26,36 @@ function isHumanWorker(worker) {
   return worker?.is_human === true || worker?.type === 'human' || worker?.agent === 'human';
 }
 
+const BUILTIN_WORKER_TYPES = new Set(['ai', 'shell', 'eval', 'human']);
+
+function isShellWorker(worker) {
+  return worker?.type === 'shell';
+}
+
+function isEvalWorker(worker) {
+  return worker?.type === 'eval';
+}
+
+function isUnknownWorkerType(worker) {
+  const type = worker?.type;
+  if (!type) return false;
+  return !BUILTIN_WORKER_TYPES.has(type);
+}
+
 function getWorkerTypeIcon(worker) {
-  return isHumanWorker(worker) ? 'user' : 'bot';
+  if (isHumanWorker(worker)) return 'user';
+  if (isShellWorker(worker)) return 'terminal';
+  if (isEvalWorker(worker)) return 'flask-conical';
+  if (isUnknownWorkerType(worker)) return 'circle-help';
+  return 'bot';
+}
+
+function workerTypeLabel(worker) {
+  if (isShellWorker(worker)) return 'Shell';
+  if (isEvalWorker(worker)) return 'Eval';
+  if (isHumanWorker(worker)) return 'Human';
+  if (isUnknownWorkerType(worker)) return worker.type;
+  return 'AI';
 }
 
 function getColumnIcon(col) {

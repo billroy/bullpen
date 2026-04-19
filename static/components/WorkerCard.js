@@ -2,7 +2,7 @@ const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed'],
   template: `
-    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small', 'is-dragging': isDragging }"
+    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
          :style="layoutMode === 'small' ? { background: agentColor } : null"
          draggable="true"
          @pointerdown="onPointerDown"
@@ -45,7 +45,7 @@ const WorkerCard = {
           </span>
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
           <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
-            <button class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
+            <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
             <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Run</span></button>
             <button v-if="isWorking" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
             <button v-if="isWorking" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
@@ -60,6 +60,9 @@ const WorkerCard = {
         </div>
       </div>
       <div v-if="layoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
+        <div v-if="isDisabledType" class="worker-card-disabled-badge" :title="disabledTypeMessage">
+          {{ disabledTypeMessage }}
+        </div>
         <div class="worker-card-queue" v-if="layoutMode !== 'small' && queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
                @click.stop="$emit('select-task', t.id)">
@@ -134,7 +137,10 @@ const WorkerCard = {
       return this.taskQueueCount > 0 ? `${name} (${this.taskQueueCount})` : name;
     },
     canStart() {
-      return this.workerState === 'idle';
+      return this.workerState === 'idle' && !this.isDisabledType;
+    },
+    canConfigure() {
+      return !this.isUnknownType;
     },
     isScheduled() {
       return this.worker.activation === 'at_time' || this.worker.activation === 'on_interval';
@@ -150,6 +156,26 @@ const WorkerCard = {
     },
     workerIcon() {
       return getWorkerTypeIcon(this.worker);
+    },
+    workerTypeLabel() {
+      return workerTypeLabel(this.worker);
+    },
+    isShell() {
+      return isShellWorker(this.worker);
+    },
+    isEval() {
+      return isEvalWorker(this.worker);
+    },
+    isUnknownType() {
+      return isUnknownWorkerType(this.worker);
+    },
+    isDisabledType() {
+      return this.isEval || this.isUnknownType;
+    },
+    disabledTypeMessage() {
+      if (this.isUnknownType) return 'Worker type not installed';
+      if (this.isEval) return 'Eval workers reserved for a future release';
+      return '';
     },
     queuedTasks() {
       if (!this.worker.task_queue || !this.tasks) return [];
@@ -169,10 +195,15 @@ const WorkerCard = {
       if (!this.worker.task_queue?.length || !this.tasks) return '';
       const task = this.tasks.find(t => t.id === this.worker.task_queue[0]);
       if (!task?.body) return '';
-      const marker = '## Agent Output';
-      const idx = task.body.indexOf(marker);
+      let idx = -1;
+      let markerLen = 0;
+      for (const marker of ['## Agent Output', '## Worker Output']) {
+        const i = task.body.indexOf(marker);
+        if (i < 0) continue;
+        if (idx < 0 || i < idx) { idx = i; markerLen = marker.length; }
+      }
       if (idx < 0) return '';
-      const output = task.body.substring(idx + marker.length).trim();
+      const output = task.body.substring(idx + markerLen).trim();
       const lines = output.split('\n');
       return lines.slice(-5).join('\n');
     }

@@ -383,18 +383,27 @@ def register_events(socketio, app):
         layout = _load_layout(bp_dir)
         coord = validate_coord(data, "coord")
         slot_index = validate_slot(data, max_slots=200) if coord is None else _first_empty_slot(layout)
+        worker_type = str(data.get("type") or "").strip().lower()
         profile_id = data.get("profile")
+        fields = data.get("fields") if isinstance(data.get("fields"), dict) else {}
 
-        if profile_id is None:
-            emit("error", {"message": "worker:add requires profile"})
+        if not worker_type:
+            worker_type = "ai" if profile_id is not None else ""
+
+        if worker_type not in ("ai", "shell"):
+            emit("error", {"message": "worker:add requires a supported type"})
             return
 
-        # Get profile data for defaults
-        from server.profiles import get_profile
-        profile = get_profile(bp_dir, profile_id)
-        if not profile:
-            emit("error", {"message": f"Profile not found: {profile_id}"})
-            return
+        profile = None
+        if worker_type == "ai":
+            if profile_id is None:
+                emit("error", {"message": "worker:add requires profile"})
+                return
+            from server.profiles import get_profile
+            profile = get_profile(bp_dir, profile_id)
+            if not profile:
+                emit("error", {"message": f"Profile not found: {profile_id}"})
+                return
 
         config = read_json(os.path.join(bp_dir, "config.json"))
         cols = _safe_legacy_cols(config)
@@ -410,39 +419,66 @@ def register_events(socketio, app):
             row = coord["row"]
             col = coord["col"]
 
-        # Suggest a unique display name
-        base_name = profile["name"]
         existing_names = {s["name"] for s in layout["slots"] if s}
-        candidate = base_name
-        suffix = 2
-        while candidate in existing_names:
-            candidate = f"{base_name} {suffix}"
-            suffix += 1
 
-        worker = {
-            "type": "ai",
-            "row": row,
-            "col": col,
-            "profile": profile_id,
-            "name": candidate,
-            "agent": profile.get("default_agent", "claude"),
-            "model": profile.get("default_model", "claude-sonnet-4-6"),
-            "activation": profile.get("default_activation", "on_drop"),
-            "disposition": profile.get("default_disposition", "review"),
-            "watch_column": None,
-            "expertise_prompt": profile.get("expertise_prompt", ""),
-            "max_retries": profile.get("default_max_retries", 1),
-            "use_worktree": False,
-            "auto_commit": False,
-            "auto_pr": False,
-            "trigger_time": None,
-            "trigger_interval_minutes": None,
-            "trigger_every_day": False,
-            "last_trigger_time": None,
-            "paused": False,
-            "task_queue": [],
-            "state": "idle",
-        }
+        def _unique_name(base):
+            candidate = base
+            suffix = 2
+            while candidate in existing_names:
+                candidate = f"{base} {suffix}"
+                suffix += 1
+            return candidate
+
+        if worker_type == "ai":
+            base_name = fields.get("name") or profile["name"]
+            worker = {
+                "type": "ai",
+                "row": row,
+                "col": col,
+                "profile": profile_id,
+                "name": _unique_name(base_name),
+                "agent": profile.get("default_agent", "claude"),
+                "model": profile.get("default_model", "claude-sonnet-4-6"),
+                "activation": profile.get("default_activation", "on_drop"),
+                "disposition": profile.get("default_disposition", "review"),
+                "watch_column": None,
+                "expertise_prompt": profile.get("expertise_prompt", ""),
+                "max_retries": profile.get("default_max_retries", 1),
+                "use_worktree": False,
+                "auto_commit": False,
+                "auto_pr": False,
+                "trigger_time": None,
+                "trigger_interval_minutes": None,
+                "trigger_every_day": False,
+                "last_trigger_time": None,
+                "paused": False,
+                "task_queue": [],
+                "state": "idle",
+            }
+        else:  # shell
+            base_name = fields.get("name") or "Shell worker"
+            worker = {
+                "type": "shell",
+                "row": row,
+                "col": col,
+                "name": _unique_name(str(base_name)),
+                "activation": fields.get("activation", "manual"),
+                "disposition": fields.get("disposition", "review"),
+                "watch_column": None,
+                "max_retries": int(fields.get("max_retries", 0) or 0),
+                "trigger_time": None,
+                "trigger_interval_minutes": None,
+                "trigger_every_day": False,
+                "last_trigger_time": None,
+                "paused": False,
+                "task_queue": [],
+                "state": "idle",
+                "command": str(fields.get("command", "") or ""),
+                "cwd": str(fields.get("cwd", "") or ""),
+                "timeout_seconds": int(fields.get("timeout_seconds", 60) or 60),
+                "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
+                "ticket_delivery": fields.get("ticket_delivery", "stdin-json"),
+            }
 
         # Ensure slots list is large enough
         while len(layout["slots"]) <= slot_index:

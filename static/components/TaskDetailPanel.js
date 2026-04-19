@@ -12,17 +12,29 @@ const TaskDetailPanel = {
     };
   },
   computed: {
+    _outputMarkerIndex() {
+      // Shell workers write under "## Worker Output"; AI workers write under
+      // "## Agent Output". A single ticket may hit both (e.g. Shell success
+      // then a subsequent AI pass). Pick the earliest marker so everything
+      // after it renders together in the Output section.
+      if (!this.task?.body) return { idx: -1, marker: '' };
+      const candidates = ['## Agent Output', '## Worker Output'];
+      let best = { idx: -1, marker: '' };
+      for (const marker of candidates) {
+        const idx = this.task.body.indexOf(marker);
+        if (idx < 0) continue;
+        if (best.idx < 0 || idx < best.idx) best = { idx, marker };
+      }
+      return best;
+    },
     agentOutput() {
-      if (!this.task?.body) return '';
-      const marker = '## Agent Output';
-      const idx = this.task.body.indexOf(marker);
+      const { idx, marker } = this._outputMarkerIndex;
       if (idx < 0) return '';
       return this.task.body.substring(idx + marker.length).trim();
     },
     bodyWithoutOutput() {
       if (!this.task?.body) return '';
-      const marker = '## Agent Output';
-      const idx = this.task.body.indexOf(marker);
+      const { idx } = this._outputMarkerIndex;
       if (idx < 0) return this.task.body;
       return this.task.body.substring(0, idx).trim();
     },

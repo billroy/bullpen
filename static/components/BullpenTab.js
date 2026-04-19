@@ -9,6 +9,7 @@ const BullpenTab = {
   data() {
     return {
       showLibrary: false,
+      libraryMode: 'ai',
       showGoTo: false,
       goToInput: '',
       goToWorkerSlot: '',
@@ -275,18 +276,56 @@ const BullpenTab = {
         tabindex="0"
         ref="libraryOverlay"
       >
-        <div class="modal">
+        <div class="modal worker-library-modal">
           <div class="modal-header">
             <h2>Add Worker</h2>
             <button class="btn btn-icon" @click="closeLibrary">&times;</button>
           </div>
-          <div class="modal-body profile-library">
+          <div class="worker-type-tabs" role="tablist" aria-label="Worker type">
+            <button class="worker-type-tab" :class="{ active: libraryMode === 'ai' }"
+                    role="tab" :aria-selected="libraryMode === 'ai'"
+                    @click="libraryMode = 'ai'">
+              <i data-lucide="bot" aria-hidden="true"></i>
+              <span>AI</span>
+            </button>
+            <button class="worker-type-tab" :class="{ active: libraryMode === 'shell' }"
+                    role="tab" :aria-selected="libraryMode === 'shell'"
+                    @click="libraryMode = 'shell'">
+              <i data-lucide="terminal" aria-hidden="true"></i>
+              <span>Shell</span>
+            </button>
+            <button class="worker-type-tab worker-type-tab--disabled"
+                    role="tab" aria-selected="false" disabled
+                    title="Reserved for a future release">
+              <i data-lucide="flask-conical" aria-hidden="true"></i>
+              <span>Eval</span>
+            </button>
+          </div>
+          <div v-if="libraryMode === 'ai'" class="modal-body profile-library">
             <div v-for="p in sortedProfiles" :key="p.id"
                  class="profile-item"
                  @click="addFromLibrary(p.id)">
               <span class="profile-name">{{ p.name }}</span>
               <span class="profile-agent">{{ p.default_agent }}/{{ p.default_model }}</span>
             </div>
+          </div>
+          <div v-else-if="libraryMode === 'shell'" class="modal-body shell-library">
+            <p class="shell-library-intro">
+              Shell workers run a configured command against the current ticket.
+              They are powerful but executed verbatim with workspace access.
+            </p>
+            <div class="shell-warning">
+              <strong>Heads-up:</strong> command and env values are stored in
+              plaintext in <code>layout.json</code>. Do not commit real secrets
+              here. Pick variables already in the server environment instead.
+            </div>
+            <button class="btn btn-primary" @click="addShellWorker">
+              Create Shell worker
+            </button>
+            <p class="shell-library-hint">
+              You'll configure the command, delivery mode, and optional
+              examples in the next dialog.
+            </p>
           </div>
         </div>
       </div>
@@ -1036,6 +1075,7 @@ const BullpenTab = {
     },
     openLibraryForCoord(coord) {
       this.selectedAddCoord = { ...coord };
+      this.libraryMode = 'ai';
       this.showLibrary = true;
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
@@ -1047,7 +1087,15 @@ const BullpenTab = {
       this.$nextTick(() => this.$refs.viewport?.focus());
     },
     addFromLibrary(profileId) {
-      this.$emit('add-worker', { coord: this.selectedAddCoord, profile: profileId });
+      this.$emit('add-worker', { coord: this.selectedAddCoord, profile: profileId, type: 'ai' });
+      this.closeLibrary();
+    },
+    addShellWorker() {
+      this.$emit('add-worker', {
+        coord: this.selectedAddCoord,
+        type: 'shell',
+        fields: { name: 'Shell worker' },
+      });
       this.closeLibrary();
     },
     workerFieldsForClipboard(worker) {

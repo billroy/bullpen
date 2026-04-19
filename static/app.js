@@ -666,7 +666,9 @@ const app = createApp({
     }
 
     // Worker actions
-    function addWorker({ slot, coord, profile }) { socket.emit('worker:add', _wsData({ slot, coord, profile })); }
+    function addWorker({ slot, coord, profile, type, fields }) {
+      socket.emit('worker:add', _wsData({ slot, coord, profile, type, fields }));
+    }
     function removeWorker(slot) {
       const worker = state.layout?.slots?.[slot];
       const name = worker?.name || `Slot ${slot + 1}`;
@@ -795,8 +797,22 @@ const app = createApp({
       }
       showColumnManager.value = false;
     }
-    function saveTeam(name) { socket.emit('team:save', _wsData({ name })); }
-    function loadTeam(name) { socket.emit('team:load', _wsData({ name })); }
+    function _hasShellWorkers() {
+      const slots = state.layout?.slots || [];
+      return slots.some(s => s && s.type === 'shell');
+    }
+    function saveTeam(name) {
+      if (_hasShellWorkers()) {
+        const ok = confirm(
+          'This team includes Shell workers. Their commands and env values will be saved in plaintext.\n\nContinue saving?'
+        );
+        if (!ok) return;
+      }
+      socket.emit('team:save', _wsData({ name }));
+    }
+    function loadTeam(name) {
+      socket.emit('team:load', _wsData({ name }));
+    }
     function saveProfile(data) { socket.emit('profile:create', _wsData(data)); }
 
     // Project actions

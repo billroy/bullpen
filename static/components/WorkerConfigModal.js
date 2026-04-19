@@ -4,7 +4,9 @@ const WorkerConfigModal = {
   data() {
     return {
       form: {},
-      overlayMouseDown: false
+      overlayMouseDown: false,
+      shellExamples: [],
+      selectedExampleId: '',
     };
   },
   watch: {
@@ -22,15 +24,16 @@ const WorkerConfigModal = {
             disposition = 'random:';
           }
           this.form = {
+            type: w.type || 'ai',
             name: w.name || '',
             agent: w.agent || 'claude',
             model: w.model || 'claude-sonnet-4-6',
-            activation: w.activation || 'on_drop',
+            activation: w.activation || (w.type === 'shell' ? 'manual' : 'on_drop'),
             disposition,
             random_name: randomName,
             watch_column: w.watch_column || '',
             expertise_prompt: w.expertise_prompt || '',
-            max_retries: w.max_retries ?? 1,
+            max_retries: w.max_retries ?? (w.type === 'shell' ? 0 : 1),
             use_worktree: w.use_worktree || false,
             auto_commit: w.auto_commit || false,
             auto_pr: w.auto_pr || false,
@@ -38,12 +41,28 @@ const WorkerConfigModal = {
             trigger_interval_minutes: w.trigger_interval_minutes || 60,
             trigger_every_day: w.trigger_every_day || false,
             paused: w.paused || false,
+            // Shell-specific fields
+            command: w.command || '',
+            cwd: w.cwd || '',
+            timeout_seconds: w.timeout_seconds ?? 60,
+            ticket_delivery: w.ticket_delivery || 'stdin-json',
+            env: Array.isArray(w.env) ? w.env.map(e => ({ key: e.key || '', value: e.value || '' })) : [],
           };
+          this.selectedExampleId = '';
         }
       }
     }
   },
+  mounted() {
+    if (this.worker?.type === 'shell') this.loadShellExamples();
+  },
   computed: {
+    isShell() {
+      return this.form.type === 'shell';
+    },
+    isAI() {
+      return this.form.type === 'ai' || this.form.type == null;
+    },
     otherWorkers() {
       if (!this.workers) return [];
       return this.workers
@@ -54,9 +73,6 @@ const WorkerConfigModal = {
       return MODEL_OPTIONS[this.form.agent] || ['default'];
     },
     passAvailability() {
-      // Disable pass options when this worker is at the edge of the grid
-      // or the adjacent cell has no worker — mirroring the drag-handle
-      // availability shown on the grid.
       const rows = this.gridRows || 4;
       const cols = this.gridCols || 6;
       const idx = this.slotIndex;
@@ -76,13 +92,21 @@ const WorkerConfigModal = {
     },
     modelSelectValue() {
       return this.modelOptions.includes(this.form.model) ? this.form.model : '__custom__';
-    }
+    },
+    platformExamples() {
+      const isWin = (navigator.platform || '').toLowerCase().includes('win');
+      const current = isWin ? 'windows' : 'posix';
+      return this.shellExamples.filter(ex => !ex.platforms || ex.platforms.includes(current));
+    },
   },
   template: `
     <div v-if="worker" class="modal-overlay" @mousedown.self="overlayMouseDown = true" @click.self="onOverlayClick" @keydown.escape="$emit('close')" @keydown.meta.enter="onPrimaryShortcut" tabindex="0" ref="overlay">
       <div class="modal modal-wide" @mouseup="overlayMouseDown = false">
         <div class="modal-header">
-          <h2>Configure: {{ form.name }}</h2>
+          <h2>
+            Configure: {{ form.name }}
+            <span v-if="isShell" class="worker-type-badge">Shell</span>
+          </h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
         </div>
         <div class="modal-body">
@@ -90,28 +114,100 @@ const WorkerConfigModal = {
             Name
             <input class="form-input" v-model="form.name">
           </label>
-          <label class="form-label">
-            Expertise Prompt
-            <textarea class="form-textarea" v-model="form.expertise_prompt" rows="5"></textarea>
-          </label>
-          <div class="form-row">
+
+          <!-- AI-only: expertise prompt, agent, model -->
+          <template v-if="isAI">
             <label class="form-label">
-              AI Provider
-              <select class="form-select" v-model="form.agent" @change="onAgentChange">
-                <option value="claude">Claude</option>
-                <option value="codex">Codex</option>
-                <option value="gemini">Gemini</option>
-              </select>
+              Expertise Prompt
+              <textarea class="form-textarea" v-model="form.expertise_prompt" rows="5"></textarea>
+            </label>
+            <div class="form-row">
+              <label class="form-label">
+                AI Provider
+                <select class="form-select" v-model="form.agent" @change="onAgentChange">
+                  <option value="claude">Claude</option>
+                  <option value="codex">Codex</option>
+                  <option value="gemini">Gemini</option>
+                </select>
+              </label>
+              <label class="form-label">
+                Model
+                <select class="form-select" :value="modelSelectValue" @change="onModelSelect">
+                  <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
+                  <option value="__custom__">Custom...</option>
+                </select>
+                <input v-if="showCustomModel" class="form-input" v-model="form.model" placeholder="Enter model slug" style="margin-top: 4px;">
+              </label>
+            </div>
+          </template>
+
+          <!-- Shell-only: command, delivery, cwd, timeout, env, examples -->
+          <template v-if="isShell">
+            <label class="form-label">
+              Start from example
+              <div class="shell-example-picker">
+                <select class="form-select" v-model="selectedExampleId">
+                  <option value="">(blank)</option>
+                  <option v-for="ex in platformExamples" :key="ex.id" :value="ex.id">
+                    {{ ex.name }} &mdash; {{ ex.description }}
+                  </option>
+                </select>
+                <button class="btn btn-sm" :disabled="!selectedExampleId" @click="applyExample">Apply</button>
+              </div>
+              <span class="form-hint">Overwrites command, delivery mode, and disposition defaults.</span>
             </label>
             <label class="form-label">
-              Model
-              <select class="form-select" :value="modelSelectValue" @change="onModelSelect">
-                <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
-                <option value="__custom__">Custom...</option>
-              </select>
-              <input v-if="showCustomModel" class="form-input" v-model="form.model" placeholder="Enter model slug" style="margin-top: 4px;">
+              Command
+              <textarea class="form-textarea form-textarea--mono" v-model="form.command" rows="3"
+                        placeholder="python3 scripts/check_ticket.py"></textarea>
+              <span class="form-hint">Executed with <code>/bin/sh -c</code> (POSIX) or <code>cmd.exe /c</code> (Windows). Ticket fields are never interpolated.</span>
             </label>
-          </div>
+            <div class="shell-warning">
+              <strong>Stored in plaintext:</strong> command and env values live in
+              <code>layout.json</code>. Stdout/stderr are saved under
+              <code>.bullpen/logs/worker-runs/</code> and appear in ticket
+              history. Do not put real secrets here; reference variables already
+              in the server environment instead.
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                Pass ticket as
+                <select class="form-select" v-model="form.ticket_delivery">
+                  <option value="stdin-json">stdin-json (JSON on stdin)</option>
+                  <option value="env-vars">env-vars (BULLPEN_TICKET_*)</option>
+                  <option value="argv-json">argv-json (single positional arg)</option>
+                </select>
+              </label>
+              <label class="form-label">
+                Timeout (seconds)
+                <input class="form-input" type="number" v-model.number="form.timeout_seconds" min="1" max="600">
+              </label>
+            </div>
+            <label class="form-label">
+              Working directory
+              <input class="form-input" v-model="form.cwd" placeholder="(workspace root)">
+              <span class="form-hint">Relative to workspace root. Must stay inside the workspace.</span>
+            </label>
+            <div class="form-label">
+              <span>Environment</span>
+              <div class="shell-env-list">
+                <div v-for="(item, i) in form.env" :key="i" class="shell-env-row">
+                  <input class="form-input" v-model="item.key" placeholder="KEY" />
+                  <input class="form-input" v-model="item.value" placeholder="value" />
+                  <button class="btn btn-sm btn-danger" @click="removeEnv(i)" title="Remove">&times;</button>
+                </div>
+                <button class="btn btn-sm" @click="addEnv">Add env var</button>
+              </div>
+              <span class="form-hint">
+                Variables whose names contain TOKEN, KEY, SECRET, PASSWORD,
+                CREDENTIAL, or PASSPHRASE are filtered from the inherited env
+                by default. Re-add them here explicitly if non-sensitive.
+                <code>BULLPEN_MCP_TOKEN</code> is always rejected.
+              </span>
+            </div>
+          </template>
+
+          <!-- Shared: activation, disposition, max retries -->
           <div class="form-row">
             <label class="form-label">
               Input Trigger
@@ -180,7 +276,9 @@ const WorkerConfigModal = {
               </select>
             </label>
           </div>
-          <div class="form-row">
+
+          <!-- AI-only: worktree / commit / PR -->
+          <div v-if="isAI" class="form-row">
             <label class="form-label form-label-inline">
               <input type="checkbox" v-model="form.use_worktree">
               Use Git Worktree
@@ -201,7 +299,7 @@ const WorkerConfigModal = {
         <div class="modal-footer">
           <button class="btn btn-danger btn-sm" @click="onRemove">Remove Worker</button>
           <div class="modal-footer-right">
-            <button class="btn btn-sm" @click="onSaveProfile">Save as Profile</button>
+            <button v-if="isAI" class="btn btn-sm" @click="onSaveProfile">Save as Profile</button>
             <button class="btn" @click="$emit('close')">Cancel</button>
             <button class="btn btn-primary" @click="onSave">Save</button>
           </div>
@@ -228,12 +326,59 @@ const WorkerConfigModal = {
       if (this.overlayMouseDown) this.$emit('close');
       this.overlayMouseDown = false;
     },
+    async loadShellExamples() {
+      if (this.shellExamples.length) return;
+      try {
+        const res = await fetch('/static/shell_worker_examples.json', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const data = await res.json();
+        this.shellExamples = Array.isArray(data?.examples) ? data.examples : [];
+      } catch (_err) { /* ignore */ }
+    },
+    applyExample() {
+      const ex = this.shellExamples.find(e => e.id === this.selectedExampleId);
+      if (!ex) return;
+      this.form.command = ex.command || '';
+      this.form.ticket_delivery = ex.ticket_delivery || 'stdin-json';
+      if (ex.disposition) this.form.disposition = ex.disposition;
+      if (Number.isFinite(ex.max_retries)) this.form.max_retries = ex.max_retries;
+      if (Array.isArray(ex.env)) {
+        this.form.env = ex.env.map(e => ({ key: e.key || '', value: e.value || '' }));
+      }
+    },
+    addEnv() {
+      this.form.env.push({ key: '', value: '' });
+    },
+    removeEnv(i) {
+      this.form.env.splice(i, 1);
+    },
     onSave() {
       const fields = { ...this.form };
       if (fields.disposition === 'random:') {
         fields.disposition = 'random:' + (fields.random_name || '').trim();
       }
       delete fields.random_name;
+      if (this.isShell) {
+        // Drop AI-only fields from the payload so server-side normalization
+        // never writes them onto a shell slot.
+        delete fields.agent;
+        delete fields.model;
+        delete fields.expertise_prompt;
+        delete fields.use_worktree;
+        delete fields.auto_commit;
+        delete fields.auto_pr;
+        fields.env = (fields.env || [])
+          .filter(e => e && String(e.key || '').trim())
+          .map(e => ({ key: String(e.key).trim(), value: String(e.value || '') }));
+      } else {
+        // Drop Shell-only fields from AI payloads.
+        delete fields.command;
+        delete fields.cwd;
+        delete fields.timeout_seconds;
+        delete fields.ticket_delivery;
+        delete fields.env;
+      }
+      delete fields.type;
       this.$emit('save', { slot: this.slotIndex, fields });
       this.$emit('close');
     },
