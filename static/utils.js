@@ -11,8 +11,15 @@ const MODEL_OPTIONS = {
   gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'],
 };
 
+const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4' };
+window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
+window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
+  ? window.Vue.reactive({ overrides: {} })
+  : { overrides: {} };
+
 function agentColor(agent) {
-  return { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4' }[agent] || '#6B7280';
+  const overrides = window.BULLPEN_AGENT_COLORS.overrides || {};
+  return overrides[agent] || DEFAULT_AGENT_COLORS[agent] || '#6B7280';
 }
 
 function isHumanWorker(worker) {

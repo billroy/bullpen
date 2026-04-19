@@ -238,8 +238,29 @@ def validate_grid(data):
 VALID_CONFIG_KEYS = {
     "name", "grid", "columns", "agent_timeout_seconds",
     "max_prompt_chars", "auto_commit", "auto_pr", "theme",
-    "ambient_preset", "ambient_volume",
+    "ambient_preset", "ambient_volume", "provider_colors",
 }
+
+HEX_COLOR_REGEX = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
+
+
+def _validate_provider_colors(val):
+    """Validate provider_colors. None resets to defaults; dict maps agent→hex color."""
+    from server.init import DEFAULT_PROVIDER_COLORS
+    if val is None:
+        return dict(DEFAULT_PROVIDER_COLORS)
+    if not isinstance(val, dict):
+        raise ValidationError("provider_colors must be an object")
+    sanitized = dict(DEFAULT_PROVIDER_COLORS)
+    for k, v in val.items():
+        if k not in VALID_AGENTS:
+            raise ValidationError(f"Unknown agent in provider_colors: '{k}'")
+        if v is None:
+            continue
+        if not isinstance(v, str) or not HEX_COLOR_REGEX.match(v):
+            raise ValidationError(f"provider_colors['{k}'] must be a hex color (e.g. '#rrggbb')")
+        sanitized[k] = v.lower()
+    return sanitized
 
 
 def validate_config_update(data):
@@ -262,6 +283,9 @@ def validate_config_update(data):
                 sanitized[k] = None
             else:
                 sanitized[k] = _id(v, "ambient_preset")
+            continue
+        if k == "provider_colors":
+            sanitized[k] = _validate_provider_colors(v)
             continue
         sanitized[k] = v
     return sanitized

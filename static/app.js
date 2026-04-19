@@ -132,7 +132,29 @@ const app = createApp({
       safe.theme = _normalizeTheme(safe.theme || 'dark');
       safe.ambient_preset = _normalizeAmbientPreset(safe.ambient_preset);
       safe.ambient_volume = _normalizeAmbientVolume(safe.ambient_volume);
+      safe.provider_colors = _normalizeProviderColors(safe.provider_colors);
       return safe;
+    }
+
+    const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+    function _normalizeProviderColors(value) {
+      const defaults = window.DEFAULT_AGENT_COLORS || {};
+      const result = { ...defaults };
+      if (value && typeof value === 'object') {
+        for (const agent of Object.keys(defaults)) {
+          const v = value[agent];
+          if (typeof v === 'string' && HEX_COLOR_RE.test(v)) result[agent] = v.toLowerCase();
+        }
+      }
+      return result;
+    }
+
+    function _applyWorkspaceProviderColors(wsId) {
+      const ws = workspaces[wsId];
+      const colors = _normalizeProviderColors(ws?.config?.provider_colors);
+      if (window.BULLPEN_AGENT_COLORS) {
+        window.BULLPEN_AGENT_COLORS.overrides = colors;
+      }
     }
 
     function _applyWorkspaceAmbient(wsId) {
@@ -208,6 +230,7 @@ const app = createApp({
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
       _applyWorkspaceAmbient(wsId);
+      _applyWorkspaceProviderColors(wsId);
       _updateDocumentTitle();
       if (socket?.connected) socket.emit('project:join', { workspaceId: wsId });
       if (wasLiveAgent) {
@@ -413,6 +436,7 @@ const app = createApp({
         _syncToView(wsId);
         _applyWorkspaceTheme(wsId);
         _applyWorkspaceAmbient(wsId);
+        _applyWorkspaceProviderColors(wsId);
         _updateDocumentTitle();
       }
       socket.emit('chat:tabs:request', { workspaceId: wsId });
@@ -480,6 +504,7 @@ const app = createApp({
         state.config = ws.config;
         _applyWorkspaceTheme(wsId);
         _applyWorkspaceAmbient(wsId);
+        _applyWorkspaceProviderColors(wsId);
       }
     });
     socket.on('profiles:updated', (profiles) => {
@@ -910,6 +935,31 @@ const app = createApp({
       }
       updateConfig({ ambient_preset: next });
     }
+    function setProviderColor(agent, color) {
+      if (!activeWorkspaceId.value) return;
+      const defaults = window.DEFAULT_AGENT_COLORS || {};
+      if (!(agent in defaults)) return;
+      if (typeof color !== 'string' || !HEX_COLOR_RE.test(color)) return;
+      const ws = _getWs(activeWorkspaceId.value);
+      const next = { ..._normalizeProviderColors(ws.config?.provider_colors), [agent]: color.toLowerCase() };
+      ws.config = { ...(ws.config || {}), provider_colors: next };
+      if (_isActive(activeWorkspaceId.value)) {
+        state.config = ws.config;
+        _applyWorkspaceProviderColors(activeWorkspaceId.value);
+      }
+      updateConfig({ provider_colors: next });
+    }
+    function resetProviderColors() {
+      if (!activeWorkspaceId.value) return;
+      const defaults = { ...(window.DEFAULT_AGENT_COLORS || {}) };
+      const ws = _getWs(activeWorkspaceId.value);
+      ws.config = { ...(ws.config || {}), provider_colors: defaults };
+      if (_isActive(activeWorkspaceId.value)) {
+        state.config = ws.config;
+        _applyWorkspaceProviderColors(activeWorkspaceId.value);
+      }
+      updateConfig({ provider_colors: null });
+    }
     function setAmbientVolume(volume) {
       const next = _normalizeAmbientVolume(volume);
       if (!activeWorkspaceId.value) return;
@@ -1053,6 +1103,8 @@ const app = createApp({
     const ambientPresets = computed(() => AMBIENT_PRESETS);
     const currentAmbientPreset = computed(() => _normalizeAmbientPreset(state.config?.ambient_preset) || '');
     const currentAmbientVolume = computed(() => _normalizeAmbientVolume(state.config?.ambient_volume));
+    const currentProviderColors = computed(() => _normalizeProviderColors(state.config?.provider_colors));
+    const defaultProviderColors = computed(() => ({ ...(window.DEFAULT_AGENT_COLORS || {}) }));
     const activeProjectName = computed(() => _workspaceBaseName(state.workspace));
     const visibleTicketTasks = computed(() => {
       if (ticketsViewMode.value === 'list' && ticketListScope.value === 'archived') {
@@ -1100,7 +1152,7 @@ const app = createApp({
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
-      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
+      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
@@ -1139,6 +1191,8 @@ const app = createApp({
         :ambient-presets="ambientPresets"
         :ambient-preset="currentAmbientPreset"
         :ambient-volume="currentAmbientVolume"
+        :provider-colors="currentProviderColors"
+        :default-provider-colors="defaultProviderColors"
         :quick-create-clear-token="quickCreateClearToken"
         :palette-commands="paletteCommands"
         @toggle-left-pane="toggleLeftPane"
@@ -1151,6 +1205,8 @@ const app = createApp({
         @set-theme="setTheme"
         @set-ambient-preset="setAmbientPreset"
         @set-ambient-volume="setAmbientVolume"
+        @set-provider-color="(agent, color) => setProviderColor(agent, color)"
+        @reset-provider-colors="resetProviderColors"
         @quick-create-task="quickCreateTask"
         @run-palette-command="runPaletteCommand"
         @run-palette-input="runPaletteInput"

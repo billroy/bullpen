@@ -6,11 +6,18 @@ import shutil
 from server.persistence import write_json, atomic_write
 
 
+DEFAULT_PROVIDER_COLORS = {
+    "claude": "#da7756",
+    "codex": "#5b6fd6",
+    "gemini": "#3c7bf4",
+}
+
 DEFAULT_CONFIG = {
     "name": "Bullpen",
     "theme": "dark",
     "ambient_preset": None,
     "ambient_volume": 40,
+    "provider_colors": dict(DEFAULT_PROVIDER_COLORS),
     "grid": {"layout": "medium", "columnWidth": 220, "viewportOrigin": {"col": 0, "row": 0}},
     "columns": [
         {"key": "inbox", "label": "Inbox", "color": "#6B7280"},

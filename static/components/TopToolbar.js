@@ -1,11 +1,13 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'quickCreateClearToken', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'quickCreateClearToken', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
     'set-theme',
     'set-ambient-preset',
     'set-ambient-volume',
+    'set-provider-color',
+    'reset-provider-colors',
     'export-workspace',
     'export-all',
     'import-workers',
@@ -23,6 +25,7 @@ const TopToolbar = {
       paletteOverlayOpen: false,
       selectedPaletteIndex: 0,
       showEventSoundsMenu: false,
+      showProviderColorsMenu: false,
       eventSoundFlags: (window.EventSounds && window.EventSounds.getFlags())
         || { ...(window.EVENT_SOUND_FLAGS_DEFAULTS || {}) },
       eventSoundLabels: window.EVENT_SOUND_LABELS || [],
@@ -160,7 +163,28 @@ const TopToolbar = {
     onGlobalClick() {
       this.showMainMenu = false;
       this.showEventSoundsMenu = false;
+      this.showProviderColorsMenu = false;
       if (!this.paletteOverlayOpen) this.showPalette = false;
+    },
+    toggleProviderColorsMenu() {
+      this.showProviderColorsMenu = !this.showProviderColorsMenu;
+      if (this.showProviderColorsMenu) {
+        this.showMainMenu = false;
+        this.showEventSoundsMenu = false;
+      }
+    },
+    providerColorValue(agent) {
+      return (this.providerColors && this.providerColors[agent])
+        || (this.defaultProviderColors && this.defaultProviderColors[agent])
+        || '#6B7280';
+    },
+    onProviderColorInput(agent, event) {
+      const value = event?.target?.value;
+      if (!value) return;
+      this.$emit('set-provider-color', agent, value);
+    },
+    onResetProviderColors() {
+      this.$emit('reset-provider-colors');
     },
     onGlobalKeydown(event) {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
@@ -480,6 +504,31 @@ const TopToolbar = {
                   @click="onPreviewEventSound(item.preview)"
                   title="Preview"
                 >▶</button>
+              </div>
+            </div>
+          </div>
+          <div class="toolbar-menu-wrap provider-colors-menu-wrap" @click.stop>
+            <button
+              class="btn btn-icon provider-colors-btn"
+              @click="toggleProviderColorsMenu"
+              title="Agent colors"
+            >
+              <i data-lucide="palette" aria-hidden="true"></i>
+            </button>
+            <div v-if="showProviderColorsMenu" class="project-menu toolbar-menu provider-colors-menu">
+              <div class="provider-colors-title">Agent colors</div>
+              <div class="provider-colors-row" v-for="agent in ['claude','codex','gemini']" :key="agent">
+                <span class="provider-colors-swatch" :style="{ background: providerColorValue(agent) }"></span>
+                <label class="provider-colors-label">{{ agent }}</label>
+                <input
+                  type="color"
+                  class="provider-colors-input"
+                  :value="providerColorValue(agent)"
+                  @input="onProviderColorInput(agent, $event)"
+                />
+              </div>
+              <div class="provider-colors-actions">
+                <button class="btn btn-sm" @click="onResetProviderColors">Restore defaults</button>
               </div>
             </div>
           </div>
