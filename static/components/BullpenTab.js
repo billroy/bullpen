@@ -1053,9 +1053,10 @@ const BullpenTab = {
     },
     buildWorkerDragPayload(slotIndex, options = {}) {
       const source = Number(slotIndex);
-      if (options.singleton) return { source, group: [source] };
+      const pointerOffset = this._workerDragPointerOffset(source, options);
+      if (options.singleton) return { source, group: [source], pointerOffset };
       const group = this.workerGroupSlots(source);
-      return { source, group: group.length ? group : [source] };
+      return { source, group: group.length ? group : [source], pointerOffset };
     },
     buildWorkerDragImage(slotIndex, pointer = {}, options = {}) {
       const source = Number(slotIndex);
@@ -1099,19 +1100,26 @@ const BullpenTab = {
         root.appendChild(node);
       }
       document.body.appendChild(root);
-      const sourceEl = this.workerElementForSlot(source);
-      let pointerDx = this.columnWidth / 2;
-      let pointerDy = this.rowHeight / 2;
-      if (sourceEl && Number.isFinite(Number(pointer.clientX)) && Number.isFinite(Number(pointer.clientY))) {
-        const rect = sourceEl.getBoundingClientRect();
-        pointerDx = Math.max(0, Math.min(rect.width, Number(pointer.clientX) - rect.left));
-        pointerDy = Math.max(0, Math.min(rect.height, Number(pointer.clientY) - rect.top));
-      }
+      const pointerOffset = this._workerDragPointerOffset(source, pointer);
+      const pointerDx = pointerOffset.x;
+      const pointerDy = pointerOffset.y;
       return {
         element: root,
         offsetX: sourceDx + pointerDx,
         offsetY: sourceDy + pointerDy,
       };
+    },
+    _workerDragPointerOffset(slotIndex, pointer = {}) {
+      const source = Number(slotIndex);
+      const sourceEl = this.workerElementForSlot(source);
+      let x = this.columnWidth / 2;
+      let y = this.rowHeight / 2;
+      if (sourceEl && Number.isFinite(Number(pointer.clientX)) && Number.isFinite(Number(pointer.clientY))) {
+        const rect = sourceEl.getBoundingClientRect();
+        x = Math.max(0, Math.min(rect.width, Number(pointer.clientX) - rect.left));
+        y = Math.max(0, Math.min(rect.height, Number(pointer.clientY) - rect.top));
+      }
+      return { x, y };
     },
     workerElementForSlot(slotIndex) {
       const ref = this.workerRefs?.[slotIndex];
@@ -1135,6 +1143,16 @@ const BullpenTab = {
     _isWorkerDrag(e) {
       const types = Array.from(e?.dataTransfer?.types || []);
       return types.includes('application/x-worker-slot') || types.includes('application/x-worker-group');
+    },
+    _workerDragCoordFromEvent(e) {
+      const offset = window._bullpenWorkerDrag?.pointerOffset;
+      const offsetX = Number(offset?.x);
+      const offsetY = Number(offset?.y);
+      if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return this.coordFromEvent(e);
+      const rect = this.$refs.viewport.getBoundingClientRect();
+      const x = e.clientX - rect.left - this.headerWidth - offsetX;
+      const y = e.clientY - rect.top - this.headerHeight - offsetY;
+      return GridGeometry.pixelToCoord(x, y, this.viewportOrigin, this.cardSize);
     },
     buildGroupMovePlan(sourceSlot, destinationCoord, overrideSlots) {
       const source = Number(sourceSlot);
@@ -1162,7 +1180,9 @@ const BullpenTab = {
       }
       return { source, slots, moves };
     },
-    canDropWorkerAtSlot(sourceSlot, targetSlot) {
+    canDropWorkerAtSlot(sourceSlot, targetSlot, e) {
+      const coord = e ? this._workerDragCoordFromEvent(e) : null;
+      if (coord) return !!this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return false;
       return !!this.buildGroupMovePlan(sourceSlot, target.coord, this._dragGroupSlots());
@@ -1170,11 +1190,13 @@ const BullpenTab = {
     canDropWorkerAtCoord(sourceSlot, coord) {
       return !!this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
     },
-    dropWorkerOnSlot(sourceSlot, targetSlot) {
+    dropWorkerOnSlot(sourceSlot, targetSlot, e) {
       this._clearDropTarget();
+      const coord = e ? this._workerDragCoordFromEvent(e) : null;
+      if (coord) return this.moveWorkerGroupToCoord(sourceSlot, coord);
       const target = this.workerItemBySlot[targetSlot];
-      if (!target) return;
-      this.moveWorkerGroupToCoord(sourceSlot, target.coord);
+      if (!target) return false;
+      return this.moveWorkerGroupToCoord(sourceSlot, target.coord);
     },
     moveWorkerGroupToCoord(sourceSlot, coord) {
       const plan = this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
@@ -1292,7 +1314,8 @@ const BullpenTab = {
     onEmptyDragOver(e, coord) {
       if (!this._isWorkerDrag(e)) return;
       const source = this._workerDragSource(e);
-      if (Number.isInteger(source) && this._setDropTarget(source, coord)) {
+      const dropCoord = this._workerDragCoordFromEvent(e) || coord;
+      if (Number.isInteger(source) && this._setDropTarget(source, dropCoord)) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
       } else {
@@ -1302,14 +1325,15 @@ const BullpenTab = {
     },
     onDropOnEmpty(e, coord) {
       const source = this._workerDragSource(e);
+      const dropCoord = this._workerDragCoordFromEvent(e) || coord;
       this._clearDropTarget();
-      if (!Number.isInteger(source)) return;
-      this.moveWorkerGroupToCoord(source, coord);
+      if (!Number.isInteger(source)) return false;
+      return this.moveWorkerGroupToCoord(source, dropCoord);
     },
     onCanvasDragOver(e) {
       if (!this._isWorkerDrag(e)) return;
       const source = this._workerDragSource(e);
-      const coord = this.coordFromEvent(e);
+      const coord = this._workerDragCoordFromEvent(e);
       if (Number.isInteger(source) && coord && this._setDropTarget(source, coord)) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
@@ -1323,7 +1347,7 @@ const BullpenTab = {
     onCanvasDrop(e) {
       if (!this._isWorkerDrag(e)) return;
       const src = this._workerDragSource(e);
-      const coord = this.coordFromEvent(e);
+      const coord = this._workerDragCoordFromEvent(e);
       this.hoveredCoord = null;
       this._clearDropTarget();
       if (!Number.isInteger(src) || !coord) return;

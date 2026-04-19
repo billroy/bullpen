@@ -23,7 +23,7 @@ def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
     assert "workerGroupSlots(startSlot)" in text
     assert "passTargetsForSlot(slotIndex)" in text
     assert "buildGroupMovePlan(sourceSlot, destinationCoord," in text
-    assert "canDropWorkerAtSlot(sourceSlot, targetSlot)" in text
+    assert "canDropWorkerAtSlot(sourceSlot, targetSlot, e)" in text
     assert "moveWorkerGroupToCoord(sourceSlot, coord)" in text
     assert "this.$root.moveWorkerGroup(plan.moves)" in text
     assert "Copied worker group (" in text
@@ -51,11 +51,15 @@ def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
     assert "'dropWorkerOnSlot'" in text
     assert "'application/x-worker-group'" in text
     assert "window._bullpenWorkerDrag = payload" in text
+    assert "this.buildWorkerDragPayload(this.slotIndex, {" in text
+    assert "clientX: e.clientX" in text
+    assert "clientY: e.clientY" in text
     assert "this.buildWorkerDragImage(this.slotIndex" in text
     assert "e.dataTransfer.setDragImage(dragImage.element, offsetX, offsetY)" in text
     assert "removeDragImage()" in text
-    assert "this.canDropWorkerAtSlot(source, this.slotIndex)" in text
-    assert "this.dropWorkerOnSlot(dragSource, this.slotIndex)" in text
+    assert "this.canDropWorkerAtSlot(source, this.slotIndex, e)" in text
+    assert "const handled = this.dropWorkerOnSlot(dragSource, this.slotIndex, e)" in text
+    assert "if (handled) {" in text
 
 
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():
@@ -65,3 +69,16 @@ def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():
     assert "worker-group-drag-image" in text
     assert "workerElementForSlot(slotIndex)" in text
     assert "cardEl ? cardEl.cloneNode(true)" in text
+
+
+def test_worker_drag_uses_pointer_projected_drop_coordinates():
+    text = _read("static/components/BullpenTab.js")
+    assert "pointerOffset" in text
+    assert "_workerDragPointerOffset(slotIndex, pointer = {})" in text
+    assert "_workerDragCoordFromEvent(e)" in text
+    assert "const x = e.clientX - rect.left - this.headerWidth - offsetX" in text
+    assert "const y = e.clientY - rect.top - this.headerHeight - offsetY" in text
+    assert "canDropWorkerAtSlot(sourceSlot, targetSlot, e)" in text
+    assert "dropWorkerOnSlot(sourceSlot, targetSlot, e)" in text
+    assert "const dropCoord = this._workerDragCoordFromEvent(e) || coord" in text
+    assert "const coord = this._workerDragCoordFromEvent(e)" in text

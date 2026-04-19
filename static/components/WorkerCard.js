@@ -201,7 +201,11 @@ const WorkerCard = {
     onDragStart(e) {
       const singleton = !!e.shiftKey;
       const payload = typeof this.buildWorkerDragPayload === 'function'
-        ? this.buildWorkerDragPayload(this.slotIndex, { singleton })
+        ? this.buildWorkerDragPayload(this.slotIndex, {
+          singleton,
+          clientX: e.clientX,
+          clientY: e.clientY,
+        })
         : { source: this.slotIndex, group: [this.slotIndex] };
       e.dataTransfer.setData('application/x-worker-slot', String(this.slotIndex));
       try {
@@ -269,7 +273,7 @@ const WorkerCard = {
           const drag = window._bullpenWorkerDrag;
           const source = Number(drag?.source);
           const canDrop = Number.isInteger(source)
-            ? (typeof this.canDropWorkerAtSlot === 'function' ? !!this.canDropWorkerAtSlot(source, this.slotIndex) : true)
+            ? (typeof this.canDropWorkerAtSlot === 'function' ? !!this.canDropWorkerAtSlot(source, this.slotIndex, e) : true)
             : false;
           if (canDrop) {
             e.preventDefault();
@@ -306,10 +310,13 @@ const WorkerCard = {
       const fromSlot = e.dataTransfer.getData('application/x-worker-slot');
       const dragSource = fromSlot !== '' ? Number(fromSlot) : Number(window._bullpenWorkerDrag?.source);
       if (Number.isInteger(dragSource)) {
-        e.stopPropagation();
         if (typeof this.dropWorkerOnSlot === 'function') {
-          this.dropWorkerOnSlot(dragSource, this.slotIndex);
+          const handled = this.dropWorkerOnSlot(dragSource, this.slotIndex, e);
+          if (handled) {
+            e.stopPropagation();
+          }
         } else if (dragSource !== this.slotIndex) {
+          e.stopPropagation();
           this.$root.moveWorker(dragSource, this.slotIndex);
         }
         return;
