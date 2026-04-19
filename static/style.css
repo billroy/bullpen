@@ -900,13 +900,22 @@ body {
 .project-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  --project-visible-rows: 6;
+  --project-row-height: 24px;
+  --project-row-gap: 2px;
+  gap: var(--project-row-gap);
+  max-height: calc(
+    (var(--project-visible-rows) * var(--project-row-height))
+    + ((var(--project-visible-rows) - 1) * var(--project-row-gap))
+  );
+  overflow-y: auto;
 }
 
 .project-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: var(--project-row-height);
   padding: 4px 8px;
   border-radius: var(--radius);
   cursor: pointer;

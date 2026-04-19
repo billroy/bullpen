@@ -95,3 +95,10 @@ def test_project_remove_button_styles_exist():
     text = _read("static/style.css")
     assert ".project-remove-btn {" in text
     assert ".project-item:hover .project-remove-btn" in text
+
+
+def test_project_list_caps_at_six_rows_and_scrolls():
+    text = _read("static/style.css")
+    assert "--project-visible-rows: 6;" in text
+    assert "max-height: calc(" in text
+    assert "overflow-y: auto;" in text
