@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'quickCreateClearToken'],
+  props: ['projectName', 'projectPath', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'quickCreateClearToken', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -12,25 +12,118 @@ const TopToolbar = {
     'import-workspace',
     'import-all',
     'quick-create-task',
-    'run-command-bar',
+    'run-palette-command',
+    'run-palette-input',
   ],
   data() {
     return {
       showMainMenu: false,
       quickCreateText: '',
+      showPalette: false,
+      paletteOverlayOpen: false,
+      selectedPaletteIndex: 0,
       showEventSoundsMenu: false,
       eventSoundFlags: (window.EventSounds && window.EventSounds.getFlags())
         || { ...(window.EVENT_SOUND_FLAGS_DEFAULTS || {}) },
       eventSoundLabels: window.EVENT_SOUND_LABELS || [],
     };
   },
+  computed: {
+    paletteMode() {
+      const text = this.quickCreateText.trimStart();
+      if (text.startsWith('>')) return 'command';
+      if (text.startsWith('?')) return 'help';
+      return 'ticket';
+    },
+    paletteQuery() {
+      const text = this.quickCreateText.trimStart();
+      if (text.startsWith('>') || text.startsWith('?')) return text.slice(1).trim();
+      return text.trim();
+    },
+    visiblePaletteResults() {
+      if (this.paletteMode === 'command' || this.paletteMode === 'help') {
+        const parsed = window.BullpenCommands?.parseCommandInput(this.quickCreateText) || { args: '' };
+        let matches = window.BullpenCommands
+          ? window.BullpenCommands.filterCommands(this.paletteCommands || [], this.paletteQuery, 10)
+          : [];
+        if (window.BullpenCommands && parsed.command && parsed.args) {
+          const direct = window.BullpenCommands.findCommand(this.paletteCommands || [], `>${parsed.command}`);
+          if (direct?.command && !matches.some(command => command.id === direct.command.id)) {
+            matches = [direct.command, ...matches].slice(0, 10);
+          }
+        }
+        return matches.map(command => ({
+          kind: 'command',
+          command,
+          title: command.title,
+          subtitle: command.subtitle,
+          group: command.group,
+          shortcut: command.shortcut,
+          disabledReason: command.disabledReason,
+          args: parsed.args,
+        }));
+      }
+
+      const text = this.quickCreateText.trim();
+      if (!text) {
+        const createCommand = (this.paletteCommands || []).find(command => command.id === 'ticket.create');
+        return [
+          {
+            kind: 'mode',
+            title: 'Show commands',
+            subtitle: 'Type > to run Bullpen commands',
+            shortcut: '>',
+          },
+          {
+            kind: 'description-help',
+            title: 'How to add a description',
+            subtitle: 'Use Title / description',
+          },
+          {
+            kind: 'command',
+            command: createCommand,
+            title: 'Create ticket',
+            subtitle: 'Open the ticket composer',
+            shortcut: 'Enter',
+            disabledReason: createCommand?.disabledReason || '',
+          },
+        ].filter(result => result.kind !== 'command' || result.command);
+      }
+
+      const payload = this.splitQuickCreateText(text);
+      const title = payload.description
+        ? `Create ticket: "${payload.title}" with description`
+        : `Create ticket: "${payload.title}"`;
+      return [
+        {
+          kind: 'create',
+          title,
+          subtitle: payload.description || 'Plain text creates a ticket',
+          shortcut: 'Enter',
+          payload,
+          disabledReason: payload.title ? '' : 'Ticket title cannot be empty',
+        },
+        {
+          kind: 'mode',
+          title: 'Show commands',
+          subtitle: 'Start with > to search commands',
+          shortcut: '>',
+        },
+      ];
+    },
+  },
   watch: {
     quickCreateClearToken() {
       this.quickCreateText = '';
     },
+    quickCreateText() {
+      this.selectedPaletteIndex = 0;
+      if (this.paletteOverlayOpen) this.showPalette = true;
+    },
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
+    window.addEventListener('keydown', this.onGlobalKeydown);
     window.addEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
     renderLucideIcons(this.$el);
   },
@@ -39,9 +132,20 @@ const TopToolbar = {
   },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
+    window.removeEventListener('keydown', this.onGlobalKeydown);
     window.removeEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
   },
   methods: {
+    splitQuickCreateText(text) {
+      if (window.BullpenCommands?.splitQuickCreateText) {
+        return window.BullpenCommands.splitQuickCreateText(text);
+      }
+      const raw = String(text || '').trim();
+      const slashIdx = raw.indexOf('/');
+      return slashIdx >= 0
+        ? { title: raw.slice(0, slashIdx).trim(), description: raw.slice(slashIdx + 1).trim() }
+        : { title: raw, description: '' };
+    },
     toggleMainMenu() {
       this.showMainMenu = !this.showMainMenu;
       if (this.showMainMenu) {
@@ -52,6 +156,29 @@ const TopToolbar = {
     onGlobalClick() {
       this.showMainMenu = false;
       this.showEventSoundsMenu = false;
+      if (!this.paletteOverlayOpen) this.showPalette = false;
+    },
+    onGlobalKeydown(event) {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
+      event.preventDefault();
+      this.openPaletteOverlay();
+    },
+    onPaletteFocus() {
+      this.showPalette = true;
+    },
+    openPaletteOverlay() {
+      if (!this.quickCreateText.trim()) this.quickCreateText = '>';
+      this.paletteOverlayOpen = true;
+      this.showPalette = true;
+      this.selectedPaletteIndex = 0;
+      this.$nextTick(() => {
+        const input = this.$refs.paletteOverlayInput || this.$refs.quickCreateInput;
+        if (input) input.focus();
+      });
+    },
+    closePaletteOverlay() {
+      this.paletteOverlayOpen = false;
+      this.showPalette = false;
     },
     toggleEventSoundsMenu() {
       this.showEventSoundsMenu = !this.showEventSoundsMenu;
@@ -125,138 +252,254 @@ const TopToolbar = {
       if (!file) return;
       this.$emit('import-all', file);
     },
+    onPaletteKeydown(event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        const count = this.visiblePaletteResults.length || 1;
+        this.selectedPaletteIndex = (this.selectedPaletteIndex + 1) % count;
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        const count = this.visiblePaletteResults.length || 1;
+        this.selectedPaletteIndex = (this.selectedPaletteIndex - 1 + count) % count;
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        this.submitQuickCreate();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (this.paletteOverlayOpen) {
+          this.closePaletteOverlay();
+          return;
+        }
+        if (this.paletteMode === 'command' || this.paletteMode === 'help') {
+          this.quickCreateText = '';
+          return;
+        }
+        this.showPalette = false;
+      }
+    },
+    focusActiveInput() {
+      this.$nextTick(() => {
+        const input = this.paletteOverlayOpen ? this.$refs.paletteOverlayInput : this.$refs.quickCreateInput;
+        if (input) input.focus();
+      });
+    },
+    runPaletteResult(result) {
+      if (!result || result.disabledReason) return;
+      if (result.kind === 'create') {
+        if (!result.payload?.title) return;
+        this.$emit('quick-create-task', result.payload);
+        this.showPalette = false;
+        return;
+      }
+      if (result.kind === 'mode') {
+        this.quickCreateText = '>';
+        this.showPalette = true;
+        this.focusActiveInput();
+        return;
+      }
+      if (result.kind === 'description-help') {
+        this.quickCreateText = 'Ticket title / description';
+        this.showPalette = true;
+        this.focusActiveInput();
+        return;
+      }
+      if (result.kind === 'command' && result.command) {
+        this.$emit('run-palette-command', result.command.id, result.args || '');
+        this.quickCreateText = '';
+        this.closePaletteOverlay();
+      }
+    },
     submitQuickCreate() {
       const text = this.quickCreateText.trim();
       if (!text) return;
-      if (text.startsWith('/')) {
-        this.$emit('run-command-bar', text);
+      if (this.paletteMode === 'command') {
+        const result = this.visiblePaletteResults[this.selectedPaletteIndex] || this.visiblePaletteResults[0];
+        if (result?.kind === 'command') {
+          this.runPaletteResult(result);
+          return;
+        }
+        this.$emit('run-palette-input', text);
         this.quickCreateText = '';
+        this.closePaletteOverlay();
         return;
       }
-      const slashIdx = text.indexOf('/');
-      const payload = slashIdx >= 0
-        ? {
-            title: text.slice(0, slashIdx).trim(),
-            description: text.slice(slashIdx + 1).trim(),
-          }
-        : { title: text, description: '' };
+      if (this.paletteMode === 'help') {
+        this.quickCreateText = '>';
+        this.showPalette = true;
+        return;
+      }
+      const payload = this.splitQuickCreateText(text);
       if (!payload.title) return;
       this.$emit('quick-create-task', payload);
+      this.showPalette = false;
     },
   },
   template: `
-    <div class="top-toolbar">
-      <div class="toolbar-left">
-        <div class="toolbar-menu-wrap" @click.stop>
-          <button class="btn btn-icon" @click="toggleMainMenu" title="Main menu">&#9776;</button>
-          <div v-if="showMainMenu" class="project-menu toolbar-menu">
-            <button class="project-menu-item" @click="onToggleLeftPane"><i class="menu-item-icon" data-lucide="panel-left" aria-hidden="true"></i><span class="menu-item-label">Toggle Left Pane</span></button>
-            <button class="project-menu-item" @click="onExportWorkspace"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Project</span></button>
-            <button class="project-menu-item" @click="onExportWorkers"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Workers</span></button>
-            <button class="project-menu-item" @click="onExportAll"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export All</span></button>
-            <button class="project-menu-item" @click="triggerImportWorkspace"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Project</span></button>
-            <button class="project-menu-item" @click="triggerImportWorkers"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Workers</span></button>
-            <button class="project-menu-item" @click="triggerImportAll"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import All</span></button>
-            <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="github" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
-          </div>
-          <input
-            ref="workersImportInput"
-            type="file"
-            accept=".zip,application/zip"
-            class="toolbar-import-input"
-            @change="onImportWorkersSelected"
-          >
-          <input
-            ref="workspaceImportInput"
-            type="file"
-            accept=".zip,application/zip"
-            class="toolbar-import-input"
-            @change="onImportWorkspaceSelected"
-          >
-          <input
-            ref="allImportInput"
-            type="file"
-            accept=".zip,application/zip"
-            class="toolbar-import-input"
-            @change="onImportAllSelected"
-          >
-        </div>
-        <span class="toolbar-name">Bullpen<span v-if="projectName" :title="projectPath || ''"> / {{ projectName }}</span></span>
-      </div>
-      <div class="toolbar-center">
-        <input
-          class="quick-create-input toolbar-quick-create-input"
-          v-model="quickCreateText"
-          placeholder="Enter ticket title/description"
-          @keyup.enter="submitQuickCreate"
-        />
-      </div>
-      <div class="toolbar-right">
-        <div class="toolbar-audio">
-          <label class="toolbar-audio-label" for="ambient-preset">Ambient</label>
-          <select id="ambient-preset" class="form-select toolbar-audio-select" :value="ambientPreset || ''" @change="$emit('set-ambient-preset', $event.target.value)" title="Ambient sound">
-            <option value="">Off</option>
-            <option v-for="p in ambientPresets || []" :key="p.key" :value="p.key">{{ p.label }}</option>
-          </select>
-          <label class="toolbar-audio-label" for="ambient-volume">Vol</label>
-          <input
-            id="ambient-volume"
-            class="toolbar-audio-volume"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            :value="ambientVolume"
-            @input="$emit('set-ambient-volume', Number($event.target.value))"
-            title="Ambient volume"
-          >
-          <span class="toolbar-audio-value">{{ ambientVolume }}%</span>
-        </div>
-        <div class="toolbar-menu-wrap event-sounds-menu-wrap" @click.stop>
-          <button
-            class="btn btn-icon event-sounds-btn"
-            :class="{ 'is-disabled': !eventSoundFlags.enabled }"
-            @click="toggleEventSoundsMenu"
-            title="Event sounds"
-          >
-            <i data-lucide="bell" aria-hidden="true"></i>
-          </button>
-          <div v-if="showEventSoundsMenu" class="project-menu toolbar-menu event-sounds-menu">
-            <label class="event-sounds-row event-sounds-master">
-              <input
-                type="checkbox"
-                :checked="eventSoundFlags.enabled"
-                @change="onToggleEventSoundFlag('enabled')"
-              >
-              <span class="event-sounds-row-label">All event sounds</span>
-            </label>
-            <div class="event-sounds-divider"></div>
-            <div
-              v-for="item in eventSoundLabels"
-              :key="item.key"
-              class="event-sounds-row"
+    <div class="top-toolbar-shell">
+      <div class="top-toolbar">
+        <div class="toolbar-left">
+          <div class="toolbar-menu-wrap" @click.stop>
+            <button class="btn btn-icon" @click="toggleMainMenu" title="Main menu">&#9776;</button>
+            <div v-if="showMainMenu" class="project-menu toolbar-menu">
+              <button class="project-menu-item" @click="onToggleLeftPane"><i class="menu-item-icon" data-lucide="panel-left" aria-hidden="true"></i><span class="menu-item-label">Toggle Left Pane</span></button>
+              <button class="project-menu-item" @click="onExportWorkspace"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Project</span></button>
+              <button class="project-menu-item" @click="onExportWorkers"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Workers</span></button>
+              <button class="project-menu-item" @click="onExportAll"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export All</span></button>
+              <button class="project-menu-item" @click="triggerImportWorkspace"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Project</span></button>
+              <button class="project-menu-item" @click="triggerImportWorkers"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Workers</span></button>
+              <button class="project-menu-item" @click="triggerImportAll"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import All</span></button>
+              <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="github" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
+            </div>
+            <input
+              ref="workersImportInput"
+              type="file"
+              accept=".zip,application/zip"
+              class="toolbar-import-input"
+              @change="onImportWorkersSelected"
             >
-              <label class="event-sounds-row-main">
-                <input
-                  type="checkbox"
-                  :checked="!!eventSoundFlags[item.key]"
-                  :disabled="!eventSoundFlags.enabled"
-                  @change="onToggleEventSoundFlag(item.key)"
-                >
-                <span class="event-sounds-row-label">{{ item.label }}</span>
-              </label>
+            <input
+              ref="workspaceImportInput"
+              type="file"
+              accept=".zip,application/zip"
+              class="toolbar-import-input"
+              @change="onImportWorkspaceSelected"
+            >
+            <input
+              ref="allImportInput"
+              type="file"
+              accept=".zip,application/zip"
+              class="toolbar-import-input"
+              @change="onImportAllSelected"
+            >
+          </div>
+          <span class="toolbar-name">Bullpen<span v-if="projectName" :title="projectPath || ''"> / {{ projectName }}</span></span>
+        </div>
+        <div class="toolbar-center">
+          <div class="command-palette-inline" @click.stop>
+            <input
+              ref="quickCreateInput"
+              class="quick-create-input toolbar-quick-create-input"
+              v-model="quickCreateText"
+              placeholder="New ticket / description, or > commands"
+              @focus="onPaletteFocus"
+              @keydown="onPaletteKeydown"
+            />
+            <div v-if="showPalette && !paletteOverlayOpen" class="command-palette-menu">
               <button
-                class="btn btn-sm event-sounds-preview"
-                @click="onPreviewEventSound(item.preview)"
-                title="Preview"
-              >▶</button>
+                v-for="(result, index) in visiblePaletteResults"
+                :key="result.kind + '-' + (result.command?.id || result.title)"
+                class="command-palette-result"
+                :class="{ selected: index === selectedPaletteIndex, disabled: result.disabledReason }"
+                @mousedown.prevent="runPaletteResult(result)"
+              >
+                <span class="command-palette-result-main">
+                  <span class="command-palette-result-title">{{ result.title }}</span>
+                  <span class="command-palette-result-subtitle">{{ result.disabledReason || result.subtitle }}</span>
+                </span>
+                <span v-if="result.group || result.shortcut" class="command-palette-result-meta">{{ result.group || result.shortcut }}</span>
+              </button>
             </div>
           </div>
         </div>
-        <select class="form-select theme-select" :value="activeTheme" @change="$emit('set-theme', $event.target.value)" title="Theme">
-          <option v-for="t in themes || []" :key="t.id" :value="t.id">{{ t.label }}</option>
-        </select>
-        <span class="connection-dot" :class="{ connected }"></span>
+        <div class="toolbar-right">
+          <div class="toolbar-audio">
+            <label class="toolbar-audio-label" for="ambient-preset">Ambient</label>
+            <select id="ambient-preset" class="form-select toolbar-audio-select" :value="ambientPreset || ''" @change="$emit('set-ambient-preset', $event.target.value)" title="Ambient sound">
+              <option value="">Off</option>
+              <option v-for="p in ambientPresets || []" :key="p.key" :value="p.key">{{ p.label }}</option>
+            </select>
+            <label class="toolbar-audio-label" for="ambient-volume">Vol</label>
+            <input
+              id="ambient-volume"
+              class="toolbar-audio-volume"
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              :value="ambientVolume"
+              @input="$emit('set-ambient-volume', Number($event.target.value))"
+              title="Ambient volume"
+            >
+            <span class="toolbar-audio-value">{{ ambientVolume }}%</span>
+          </div>
+          <div class="toolbar-menu-wrap event-sounds-menu-wrap" @click.stop>
+            <button
+              class="btn btn-icon event-sounds-btn"
+              :class="{ 'is-disabled': !eventSoundFlags.enabled }"
+              @click="toggleEventSoundsMenu"
+              title="Event sounds"
+            >
+              <i data-lucide="bell" aria-hidden="true"></i>
+            </button>
+            <div v-if="showEventSoundsMenu" class="project-menu toolbar-menu event-sounds-menu">
+              <label class="event-sounds-row event-sounds-master">
+                <input
+                  type="checkbox"
+                  :checked="eventSoundFlags.enabled"
+                  @change="onToggleEventSoundFlag('enabled')"
+                >
+                <span class="event-sounds-row-label">All event sounds</span>
+              </label>
+              <div class="event-sounds-divider"></div>
+              <div
+                v-for="item in eventSoundLabels"
+                :key="item.key"
+                class="event-sounds-row"
+              >
+                <label class="event-sounds-row-main">
+                  <input
+                    type="checkbox"
+                    :checked="!!eventSoundFlags[item.key]"
+                    :disabled="!eventSoundFlags.enabled"
+                    @change="onToggleEventSoundFlag(item.key)"
+                  >
+                  <span class="event-sounds-row-label">{{ item.label }}</span>
+                </label>
+                <button
+                  class="btn btn-sm event-sounds-preview"
+                  @click="onPreviewEventSound(item.preview)"
+                  title="Preview"
+                >▶</button>
+              </div>
+            </div>
+          </div>
+          <select class="form-select theme-select" :value="activeTheme" @change="$emit('set-theme', $event.target.value)" title="Theme">
+            <option v-for="t in themes || []" :key="t.id" :value="t.id">{{ t.label }}</option>
+          </select>
+          <span class="connection-dot" :class="{ connected }"></span>
+        </div>
+      </div>
+      <div v-if="paletteOverlayOpen" class="command-palette-overlay" @mousedown.self="closePaletteOverlay">
+        <div class="command-palette-dialog" @click.stop>
+          <input
+            ref="paletteOverlayInput"
+            class="quick-create-input command-palette-overlay-input"
+            v-model="quickCreateText"
+            placeholder="New ticket / description, or > commands"
+            @keydown="onPaletteKeydown"
+          />
+          <div class="command-palette-overlay-results">
+            <button
+              v-for="(result, index) in visiblePaletteResults"
+              :key="'overlay-' + result.kind + '-' + (result.command?.id || result.title)"
+              class="command-palette-result"
+              :class="{ selected: index === selectedPaletteIndex, disabled: result.disabledReason }"
+              @mousedown.prevent="runPaletteResult(result)"
+            >
+              <span class="command-palette-result-main">
+                <span class="command-palette-result-title">{{ result.title }}</span>
+                <span class="command-palette-result-subtitle">{{ result.disabledReason || result.subtitle }}</span>
+              </span>
+              <span v-if="result.group || result.shortcut" class="command-palette-result-meta">{{ result.group || result.shortcut }}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   `
