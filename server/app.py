@@ -406,7 +406,7 @@ def create_app(
             from flask import send_file
             return send_file(full_path, mimetype=mime or "text/plain")
 
-        if mime and mime.startswith("image/"):
+        if mime and (mime.startswith("image/") or not mime.startswith("text/")):
             from flask import send_file
             return send_file(full_path, mimetype=mime)
 

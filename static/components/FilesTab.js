@@ -118,7 +118,7 @@ const FilesTab = {
           </div>
           <!-- PDF -->
           <div v-else-if="isPdf" class="file-view-pdf">
-            <embed :src="'/api/files/' + activeFile.path" type="application/pdf" width="100%" height="100%" />
+            <embed :src="'/api/files/' + activeFile.path + '?raw=1'" type="application/pdf" width="100%" height="100%" />
           </div>
           <!-- HTML preview -->
           <div v-else-if="isHtml" class="file-view-html">
