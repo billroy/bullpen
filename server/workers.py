@@ -1465,55 +1465,50 @@ def _append_shell_run_record(bp_dir, task_id, worker, slot_index, result, comple
     }
     history.append(row)
 
-    block = _build_shell_output_block(
-        timestamp,
-        worker,
-        result,
-        completed,
-        prepared,
-        row,
-        stdout_rel,
-        stderr_rel,
-        excerpt=False,
-    )
     body = task.get("body", "")
-    proposed = body.rstrip() + "\n\n" + block
+    marker = "## Worker Output"
+    idx = body.find(marker)
+    if idx < 0:
+        desc_part = body.rstrip()
+        meta_part = ""
+    else:
+        desc_part = body[:idx].rstrip()
+        meta_part = body[idx:].rstrip()
+
+    meta_block = _build_shell_metadata_block(
+        timestamp, worker, result, completed, prepared, row, stdout_rel, stderr_rel
+    )
+
+    def _assemble(desc_block):
+        if desc_part:
+            new_desc = desc_part + "\n\n" + desc_block
+        else:
+            new_desc = desc_block
+        if meta_part:
+            new_meta = meta_part + "\n\n" + meta_block
+        else:
+            new_meta = f"{marker}\n\n" + meta_block
+        return new_desc.rstrip() + "\n\n" + new_meta.rstrip() + "\n"
+
+    desc_block = _build_shell_description_block(timestamp, worker, completed, excerpt=False)
+    proposed = _assemble(desc_block)
     if len(proposed.encode("utf-8", errors="replace")) > TASK_BODY_LIMIT:
         row["body_excerpt_truncated"] = True
-        block = _build_shell_output_block(
-            timestamp,
-            worker,
-            result,
-            completed,
-            prepared,
-            row,
-            stdout_rel,
-            stderr_rel,
-            excerpt=True,
-        )
-        proposed = body.rstrip() + "\n\n" + block
+        desc_block = _build_shell_description_block(timestamp, worker, completed, excerpt=True)
+        proposed = _assemble(desc_block)
     if len(proposed.encode("utf-8", errors="replace")) > TASK_BODY_LIMIT:
-        block = _build_shell_output_stub(timestamp, worker, result, prepared, row, stdout_rel, stderr_rel)
-        proposed = body.rstrip() + "\n\n" + block
+        desc_block = _build_shell_description_stub(timestamp, worker, row, stdout_rel, stderr_rel)
+        proposed = _assemble(desc_block)
 
     task_mod.update_task(bp_dir, task_id, {"history": history, "body": proposed})
     return row
 
 
-def _build_shell_output_block(timestamp, worker, result, completed, prepared, row, stdout_rel, stderr_rel, excerpt):
+def _build_shell_description_block(timestamp, worker, completed, excerpt):
     stdout_text = _output_excerpt(completed.stdout) if excerpt else (completed.stdout or "")
     stderr_text = _output_excerpt(completed.stderr) if excerpt else (completed.stderr or "")
     return (
-        "## Worker Output\n\n"
         f"### {timestamp} - {worker.get('name', 'Shell')} (shell)\n\n"
-        f"Outcome: {result.outcome}\n"
-        f"Disposition: {result.disposition or worker.get('disposition', 'review')}\n"
-        f"Reason: {result.reason or 'none'}\n"
-        f"Exit code: {completed.returncode}\n"
-        f"Duration: {row['duration_ms'] / 1000:.3f}s\n"
-        f"Delivery: {prepared.delivery}\n"
-        f"stdout artifact: {stdout_rel}\n"
-        f"stderr artifact: {stderr_rel}\n\n"
         "#### stdout\n\n"
         "```text\n"
         f"{stdout_text}\n"
@@ -1525,20 +1520,28 @@ def _build_shell_output_block(timestamp, worker, result, completed, prepared, ro
     )
 
 
-def _build_shell_output_stub(timestamp, worker, result, prepared, row, stdout_rel, stderr_rel):
+def _build_shell_description_stub(timestamp, worker, row, stdout_rel, stderr_rel):
     return (
-        "## Worker Output\n\n"
         f"### {timestamp} - {worker.get('name', 'Shell')} (shell)\n\n"
-        f"Outcome: {result.outcome}\n"
-        f"Disposition: {result.disposition or worker.get('disposition', 'review')}\n"
-        f"Reason: {result.reason or 'none'}\n"
-        f"Duration: {row['duration_ms'] / 1000:.3f}s\n"
-        f"Delivery: {prepared.delivery}\n"
         f"stdout bytes: {row['stdout_bytes']} (observed {row['stdout_observed_bytes']})\n"
         f"stderr bytes: {row['stderr_bytes']} (observed {row['stderr_observed_bytes']})\n"
         f"stdout artifact: {stdout_rel}\n"
         f"stderr artifact: {stderr_rel}\n"
         "[Output omitted from ticket body; see artifacts.]\n"
+    )
+
+
+def _build_shell_metadata_block(timestamp, worker, result, completed, prepared, row, stdout_rel, stderr_rel):
+    return (
+        f"### {timestamp} - {worker.get('name', 'Shell')} (shell)\n\n"
+        f"Outcome: {result.outcome}\n"
+        f"Disposition: {result.disposition or worker.get('disposition', 'review')}\n"
+        f"Reason: {result.reason or 'none'}\n"
+        f"Exit code: {completed.returncode}\n"
+        f"Duration: {row['duration_ms'] / 1000:.3f}s\n"
+        f"Delivery: {prepared.delivery}\n"
+        f"stdout artifact: {stdout_rel}\n"
+        f"stderr artifact: {stderr_rel}\n"
     )
 
 
