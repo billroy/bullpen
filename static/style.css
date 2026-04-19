@@ -3375,6 +3375,23 @@ body.worker-singleton-dragging * {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.detail-panel-resize {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+
+.detail-panel-resize:hover,
+.detail-panel-resize:active {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .detail-header {

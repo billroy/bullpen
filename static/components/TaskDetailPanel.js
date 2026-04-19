@@ -9,6 +9,9 @@ const TaskDetailPanel = {
       editTitle: '',
       editingTags: false,
       editTagsValue: '',
+      panelWidth: TaskDetailPanel._loadPanelWidth(),
+      resizing: null,
+      draggingWidth: null,
     };
   },
   computed: {
@@ -72,7 +75,8 @@ const TaskDetailPanel = {
     }
   },
   template: `
-    <div v-if="task" class="detail-panel">
+    <div v-if="task" class="detail-panel" :style="{ width: (draggingWidth || panelWidth) + 'px' }">
+      <div class="detail-panel-resize" @pointerdown="onResizeDown" @dblclick="resetWidth" title="Drag to resize"></div>
       <div class="detail-header">
         <div v-if="editingTitle" class="detail-title-edit">
           <input class="form-input detail-title-input" v-model="editTitle"
@@ -283,6 +287,82 @@ const TaskDetailPanel = {
     openCommitDiff(hash) {
       if (!hash) return;
       this.$emit('open-commit-diff', hash);
-    }
-  }
+    },
+    onResizeDown(e) {
+      if (e.button !== 0) return;
+      if (this.resizing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.resizing = {
+        startX: e.clientX,
+        startWidth: this.panelWidth,
+        pointerId: e.pointerId,
+      };
+      this.draggingWidth = this.panelWidth;
+      this._resizeMoveHandler = (ev) => this.onResizeMove(ev);
+      this._resizeUpHandler = (ev) => this.onResizeUp(ev);
+      window.addEventListener('pointermove', this._resizeMoveHandler);
+      window.addEventListener('pointerup', this._resizeUpHandler);
+      window.addEventListener('pointercancel', this._resizeUpHandler);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    onResizeMove(e) {
+      if (!this.resizing) return;
+      if (e.pointerId !== this.resizing.pointerId) return;
+      // Dragging the left edge: moving left (negative dx) widens the panel.
+      const dx = e.clientX - this.resizing.startX;
+      const next = this.resizing.startWidth - dx;
+      this.draggingWidth = TaskDetailPanel._clampWidth(Math.round(next));
+    },
+    onResizeUp(e) {
+      if (!this.resizing) return;
+      if (e && e.pointerId !== this.resizing.pointerId) return;
+      this._teardownResizeListeners();
+      const dragged = this.draggingWidth;
+      this.resizing = null;
+      this.draggingWidth = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      if (dragged != null) {
+        this.panelWidth = TaskDetailPanel._clampWidth(dragged);
+        try {
+          localStorage.setItem('bullpen.detailPanelWidth', String(this.panelWidth));
+        } catch (e) { /* ignore */ }
+      }
+    },
+    resetWidth() {
+      this.panelWidth = 380;
+      try {
+        localStorage.setItem('bullpen.detailPanelWidth', '380');
+      } catch (e) { /* ignore */ }
+    },
+    _teardownResizeListeners() {
+      if (this._resizeMoveHandler) {
+        window.removeEventListener('pointermove', this._resizeMoveHandler);
+        window.removeEventListener('pointerup', this._resizeUpHandler);
+        window.removeEventListener('pointercancel', this._resizeUpHandler);
+        this._resizeMoveHandler = null;
+        this._resizeUpHandler = null;
+      }
+    },
+  },
+  beforeUnmount() {
+    this._teardownResizeListeners();
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  },
+  _clampWidth(w) {
+    return Math.max(280, Math.min(900, w));
+  },
+  _loadPanelWidth() {
+    try {
+      const raw = localStorage.getItem('bullpen.detailPanelWidth');
+      if (raw) {
+        const n = parseInt(raw, 10);
+        if (Number.isFinite(n)) return Math.max(280, Math.min(900, n));
+      }
+    } catch (e) { /* ignore */ }
+    return 380;
+  },
 };
