@@ -1584,8 +1584,8 @@ body {
 }
 
 .worker-grid-column-header.is-selected {
-  background: var(--text-primary);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--bg-primary);
   border-radius: 3px;
 }
 
@@ -1664,8 +1664,8 @@ body {
 }
 
 .worker-grid-row-header.is-selected {
-  background: var(--text-primary);
-  color: var(--bg);
+  background: var(--accent);
+  color: var(--bg-primary);
   border-radius: 3px;
 }
 
