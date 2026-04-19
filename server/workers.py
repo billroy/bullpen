@@ -88,7 +88,10 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
         exclude_task_id: Task ID to skip (e.g. when the task was just explicitly
             assigned via another path and shouldn't be double-claimed).
     """
-    layout = _load_layout(bp_dir)
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
     slots = layout.get("slots", [])
 
     # Find eligible watchers: on_queue, watching this column, idle, not paused
@@ -133,7 +136,10 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
 def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
     """When an on_queue worker returns to idle with an empty queue, check its
     watch_column for unclaimed tasks and claim the oldest one."""
-    layout = _load_layout(bp_dir)
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
     worker = layout["slots"][slot_index]
     if not worker:
         return
@@ -217,7 +223,10 @@ def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None, preserve
 
 def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Dequeue next task and invoke agent."""
-    layout = _load_layout(bp_dir)
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
     worker = layout["slots"][slot_index]
     if not worker:
         return

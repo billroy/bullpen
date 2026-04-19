@@ -32,6 +32,17 @@ from server.agents import get_adapter, register_adapter
 from tests.conftest import MockAdapter
 
 
+def _wait_for_worker_threads(timeout=3.0):
+    """Let daemon worker threads finish their final filesystem writes."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with workers_mod._process_lock:
+            if not _processes:
+                return True
+        time.sleep(0.02)
+    return False
+
+
 class UnavailableAdapter(MockAdapter):
     @property
     def name(self):
@@ -151,7 +162,8 @@ def bp_dir(tmp_workspace):
     bp = init_workspace(tmp_workspace)
     # Register mock adapter
     register_adapter("mock", MockAdapter(output="Mock agent output"))
-    return bp
+    yield bp
+    _wait_for_worker_threads()
 
 
 @pytest.fixture
@@ -1292,6 +1304,7 @@ class TestWatchColumn:
 
         layout = _load_layout(bp_dir)
         assert new_task["id"] not in layout["slots"][0]["task_queue"]
+        _wait_for_worker_threads()
 
     def test_watch_column_end_to_end(self, bp_dir, watcher_slot):
         """Full lifecycle: task enters watched column → worker claims and processes it."""
