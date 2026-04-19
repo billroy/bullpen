@@ -1044,6 +1044,7 @@ const BullpenTab = {
     closeLibrary() {
       this.showLibrary = false;
       this.selectedAddCoord = null;
+      this.$nextTick(() => this.$refs.viewport?.focus());
     },
     addFromLibrary(profileId) {
       this.$emit('add-worker', { coord: this.selectedAddCoord, profile: profileId });
