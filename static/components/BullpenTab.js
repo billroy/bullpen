@@ -11,6 +11,7 @@ const BullpenTab = {
       showLibrary: false,
       showGoTo: false,
       goToInput: '',
+      goToWorkerSlot: '',
       goToError: '',
       showHelp: false,
       selectedAddCoord: null,
@@ -203,14 +204,37 @@ const BullpenTab = {
           </div>
           <div class="modal-body">
             <form @submit.prevent="submitGoTo">
-              <input
-                ref="goToInputEl"
-                type="text"
-                v-model="goToInput"
-                placeholder="Worker name or cell (e.g. AA122)"
-                style="width: 100%; box-sizing: border-box; padding: 6px 8px;"
-                @keydown.escape.stop="closeGoTo"
-              />
+              <label class="form-label">
+                Cell address
+                <input
+                  ref="goToInputEl"
+                  type="text"
+                  v-model="goToInput"
+                  class="form-input"
+                  placeholder="AA122"
+                  style="width: 100%; box-sizing: border-box;"
+                  @input="onGoToCellInput"
+                  @keydown.escape.stop="closeGoTo"
+                />
+              </label>
+              <label class="form-label" style="margin-top: 10px;">
+                Worker
+                <select
+                  v-model="goToWorkerSlot"
+                  class="form-select"
+                  style="width: 100%; box-sizing: border-box;"
+                  @change="onGoToWorkerSelect"
+                >
+                  <option value="">Select a worker</option>
+                  <option
+                    v-for="item in goToWorkerOptions"
+                    :key="item.slotIndex"
+                    :value="String(item.slotIndex)"
+                  >
+                    {{ item.label }}
+                  </option>
+                </select>
+              </label>
               <div v-if="goToError" style="color: var(--color-danger, #c33); margin-top: 6px; font-size: 12px;">
                 {{ goToError }}
               </div>
@@ -327,6 +351,12 @@ const BullpenTab = {
         if (!worker) return null;
         return { worker, slotIndex, coord: this.coordForSlot(worker, slotIndex) };
       }).filter(Boolean);
+    },
+    goToWorkerOptions() {
+      return this.workerItems.map(item => ({
+        slotIndex: item.slotIndex,
+        label: `${item.worker?.name || `Slot ${item.slotIndex + 1}`} (${this.colLabel(item.coord.col)}${this.rowLabel(item.coord.row)})`,
+      }));
     },
     workerItemBySlot() {
       const map = {};
@@ -822,13 +852,23 @@ const BullpenTab = {
     openGoTo() {
       this.showGoTo = true;
       this.goToInput = '';
+      this.goToWorkerSlot = '';
       this.goToError = '';
       this.$nextTick(() => this.$refs.goToInputEl?.focus());
     },
     closeGoTo() {
       this.showGoTo = false;
+      this.goToWorkerSlot = '';
       this.goToError = '';
       this.$nextTick(() => this.$refs.viewport?.focus());
+    },
+    onGoToCellInput() {
+      this.goToError = '';
+      if ((this.goToInput || '').trim()) this.goToWorkerSlot = '';
+    },
+    onGoToWorkerSelect() {
+      this.goToError = '';
+      if (this.goToWorkerSlot) this.goToInput = '';
     },
     openHelp() {
       this.showHelp = true;
@@ -869,6 +909,15 @@ const BullpenTab = {
       }
     },
     submitGoTo() {
+      if (this.goToWorkerSlot !== '') {
+        const slot = Number.parseInt(this.goToWorkerSlot, 10);
+        const selected = this.workerItemBySlot[slot];
+        if (selected) {
+          this.goToCoord(selected.coord);
+          this.closeGoTo();
+          return;
+        }
+      }
       const text = (this.goToInput || '').trim();
       if (!text) { this.closeGoTo(); return; }
       const cellRef = this.parseCellRef(text);
