@@ -2,6 +2,23 @@
 
 An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex, Gemini) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
 
+## Screenshots
+
+### Tickets
+![Tickets](screenshots/ticket-tab.png)
+
+### Workers
+![Workers](screenshots/worker-tab.png)
+
+### Files
+![Files](screenshots/file-tab.png)
+
+### Commits
+![Commits](screenshots/commit-tab.png)
+
+### Live Agent
+![Live Agent](screenshots/live-agent-tab.png)
+
 ## Quick Start
 
 ```bash
