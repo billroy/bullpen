@@ -7,9 +7,11 @@ import signal
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
+from dataclasses import dataclass
 
 from server.agents import get_adapter
 from server.locks import write_lock as _write_lock
@@ -24,10 +26,18 @@ from server.usage import (
 from server import tasks as task_mod
 from server.model_aliases import normalize_model
 from server.worker_types import get_worker_type, normalize_layout
+from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
 MAX_HANDOFF_DEPTH = 10
 # Feature switch: keep depth-limit logic available, but disable enforcement by default.
 ENFORCE_HANDOFF_CHAIN_LIMIT = False
+SHELL_WORKER_EXIT_BLOCKED = 78
+SHELL_OUTPUT_ARTIFACT_LIMIT = 1_048_576
+TASK_BODY_LIMIT = 1_048_576
+SHELL_OUTPUT_EXCERPT_BYTES = 65_536
+SHELL_SECRET_ENV_MARKERS = (
+    "TOKEN", "SECRET", "KEY", "PASSWORD", "CREDENTIAL", "PASSPHRASE",
+)
 
 
 def _handoff_depth_limit_reached(depth):
@@ -75,6 +85,22 @@ def _ws_emit(socketio, event, payload, ws_id=None):
 
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _timestamp_id():
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _shell_workers_enabled(bp_dir):
+    env_value = os.environ.get("BULLPEN_ENABLE_SHELL_WORKERS")
+    if env_value is not None:
+        return env_value.strip().lower() not in ("0", "false", "no", "off")
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        return True
+    features = config.get("features") if isinstance(config.get("features"), dict) else {}
+    return features.get("shell_workers_enabled", True) is not False
 
 
 def _load_layout(bp_dir):
@@ -187,7 +213,8 @@ def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
     assign_task(bp_dir, slot_index, unclaimed[0]["id"], socketio, ws_id)
 
 
-def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None):
+def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None,
+                     trigger_kind="manual", trigger_label=None, scheduled_at=None):
     """Create an ephemeral task for a self-directed worker with no queue.
 
     ws_id must be propagated so the resulting agent process is registered
@@ -196,9 +223,35 @@ def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None):
     """
     worker_name = worker.get("name", "Worker")
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    title = f"[Auto] {worker_name} — {timestamp}"
+    label = trigger_label or trigger_kind or "manual"
+    title = f"[Auto] {worker_name} - {label} - {timestamp}"
+    synthetic_key = f"{slot_index}:{trigger_kind}:{scheduled_at or timestamp}"
 
-    task = task_mod.create_task(bp_dir, title, task_type="chore")
+    body = (
+        f"Worker: {worker_name}\n"
+        f"Worker type: {worker.get('type', 'ai')}\n"
+        f"Trigger kind: {trigger_kind}\n"
+        f"Workspace: {os.path.dirname(bp_dir)}\n"
+    )
+    if scheduled_at:
+        body += f"Scheduled at: {scheduled_at}\n"
+
+    task = task_mod.create_task(
+        bp_dir,
+        title,
+        description=body,
+        task_type="chore",
+        priority="normal",
+        tags=["synthetic", "worker-run", "scheduled" if trigger_kind in ("at_time", "on_interval") else "manual"],
+    )
+    task = task_mod.update_task(bp_dir, task["id"], {
+        "synthetic_run": True,
+        "trigger_kind": trigger_kind,
+        "synthetic_run_key": synthetic_key,
+        **({"scheduled_at": scheduled_at} if scheduled_at else {}),
+    })
+    if socketio:
+        _ws_emit(socketio, "task:created", task, ws_id)
     assign_task(bp_dir, slot_index, task["id"], socketio, ws_id)
     return task
 
@@ -255,6 +308,9 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     if not worker:
         return
     worker_type = get_worker_type(worker.get("type", "ai"))
+    if worker_type.type_id == "shell":
+        _start_shell_worker(bp_dir, slot_index, socketio, ws_id)
+        return
     if worker_type.type_id != "ai":
         if socketio:
             errors = worker_type.validate_config(worker)
@@ -345,6 +401,253 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         daemon=True,
     )
     thread.start()
+
+
+@dataclass
+class PreparedShellRun:
+    argv: list
+    cwd: str
+    env: dict
+    stdin_text: str | None
+    timeout: int
+    delivery: str
+    delivery_fallback_from: str | None = None
+    body_file: str | None = None
+    prelude_lines: list | None = None
+
+
+@dataclass
+class ShellResult:
+    outcome: str
+    disposition: str | None = None
+    reason: str | None = None
+    ticket_updates: dict | None = None
+
+
+def _start_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+    """Dequeue next task and run a configured Shell worker."""
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
+    worker = layout["slots"][slot_index]
+    if not worker:
+        return
+
+    if not _shell_workers_enabled(bp_dir):
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": "Shell workers are disabled for this workspace.",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    errors = _validate_shell_worker(worker, bp_dir)
+    if errors:
+        queue = worker.get("task_queue", [])
+        if not queue:
+            if socketio:
+                _ws_emit(socketio, "toast", {
+                    "message": errors[0],
+                    "level": "warning",
+                }, ws_id)
+            return
+        _block_agent_start_failure(bp_dir, slot_index, queue[0], errors[0], socketio, ws_id)
+        return
+
+    queue = worker.get("task_queue", [])
+    if not queue:
+        create_auto_task(bp_dir, slot_index, worker, socketio, ws_id, trigger_kind="manual", trigger_label="manual")
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][slot_index]
+        if worker and worker.get("state") == "working":
+            return
+        queue = worker.get("task_queue", []) if worker else []
+        if not queue:
+            return
+
+    task_id = queue[0]
+    task = task_mod.read_task(bp_dir, task_id)
+    if not task:
+        queue.pop(0)
+        _save_layout(bp_dir, layout)
+        if queue:
+            start_worker(bp_dir, slot_index, socketio, ws_id)
+        return
+
+    workspace = os.path.dirname(bp_dir)
+    try:
+        prepared = _prepare_shell_run(bp_dir, workspace, slot_index, worker, task)
+    except Exception as exc:
+        _on_agent_error(bp_dir, slot_index, task_id, str(exc), socketio, ws_id=ws_id, non_retryable=True)
+        return
+
+    worker["state"] = "working"
+    worker["started_at"] = _now_iso()
+    task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
+    _save_layout(bp_dir, layout)
+
+    if socketio:
+        updated_task = task_mod.read_task(bp_dir, task_id)
+        _ws_emit(socketio, "task:updated", updated_task, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id)
+
+    thread = threading.Thread(
+        target=_run_shell,
+        args=(bp_dir, slot_index, task_id, worker, prepared, socketio, ws_id),
+        daemon=True,
+    )
+    thread.start()
+
+
+def _validate_shell_worker(worker, bp_dir):
+    errors = []
+    if not str(worker.get("command") or "").strip():
+        errors.append("Shell workers require a command.")
+    for item in worker.get("env") or []:
+        key = str((item or {}).get("key") or "").strip()
+        if key == "BULLPEN_MCP_TOKEN":
+            errors.append("BULLPEN_MCP_TOKEN cannot be configured for Shell workers.")
+    return errors
+
+
+def _shell_payload(task, worker, slot_index, workspace):
+    return {
+        "id": task.get("id"),
+        "title": task.get("title", ""),
+        "filename": f"{task.get('id')}.md" if task.get("id") else "",
+        "project": workspace,
+        "status": task.get("status", ""),
+        "type": task.get("type", "task"),
+        "priority": task.get("priority", "normal"),
+        "tags": task.get("tags") or [],
+        "body": task.get("body", ""),
+        "history": task.get("history") or [],
+        "worker": {
+            "name": worker.get("name", "Worker"),
+            "slot_index": slot_index,
+            "coord": {
+                "row": worker.get("row"),
+                "col": worker.get("col"),
+            },
+        },
+    }
+
+
+def _resolve_shell_cwd(workspace, configured_cwd):
+    configured_cwd = str(configured_cwd or "").strip()
+    cwd = os.path.join(workspace, configured_cwd) if configured_cwd and not os.path.isabs(configured_cwd) else (configured_cwd or workspace)
+    real = os.path.realpath(cwd)
+    root = os.path.realpath(workspace)
+    if real != root and not real.startswith(root + os.sep):
+        raise ValueError("Shell worker cwd escapes the workspace.")
+    if not os.path.isdir(real):
+        raise ValueError("Shell worker cwd does not exist.")
+    return real
+
+
+def _is_secret_env_name(name):
+    upper = str(name or "").upper()
+    return any(marker in upper for marker in SHELL_SECRET_ENV_MARKERS)
+
+
+def _minimal_shell_env(configured_env):
+    if sys.platform == "win32":
+        allowed = {"PATH", "SYSTEMROOT", "COMSPEC", "PATHEXT", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP"}
+        inherited = {
+            key: value for key, value in os.environ.items()
+            if key.upper() in allowed and not _is_secret_env_name(key)
+        }
+    else:
+        inherited = {
+            key: value for key, value in os.environ.items()
+            if (key in {"PATH", "HOME", "LANG", "TZ"} or key.startswith("LC_"))
+            and not _is_secret_env_name(key)
+        }
+
+    inherited.pop("BULLPEN_MCP_TOKEN", None)
+    for item in configured_env or []:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        if not key:
+            continue
+        if key == "BULLPEN_MCP_TOKEN":
+            raise ValueError("BULLPEN_MCP_TOKEN cannot be configured for Shell workers.")
+        inherited[key] = str(item.get("value") or "")
+    return inherited
+
+
+def _argv_json_limit():
+    if sys.platform == "win32":
+        return 24 * 1024
+    try:
+        return max(0, int(os.sysconf("SC_ARG_MAX")) - 4096)
+    except (AttributeError, ValueError, OSError):
+        return 128 * 1024
+
+
+def _prepare_shell_run(bp_dir, workspace, slot_index, worker, task):
+    payload = _shell_payload(task, worker, slot_index, workspace)
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    payload_json.encode("utf-8")
+
+    cwd = _resolve_shell_cwd(workspace, worker.get("cwd"))
+    env = _minimal_shell_env(worker.get("env"))
+    delivery = worker.get("ticket_delivery") or "stdin-json"
+    fallback_from = None
+    stdin_text = None
+    body_file = None
+    prelude_lines = []
+
+    command = str(worker.get("command") or "")
+    if sys.platform == "win32":
+        argv = ["cmd.exe", "/c", command]
+    else:
+        argv = ["/bin/sh", "-c", command]
+
+    if delivery == "argv-json":
+        payload_bytes = len(payload_json.encode("utf-8"))
+        limit = _argv_json_limit()
+        if payload_bytes > limit:
+            fallback_from = "argv-json"
+            delivery = "stdin-json"
+            prelude_lines.append(
+                f"[bullpen] payload {payload_bytes // 1024 + 1}KiB > argv limit, using stdin-json"
+            )
+        elif sys.platform == "win32":
+            argv.append(payload_json)
+        else:
+            argv.extend(["bullpen", payload_json])
+
+    if delivery == "stdin-json":
+        stdin_text = payload_json
+    elif delivery == "env-vars":
+        fd, body_file = tempfile.mkstemp(prefix="bullpen_ticket_body_")
+        with os.fdopen(fd, "w") as handle:
+            handle.write(task.get("body", ""))
+        env.update({
+            "BULLPEN_TICKET_ID": str(task.get("id") or ""),
+            "BULLPEN_TICKET_TITLE": str(task.get("title") or ""),
+            "BULLPEN_TICKET_FILENAME": f"{task.get('id')}.md" if task.get("id") else "",
+            "BULLPEN_PROJECT": workspace,
+            "BULLPEN_TICKET_STATUS": str(task.get("status") or ""),
+            "BULLPEN_TICKET_PRIORITY": str(task.get("priority") or ""),
+            "BULLPEN_TICKET_TAGS": json.dumps(task.get("tags") or []),
+            "BULLPEN_TICKET_BODY_FILE": body_file,
+        })
+
+    return PreparedShellRun(
+        argv=argv,
+        cwd=cwd,
+        env=env,
+        stdin_text=stdin_text,
+        timeout=max(1, min(int(worker.get("timeout_seconds") or 60), 600)),
+        delivery=delivery,
+        delivery_fallback_from=fallback_from,
+        body_file=body_file,
+        prelude_lines=prelude_lines,
+    )
 
 
 def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=None, ws_id=None):
@@ -666,6 +969,7 @@ class SubprocessRunner:
         task_id,
         argv,
         cwd,
+        env=None,
         stdin_text,
         timeout,
         socketio=None,
@@ -678,6 +982,7 @@ class SubprocessRunner:
         self.task_id = task_id
         self.argv = argv
         self.cwd = cwd
+        self.env = env
         self.stdin_text = stdin_text
         self.timeout = timeout
         self.socketio = socketio
@@ -699,6 +1004,7 @@ class SubprocessRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=self.cwd,
+            env=self.env,
             text=True,
             bufsize=1,
             **popen_kwargs,
@@ -818,6 +1124,382 @@ class SubprocessRunner:
             timed_out=self.timed_out,
             combined_lines=combined_lines,
         )
+
+
+def _run_shell(bp_dir, slot_index, task_id, worker_snapshot, prepared, socketio, ws_id=None):
+    started = time.time()
+    try:
+        prelude = "\n".join(prepared.prelude_lines or [])
+        runner = SubprocessRunner(
+            bp_dir=bp_dir,
+            slot_index=slot_index,
+            task_id=task_id,
+            argv=prepared.argv,
+            cwd=prepared.cwd,
+            env=prepared.env,
+            stdin_text=prepared.stdin_text,
+            timeout=prepared.timeout,
+            socketio=socketio,
+            ws_id=ws_id,
+            line_formatter=lambda line: line.rstrip("\n"),
+        )
+        if prelude and socketio:
+            _ws_emit(socketio, "worker:output", {"slot": slot_index, "lines": prelude.splitlines()}, ws_id)
+        completed = runner.run()
+        duration_ms = int((time.time() - started) * 1000)
+
+        if prelude:
+            completed.stdout = prelude + "\n" + completed.stdout
+            completed.combined_lines = prelude.splitlines() + completed.combined_lines
+
+        if completed.timed_out:
+            result = ShellResult(outcome="error", reason="timeout")
+        else:
+            result = _parse_shell_result(bp_dir, worker_snapshot, completed)
+
+        record = _append_shell_run_record(
+            bp_dir,
+            task_id,
+            worker_snapshot,
+            slot_index,
+            result,
+            completed,
+            prepared,
+            duration_ms,
+        )
+
+        if socketio:
+            _ws_emit(socketio, "worker:output:done", {
+                "slot": slot_index,
+                "lines": [line.rstrip("\n") for line in completed.combined_lines],
+                "reason": result.reason,
+            }, ws_id)
+
+        if result.outcome == "success":
+            if result.ticket_updates:
+                _apply_shell_ticket_updates(bp_dir, task_id, result.ticket_updates)
+            _on_agent_success(
+                bp_dir,
+                slot_index,
+                task_id,
+                "",
+                socketio,
+                agent_cwd=None,
+                ws_id=ws_id,
+                usage={},
+                disposition_override=result.disposition,
+                output_appender=lambda _worker: None,
+                allow_auto_actions=False,
+            )
+        elif result.outcome == "reroute":
+            _on_agent_error(
+                bp_dir,
+                slot_index,
+                task_id,
+                result.reason or "Shell worker requested blocked disposition",
+                socketio,
+                output="",
+                ws_id=ws_id,
+                non_retryable=True,
+            )
+        else:
+            _on_agent_error(
+                bp_dir,
+                slot_index,
+                task_id,
+                result.reason or f"Shell command failed with exit code {completed.returncode}",
+                socketio,
+                output="",
+                ws_id=ws_id,
+                non_retryable=False,
+            )
+    except Exception as exc:
+        _on_agent_error(bp_dir, slot_index, task_id, str(exc), socketio, ws_id=ws_id)
+    finally:
+        if prepared.body_file:
+            try:
+                os.unlink(prepared.body_file)
+            except OSError:
+                pass
+        with _process_lock:
+            _processes.pop((ws_id, slot_index), None)
+
+
+def _parse_shell_result(bp_dir, worker, completed):
+    stdout_text = (completed.stdout or "").strip()
+    parsed = None
+    if stdout_text:
+        try:
+            candidate = json.loads(stdout_text)
+            if isinstance(candidate, dict):
+                parsed = candidate
+        except json.JSONDecodeError:
+            parsed = None
+
+    if completed.returncode == SHELL_WORKER_EXIT_BLOCKED:
+        return ShellResult(
+            outcome="reroute",
+            disposition="blocked",
+            reason=_json_reason(parsed) or f"Shell command exited {SHELL_WORKER_EXIT_BLOCKED}",
+        )
+    if completed.returncode != 0:
+        return ShellResult(
+            outcome="error",
+            reason=_json_reason(parsed) or f"Shell command exited {completed.returncode}",
+        )
+
+    if not parsed:
+        return ShellResult(outcome="success", disposition=None, reason=None, ticket_updates=None)
+
+    disposition = parsed.get("disposition")
+    if disposition is not None:
+        disposition = str(disposition)
+        if not _valid_disposition(bp_dir, disposition):
+            return ShellResult(outcome="error", reason=f"Invalid disposition: {disposition}")
+
+    reason = parsed.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        return ShellResult(outcome="error", reason="Invalid reason in Shell worker result")
+
+    try:
+        ticket_updates = _validate_shell_ticket_updates(parsed.get("ticket_updates"))
+    except ValueError as exc:
+        return ShellResult(outcome="error", reason=str(exc))
+
+    return ShellResult(
+        outcome="success",
+        disposition=disposition,
+        reason=reason,
+        ticket_updates=ticket_updates,
+    )
+
+
+def _json_reason(parsed):
+    if isinstance(parsed, dict) and isinstance(parsed.get("reason"), str):
+        return parsed["reason"]
+    return None
+
+
+def _valid_disposition(bp_dir, disposition):
+    value = str(disposition or "").strip()
+    folded = value.casefold()
+    if folded in {"review", "done", "blocked"}:
+        return True
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    column_keys = {
+        str(col.get("key")) for col in config.get("columns", [])
+        if isinstance(col, dict) and col.get("key")
+    }
+    if value in column_keys:
+        return True
+    if folded.startswith("worker:"):
+        return bool(value[len("worker:"):].strip())
+    if folded.startswith("pass:"):
+        return value[len("pass:"):].strip().casefold() in {"left", "right", "up", "down", "random"}
+    if folded.startswith("random:"):
+        return True
+    return False
+
+
+def _validate_shell_ticket_updates(updates):
+    if updates is None:
+        return None
+    if not isinstance(updates, dict):
+        raise ValueError("ticket_updates must be an object")
+    allowed = {"title", "priority", "tags", "body_append"}
+    unknown = set(updates) - allowed
+    if unknown:
+        raise ValueError(f"ticket_updates contains disallowed field: {sorted(unknown)[0]}")
+    clean = {}
+    if "title" in updates:
+        title = str(updates["title"])
+        if len(title) > MAX_TITLE:
+            raise ValueError("ticket_updates.title is too long")
+        clean["title"] = title
+    if "priority" in updates:
+        priority = str(updates["priority"])
+        if priority not in VALID_PRIORITIES:
+            raise ValueError("ticket_updates.priority is invalid")
+        clean["priority"] = priority
+    if "tags" in updates:
+        tags = updates["tags"]
+        if not isinstance(tags, list):
+            raise ValueError("ticket_updates.tags must be a list")
+        if len(tags) > MAX_TAGS:
+            raise ValueError("ticket_updates.tags has too many entries")
+        clean_tags = []
+        for tag in tags:
+            if not isinstance(tag, str):
+                raise ValueError("ticket_updates.tags entries must be strings")
+            if len(tag) > MAX_TAG_LEN:
+                raise ValueError("ticket_updates.tags contains an overlong tag")
+            clean_tags.append(tag)
+        clean["tags"] = clean_tags
+    if "body_append" in updates:
+        body_append = str(updates["body_append"])
+        if len(body_append) > MAX_DESCRIPTION:
+            raise ValueError("ticket_updates.body_append is too long")
+        clean["body_append"] = body_append
+    return clean
+
+
+def _apply_shell_ticket_updates(bp_dir, task_id, updates):
+    updates = dict(updates or {})
+    body_append = updates.pop("body_append", None)
+    if body_append:
+        task = task_mod.read_task(bp_dir, task_id)
+        body = task.get("body", "") if task else ""
+        updates["body"] = body.rstrip() + "\n\n" + body_append + "\n"
+    if updates:
+        task_mod.update_task(bp_dir, task_id, updates)
+
+
+def _cap_bytes(text, limit=SHELL_OUTPUT_ARTIFACT_LIMIT):
+    data = (text or "").encode("utf-8", errors="replace")
+    if len(data) <= limit:
+        return data, False, len(data)
+    marker = b"\n[bullpen output truncated]\n"
+    return data[: max(0, limit - len(marker))] + marker, True, len(data)
+
+
+def _decode_artifact(data):
+    return data.decode("utf-8", errors="replace")
+
+
+def _output_excerpt(text):
+    data = (text or "").encode("utf-8", errors="replace")
+    if len(data) <= SHELL_OUTPUT_EXCERPT_BYTES * 2:
+        return _decode_artifact(data)
+    head = data[:SHELL_OUTPUT_EXCERPT_BYTES]
+    tail = data[-SHELL_OUTPUT_EXCERPT_BYTES:]
+    return _decode_artifact(head) + "\n\n[bullpen middle output omitted]\n\n" + _decode_artifact(tail)
+
+
+def _append_shell_run_record(bp_dir, task_id, worker, slot_index, result, completed, prepared, duration_ms):
+    task = task_mod.read_task(bp_dir, task_id)
+    if not task:
+        return None
+
+    output_block_id = f"shell-run-{_timestamp_id()}-slot{slot_index}"
+    artifact_dir = os.path.join(bp_dir, "logs", "worker-runs", task_id)
+    os.makedirs(artifact_dir, exist_ok=True)
+
+    stdout_data, stdout_truncated, stdout_observed = _cap_bytes(completed.stdout)
+    stderr_data, stderr_truncated, stderr_observed = _cap_bytes(completed.stderr)
+    stdout_path = os.path.join(artifact_dir, f"{output_block_id}.stdout.log")
+    stderr_path = os.path.join(artifact_dir, f"{output_block_id}.stderr.log")
+    atomic_write(stdout_path, _decode_artifact(stdout_data))
+    atomic_write(stderr_path, _decode_artifact(stderr_data))
+
+    stdout_rel = os.path.relpath(stdout_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
+    stderr_rel = os.path.relpath(stderr_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
+    timestamp = _now_iso()
+    history = list(task.get("history") or [])
+    row = {
+        "timestamp": timestamp,
+        "event": "worker_run",
+        "worker_type": "shell",
+        "worker_name": worker.get("name", "Shell"),
+        "worker_slot": slot_index,
+        "task_id": task_id,
+        "outcome": result.outcome,
+        "disposition": result.disposition or worker.get("disposition", "review"),
+        "reason": result.reason,
+        "exit_code": completed.returncode,
+        "duration_ms": duration_ms,
+        "delivery": prepared.delivery,
+        "delivery_fallback_from": prepared.delivery_fallback_from,
+        "stdout_bytes": len(stdout_data),
+        "stderr_bytes": len(stderr_data),
+        "stdout_observed_bytes": stdout_observed,
+        "stderr_observed_bytes": stderr_observed,
+        "stdout_truncated": stdout_truncated,
+        "stderr_truncated": stderr_truncated,
+        "stdout_artifact": stdout_rel,
+        "stderr_artifact": stderr_rel,
+        "body_excerpt_truncated": False,
+        "output_block_id": output_block_id,
+    }
+    history.append(row)
+
+    block = _build_shell_output_block(
+        timestamp,
+        worker,
+        result,
+        completed,
+        prepared,
+        row,
+        stdout_rel,
+        stderr_rel,
+        excerpt=False,
+    )
+    body = task.get("body", "")
+    proposed = body.rstrip() + "\n\n" + block
+    if len(proposed.encode("utf-8", errors="replace")) > TASK_BODY_LIMIT:
+        row["body_excerpt_truncated"] = True
+        block = _build_shell_output_block(
+            timestamp,
+            worker,
+            result,
+            completed,
+            prepared,
+            row,
+            stdout_rel,
+            stderr_rel,
+            excerpt=True,
+        )
+        proposed = body.rstrip() + "\n\n" + block
+    if len(proposed.encode("utf-8", errors="replace")) > TASK_BODY_LIMIT:
+        block = _build_shell_output_stub(timestamp, worker, result, prepared, row, stdout_rel, stderr_rel)
+        proposed = body.rstrip() + "\n\n" + block
+
+    task_mod.update_task(bp_dir, task_id, {"history": history, "body": proposed})
+    return row
+
+
+def _build_shell_output_block(timestamp, worker, result, completed, prepared, row, stdout_rel, stderr_rel, excerpt):
+    stdout_text = _output_excerpt(completed.stdout) if excerpt else (completed.stdout or "")
+    stderr_text = _output_excerpt(completed.stderr) if excerpt else (completed.stderr or "")
+    return (
+        "## Worker Output\n\n"
+        f"### {timestamp} - {worker.get('name', 'Shell')} (shell)\n\n"
+        f"Outcome: {result.outcome}\n"
+        f"Disposition: {result.disposition or worker.get('disposition', 'review')}\n"
+        f"Reason: {result.reason or 'none'}\n"
+        f"Exit code: {completed.returncode}\n"
+        f"Duration: {row['duration_ms'] / 1000:.3f}s\n"
+        f"Delivery: {prepared.delivery}\n"
+        f"stdout artifact: {stdout_rel}\n"
+        f"stderr artifact: {stderr_rel}\n\n"
+        "#### stdout\n\n"
+        "```text\n"
+        f"{stdout_text}\n"
+        "```\n\n"
+        "#### stderr\n\n"
+        "```text\n"
+        f"{stderr_text}\n"
+        "```\n"
+    )
+
+
+def _build_shell_output_stub(timestamp, worker, result, prepared, row, stdout_rel, stderr_rel):
+    return (
+        "## Worker Output\n\n"
+        f"### {timestamp} - {worker.get('name', 'Shell')} (shell)\n\n"
+        f"Outcome: {result.outcome}\n"
+        f"Disposition: {result.disposition or worker.get('disposition', 'review')}\n"
+        f"Reason: {result.reason or 'none'}\n"
+        f"Duration: {row['duration_ms'] / 1000:.3f}s\n"
+        f"Delivery: {prepared.delivery}\n"
+        f"stdout bytes: {row['stdout_bytes']} (observed {row['stdout_observed_bytes']})\n"
+        f"stderr bytes: {row['stderr_bytes']} (observed {row['stderr_observed_bytes']})\n"
+        f"stdout artifact: {stdout_rel}\n"
+        f"stderr artifact: {stderr_rel}\n"
+        "[Output omitted from ticket body; see artifacts.]\n"
+    )
 
 
 def is_non_retryable_provider_error(provider, *texts):
@@ -1194,7 +1876,19 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
     assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
 
 
-def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=None, ws_id=None, usage=None):
+def _on_agent_success(
+    bp_dir,
+    slot_index,
+    task_id,
+    output,
+    socketio,
+    agent_cwd=None,
+    ws_id=None,
+    usage=None,
+    disposition_override=None,
+    output_appender=None,
+    allow_auto_actions=True,
+):
     """Handle successful agent completion."""
     with _write_lock:
         layout = _load_layout(bp_dir)
@@ -1218,11 +1912,15 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
                     if usage_update:
                         task_mod.update_task(bp_dir, task_id, usage_update)
 
-        # Append output to task
-        _append_output(bp_dir, task_id, worker, output)
+        # Append output to task. Shell workers write structured Worker Output
+        # blocks before entering this shared success path.
+        if output_appender:
+            output_appender(worker)
+        else:
+            _append_output(bp_dir, task_id, worker, output)
 
         # Auto-commit if enabled
-        if worker.get("auto_commit") and agent_cwd:
+        if allow_auto_actions and worker.get("auto_commit") and agent_cwd:
             task = task_mod.read_task(bp_dir, task_id)
             task_title = task.get("title", "untitled") if task else "untitled"
             commit_hash = _auto_commit(agent_cwd, task_title, task_id)
@@ -1241,7 +1939,7 @@ def _on_agent_success(bp_dir, slot_index, task_id, output, socketio, agent_cwd=N
             queue.pop(0)
 
         # Disposition: move task to target column or hand off to another worker
-        disposition = worker.get("disposition", "review")
+        disposition = disposition_override or worker.get("disposition", "review")
         handed_off = False
         if disposition.startswith("worker:"):
             target_name = disposition[len("worker:"):].strip()

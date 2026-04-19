@@ -52,7 +52,7 @@ class Scheduler:
         current_time = now.strftime("%H:%M")
         current_ts = time.time()
 
-        # Collect workers to fire (slot_index, needs_auto_task) outside the lock
+        # Collect workers to fire outside the lock.
         to_fire = []
 
         with write_lock:
@@ -73,10 +73,11 @@ class Scheduler:
                 if activation == "at_time":
                     trigger_time = worker.get("trigger_time")
                     if trigger_time and trigger_time == current_time:
+                        activation_kind = activation
                         if not worker.get("trigger_every_day"):
                             worker["activation"] = "manual"
                             dirty = True
-                        to_fire.append((slot_index, worker))
+                        to_fire.append((slot_index, worker, activation_kind))
 
                 elif activation == "on_interval":
                     interval_min = worker.get("trigger_interval_minutes")
@@ -91,16 +92,24 @@ class Scheduler:
                     if interval_min and (current_ts - last_trigger) >= interval_min * 60:
                         worker["last_trigger_time"] = current_ts
                         dirty = True
-                        to_fire.append((slot_index, worker))
+                        to_fire.append((slot_index, worker, activation))
 
             if dirty:
                 from server.persistence import write_json
                 write_json(layout_path, normalize_layout(layout, config=config))
 
         # Fire workers outside the lock (start_worker acquires it internally via events)
-        for slot_index, worker in to_fire:
+        for slot_index, worker, trigger_kind in to_fire:
             if not worker.get("task_queue"):
                 # Auto-create an ephemeral task for self-directed workers
-                task = worker_mod.create_auto_task(self.bp_dir, slot_index, worker, self.socketio, self.ws_id)
+                task = worker_mod.create_auto_task(
+                    self.bp_dir,
+                    slot_index,
+                    worker,
+                    self.socketio,
+                    self.ws_id,
+                    trigger_kind=trigger_kind,
+                    trigger_label=trigger_kind,
+                )
                 log.info("Auto-created task %s for worker %s (slot %d)", task["id"], worker.get("name"), slot_index)
             worker_mod.start_worker(self.bp_dir, slot_index, self.socketio, self.ws_id)
