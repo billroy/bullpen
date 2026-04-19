@@ -49,8 +49,14 @@ def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
     assert "'buildWorkerDragImage'" in text
     assert "'canDropWorkerAtSlot'" in text
     assert "'dropWorkerOnSlot'" in text
+    assert "'updateSingletonWorkerDrag'" in text
+    assert "'endSingletonWorkerDrag'" in text
+    assert "'cancelSingletonWorkerDrag'" in text
     assert "'application/x-worker-group'" in text
     assert "@pointerdown=\"onPointerDown\"" in text
+    assert "@pointermove=\"onPointerMove\"" in text
+    assert "@lostpointercapture=\"onPointerLostCapture\"" in text
+    assert "pointerWorkerDrag" in text
     assert "shiftDragIntent" in text
     assert "const singleton = !!(e.shiftKey || this.shiftDragIntent)" in text
     assert "window._bullpenWorkerDrag = payload" in text
@@ -94,6 +100,12 @@ def test_shift_worker_drag_uses_single_card_move_or_swap_semantics():
     assert "return !!window._bullpenWorkerDrag || types.includes('application/x-worker-slot')" in text
     assert "moveWorkerDragToCoord(sourceSlot, coord)" in text
     assert "moveSingleWorkerToCoord(sourceSlot, coord)" in text
+    assert "updateSingletonWorkerDrag(sourceSlot, e)" in text
+    assert "endSingletonWorkerDrag(sourceSlot, e)" in text
+    assert "cancelSingletonWorkerDrag()" in text
     assert "if (this._isSingletonWorkerDrag()) {" in text
     assert "this.$root.moveWorker(source, occupied.slotIndex)" in text
     assert "this.$root.moveWorker(source, coord)" in text
+    assert ":update-singleton-worker-drag=\"updateSingletonWorkerDrag\"" in text
+    assert ":end-singleton-worker-drag=\"endSingletonWorkerDrag\"" in text
+    assert ":cancel-singleton-worker-drag=\"cancelSingletonWorkerDrag\"" in text

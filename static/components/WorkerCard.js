@@ -1,13 +1,15 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small', 'is-dragging': isDragging }"
          :style="layoutMode === 'small' ? { background: agentColor } : null"
          draggable="true"
          @pointerdown="onPointerDown"
+         @pointermove="onPointerMove"
          @pointerup="onPointerUp"
-         @pointercancel="onPointerUp"
+         @pointercancel="onPointerCancel"
+         @lostpointercapture="onPointerLostCapture"
          @dragstart="onDragStart"
          @dragend="onDragEnd"
          @dragover="onDragOver"
@@ -83,6 +85,7 @@ const WorkerCard = {
       hoveredHandle: null,
       shiftDragIntent: false,
       isDragging: false,
+      pointerWorkerDrag: null,
     };
   },
   mounted() {
@@ -102,6 +105,7 @@ const WorkerCard = {
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
     document.removeEventListener('click', this._closeMenu);
+    document.body.classList.remove('worker-singleton-dragging');
     this.removeDragImage();
   },
   computed: {
@@ -215,11 +219,79 @@ const WorkerCard = {
       if (e.button !== 0) return;
       if (e.target.closest('.connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) return;
       this.shiftDragIntent = !!e.shiftKey;
+      if (!e.shiftKey || typeof this.buildWorkerDragPayload !== 'function') return;
+      const payload = this.buildWorkerDragPayload(this.slotIndex, {
+        singleton: true,
+        clientX: e.clientX,
+        clientY: e.clientY,
+      });
+      this.pointerWorkerDrag = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        payload,
+        active: false,
+      };
+      window._bullpenWorkerDrag = payload;
+      this.isDragging = true;
+      document.body.classList.add('worker-singleton-dragging');
+      this.$el.setPointerCapture?.(e.pointerId);
+      e.preventDefault();
+      e.stopPropagation();
     },
-    onPointerUp() {
+    onPointerMove(e) {
+      const drag = this.pointerWorkerDrag;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!drag.active && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) <= 5) return;
+      drag.active = true;
+      window._bullpenWorkerDrag = drag.payload;
+      if (typeof this.updateSingletonWorkerDrag === 'function') {
+        this.updateSingletonWorkerDrag(drag.payload.source, e);
+      }
+    },
+    onPointerUp(e) {
+      const drag = this.pointerWorkerDrag;
+      if (drag) {
+        if (drag.active && typeof this.endSingletonWorkerDrag === 'function') {
+          this.endSingletonWorkerDrag(drag.payload.source, e);
+          window._bullpenSuppressWorkerClickUntil = Date.now() + 250;
+        } else if (typeof this.cancelSingletonWorkerDrag === 'function') {
+          this.cancelSingletonWorkerDrag();
+        }
+        this.pointerWorkerDrag = null;
+        this.$el.releasePointerCapture?.(drag.pointerId);
+        e.preventDefault();
+        e.stopPropagation();
+      }
       this.shiftDragIntent = false;
+      this.isDragging = false;
+      if (window._bullpenWorkerDrag?.source === drag?.payload?.source) window._bullpenWorkerDrag = null;
+      document.body.classList.remove('worker-singleton-dragging');
+    },
+    onPointerCancel(e) {
+      const drag = this.pointerWorkerDrag;
+      if (drag) {
+        if (typeof this.cancelSingletonWorkerDrag === 'function') this.cancelSingletonWorkerDrag();
+        this.pointerWorkerDrag = null;
+        this.$el.releasePointerCapture?.(drag.pointerId);
+      }
+      this.shiftDragIntent = false;
+      this.isDragging = false;
+      if (window._bullpenWorkerDrag?.source === drag?.payload?.source) window._bullpenWorkerDrag = null;
+      document.body.classList.remove('worker-singleton-dragging');
+    },
+    onPointerLostCapture(e) {
+      if (this.pointerWorkerDrag && this.pointerWorkerDrag.pointerId === e.pointerId) {
+        this.onPointerCancel(e);
+      }
     },
     onDragStart(e) {
+      if (this.pointerWorkerDrag) {
+        e.preventDefault();
+        return;
+      }
       const singleton = !!(e.shiftKey || this.shiftDragIntent);
       const payload = typeof this.buildWorkerDragPayload === 'function'
         ? this.buildWorkerDragPayload(this.slotIndex, {

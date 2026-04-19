@@ -116,6 +116,9 @@ const BullpenTab = {
             :build-worker-drag-image="buildWorkerDragImage"
             :can-drop-worker-at-slot="canDropWorkerAtSlot"
             :drop-worker-on-slot="dropWorkerOnSlot"
+            :update-singleton-worker-drag="updateSingletonWorkerDrag"
+            :end-singleton-worker-drag="endSingletonWorkerDrag"
+            :cancel-singleton-worker-drag="cancelSingletonWorkerDrag"
             :aria-rowindex="ariaRowIndex(item.coord)"
             :aria-colindex="ariaColIndex(item.coord)"
             :aria-label="'Worker ' + item.worker.name + ' at column ' + item.coord.col + ', row ' + item.coord.row"
@@ -690,6 +693,7 @@ const BullpenTab = {
       this.focusViewport();
     },
     onWorkerClick(e, item) {
+      if (window._bullpenSuppressWorkerClickUntil && Date.now() < window._bullpenSuppressWorkerClickUntil) return;
       if (e.target.closest('.connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
         return;
       }
@@ -1204,6 +1208,29 @@ const BullpenTab = {
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return false;
       return this.moveWorkerDragToCoord(sourceSlot, target.coord);
+    },
+    updateSingletonWorkerDrag(sourceSlot, e) {
+      const source = Number(sourceSlot);
+      const coord = this._workerDragCoordFromEvent(e);
+      if (Number.isInteger(source) && coord && this._setDropTarget(source, coord)) {
+        this.hoveredCoord = coord;
+        return true;
+      }
+      this.hoveredCoord = null;
+      this._clearDropTarget();
+      return false;
+    },
+    endSingletonWorkerDrag(sourceSlot, e) {
+      const source = Number(sourceSlot);
+      const coord = this._workerDragCoordFromEvent(e);
+      this.hoveredCoord = null;
+      this._clearDropTarget();
+      if (!Number.isInteger(source) || !coord) return false;
+      return this.moveSingleWorkerToCoord(source, coord);
+    },
+    cancelSingletonWorkerDrag() {
+      this.hoveredCoord = null;
+      this._clearDropTarget();
     },
     moveWorkerDragToCoord(sourceSlot, coord) {
       if (this._isSingletonWorkerDrag()) {

@@ -1852,6 +1852,13 @@ body {
   cursor: grabbing;
 }
 
+body.worker-singleton-dragging,
+body.worker-singleton-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .worker-card:hover {
   border-color: var(--accent);
 }

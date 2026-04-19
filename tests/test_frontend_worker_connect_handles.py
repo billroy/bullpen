@@ -117,6 +117,7 @@ def test_worker_card_exposes_drag_feedback_while_initiating_drag():
     text = _read("static/style.css")
     assert ".worker-card[draggable=\"true\"]:active" in text
     assert ".worker-card.is-dragging" in text
+    assert "body.worker-singleton-dragging" in text
     assert "cursor: grabbing;" in text
     assert ".worker-card-header {" in text
     assert "cursor: grab;" in text
