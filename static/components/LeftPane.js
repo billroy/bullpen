@@ -72,7 +72,7 @@ const LeftPane = {
           <div v-for="w in workerList" :key="w.slot"
                class="roster-item"
                :class="{ 'drag-over': rosterDragSlot === w.slot }"
-               :style="{ background: agentColor(w.agent) }"
+               :style="{ background: workerColor(w) }"
                @dragover.prevent="onRosterDragOver($event, w)"
                @dragleave="onRosterDragLeave"
                @drop="onRosterDrop($event, w.slot)">
@@ -113,6 +113,7 @@ const LeftPane = {
           name: s.name,
           state: s.state || 'idle',
           agent: s.agent,
+          type: s.type,
           taskQueueLength: Array.isArray(s.task_queue) ? s.task_queue.length : 0,
         } : null)
         .filter(Boolean);
@@ -180,6 +181,9 @@ const LeftPane = {
     },
     agentColor(agent) {
       return agentColor(agent);
+    },
+    workerColor(worker) {
+      return workerColor(worker);
     },
     workerTypeIcon(worker) {
       return getWorkerTypeIcon(worker);

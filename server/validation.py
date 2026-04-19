@@ -15,6 +15,7 @@ MAX_PAYLOAD_SIZE = 1_000_000  # 1MB
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
 VALID_AGENTS = {"claude", "codex", "gemini"}
+VALID_WORKER_COLOR_KEYS = {"claude", "codex", "gemini", "shell"}
 VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval"}
 VALID_DISPOSITIONS = {"review", "done"}
 VALID_THEMES = {
@@ -284,8 +285,8 @@ def _validate_provider_colors(val):
         raise ValidationError("provider_colors must be an object")
     sanitized = dict(DEFAULT_PROVIDER_COLORS)
     for k, v in val.items():
-        if k not in VALID_AGENTS:
-            raise ValidationError(f"Unknown agent in provider_colors: '{k}'")
+        if k not in VALID_WORKER_COLOR_KEYS:
+            raise ValidationError(f"Unknown key in provider_colors: '{k}'")
         if v is None:
             continue
         if not isinstance(v, str) or not HEX_COLOR_REGEX.match(v):

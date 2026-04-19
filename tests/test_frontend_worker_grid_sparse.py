@@ -151,6 +151,6 @@ def test_minimap_nodes_use_worker_header_colors():
     css = _read("static/style.css")
 
     assert "class=\"worker-minimap-dot\" :style=\"dot.style\"" in tab
-    assert "background: agentColor(item.worker?.agent)" in tab
+    assert "background: workerColor(item.worker)" in tab
     assert "worker-minimap-dot.status-working" not in css
     assert "worker-minimap-dot.status-queued" not in css

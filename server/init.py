@@ -10,6 +10,7 @@ DEFAULT_PROVIDER_COLORS = {
     "claude": "#da7756",
     "codex": "#5b6fd6",
     "gemini": "#3c7bf4",
+    "shell": "#64748b",
 }
 
 DEFAULT_CONFIG = {

@@ -571,7 +571,7 @@ const BullpenTab = {
           width: w + 'px',
           height: h + 'px',
           borderRadius: radius + 'px',
-          background: agentColor(item.worker?.agent),
+          background: workerColor(item.worker),
         },
       }));
     },

@@ -11,7 +11,7 @@ const MODEL_OPTIONS = {
   gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'],
 };
 
-const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4' };
+const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', shell: '#64748b' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
   ? window.Vue.reactive({ overrides: {} })
@@ -20,6 +20,15 @@ window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
 function agentColor(agent) {
   const overrides = window.BULLPEN_AGENT_COLORS.overrides || {};
   return overrides[agent] || DEFAULT_AGENT_COLORS[agent] || '#6B7280';
+}
+
+function workerColorKey(worker) {
+  if (worker?.type === 'shell') return 'shell';
+  return worker?.agent;
+}
+
+function workerColor(worker) {
+  return agentColor(workerColorKey(worker));
 }
 
 function isHumanWorker(worker) {

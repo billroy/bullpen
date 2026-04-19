@@ -511,13 +511,13 @@ const TopToolbar = {
             <button
               class="btn btn-icon provider-colors-btn"
               @click="toggleProviderColorsMenu"
-              title="Agent colors"
+              title="Worker colors"
             >
               <i data-lucide="palette" aria-hidden="true"></i>
             </button>
             <div v-if="showProviderColorsMenu" class="project-menu toolbar-menu provider-colors-menu">
-              <div class="provider-colors-title">Agent colors</div>
-              <div class="provider-colors-row" v-for="agent in ['claude','codex','gemini']" :key="agent">
+              <div class="provider-colors-title">Worker colors</div>
+              <div class="provider-colors-row" v-for="agent in ['claude','codex','gemini','shell']" :key="agent">
                 <span class="provider-colors-swatch" :style="{ background: providerColorValue(agent) }"></span>
                 <label class="provider-colors-label">{{ agent }}</label>
                 <input

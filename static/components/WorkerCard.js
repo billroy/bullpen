@@ -152,7 +152,7 @@ const WorkerCard = {
       return this.workerState === 'idle';
     },
     agentColor() {
-      return agentColor(this.worker.agent);
+      return workerColor(this.worker);
     },
     workerIcon() {
       return getWorkerTypeIcon(this.worker);
