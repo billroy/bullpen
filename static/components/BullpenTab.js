@@ -898,7 +898,16 @@ const BullpenTab = {
       return { col, row };
     },
     goToCoord(coord) {
-      this.setOrigin({ col: coord.col, row: coord.row });
+      const visibleCols = this.viewportPx.width / this.columnWidth;
+      const visibleRows = this.viewportPx.height / this.rowHeight;
+      const isVisible =
+        coord.col + 1 > this.viewportOrigin.col &&
+        coord.col < this.viewportOrigin.col + visibleCols &&
+        coord.row + 1 > this.viewportOrigin.row &&
+        coord.row < this.viewportOrigin.row + visibleRows;
+      if (!isVisible) {
+        this.setOrigin({ col: coord.col, row: coord.row });
+      }
       const item = this.itemAtCoord(coord);
       if (item) {
         this.selectWorker(item);
