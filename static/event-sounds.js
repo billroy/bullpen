@@ -237,11 +237,11 @@
   window.EventSounds = EventSounds;
   window.EVENT_SOUND_FLAGS_DEFAULTS = { ...DEFAULT_FLAGS };
   window.EVENT_SOUND_LABELS = [
-    { key: 'taskCreated',  label: 'Task created',  preview: 'playSpawn' },
-    { key: 'taskStarted',  label: 'Task started',  preview: 'playStart' },
-    { key: 'taskDone',     label: 'Task done',     preview: 'playDone' },
-    { key: 'taskDeleted',  label: 'Task deleted',  preview: 'playDespawn' },
-    { key: 'taskReverted', label: 'Task reverted to inbox', preview: 'playRevert' },
+    { key: 'taskCreated',  label: 'Ticket created',  preview: 'playSpawn' },
+    { key: 'taskStarted',  label: 'Ticket started',  preview: 'playStart' },
+    { key: 'taskDone',     label: 'Ticket done',     preview: 'playDone' },
+    { key: 'taskDeleted',  label: 'Ticket deleted',  preview: 'playDespawn' },
+    { key: 'taskReverted', label: 'Ticket reverted to inbox', preview: 'playRevert' },
     { key: 'workerError',  label: 'Worker error',  preview: 'playError' },
     { key: 'serverError',  label: 'Server error',  preview: 'playError' },
     { key: 'toast',        label: 'Toast notification', preview: 'playToast' },
