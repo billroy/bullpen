@@ -32,6 +32,7 @@
     taskDone: true,
     taskDeleted: true,
     taskReverted: false,
+    taskMoved: true,
     workerError: true,
     serverError: true,
     toast: true,
@@ -61,6 +62,7 @@
     _lastGlobal: 0,
     _pendingBurst: null,         // { kind, playFn, severity, timer }
     _taskStatus: new Map(),      // taskId → last-known status
+    _taskAssigned: new Map(),    // taskId → last-known assigned_to
     _layoutStates: new Map(),    // slotIndex → last-known worker state
 
     getFlags() {
@@ -82,7 +84,10 @@
     primeFromState(data) {
       const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
       for (const t of tasks) {
-        if (t && t.id) this._taskStatus.set(t.id, t.status || null);
+        if (t && t.id) {
+          this._taskStatus.set(t.id, t.status || null);
+          this._taskAssigned.set(t.id, t.assigned_to ?? null);
+        }
       }
       const slots = Array.isArray(data?.layout?.slots) ? data.layout.slots : [];
       slots.forEach((slot, i) => {
@@ -92,22 +97,42 @@
       setTimeout(() => { this._ready = true; }, READY_DELAY_MS);
     },
 
-    /** Called on every task:updated; returns the status transition kind, if any. */
+    /** Called on every task:updated; returns status + assignment diffs. */
     recordTaskUpdate(task) {
       if (!task || !task.id) return null;
-      const prev = this._taskStatus.get(task.id);
-      const next = task.status || null;
-      this._taskStatus.set(task.id, next);
-      if (prev === next) return null;
-      return { prev, next };
+      const prevStatus = this._taskStatus.get(task.id);
+      const nextStatus = task.status || null;
+      const prevAssigned = this._taskAssigned.has(task.id)
+        ? this._taskAssigned.get(task.id)
+        : undefined;
+      const nextAssigned = task.assigned_to ?? null;
+      this._taskStatus.set(task.id, nextStatus);
+      this._taskAssigned.set(task.id, nextAssigned);
+      const statusChanged = prevStatus !== nextStatus;
+      const assignedChanged = prevAssigned !== undefined && prevAssigned !== nextAssigned;
+      if (!statusChanged && !assignedChanged) return null;
+      return {
+        prev: prevStatus,
+        next: nextStatus,
+        statusChanged,
+        assignedChanged,
+        prevAssigned,
+        nextAssigned,
+      };
     },
 
     recordTaskCreate(task) {
-      if (task && task.id) this._taskStatus.set(task.id, task.status || null);
+      if (task && task.id) {
+        this._taskStatus.set(task.id, task.status || null);
+        this._taskAssigned.set(task.id, task.assigned_to ?? null);
+      }
     },
 
     recordTaskDelete(id) {
-      if (id) this._taskStatus.delete(id);
+      if (id) {
+        this._taskStatus.delete(id);
+        this._taskAssigned.delete(id);
+      }
     },
 
     /** Diff a layout:updated against last-known slot states; returns list of transitions. */
@@ -192,14 +217,23 @@
         const diff = this.recordTaskUpdate(task);
         if (!diff) return;
         const id = task.id;
-        if (diff.next === 'in_progress') {
-          this._fire('start', id, 'taskStarted', () => window.ambientAudio.playStart());
-        } else if (diff.next === 'done') {
-          this._fire('done', id, 'taskDone', () => window.ambientAudio.playDone());
-        } else if (diff.next === 'blocked') {
-          this._fire('error', id, 'workerError', () => window.ambientAudio.playError());
-        } else if (diff.next === 'inbox' && diff.prev && diff.prev !== 'inbox') {
-          this._fire('revert', id, 'taskReverted', () => window.ambientAudio.playRevert());
+        if (diff.statusChanged) {
+          if (diff.next === 'in_progress') {
+            this._fire('start', id, 'taskStarted', () => window.ambientAudio.playStart());
+            return;
+          } else if (diff.next === 'done') {
+            this._fire('done', id, 'taskDone', () => window.ambientAudio.playDone());
+            return;
+          } else if (diff.next === 'blocked') {
+            this._fire('error', id, 'workerError', () => window.ambientAudio.playError());
+            return;
+          } else if (diff.next === 'inbox' && diff.prev && diff.prev !== 'inbox') {
+            this._fire('revert', id, 'taskReverted', () => window.ambientAudio.playRevert());
+            return;
+          }
+        }
+        if (diff.assignedChanged || diff.statusChanged) {
+          this._fire('move', id, 'taskMoved', () => window.ambientAudio.playMove());
         }
       });
 
@@ -242,6 +276,7 @@
     { key: 'taskDone',     label: 'Ticket done',     preview: 'playDone' },
     { key: 'taskDeleted',  label: 'Ticket deleted',  preview: 'playDespawn' },
     { key: 'taskReverted', label: 'Ticket reverted to inbox', preview: 'playRevert' },
+    { key: 'taskMoved',    label: 'Ticket moved',    preview: 'playMove' },
     { key: 'workerError',  label: 'Worker error',  preview: 'playError' },
     { key: 'serverError',  label: 'Server error',  preview: 'playError' },
     { key: 'toast',        label: 'Toast notification', preview: 'playToast' },

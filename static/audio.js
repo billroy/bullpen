@@ -243,6 +243,12 @@ class AudioEngine {
     setTimeout(() => this._tone(784, 784, 0.12, 'sine', 0.25), 120);
   }
 
+  /** Ticket moved / reassigned: quiet short tick */
+  playMove() {
+    this._init();
+    this._tone(520, 520, 0.04, 'triangle', 0.12);
+  }
+
   /** Task reverted to inbox: descending minor third A4→F4 */
   playRevert() {
     this._init();
