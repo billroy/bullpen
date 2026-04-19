@@ -164,7 +164,7 @@ const TaskDetailPanel = {
 
         <div class="detail-output" v-if="agentOutput">
           <div class="detail-section-header">
-            <h3>Agent Output</h3>
+            <h3>Worker Output</h3>
             <button v-if="!readOnly" class="btn btn-sm btn-danger" @click="$emit('clear-output', task.id)">Clear</button>
           </div>
           <pre class="detail-output-content"><span v-for="line in parsedAgentOutputLines" :key="line.id" class="detail-output-line"><template v-if="line.commitHash">{{ line.prefix }}<button class="detail-output-commit" @click="openCommitDiff(line.commitHash)">{{ line.commitHash }}</button>{{ line.suffix }}</template><template v-else>{{ line.prefix }}</template></span></pre>
