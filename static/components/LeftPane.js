@@ -1,6 +1,6 @@
 const LeftPane = {
-  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'activeWorkspaceId', 'workspaces', 'quickCreateClearToken'],
-  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project', 'quick-create-task'],
+  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'activeWorkspaceId', 'workspaces'],
+  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
       <div v-if="projects" class="left-pane-section" :class="{ 'project-add-only': projects.length <= 1 }">
@@ -48,12 +48,6 @@ const LeftPane = {
           </select>
           <button class="btn btn-sm" @click="$emit('new-task')">+ New Ticket</button>
         </div>
-        <input
-          class="quick-create-input"
-          v-model="quickCreateText"
-          placeholder="Enter ticket title/description"
-          @keyup.enter="submitQuickCreate"
-        />
         <div class="inbox-list">
           <div v-if="filteredTasks.length === 0" class="empty-state">No tickets in {{ selectedColumnLabel }}</div>
           <div v-for="task in filteredTasks" :key="task.id"
@@ -130,9 +124,6 @@ const LeftPane = {
         this.selectedColumn = 'inbox';
       }
     },
-    quickCreateClearToken() {
-      this.quickCreateText = '';
-    },
     projectsLoaded: {
       immediate: true,
       handler(loaded) {
@@ -149,7 +140,6 @@ const LeftPane = {
     return {
       rosterDragSlot: null,
       selectedColumn: 'inbox',
-      quickCreateText: '',
       showProjectMenu: false,
       showEmptyProjectHint: false,
       emptyProjectHintInitialized: false,
@@ -182,19 +172,6 @@ const LeftPane = {
     onExternalCloseProjectMenu() {
       this.showProjectMenu = false;
       this.showEmptyProjectHint = false;
-    },
-    submitQuickCreate() {
-      const text = this.quickCreateText.trim();
-      if (!text) return;
-      const slashIdx = text.indexOf('/');
-      const payload = slashIdx >= 0
-        ? {
-            title: text.slice(0, slashIdx).trim(),
-            description: text.slice(slashIdx + 1).trim(),
-          }
-        : { title: text, description: '' };
-      if (!payload.title) return;
-      this.$emit('quick-create-task', payload);
     },
     onDragStart(e, taskId) {
       e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, taskId);
