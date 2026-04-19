@@ -43,13 +43,14 @@ const TopToolbar = {
     visiblePaletteResults() {
       if (this.paletteMode === 'command' || this.paletteMode === 'help') {
         const parsed = window.BullpenCommands?.parseCommandInput(this.quickCreateText) || { args: '' };
+        const limit = this.paletteQuery ? 10 : Infinity;
         let matches = window.BullpenCommands
-          ? window.BullpenCommands.filterCommands(this.paletteCommands || [], this.paletteQuery, 10)
+          ? window.BullpenCommands.filterCommands(this.paletteCommands || [], this.paletteQuery, limit)
           : [];
         if (window.BullpenCommands && parsed.command && parsed.args) {
           const direct = window.BullpenCommands.findCommand(this.paletteCommands || [], `>${parsed.command}`);
           if (direct?.command && !matches.some(command => command.id === direct.command.id)) {
-            matches = [direct.command, ...matches].slice(0, 10);
+            matches = [direct.command, ...matches].slice(0, limit);
           }
         }
         return matches.map(command => ({
