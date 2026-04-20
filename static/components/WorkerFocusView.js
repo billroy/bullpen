@@ -10,7 +10,7 @@ const WorkerFocusView = {
     <div class="focus-view">
       <div class="focus-header">
         <div class="focus-header-left">
-          <span class="focus-task-title">{{ task?.title || 'No task' }}</span>
+          <span class="focus-task-title">{{ task?.title || (isService ? 'Service log' : 'No task') }}</span>
           <span v-if="task?.type" class="status-pill">{{ task.type }}</span>
           <span v-if="task?.priority" class="status-pill" :class="'priority-' + task.priority">{{ task.priority }}</span>
           <span class="focus-worker-name">{{ worker?.name || 'Worker ' + slotIndex }}</span>
@@ -31,11 +31,11 @@ const WorkerFocusView = {
       </div>
       <div class="focus-status-bar">
         <span class="focus-status-state">
-          <span class="status-pill" :class="'status-' + (worker?.state || 'idle')">
-            {{ (worker?.state || 'idle').toUpperCase() }}
+          <span class="status-pill" :class="'status-' + workerState">
+            {{ workerState.toUpperCase() }}
           </span>
           <span v-if="isWorking && elapsed">{{ elapsed }} elapsed</span>
-          <span v-if="!isWorking && worker?.state === 'idle'">Completed</span>
+          <span v-if="!isWorking && !isService && workerState === 'idle'">Completed</span>
         </span>
         <span class="focus-status-lines">{{ outputLines.length.toLocaleString() }} lines</span>
       </div>
@@ -51,7 +51,13 @@ const WorkerFocusView = {
   },
   computed: {
     isWorking() {
-      return this.worker?.state === 'working';
+      return ['working', 'starting', 'running'].includes(this.workerState);
+    },
+    isService() {
+      return this.worker?.type === 'service';
+    },
+    workerState() {
+      return this.worker?.service_state?.state || this.worker?.state || 'idle';
     },
     outputText() {
       return (this.outputLines || []).join('\n');

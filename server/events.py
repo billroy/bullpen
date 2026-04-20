@@ -23,6 +23,7 @@ from server.usage import (
 )
 from server.model_aliases import normalize_model
 from server import workers as worker_mod
+from server import service_worker as service_worker_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server.validation import (
@@ -249,6 +250,13 @@ def register_events(socketio, app):
         if isinstance(payload, dict):
             payload["workspaceId"] = ws_id
         socketio.emit(event, payload, to=ws_id)
+
+    def _service_slot(data, event_name):
+        try:
+            return validate_slot(data or {}, max_slots=200)
+        except ValidationError as e:
+            emit("error", {"message": f"{event_name} {e}"})
+            return None
 
     def with_lock(fn):
         """Execute fn under write lock, emit error on failure."""
@@ -879,6 +887,43 @@ def register_events(socketio, app):
                 "workspaceId": ws_id,
             })
 
+    # --- Service worker events ---
+
+    @socketio.on("service:start")
+    def on_service_start(data):
+        ws_id, bp_dir = _resolve(data)
+        slot = _service_slot(data, "service:start")
+        if slot is None:
+            return
+        service_worker_mod.start_service(bp_dir, ws_id, slot, socketio)
+
+    @socketio.on("service:stop")
+    def on_service_stop(data):
+        ws_id, bp_dir = _resolve(data)
+        slot = _service_slot(data, "service:stop")
+        if slot is None:
+            return
+        service_worker_mod.stop_service(bp_dir, ws_id, slot, socketio)
+
+    @socketio.on("service:restart")
+    def on_service_restart(data):
+        ws_id, bp_dir = _resolve(data)
+        slot = _service_slot(data, "service:restart")
+        if slot is None:
+            return
+        service_worker_mod.restart_service(bp_dir, ws_id, slot, socketio)
+
+    @socketio.on("service:tail")
+    def on_service_tail(data):
+        ws_id, bp_dir = _resolve(data)
+        slot = _service_slot(data, "service:tail")
+        if slot is None:
+            return
+        service_worker_mod.tail_service(
+            bp_dir, ws_id, slot, socketio,
+            max_bytes=(data or {}).get("max_bytes", 65536),
+        )
+
     # --- Project events ---
 
     def _activate_and_broadcast_project(manager, ws_id):
@@ -1044,6 +1089,7 @@ def register_events(socketio, app):
             emit("error", {"message": "Cannot remove the startup project"})
             return
 
+        service_worker_mod.stop_workspace_services(ws_id, wait=True)
         manager.remove_project(ws_id)
         with _chat_lock:
             _chat_tabs.pop(ws_id, None)

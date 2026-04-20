@@ -612,6 +612,24 @@ const app = createApp({
       outputBuffers[slot].length = 0;
       _appendLines(outputBuffers[slot], data.lines || []);
     });
+    socket.on('service:state', (data) => {
+      const wsId = data.workspaceId || activeWorkspaceId.value;
+      const ws = _getWs(wsId);
+      const slot = Number(data.slot);
+      const target = ws.layout?.slots?.[slot];
+      if (target) {
+        target.service_state = data;
+        target.state = data.state || target.state;
+        target.started_at = data.started_at || null;
+      }
+      if (!_isActive(wsId)) ws.unseenActivity++;
+    });
+    socket.on('service:log', (data) => {
+      const slot = data.slot;
+      _ensureBuffer(slot);
+      if (data.reset) outputBuffers[slot].length = 0;
+      _appendLines(outputBuffers[slot], data.lines || []);
+    });
 
     // Helper to attach workspaceId to outgoing events
     function _wsData(data) {
@@ -731,8 +749,20 @@ const app = createApp({
 
     // Execution actions
     function assignTask(taskId, slot) { socket.emit('task:assign', _wsData({ task_id: taskId, slot })); }
-    function startWorkerSlot(slot) { socket.emit('worker:start', _wsData({ slot })); }
-    function stopWorkerSlot(slot) { socket.emit('worker:stop', _wsData({ slot })); }
+    function _workerAt(slot) {
+      return state.layout?.slots?.[slot] || null;
+    }
+    function startWorkerSlot(slot) {
+      const worker = _workerAt(slot);
+      socket.emit(worker?.type === 'service' ? 'service:start' : 'worker:start', _wsData({ slot }));
+    }
+    function stopWorkerSlot(slot) {
+      const worker = _workerAt(slot);
+      socket.emit(worker?.type === 'service' ? 'service:stop' : 'worker:stop', _wsData({ slot }));
+    }
+    function restartServiceSlot(slot) {
+      socket.emit('service:restart', _wsData({ slot }));
+    }
 
     // Focus tab management
     function openFocusTab(slotIndex) {
@@ -745,7 +775,11 @@ const app = createApp({
       activeTab.value = 'focus-' + slotIndex;
       // Ensure reactive buffer and request catchup
       _ensureBuffer(slotIndex);
-      socket.emit('worker:output:request', _wsData({ slot: slotIndex }));
+      if (worker.type === 'service') {
+        socket.emit('service:tail', _wsData({ slot: slotIndex }));
+      } else {
+        socket.emit('worker:output:request', _wsData({ slot: slotIndex }));
+      }
     }
     function closeFocusTab(slotIndex) {
       const idx = focusTabs.findIndex(t => t.slotIndex === slotIndex);
@@ -1180,7 +1214,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, restartServiceSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, multipleWorkspaces,
       transferSlot, transferMode, openTransfer, transferWorker,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,

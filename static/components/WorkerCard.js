@@ -46,9 +46,10 @@ const WorkerCard = {
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
           <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
             <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
-            <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Run</span></button>
-            <button v-if="isWorking" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
-            <button v-if="isWorking" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
+            <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ isService ? 'Start' : 'Run' }}</span></button>
+            <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
+            <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
+            <button v-if="canStop" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
             <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
             <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
             <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
@@ -70,8 +71,8 @@ const WorkerCard = {
             <span class="worker-queue-title">{{ t.title }}</span>
           </div>
         </div>
-        <div v-else class="worker-card-empty">Idle</div>
-        <div v-if="showOutputPane && isWorking && lastOutput" class="worker-card-output">
+        <div v-else class="worker-card-empty">{{ emptyLabel }}</div>
+        <div v-if="showOutputPane && (isWorking || isService) && lastOutput" class="worker-card-output">
           <pre>{{ lastOutput }}</pre>
         </div>
       </div>
@@ -119,13 +120,15 @@ const WorkerCard = {
     passConnectsToNeighbor() {
       return !!(this.passDir && this.neighborSlots && this.neighborSlots[this.passDir] != null);
     },
-    workerState() { return this.worker.state || 'idle'; },
-    isWorking() { return this.workerState === 'working'; },
+    workerState() { return this.worker.service_state?.state || this.worker.state || 'idle'; },
+    isWorking() { return ['working', 'starting', 'running'].includes(this.workerState); },
     showOutputPane() {
       return this.layoutMode !== 'small';
     },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
+      if (this.isService && this.workerState === 'running') return `RUNNING ${this.elapsed}`;
+      if (this.isService && this.workerState === 'starting') return `STARTING ${this.elapsed}`;
       if (this.isWorking) return `BUSY ${this.elapsed}`;
       return this.workerState.toUpperCase();
     },
@@ -137,7 +140,18 @@ const WorkerCard = {
       return this.taskQueueCount > 0 ? `${name} (${this.taskQueueCount})` : name;
     },
     canStart() {
+      if (this.isService) return ['idle', 'stopped', 'crashed'].includes(this.workerState);
       return this.workerState === 'idle' && !this.isDisabledType;
+    },
+    canStop() {
+      if (this.isService) return ['starting', 'running'].includes(this.workerState);
+      return this.isWorking;
+    },
+    canRestart() {
+      return this.isService && ['idle', 'stopped', 'running', 'crashed'].includes(this.workerState);
+    },
+    canWatch() {
+      return this.isService || this.isWorking;
     },
     canConfigure() {
       return !this.isUnknownType;
@@ -149,7 +163,7 @@ const WorkerCard = {
       return this.worker.paused === true;
     },
     canMove() {
-      return this.workerState === 'idle';
+      return this.workerState === 'idle' || (this.isService && ['stopped', 'crashed'].includes(this.workerState));
     },
     agentColor() {
       return workerColor(this.worker);
@@ -173,10 +187,9 @@ const WorkerCard = {
       return isUnknownWorkerType(this.worker);
     },
     isDisabledType() {
-      return this.isService || this.isEval || this.isUnknownType;
+      return this.isEval || this.isUnknownType;
     },
     disabledTypeMessage() {
-      if (this.isService) return 'Service lifecycle pending';
       if (this.isUnknownType) return 'Worker type not installed';
       if (this.isEval) return 'Eval workers reserved for a future release';
       return '';
@@ -193,7 +206,7 @@ const WorkerCard = {
     },
     lastOutput() {
       // Prefer live output buffer when working
-      if (this.isWorking && this.outputLines?.length) {
+      if ((this.isWorking || this.isService) && this.outputLines?.length) {
         return this.outputLines.slice(-5).join('\n');
       }
       if (!this.worker.task_queue?.length || !this.tasks) return '';
@@ -210,11 +223,15 @@ const WorkerCard = {
       const output = task.body.substring(idx + markerLen).trim();
       const lines = output.split('\n');
       return lines.slice(-5).join('\n');
+    },
+    emptyLabel() {
+      if (this.isService) return this.workerState === 'idle' ? 'Stopped' : this.workerState;
+      return 'Idle';
     }
   },
   methods: {
     onBodyClick() {
-      if (this.isWorking) {
+      if (this.isWorking || this.isService) {
         this.$emit('open-focus', this.slotIndex);
       }
     },
@@ -527,6 +544,10 @@ const WorkerCard = {
     menuStop() {
       this.closeMenuAndRestoreFocus();
       this.$root.stopWorkerSlot(this.slotIndex);
+    },
+    menuRestart() {
+      this.closeMenuAndRestoreFocus();
+      this.$root.restartServiceSlot(this.slotIndex);
     },
     menuPause() {
       this.closeMenuAndRestoreFocus();

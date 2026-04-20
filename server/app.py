@@ -10,6 +10,7 @@ import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
 import shutil
+import atexit
 from urllib.parse import urlparse
 
 from flask import (
@@ -35,9 +36,11 @@ from server.scheduler import Scheduler
 from server.teams import list_teams
 from server.worker_types import ViewerContext, normalize_layout, serialize_layout
 from server.workspace_manager import WorkspaceManager
+from server import service_worker as service_worker_mod
 
 
 socketio = SocketIO()
+_service_worker_atexit_registered = False
 
 # Set of socket.io sids that authenticated via mcp_token (agent/MCP clients).
 # Used by event handlers to distinguish agent-originated updates from user
@@ -189,6 +192,10 @@ def create_app(
         mcp_token = _secrets.token_urlsafe(32)
     app.config["host"] = host
     app.config["port"] = port
+    global _service_worker_atexit_registered
+    if not _service_worker_atexit_registered:
+        atexit.register(service_worker_mod.stop_all_services)
+        _service_worker_atexit_registered = True
     app.config["mcp_token"] = mcp_token
     for ws in manager.all_workspaces():
         config = read_json(os.path.join(ws.bp_dir, "config.json"))
