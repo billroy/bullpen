@@ -39,7 +39,7 @@ const WorkerCard = {
         </div>
         <div class="worker-card-actions">
           <span class="worker-card-header-status">
-            <span v-if="workerState !== 'idle' || isPaused" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
+            <span v-if="(workerState !== 'idle' || isPaused) && !pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
               {{ statusLabel }}
             </span>
           </span>
@@ -71,7 +71,12 @@ const WorkerCard = {
             <span class="worker-queue-title">{{ t.title }}</span>
           </div>
         </div>
-        <div v-else class="worker-card-empty">{{ emptyLabel }}</div>
+        <div v-else class="worker-card-empty">
+          <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
+            {{ statusLabel }}
+          </span>
+          <template v-else>{{ emptyLabel }}</template>
+        </div>
         <div v-if="showOutputPane && (isWorking || isService) && lastOutput" class="worker-card-output">
           <pre>{{ lastOutput }}</pre>
         </div>
@@ -124,6 +129,9 @@ const WorkerCard = {
     isWorking() { return ['working', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState); },
     showOutputPane() {
       return this.layoutMode !== 'small';
+    },
+    pillInBody() {
+      return this.layoutMode !== 'small' && this.isService && (this.workerState !== 'idle' || this.isPaused);
     },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
