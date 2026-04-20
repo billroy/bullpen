@@ -364,7 +364,7 @@ const BullpenTab = {
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : 4;
     },
     layoutMode() {
-      return this.rowHeight < 80 ? 'small' : 'medium';
+      return this.rowHeight < 40 ? 'small' : 'medium';
     },
     columnWidth() {
       if (this.draggingColumnWidth !== null) {
