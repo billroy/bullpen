@@ -314,6 +314,34 @@ class TestWorkerEvents:
         assert final_layout["slots"][0]["task_queue"] == []
         assert final_layout["slots"][0]["state"] == "idle"
 
+    def test_add_service_worker_persists_service_defaults(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "service",
+            "fields": {
+                "name": "Preview Server",
+                "command": "python3 app.py",
+                "pre_start": "git fetch",
+                "health_type": "http",
+                "health_url": "http://localhost:3000/health",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        worker = layout["slots"][0]
+        assert worker["type"] == "service"
+        assert worker["name"] == "Preview Server"
+        assert worker["activation"] == "on_drop"
+        assert worker["disposition"] == "review"
+        assert worker["command"] == "python3 app.py"
+        assert worker["pre_start"] == "git fetch"
+        assert worker["ticket_action"] == "start-if-stopped-else-restart"
+        assert worker["health_type"] == "http"
+        assert worker["health_url"] == "http://localhost:3000/health"
+        assert worker["state"] == "idle"
+        assert worker["task_queue"] == []
+
     def test_add_worker_persists(self, client):
         c, app = client
         c.emit("worker:add", {"slot": 2, "profile": "code-reviewer"})
@@ -481,6 +509,55 @@ class TestWorkerEvents:
         assert worker["timeout_seconds"] == 45
         assert worker["ticket_delivery"] == "env-vars"
         assert worker["env"] == [{"key": "FOO", "value": "bar"}]
+        assert worker["task_queue"] == []
+        assert worker["state"] == "idle"
+
+    def test_paste_service_worker_preserves_type_and_service_fields(self, client):
+        c, _ = client
+        c.emit("worker:paste", {
+            "coord": {"col": 5, "row": 3},
+            "worker": {
+                "type": "service",
+                "name": "Service Copy",
+                "activation": "on_drop",
+                "disposition": "review",
+                "max_retries": 1,
+                "command": "python3 app.py",
+                "cwd": "server",
+                "pre_start": "git fetch",
+                "ticket_action": "restart",
+                "startup_grace_seconds": 3,
+                "startup_timeout_seconds": 90,
+                "health_type": "shell",
+                "health_command": "curl -fsS http://localhost:3000/health",
+                "health_interval_seconds": 10,
+                "health_timeout_seconds": 4,
+                "health_failure_threshold": 5,
+                "stop_timeout_seconds": 8,
+                "log_max_bytes": 123456,
+                "env": [{"key": "HOSTED_PORT", "value": "3000"}],
+                "task_queue": ["secret-task"],
+                "state": "working",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        worker = next(s for s in layout["slots"] if s)
+        assert worker["type"] == "service"
+        assert worker["name"] == "Service Copy"
+        assert worker["command"] == "python3 app.py"
+        assert worker["cwd"] == "server"
+        assert worker["pre_start"] == "git fetch"
+        assert worker["ticket_action"] == "restart"
+        assert worker["startup_grace_seconds"] == 3
+        assert worker["startup_timeout_seconds"] == 90
+        assert worker["health_type"] == "shell"
+        assert worker["health_command"] == "curl -fsS http://localhost:3000/health"
+        assert worker["health_interval_seconds"] == 10
+        assert worker["health_timeout_seconds"] == 4
+        assert worker["health_failure_threshold"] == 5
+        assert worker["stop_timeout_seconds"] == 8
+        assert worker["log_max_bytes"] == 123456
+        assert worker["env"] == [{"key": "HOSTED_PORT", "value": "3000"}]
         assert worker["task_queue"] == []
         assert worker["state"] == "idle"
 

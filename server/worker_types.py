@@ -8,8 +8,12 @@ from dataclasses import dataclass
 from server.model_aliases import normalize_model
 
 
-VALID_WORKER_TYPES = {"ai", "shell", "eval"}
+VALID_WORKER_TYPES = {"ai", "shell", "service", "eval"}
 RUNTIME_FIELDS = {"task_queue", "state", "started_at"}
+SERVICE_TICKET_ACTIONS = {"start-if-stopped-else-restart", "restart", "start-if-stopped"}
+SERVICE_HEALTH_TYPES = {"none", "http", "shell"}
+SERVICE_CRASH_POLICIES = {"stay-crashed"}
+SERVICE_LOG_MAX_BYTES_DEFAULT = 5 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,36 @@ class ShellWorkerType(WorkerType):
         return "neutral"
 
 
+class ServiceWorkerType(WorkerType):
+    type_id = "service"
+
+    def validate_config(self, slot):
+        errors = []
+        if not str(slot.get("command") or "").strip():
+            errors.append("Service workers require a command.")
+        for item in slot.get("env") or []:
+            key = str((item or {}).get("key") or "").strip()
+            if key == "BULLPEN_MCP_TOKEN" or key.startswith("BULLPEN_"):
+                errors.append(f"{key} cannot be configured for Service workers.")
+        health_type = str(slot.get("health_type") or "none")
+        if health_type == "http" and not str(slot.get("health_url") or "").strip():
+            errors.append("HTTP health checks require a URL.")
+        if health_type == "shell" and not str(slot.get("health_command") or "").strip():
+            errors.append("Shell health checks require a command.")
+        return errors
+
+    def default_icon(self):
+        return "server-cog"
+
+    def default_color(self):
+        return "service"
+
+    def runnable(self):
+        # Phase 1 only persists/configures service slots. The lifecycle
+        # controller lands in the next phase.
+        return False
+
+
 class EvalWorkerType(WorkerType):
     type_id = "eval"
 
@@ -85,6 +119,7 @@ class UnknownWorkerType(WorkerType):
 WORKER_TYPES = {
     "ai": AIWorkerType(),
     "shell": ShellWorkerType(),
+    "service": ServiceWorkerType(),
     "eval": EvalWorkerType(),
 }
 
@@ -174,6 +209,32 @@ def normalize_worker_slot(raw, *, index, config):
             delivery = "stdin-json"
         slot["ticket_delivery"] = delivery
         slot["env"] = _normalize_env(slot.get("env"))
+    elif type_id == "service":
+        slot["command"] = str(slot.get("command") or "")
+        slot["cwd"] = str(slot.get("cwd") or "")
+        slot["pre_start"] = str(slot.get("pre_start") or "")
+        action = str(slot.get("ticket_action") or "start-if-stopped-else-restart")
+        if action not in SERVICE_TICKET_ACTIONS:
+            action = "start-if-stopped-else-restart"
+        slot["ticket_action"] = action
+        slot["startup_grace_seconds"] = max(0, min(_safe_int(slot.get("startup_grace_seconds"), 2), 3600))
+        slot["startup_timeout_seconds"] = max(1, min(_safe_int(slot.get("startup_timeout_seconds"), 60), 86400))
+        health_type = str(slot.get("health_type") or "none")
+        if health_type not in SERVICE_HEALTH_TYPES:
+            health_type = "none"
+        slot["health_type"] = health_type
+        slot["health_url"] = str(slot.get("health_url") or "")
+        slot["health_command"] = str(slot.get("health_command") or "")
+        slot["health_interval_seconds"] = max(1, min(_safe_int(slot.get("health_interval_seconds"), 5), 3600))
+        slot["health_timeout_seconds"] = max(1, min(_safe_int(slot.get("health_timeout_seconds"), 2), 3600))
+        slot["health_failure_threshold"] = max(1, min(_safe_int(slot.get("health_failure_threshold"), 3), 100))
+        on_crash = str(slot.get("on_crash") or "stay-crashed")
+        if on_crash not in SERVICE_CRASH_POLICIES:
+            on_crash = "stay-crashed"
+        slot["on_crash"] = on_crash
+        slot["stop_timeout_seconds"] = max(0, min(_safe_int(slot.get("stop_timeout_seconds"), 5), 3600))
+        slot["log_max_bytes"] = max(1024, min(_safe_int(slot.get("log_max_bytes"), SERVICE_LOG_MAX_BYTES_DEFAULT), 1024 * 1024 * 1024))
+        slot["env"] = _normalize_env(slot.get("env"))
 
     return slot
 
@@ -198,9 +259,10 @@ def serialize_worker_slot(slot, *, viewer):
     if slot is None:
         return None
     out = copy.deepcopy(slot)
-    if out.get("type") == "shell" and not viewer.can_edit:
-        if "command" in out:
-            out["command"] = "<redacted>"
+    if out.get("type") in ("shell", "service") and not viewer.can_edit:
+        for key in ("command", "pre_start", "health_command"):
+            if key in out:
+                out[key] = "<redacted>"
         if isinstance(out.get("env"), list):
             redacted = []
             for item in out["env"]:

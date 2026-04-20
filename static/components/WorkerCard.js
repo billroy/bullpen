@@ -163,6 +163,9 @@ const WorkerCard = {
     isShell() {
       return isShellWorker(this.worker);
     },
+    isService() {
+      return isServiceWorker(this.worker);
+    },
     isEval() {
       return isEvalWorker(this.worker);
     },
@@ -170,9 +173,10 @@ const WorkerCard = {
       return isUnknownWorkerType(this.worker);
     },
     isDisabledType() {
-      return this.isEval || this.isUnknownType;
+      return this.isService || this.isEval || this.isUnknownType;
     },
     disabledTypeMessage() {
+      if (this.isService) return 'Service lifecycle pending';
       if (this.isUnknownType) return 'Worker type not installed';
       if (this.isEval) return 'Eval workers reserved for a future release';
       return '';

@@ -296,6 +296,12 @@ const BullpenTab = {
               <i data-lucide="terminal" aria-hidden="true"></i>
               <span>Shell</span>
             </button>
+            <button class="worker-type-tab" :class="{ active: libraryMode === 'service' }"
+                    role="tab" :aria-selected="libraryMode === 'service'"
+                    @click="libraryMode = 'service'">
+              <i data-lucide="server-cog" aria-hidden="true"></i>
+              <span>Service</span>
+            </button>
             <button class="worker-type-tab worker-type-tab--disabled"
                     role="tab" aria-selected="false" disabled
                     title="Reserved for a future release">
@@ -323,6 +329,13 @@ const BullpenTab = {
                  @click="addShellWorker(ex)">
               <span class="profile-name">{{ ex.name }}</span>
               <span class="profile-agent">{{ ex.description }}</span>
+            </div>
+          </div>
+          <div v-else-if="libraryMode === 'service'" class="modal-body profile-library">
+            <div class="profile-item profile-item--blank"
+                 @click="addServiceWorker()">
+              <span class="profile-name">Blank service worker</span>
+              <span class="profile-agent">long-running process</span>
             </div>
           </div>
         </div>
@@ -1127,10 +1140,26 @@ const BullpenTab = {
       });
       this.closeLibrary();
     },
+    addServiceWorker() {
+      this.$emit('add-worker', {
+        coord: this.selectedAddCoord,
+        type: 'service',
+        fields: {
+          name: 'Service worker',
+          activation: 'on_drop',
+          ticket_action: 'start-if-stopped-else-restart',
+        },
+      });
+      this.closeLibrary();
+    },
     workerFieldsForClipboard(worker) {
       const fields = ['type', 'profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt',
         'max_retries', 'use_worktree', 'auto_commit', 'auto_pr', 'trigger_time', 'trigger_interval_minutes',
-        'trigger_every_day', 'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env', 'icon', 'color', 'avatar'];
+        'trigger_every_day', 'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env',
+        'pre_start', 'ticket_action', 'startup_grace_seconds', 'startup_timeout_seconds',
+        'health_type', 'health_url', 'health_command', 'health_interval_seconds',
+        'health_timeout_seconds', 'health_failure_threshold', 'on_crash',
+        'stop_timeout_seconds', 'log_max_bytes', 'icon', 'color', 'avatar'];
       const copy = {};
       for (const key of fields) {
         if (worker[key] !== undefined) copy[key] = JSON.parse(JSON.stringify(worker[key]));

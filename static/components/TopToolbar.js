@@ -517,7 +517,7 @@ const TopToolbar = {
             </button>
             <div v-if="showProviderColorsMenu" class="project-menu toolbar-menu provider-colors-menu">
               <div class="provider-colors-title">Worker colors</div>
-              <div class="provider-colors-row" v-for="agent in ['claude','codex','gemini','shell']" :key="agent">
+              <div class="provider-colors-row" v-for="agent in ['claude','codex','gemini','shell','service']" :key="agent">
                 <span class="provider-colors-swatch" :style="{ background: providerColorValue(agent) }"></span>
                 <label class="provider-colors-label">{{ agent }}</label>
                 <input

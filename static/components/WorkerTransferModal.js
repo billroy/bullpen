@@ -32,8 +32,8 @@ const WorkerTransferModal = {
             <input type="checkbox" v-model="copyProfile">
             Copy worker profile to destination
           </label>
-          <div v-if="worker.type === 'shell'" class="shell-warning" style="margin-top: 12px;">
-            <strong>Shell worker:</strong> the command and env values transfer
+          <div v-if="worker.type === 'shell' || worker.type === 'service'" class="shell-warning" style="margin-top: 12px;">
+            <strong>{{ worker.type === 'service' ? 'Service' : 'Shell' }} worker:</strong> the command and env values transfer
             in plaintext. Review them before sending to another workspace.
           </div>
         </div>

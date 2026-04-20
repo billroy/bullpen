@@ -48,6 +48,8 @@ def test_bullpen_tab_worker_clipboard_preserves_shell_fields():
     assert "workerFieldsForClipboard(worker)" in text
     assert "'type', 'profile'" in text
     assert "'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env'" in text
+    assert "'pre_start', 'ticket_action', 'startup_grace_seconds', 'startup_timeout_seconds'" in text
+    assert "'health_type', 'health_url', 'health_command', 'health_interval_seconds'" in text
     assert "copy[key] = JSON.parse(JSON.stringify(worker[key]));" in text
 
 

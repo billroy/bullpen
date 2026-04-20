@@ -805,14 +805,14 @@ const app = createApp({
       }
       showColumnManager.value = false;
     }
-    function _hasShellWorkers() {
+    function _hasPlaintextCommandWorkers() {
       const slots = state.layout?.slots || [];
-      return slots.some(s => s && s.type === 'shell');
+      return slots.some(s => s && (s.type === 'shell' || s.type === 'service'));
     }
     function saveTeam(name) {
-      if (_hasShellWorkers()) {
+      if (_hasPlaintextCommandWorkers()) {
         const ok = confirm(
-          'This team includes Shell workers. Their commands and env values will be saved in plaintext.\n\nContinue saving?'
+          'This team includes command-based workers. Their commands and env values will be saved in plaintext.\n\nContinue saving?'
         );
         if (!ok) return;
       }

@@ -117,6 +117,49 @@ def test_shell_slot_round_trips_through_team_save_load(tmp_workspace):
     assert loaded["slots"][0]["state"] == "idle"
 
 
+def test_service_slot_normalizes_defaults_and_round_trips_through_team(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    service = {
+        "type": "service",
+        "row": 0,
+        "col": 0,
+        "name": "Preview Server",
+        "command": "python3 app.py",
+        "pre_start": "git fetch",
+        "env": [{"key": "HOSTED_PORT", "value": "3000"}],
+        "health_type": "http",
+        "health_url": "http://localhost:3000/health",
+        "task_queue": ["running-ticket"],
+        "state": "working",
+    }
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    layout = normalize_layout({"slots": [service]}, config=config)
+    slot = layout["slots"][0]
+
+    assert slot["type"] == "service"
+    assert slot["ticket_action"] == "start-if-stopped-else-restart"
+    assert slot["startup_grace_seconds"] == 2
+    assert slot["startup_timeout_seconds"] == 60
+    assert slot["health_interval_seconds"] == 5
+    assert slot["health_timeout_seconds"] == 2
+    assert slot["health_failure_threshold"] == 3
+    assert slot["on_crash"] == "stay-crashed"
+    assert slot["stop_timeout_seconds"] == 5
+    assert slot["log_max_bytes"] == 5 * 1024 * 1024
+
+    saved = save_team(bp_dir, "serviceteam", layout)
+    loaded = load_team(bp_dir, "serviceteam")
+
+    assert saved["slots"][0]["type"] == "service"
+    assert saved["slots"][0]["command"] == "python3 app.py"
+    assert saved["slots"][0]["pre_start"] == "git fetch"
+    assert saved["slots"][0]["env"] == [{"key": "HOSTED_PORT", "value": "3000"}]
+    assert "task_queue" not in saved["slots"][0]
+    assert loaded["slots"][0]["type"] == "service"
+    assert loaded["slots"][0]["task_queue"] == []
+    assert loaded["slots"][0]["state"] == "idle"
+
+
 def test_unknown_worker_type_transfer_preserves_fields(tmp_path):
     ws_a = str(tmp_path / "a")
     ws_b = str(tmp_path / "b")
@@ -172,3 +215,76 @@ def test_shell_read_only_serialization_redacts_command_and_env_values(tmp_worksp
     assert editable["env"] == [{"key": "TOKEN", "value": "super-secret"}]
     assert read_only["command"] == "<redacted>"
     assert read_only["env"] == [{"key": "TOKEN", "value": "<redacted>"}]
+
+
+def test_service_read_only_serialization_redacts_plaintext_command_fields(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = normalize_worker_slot(
+        {
+            "type": "service",
+            "row": 0,
+            "col": 0,
+            "name": "Secret Service",
+            "command": "python3 app.py --token secret",
+            "pre_start": "echo secret",
+            "health_type": "shell",
+            "health_command": "curl -H 'Authorization: secret'",
+            "env": [{"key": "TOKEN", "value": "super-secret"}],
+        },
+        index=0,
+        config=config,
+    )
+
+    editable = serialize_worker_slot(slot, viewer=ViewerContext(can_edit=True))
+    read_only = serialize_worker_slot(slot, viewer=ViewerContext(can_edit=False))
+
+    assert editable["command"].startswith("python3")
+    assert editable["pre_start"] == "echo secret"
+    assert editable["health_command"].startswith("curl")
+    assert editable["env"] == [{"key": "TOKEN", "value": "super-secret"}]
+    assert read_only["command"] == "<redacted>"
+    assert read_only["pre_start"] == "<redacted>"
+    assert read_only["health_command"] == "<redacted>"
+    assert read_only["env"] == [{"key": "TOKEN", "value": "<redacted>"}]
+
+
+def test_service_worker_transfer_preserves_service_fields(tmp_path):
+    ws_a = str(tmp_path / "a")
+    ws_b = str(tmp_path / "b")
+    os.makedirs(ws_a)
+    os.makedirs(ws_b)
+    manager = WorkspaceManager(global_dir=str(tmp_path / "global"))
+    id_a = manager.register_project(ws_a, name="A")
+    id_b = manager.register_project(ws_b, name="B")
+
+    bp_a = manager.get_bp_dir(id_a)
+    layout = read_json(os.path.join(bp_a, "layout.json"))
+    layout["slots"] = [{
+        "type": "service",
+        "row": 0,
+        "col": 0,
+        "name": "Preview Server",
+        "command": "python3 app.py",
+        "pre_start": "git fetch",
+        "ticket_action": "restart",
+        "health_type": "http",
+        "health_url": "http://localhost:3000/health",
+        "env": [{"key": "HOSTED_PORT", "value": "3000"}],
+        "state": "idle",
+        "task_queue": [],
+    }]
+    write_json(os.path.join(bp_a, "layout.json"), layout)
+
+    result = transfer_worker(manager, id_a, 0, id_b, None, "copy")
+
+    bp_b = manager.get_bp_dir(id_b)
+    dest = read_json(os.path.join(bp_b, "layout.json"))["slots"][result["dest_slot"]]
+    assert dest["type"] == "service"
+    assert dest["command"] == "python3 app.py"
+    assert dest["pre_start"] == "git fetch"
+    assert dest["ticket_action"] == "restart"
+    assert dest["health_url"] == "http://localhost:3000/health"
+    assert dest["env"] == [{"key": "HOSTED_PORT", "value": "3000"}]
+    assert dest["state"] == "idle"
+    assert dest["task_queue"] == []

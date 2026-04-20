@@ -394,7 +394,7 @@ def register_events(socketio, app):
         if not worker_type:
             worker_type = "ai" if profile_id is not None else ""
 
-        if worker_type not in ("ai", "shell"):
+        if worker_type not in ("ai", "shell", "service"):
             emit("error", {"message": "worker:add requires a supported type"})
             return
 
@@ -459,7 +459,7 @@ def register_events(socketio, app):
                 "task_queue": [],
                 "state": "idle",
             }
-        else:  # shell
+        elif worker_type == "shell":
             base_name = fields.get("name") or "Shell worker"
             worker = {
                 "type": "shell",
@@ -482,6 +482,41 @@ def register_events(socketio, app):
                 "timeout_seconds": int(fields.get("timeout_seconds", 60) or 60),
                 "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
                 "ticket_delivery": fields.get("ticket_delivery", "stdin-json"),
+            }
+        else:  # service
+            base_name = fields.get("name") or "Service worker"
+            worker = {
+                "type": "service",
+                "row": row,
+                "col": col,
+                "name": _unique_name(str(base_name)),
+                "activation": fields.get("activation", "on_drop"),
+                "disposition": fields.get("disposition", "review"),
+                "watch_column": None,
+                "max_retries": int(fields.get("max_retries", 1) or 1),
+                "trigger_time": None,
+                "trigger_interval_minutes": None,
+                "trigger_every_day": False,
+                "last_trigger_time": None,
+                "paused": False,
+                "task_queue": [],
+                "state": "idle",
+                "command": str(fields.get("command", "") or ""),
+                "cwd": str(fields.get("cwd", "") or ""),
+                "pre_start": str(fields.get("pre_start", "") or ""),
+                "ticket_action": fields.get("ticket_action", "start-if-stopped-else-restart"),
+                "startup_grace_seconds": int(fields.get("startup_grace_seconds", 2) or 2),
+                "startup_timeout_seconds": int(fields.get("startup_timeout_seconds", 60) or 60),
+                "health_type": fields.get("health_type", "none"),
+                "health_url": str(fields.get("health_url", "") or ""),
+                "health_command": str(fields.get("health_command", "") or ""),
+                "health_interval_seconds": int(fields.get("health_interval_seconds", 5) or 5),
+                "health_timeout_seconds": int(fields.get("health_timeout_seconds", 2) or 2),
+                "health_failure_threshold": int(fields.get("health_failure_threshold", 3) or 3),
+                "on_crash": fields.get("on_crash", "stay-crashed"),
+                "stop_timeout_seconds": int(fields.get("stop_timeout_seconds", 5) or 5),
+                "log_max_bytes": int(fields.get("log_max_bytes", 5 * 1024 * 1024) or 5 * 1024 * 1024),
+                "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
             }
 
         # Ensure slots list is large enough

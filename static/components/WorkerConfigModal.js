@@ -47,6 +47,20 @@ const WorkerConfigModal = {
             timeout_seconds: w.timeout_seconds ?? 60,
             ticket_delivery: w.ticket_delivery || 'stdin-json',
             env: Array.isArray(w.env) ? w.env.map(e => ({ key: e.key || '', value: e.value || '' })) : [],
+            // Service-specific fields
+            pre_start: w.pre_start || '',
+            ticket_action: w.ticket_action || 'start-if-stopped-else-restart',
+            startup_grace_seconds: w.startup_grace_seconds ?? 2,
+            startup_timeout_seconds: w.startup_timeout_seconds ?? 60,
+            health_type: w.health_type || 'none',
+            health_url: w.health_url || '',
+            health_command: w.health_command || '',
+            health_interval_seconds: w.health_interval_seconds ?? 5,
+            health_timeout_seconds: w.health_timeout_seconds ?? 2,
+            health_failure_threshold: w.health_failure_threshold ?? 3,
+            on_crash: w.on_crash || 'stay-crashed',
+            stop_timeout_seconds: w.stop_timeout_seconds ?? 5,
+            log_max_bytes: w.log_max_bytes ?? 5242880,
           };
           this.selectedExampleId = '';
         }
@@ -59,6 +73,9 @@ const WorkerConfigModal = {
   computed: {
     isShell() {
       return this.form.type === 'shell';
+    },
+    isService() {
+      return this.form.type === 'service';
     },
     isAI() {
       return this.form.type === 'ai' || this.form.type == null;
@@ -106,6 +123,7 @@ const WorkerConfigModal = {
           <h2>
             Configure: {{ form.name }}
             <span v-if="isShell" class="worker-type-badge">Shell</span>
+            <span v-if="isService" class="worker-type-badge">Service</span>
           </h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
         </div>
@@ -203,6 +221,112 @@ const WorkerConfigModal = {
                 CREDENTIAL, or PASSPHRASE are filtered from the inherited env
                 by default. Re-add them here explicitly if non-sensitive.
                 <code>BULLPEN_MCP_TOKEN</code> is always rejected.
+              </span>
+            </div>
+          </template>
+
+          <!-- Service-only: command, lifecycle, health, env -->
+          <template v-if="isService">
+            <label class="form-label">
+              Command
+              <textarea class="form-textarea form-textarea--mono" v-model="form.command" rows="3"
+                        placeholder="python3 hosted-app.py --port=$HOSTED_PORT"></textarea>
+              <span class="form-hint">Executed with <code>/bin/sh -c</code> (POSIX) or <code>cmd.exe /c</code> (Windows). Ticket fields are exposed through <code>BULLPEN_*</code> variables.</span>
+            </label>
+            <label class="form-label">
+              Pre-start
+              <textarea class="form-textarea form-textarea--mono" v-model="form.pre_start" rows="2"
+                        placeholder="git fetch && git checkout &quot;$BULLPEN_SERVICE_COMMIT&quot;"></textarea>
+              <span class="form-hint">Optional. Runs before the main service command and must finish successfully.</span>
+            </label>
+            <div class="shell-warning">
+              <strong>Stored in plaintext:</strong> command, pre-start, env values, and logs live under
+              <code>.bullpen/</code>. Do not put real secrets here.
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                Ticket action
+                <select class="form-select" v-model="form.ticket_action">
+                  <option value="start-if-stopped-else-restart">Start if stopped, otherwise restart</option>
+                  <option value="restart">Always restart</option>
+                  <option value="start-if-stopped">Start only if stopped</option>
+                </select>
+              </label>
+              <label class="form-label">
+                Working directory
+                <input class="form-input" v-model="form.cwd" placeholder="(workspace root)">
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                Startup grace seconds
+                <input class="form-input" type="number" v-model.number="form.startup_grace_seconds" min="0" max="3600">
+              </label>
+              <label class="form-label">
+                Startup timeout seconds
+                <input class="form-input" type="number" v-model.number="form.startup_timeout_seconds" min="1" max="86400">
+              </label>
+              <label class="form-label">
+                Stop timeout seconds
+                <input class="form-input" type="number" v-model.number="form.stop_timeout_seconds" min="0" max="3600">
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                Health check
+                <select class="form-select" v-model="form.health_type">
+                  <option value="none">None</option>
+                  <option value="http">HTTP</option>
+                  <option value="shell">Shell command</option>
+                </select>
+              </label>
+              <label class="form-label" v-if="form.health_type === 'http'">
+                Health URL
+                <input class="form-input" v-model="form.health_url" placeholder="http://localhost:3000/health">
+              </label>
+              <label class="form-label" v-if="form.health_type === 'shell'">
+                Health command
+                <input class="form-input" v-model="form.health_command" placeholder="curl -fsS http://localhost:3000/health">
+              </label>
+            </div>
+            <div class="form-row" v-if="form.health_type !== 'none'">
+              <label class="form-label">
+                Check interval seconds
+                <input class="form-input" type="number" v-model.number="form.health_interval_seconds" min="1" max="3600">
+              </label>
+              <label class="form-label">
+                Check timeout seconds
+                <input class="form-input" type="number" v-model.number="form.health_timeout_seconds" min="1" max="3600">
+              </label>
+              <label class="form-label">
+                Failure threshold
+                <input class="form-input" type="number" v-model.number="form.health_failure_threshold" min="1" max="100">
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                On crash
+                <select class="form-select" v-model="form.on_crash">
+                  <option value="stay-crashed">Stay crashed</option>
+                </select>
+              </label>
+              <label class="form-label">
+                Log max bytes
+                <input class="form-input" type="number" v-model.number="form.log_max_bytes" min="1024" max="1073741824">
+              </label>
+            </div>
+            <div class="form-label">
+              <span>Environment</span>
+              <div class="shell-env-list">
+                <div v-for="(item, i) in form.env" :key="i" class="shell-env-row">
+                  <input class="form-input" v-model="item.key" placeholder="KEY" />
+                  <input class="form-input" v-model="item.value" placeholder="value" />
+                  <button class="btn btn-sm btn-danger" @click="removeEnv(i)" title="Remove">&times;</button>
+                </div>
+                <button class="btn btn-sm" @click="addEnv">Add env var</button>
+              </div>
+              <span class="form-hint">
+                <code>BULLPEN_*</code> names are reserved for injected Service variables and cannot be configured.
               </span>
             </div>
           </template>
@@ -358,9 +482,9 @@ const WorkerConfigModal = {
         fields.disposition = 'random:' + (fields.random_name || '').trim();
       }
       delete fields.random_name;
-      if (this.isShell) {
+      if (this.isShell || this.isService) {
         // Drop AI-only fields from the payload so server-side normalization
-        // never writes them onto a shell slot.
+        // never writes them onto a non-AI slot.
         delete fields.agent;
         delete fields.model;
         delete fields.expertise_prompt;
@@ -370,13 +494,44 @@ const WorkerConfigModal = {
         fields.env = (fields.env || [])
           .filter(e => e && String(e.key || '').trim())
           .map(e => ({ key: String(e.key).trim(), value: String(e.value || '') }));
+        if (this.isShell) {
+          delete fields.pre_start;
+          delete fields.ticket_action;
+          delete fields.startup_grace_seconds;
+          delete fields.startup_timeout_seconds;
+          delete fields.health_type;
+          delete fields.health_url;
+          delete fields.health_command;
+          delete fields.health_interval_seconds;
+          delete fields.health_timeout_seconds;
+          delete fields.health_failure_threshold;
+          delete fields.on_crash;
+          delete fields.stop_timeout_seconds;
+          delete fields.log_max_bytes;
+        } else {
+          delete fields.timeout_seconds;
+          delete fields.ticket_delivery;
+        }
       } else {
-        // Drop Shell-only fields from AI payloads.
+        // Drop non-AI fields from AI payloads.
         delete fields.command;
         delete fields.cwd;
         delete fields.timeout_seconds;
         delete fields.ticket_delivery;
         delete fields.env;
+        delete fields.pre_start;
+        delete fields.ticket_action;
+        delete fields.startup_grace_seconds;
+        delete fields.startup_timeout_seconds;
+        delete fields.health_type;
+        delete fields.health_url;
+        delete fields.health_command;
+        delete fields.health_interval_seconds;
+        delete fields.health_timeout_seconds;
+        delete fields.health_failure_threshold;
+        delete fields.on_crash;
+        delete fields.stop_timeout_seconds;
+        delete fields.log_max_bytes;
       }
       delete fields.type;
       this.$emit('save', { slot: this.slotIndex, fields });
