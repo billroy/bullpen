@@ -1,5 +1,6 @@
 """Worker state machine, queue management, agent execution."""
 
+import collections
 import json
 import os
 import random
@@ -984,6 +985,9 @@ def _setup_worktree(workspace, bp_dir, task_id):
 
 MAX_OUTPUT_BUFFER = 100_000  # 100KB server-side buffer for live display
 MAX_LINE_LEN = 10_000  # 10KB per line cap
+MAX_EMIT_LINES = 500  # per-batch cap sent to clients; prevents flooding the UI
+MAX_CAPTURED_LINES = 5_000  # cap on stdout/stderr/combined lists held in memory
+MAX_TOTAL_OUTPUT_BYTES = 10 * 1024 * 1024  # 10MB runaway-output ceiling
 LIVE_TOKEN_EMIT_INTERVAL_SECONDS = 0.5
 
 
@@ -1061,6 +1065,8 @@ class SubprocessRunner:
         except (BrokenPipeError, OSError):
             pass
 
+        self.output_exceeded = False
+
         def _watchdog():
             self.timed_out = True
             if proc.poll() is None:
@@ -1070,17 +1076,42 @@ class SubprocessRunner:
         timer.daemon = True
         timer.start()
 
-        stdout_lines = []
-        stderr_lines = []
-        combined_lines = []
+        stdout_lines = collections.deque(maxlen=MAX_CAPTURED_LINES)
+        stderr_lines = collections.deque(maxlen=MAX_CAPTURED_LINES)
+        combined_lines = collections.deque(maxlen=MAX_CAPTURED_LINES)
         batch = []
         batch_lock = threading.Lock()
         last_emit = [time.time()]
+        total_bytes = [0]
+
+        def _trim_batch_for_emit(lines):
+            """Cap lines per emit so a runaway process can't blow up the client.
+
+            V8's argument stack caps spread-push around 100k–500k args; we also
+            don't want to ship megabytes of text per Socket.IO frame. Keep the
+            tail and prepend a dropped-count marker.
+            """
+            if len(lines) <= MAX_EMIT_LINES:
+                return lines
+            dropped = len(lines) - MAX_EMIT_LINES
+            return [f"[… {dropped} lines dropped …]"] + lines[-MAX_EMIT_LINES:]
 
         def _append_stream_line(line, sink, stream_name):
             sink.append(line)
             if self.line_observer:
                 self.line_observer(line, stream_name, proc)
+
+            # Runaway-output ceiling: once we've seen too many bytes, stop
+            # reading and kill the proc. Prevents a `yes`-style process from
+            # pinning the reader thread and buffering indefinitely.
+            total_bytes[0] += len(line)
+            if (
+                not self.output_exceeded
+                and total_bytes[0] > MAX_TOTAL_OUTPUT_BYTES
+            ):
+                self.output_exceeded = True
+                if proc.poll() is None:
+                    _terminate_proc(proc)
 
             display_line = line
             if len(display_line) > MAX_LINE_LEN:
@@ -1107,7 +1138,7 @@ class SubprocessRunner:
                     batch.append(display_line)
                     now = time.time()
                     if self.socketio and now - last_emit[0] >= 0.2:
-                        to_emit = list(batch)
+                        to_emit = _trim_batch_for_emit(batch)
                         batch.clear()
                         last_emit[0] = now
                 if self.socketio and to_emit:
@@ -1149,7 +1180,7 @@ class SubprocessRunner:
         to_emit = None
         with batch_lock:
             if self.socketio and batch:
-                to_emit = list(batch)
+                to_emit = _trim_batch_for_emit(batch)
                 batch.clear()
         if self.socketio and to_emit:
             _ws_emit(self.socketio, "worker:output", {
@@ -1161,8 +1192,8 @@ class SubprocessRunner:
             stdout="".join(stdout_lines),
             stderr="".join(stderr_lines),
             returncode=proc.returncode,
-            timed_out=self.timed_out,
-            combined_lines=combined_lines,
+            timed_out=self.timed_out or self.output_exceeded,
+            combined_lines=list(combined_lines),
         )
 
 

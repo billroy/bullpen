@@ -579,30 +579,38 @@ const app = createApp({
     });
 
     // Worker output streaming
+    const OUTPUT_BUFFER_CAP = 5000;
     function _ensureBuffer(slot) {
       if (!outputBuffers[slot]) outputBuffers[slot] = reactive([]);
+    }
+    // Safe append: spreading a huge array into push() overflows V8's argument
+    // stack (~100k–500k args). Trim to the cap first, then push one-by-one.
+    function _appendLines(buf, incoming) {
+      if (!incoming || !incoming.length) return;
+      const tail = incoming.length > OUTPUT_BUFFER_CAP
+        ? incoming.slice(-OUTPUT_BUFFER_CAP)
+        : incoming;
+      for (let i = 0; i < tail.length; i++) buf.push(tail[i]);
+      if (buf.length > OUTPUT_BUFFER_CAP) {
+        buf.splice(0, buf.length - OUTPUT_BUFFER_CAP);
+      }
     }
     socket.on('worker:output', (data) => {
       const slot = data.slot;
       _ensureBuffer(slot);
-      outputBuffers[slot].push(...data.lines);
-      // Cap at 5000 lines client-side
-      if (outputBuffers[slot].length > 5000) {
-        outputBuffers[slot].splice(0, outputBuffers[slot].length - 5000);
-      }
+      _appendLines(outputBuffers[slot], data.lines);
     });
     socket.on('worker:output:catchup', (data) => {
       const slot = data.slot;
       _ensureBuffer(slot);
       outputBuffers[slot].length = 0;
-      outputBuffers[slot].push(...(data.lines || []));
+      _appendLines(outputBuffers[slot], data.lines || []);
     });
     socket.on('worker:output:done', (data) => {
       const slot = data.slot;
       _ensureBuffer(slot);
-      // Replace buffer with complete final output
       outputBuffers[slot].length = 0;
-      outputBuffers[slot].push(...(data.lines || []));
+      _appendLines(outputBuffers[slot], data.lines || []);
     });
 
     // Helper to attach workspaceId to outgoing events
