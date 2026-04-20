@@ -39,7 +39,7 @@ const WorkerCard = {
         </div>
         <div class="worker-card-actions">
           <span class="worker-card-header-status">
-            <span v-if="workerState !== 'idle' || isPaused" class="status-pill" :class="'status-' + workerState">
+            <span v-if="workerState !== 'idle' || isPaused" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
               {{ statusLabel }}
             </span>
           </span>
@@ -233,6 +233,11 @@ const WorkerCard = {
   },
   methods: {
     onBodyClick() {
+      if (this.isWorking || this.isService) {
+        this.$emit('open-focus', this.slotIndex);
+      }
+    },
+    onStatusPillClick() {
       if (this.isWorking || this.isService) {
         this.$emit('open-focus', this.slotIndex);
       }
