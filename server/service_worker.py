@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
+from urllib.request import HTTPRedirectHandler, build_opener, Request
 
 from server.persistence import read_json
 from server import tasks as task_mod
@@ -167,6 +171,36 @@ def _ticket_env(task):
     }
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _ip_allowed_for_health(host, ip_text):
+    if host.casefold() == "localhost":
+        return True
+    try:
+        ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
+
+
+def _validate_health_url(url):
+    parsed = urlparse(str(url or ""))
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("HTTP health checks require an http:// or https:// URL.")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        resolved = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"HTTP health host did not resolve: {exc}") from exc
+    addrs = {item[4][0] for item in resolved}
+    if not addrs or not all(_ip_allowed_for_health(parsed.hostname, addr) for addr in addrs):
+        raise ValueError("HTTP health checks are limited to local/private addresses.")
+    return url
+
+
 def _log_artifact(bp_dir, path):
     return os.path.relpath(path, os.path.dirname(bp_dir)).replace(os.sep, "/")
 
@@ -186,6 +220,25 @@ def _append_service_history(bp_dir, task_id, event, worker, slot_index, row):
         **row,
     })
     task_mod.update_task(bp_dir, task_id, {"history": history})
+
+
+def _service_order_still_active(bp_dir, slot_index, task_id):
+    task = task_mod.read_task(bp_dir, task_id)
+    if not task:
+        return False
+    try:
+        worker = _load_service_slot(bp_dir, slot_index)
+    except Exception:
+        return False
+    queue = worker.get("task_queue") or []
+    assigned_value = task.get("assigned_to")
+    assigned_to = "" if assigned_value is None else str(assigned_value)
+    return (
+        bool(queue)
+        and queue[0] == task_id
+        and assigned_to == str(slot_index)
+        and task.get("status") in {"assigned", "in_progress"}
+    )
 
 
 def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None):
@@ -259,6 +312,12 @@ def _run_service_order_thread(bp_dir, slot_index, task_id, worker_snapshot, sock
         controller = get_controller(bp_dir, ws_id, slot_index, socketio)
         result = controller.run_ticket_order(order, worker_snapshot)
         duration_ms = int((time.time() - started) * 1000)
+        if not _service_order_still_active(bp_dir, slot_index, task_id):
+            controller._write_log(
+                f"[bullpen] service order {task_id} finished after cancellation; ticket left unchanged\n",
+                emit=True,
+            )
+            return
         if result.get("ok"):
             snapshot = controller.state_snapshot()
             _append_service_history(
@@ -325,6 +384,15 @@ def _run_service_order_thread(bp_dir, slot_index, task_id, worker_snapshot, sock
         )
     except Exception as exc:
         duration_ms = int((time.time() - started) * 1000)
+        if not _service_order_still_active(bp_dir, slot_index, task_id):
+            try:
+                get_controller(bp_dir, ws_id, slot_index, socketio)._write_log(
+                    f"[bullpen] service order {task_id} canceled: {exc}\n",
+                    emit=True,
+                )
+            except Exception:
+                pass
+            return
         _append_service_history(
             bp_dir,
             task_id,
@@ -369,6 +437,7 @@ class ServiceWorkerController:
         self._proc = None
         self._pre_start_proc = None
         self._cancel = threading.Event()
+        self._order_cancel = threading.Event()
         self._state = "stopped"
         self._health = None
         self._pid = None
@@ -377,6 +446,8 @@ class ServiceWorkerController:
         self._active_config_hash = None
         self._config_hash = None
         self._last_error = None
+        self._active_order_id = None
+        self._health_thread = None
 
     @property
     def log_dir(self):
@@ -484,6 +555,20 @@ class ServiceWorkerController:
         self.emit_state()
         return True
 
+    def cancel_order(self, order_id):
+        with self._lock:
+            if self._active_order_id != order_id:
+                return False
+            state = self._state
+        self._write_log(f"[bullpen] service order {order_id} canceled\n", emit=True)
+        if state in BUSY_STATES:
+            self._order_cancel.set()
+            self._cancel.set()
+            pre_start_proc = self._pre_start_proc
+            if pre_start_proc and pre_start_proc.poll() is None:
+                _terminate_tree(pre_start_proc, graceful=True)
+        return True
+
     def tail(self, max_bytes=65536):
         try:
             max_bytes = max(1, min(int(max_bytes or 65536), 1024 * 1024))
@@ -568,25 +653,35 @@ class ServiceWorkerController:
             self._reader_thread = threading.Thread(target=self._drain_output, args=(proc,), daemon=True)
             self._reader_thread.start()
 
-            grace = max(0, int(worker.get("startup_grace_seconds", 2)))
-            while time.monotonic() < deadline and grace > 0:
-                if self._cancel.is_set() or proc.poll() is not None:
-                    break
-                step = min(0.1, grace)
-                time.sleep(step)
-                grace -= step
-            if self._cancel.is_set():
-                self.stop()
-                if result is not None:
-                    result.update({"ok": False, "reason": "Service start was canceled."})
-                return False
-            if proc.poll() is not None:
-                raise RuntimeError(f"Service exited during startup with code {proc.returncode}.")
-            if time.monotonic() >= deadline:
-                raise TimeoutError("Service startup timed out.")
-            self._set_state("running")
-            self._write_log("[bullpen] service running\n", emit=True)
+            if self._health_type(worker) == "none":
+                grace = max(0, int(worker.get("startup_grace_seconds", 2)))
+                while time.monotonic() < deadline and grace > 0:
+                    if self._cancel.is_set() or proc.poll() is not None:
+                        break
+                    step = min(0.1, grace)
+                    time.sleep(step)
+                    grace -= step
+                if self._cancel.is_set():
+                    self.stop()
+                    if result is not None:
+                        result.update({"ok": False, "reason": "Service start was canceled."})
+                    return False
+                if proc.poll() is not None:
+                    raise RuntimeError(f"Service exited during startup with code {proc.returncode}.")
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Service startup timed out.")
+                self._set_state("running", health=None)
+                self._write_log("[bullpen] service running\n", emit=True)
+            else:
+                self._wait_for_initial_health(worker, cwd, env, proc, deadline)
             threading.Thread(target=self._monitor, args=(proc,), daemon=True).start()
+            if self._health_type(worker) != "none":
+                self._health_thread = threading.Thread(
+                    target=self._health_monitor,
+                    args=(worker, cwd, env, proc),
+                    daemon=True,
+                )
+                self._health_thread.start()
             if result is not None:
                 result.update({"ok": True, "state": self._state, "pid": proc.pid, "exit_code": None})
             return True
@@ -601,6 +696,10 @@ class ServiceWorkerController:
 
     def _restart_sequence(self, order=None, worker_snapshot=None, result=None):
         self.stop()
+        if self._order_cancel.is_set():
+            if result is not None:
+                result.update({"ok": False, "reason": "Service order was canceled."})
+            return False
         self._cancel.clear()
         return self._start_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
 
@@ -630,10 +729,18 @@ class ServiceWorkerController:
             }
 
         result = {"action": action}
-        if action == "restart" or (action == "start-if-stopped-else-restart" and state in RUNNING_STATES):
-            self._restart_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
-        else:
-            self._start_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
+        with self._lock:
+            self._active_order_id = order_id
+        self._order_cancel.clear()
+        try:
+            if action == "restart" or (action == "start-if-stopped-else-restart" and state in RUNNING_STATES):
+                self._restart_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
+            else:
+                self._start_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
+        finally:
+            with self._lock:
+                if self._active_order_id == order_id:
+                    self._active_order_id = None
         result.setdefault("action", action)
         snapshot = self.state_snapshot()
         result.setdefault("state", snapshot.get("state"))
@@ -641,6 +748,120 @@ class ServiceWorkerController:
         result.setdefault("pid", snapshot.get("pid"))
         result.setdefault("exit_code", snapshot.get("exit_code"))
         return result
+
+    def _health_type(self, worker):
+        health_type = str(worker.get("health_type") or "none")
+        return health_type if health_type in {"http", "shell"} else "none"
+
+    def _wait_for_initial_health(self, worker, cwd, env, proc, deadline):
+        interval = max(0.1, float(worker.get("health_interval_seconds") or 5))
+        last_reason = "Health check has not run."
+        while time.monotonic() < deadline:
+            if self._cancel.is_set():
+                self.stop()
+                raise RuntimeError("Service start was canceled.")
+            if proc.poll() is not None:
+                raise RuntimeError(f"Service exited during startup with code {proc.returncode}.")
+            ok, reason = self._check_health(worker, cwd, env)
+            if ok:
+                self._set_state("healthy", health="healthy", last_error=None)
+                self._write_log("[bullpen] service healthy\n", emit=True)
+                return
+            last_reason = reason
+            with self._lock:
+                self._health = "unhealthy"
+                self._last_error = reason
+            self.emit_state()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(interval, remaining, 1.0))
+        raise TimeoutError(f"Service health check timed out: {last_reason}")
+
+    def _health_monitor(self, worker, cwd, env, proc):
+        interval = max(0.1, float(worker.get("health_interval_seconds") or 5))
+        threshold = max(1, int(worker.get("health_failure_threshold") or 3))
+        failures = 0
+        while proc.poll() is None:
+            time.sleep(interval)
+            with self._lock:
+                if self._proc is not proc or self._state in {"stopped", "stopping", "crashed"}:
+                    return
+            ok, reason = self._check_health(worker, cwd, env)
+            if ok:
+                failures = 0
+                with self._lock:
+                    changed = self._state != "healthy" or self._health != "healthy"
+                if changed:
+                    self._set_state("healthy", health="healthy", last_error=None)
+                    self._write_log("[bullpen] service healthy\n", emit=True)
+            else:
+                failures += 1
+                if failures >= threshold:
+                    with self._lock:
+                        changed = self._state != "unhealthy" or self._last_error != reason
+                    if changed:
+                        self._set_state("unhealthy", health="unhealthy", last_error=reason)
+                        self._write_log(f"[bullpen] service unhealthy: {reason}\n", emit=True)
+
+    def _check_health(self, worker, cwd, env):
+        health_type = self._health_type(worker)
+        timeout = max(0.1, float(worker.get("health_timeout_seconds") or 2))
+        if health_type == "http":
+            return self._check_http_health(worker.get("health_url"), timeout)
+        if health_type == "shell":
+            return self._check_shell_health(worker.get("health_command"), cwd, env, timeout)
+        return True, "No health check configured."
+
+    def _check_http_health(self, url, timeout):
+        try:
+            _validate_health_url(url)
+            opener = build_opener(_NoRedirect)
+            request = Request(url, method="GET", headers={"User-Agent": "Bullpen-Service-Health/1"})
+            with opener.open(request, timeout=timeout) as response:
+                status = int(getattr(response, "status", response.getcode()))
+            if 200 <= status < 300:
+                return True, f"HTTP {status}"
+            return False, f"HTTP {status}"
+        except Exception as exc:
+            return False, str(exc)
+
+    def _check_shell_health(self, command, cwd, env, timeout):
+        command = str(command or "").strip()
+        if not command:
+            return False, "Shell health checks require a command."
+        try:
+            proc = subprocess.Popen(
+                _command_argv(command),
+                cwd=cwd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                **_popen_kwargs(),
+            )
+        except Exception as exc:
+            return False, str(exc)
+        try:
+            output, _ = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_tree(proc, graceful=True)
+            try:
+                output, _ = proc.communicate(timeout=1)
+            except subprocess.TimeoutExpired:
+                _terminate_tree(proc, graceful=False)
+                output, _ = proc.communicate()
+            if output:
+                lines = [f"[health] {line}" for line in output.splitlines()]
+                self._write_log("\n".join(lines) + "\n", emit=True)
+            return False, "Shell health check timed out."
+        if output:
+            lines = [f"[health] {line}" for line in output.splitlines()]
+            self._write_log("\n".join(lines) + "\n", emit=True)
+        if proc.returncode == 0:
+            return True, "Shell health check passed."
+        return False, f"Shell health check exited {proc.returncode}."
 
     def _run_pre_start(self, command, cwd, env, deadline):
         self._write_log("[bullpen] running pre-start\n", emit=True)
@@ -810,6 +1031,10 @@ def restart_service(bp_dir, ws_id, slot, socketio=None):
 
 def tail_service(bp_dir, ws_id, slot, socketio=None, max_bytes=65536):
     return get_controller(bp_dir, ws_id, slot, socketio).tail(max_bytes=max_bytes)
+
+
+def cancel_service_order(bp_dir, ws_id, slot, task_id, socketio=None):
+    return get_controller(bp_dir, ws_id, slot, socketio).cancel_order(task_id)
 
 
 def stop_workspace_services(ws_id, *, wait=True):

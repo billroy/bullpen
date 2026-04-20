@@ -350,6 +350,7 @@ def register_events(socketio, app):
     def on_task_delete(data):
         ws_id, bp_dir = _resolve(data)
         task_id = validate_id(data)
+        worker_mod.yank_from_worker(bp_dir, task_id, socketio, ws_id)
         task_mod.delete_task(bp_dir, task_id)
         _emit("task:deleted", {"id": task_id}, ws_id)
 
@@ -358,6 +359,7 @@ def register_events(socketio, app):
     def on_task_archive(data):
         ws_id, bp_dir = _resolve(data)
         task_id = validate_id(data)
+        worker_mod.yank_from_worker(bp_dir, task_id, socketio, ws_id)
         task_mod.archive_task(bp_dir, task_id)
         _emit("task:deleted", {"id": task_id}, ws_id)
 

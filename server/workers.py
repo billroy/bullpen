@@ -805,6 +805,9 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
 
     # Kill the subprocess if this task is actively running
     if is_running:
+        if worker.get("type") == "service":
+            from server import service_worker as service_worker_mod
+            service_worker_mod.cancel_service_order(bp_dir, ws_id, slot_index, task_id, socketio)
         with _process_lock:
             entry = _processes.get((ws_id, slot_index))
             if entry is None:

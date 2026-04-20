@@ -7,7 +7,7 @@ import time
 
 from server.init import init_workspace
 from server.persistence import read_json, write_json
-from server.tasks import create_task, read_task
+from server.tasks import create_task, read_task, update_task
 from server.service_worker import (
     get_controller,
     restart_service,
@@ -16,7 +16,7 @@ from server.service_worker import (
     stop_service,
     tail_service,
 )
-from server.workers import assign_task, start_worker, _load_layout
+from server.workers import assign_task, start_worker, yank_from_worker, _load_layout
 
 
 class FakeSocket:
@@ -232,6 +232,102 @@ def test_service_ticket_order_failure_blocks_and_records_history(tmp_workspace):
     assert failed
     assert "Pre-start exited" in failed[-1]["reason"]
     assert "Pre-start exited" in updated["body"]
+
+
+def test_service_shell_health_gates_ticket_success(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    ready_path = os.path.join(tmp_workspace, "ready.flag")
+    script = os.path.join(tmp_workspace, "healthy_service.py")
+    _write_script(
+        script,
+        "import pathlib, time\n"
+        "time.sleep(0.3)\n"
+        f"pathlib.Path({ready_path!r}).write_text('ok')\n"
+        "print('healthy-ready', flush=True)\n"
+        "time.sleep(30)\n",
+    )
+    _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        command=f'"{sys.executable}" "{script}"',
+        activation="manual",
+        health_type="shell",
+        health_command=f'test -f "{ready_path}"',
+        health_interval_seconds=1,
+        health_timeout_seconds=1,
+        startup_timeout_seconds=5,
+        max_retries=0,
+    )
+    socket = FakeSocket()
+    ws_id = "ws-service-health"
+    task = create_task(bp_dir, "Wait for health")
+    assign_task(bp_dir, 0, task["id"], socket, ws_id)
+
+    start_worker(bp_dir, 0, socket, ws_id)
+
+    assert _wait_for(lambda: read_task(bp_dir, task["id"]).get("status") == "review") is True
+    controller = get_controller(bp_dir, ws_id, 0, socket)
+    assert controller.state_snapshot()["state"] == "healthy"
+    history = [row for row in read_task(bp_dir, task["id"]).get("history", []) if row.get("event") == "service_order_succeeded"]
+    assert history[-1]["state"] == "healthy"
+
+    stop_service(bp_dir, ws_id, 0, socket)
+
+
+def test_service_health_timeout_blocks_ticket(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        activation="manual",
+        health_type="shell",
+        health_command="exit 1",
+        health_interval_seconds=1,
+        health_timeout_seconds=1,
+        startup_timeout_seconds=1,
+        max_retries=0,
+    )
+    task = create_task(bp_dir, "Never healthy")
+    assign_task(bp_dir, 0, task["id"])
+
+    start_worker(bp_dir, 0)
+
+    assert _wait_for(lambda: read_task(bp_dir, task["id"]).get("status") == "blocked", timeout=3) is True
+    updated = read_task(bp_dir, task["id"])
+    failed = [row for row in updated.get("history", []) if row.get("event") == "service_order_failed"]
+    assert failed
+    assert "health check timed out" in failed[-1]["reason"].lower()
+
+
+def test_service_order_yank_cancels_without_routing_ticket(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        activation="manual",
+        pre_start=f'"{sys.executable}" -c "import time; time.sleep(5)"',
+        startup_timeout_seconds=10,
+        max_retries=0,
+    )
+    socket = FakeSocket()
+    ws_id = "ws-service-cancel"
+    task = create_task(bp_dir, "Cancel service order")
+    assign_task(bp_dir, 0, task["id"], socket, ws_id)
+    start_worker(bp_dir, 0, socket, ws_id)
+    assert _wait_for(lambda: read_task(bp_dir, task["id"]).get("status") == "in_progress") is True
+
+    assert yank_from_worker(bp_dir, task["id"], socket, ws_id) is True
+    update_task(bp_dir, task["id"], {"status": "review", "assigned_to": "", "handoff_depth": 0})
+
+    time.sleep(0.4)
+    updated = read_task(bp_dir, task["id"])
+    assert updated["status"] == "review"
+    assert updated["assigned_to"] == ""
+    layout = _load_layout(bp_dir)
+    assert layout["slots"][0]["task_queue"] == []
+    assert layout["slots"][0]["state"] == "idle"
+    assert not any(row.get("event") == "service_order_succeeded" for row in updated.get("history", []))
+    assert not any(row.get("event") == "service_order_failed" for row in updated.get("history", []))
 
 
 def teardown_module(_module):
