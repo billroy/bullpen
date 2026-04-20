@@ -28,7 +28,7 @@ const WorkerConfigModal = {
             name: w.name || '',
             agent: w.agent || 'claude',
             model: w.model || 'claude-sonnet-4-6',
-            activation: w.activation || (w.type === 'shell' ? 'manual' : 'on_drop'),
+            activation: w.activation || 'on_drop',
             disposition,
             random_name: randomName,
             watch_column: w.watch_column || '',

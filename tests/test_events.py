@@ -1,6 +1,7 @@
 """Tests for server/events.py — socket event handlers."""
 
 import os
+import sys
 import tempfile
 import time
 import json
@@ -277,6 +278,41 @@ class TestWorkerEvents:
         assert worker["max_retries"] == 0
         assert worker["task_queue"] == []
         assert worker["state"] == "idle"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="literal `true` command is POSIX-only")
+    def test_add_shell_worker_defaults_to_on_drop_and_runs_true_on_assign(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "shell",
+            "fields": {"name": "True worker", "command": "true"},
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        worker = layout["slots"][0]
+        assert worker["activation"] == "on_drop"
+
+        c.emit("task:create", {"title": "Runs on drop"})
+        task = get_event(c, "task:created")
+        assert task is not None
+
+        c.emit("task:assign", {"task_id": task["id"], "slot": 0})
+
+        from server.tasks import read_task
+        deadline = time.time() + 5
+        updated = None
+        while time.time() < deadline:
+            updated = read_task(app.config["bp_dir"], task["id"])
+            if updated and updated.get("status") == "review":
+                break
+            time.sleep(0.05)
+
+        assert updated["status"] == "review"
+        assert updated["assigned_to"] == ""
+        layout_path = os.path.join(app.config["bp_dir"], "layout.json")
+        final_layout = json.load(open(layout_path))
+        assert final_layout["slots"][0]["task_queue"] == []
+        assert final_layout["slots"][0]["state"] == "idle"
 
     def test_add_worker_persists(self, client):
         c, app = client

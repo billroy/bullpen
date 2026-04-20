@@ -1107,7 +1107,7 @@ const BullpenTab = {
       this.closeLibrary();
     },
     addShellWorker(example) {
-      const fields = { name: 'Shell worker' };
+      const fields = { name: 'Shell worker', activation: 'on_drop' };
       if (example && typeof example === 'object') {
         if (example.name) fields.name = example.name;
         if (example.command) fields.command = example.command;
