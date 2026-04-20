@@ -1128,12 +1128,12 @@ const BullpenTab = {
       this.closeLibrary();
     },
     workerFieldsForClipboard(worker) {
-      const fields = ['profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt',
+      const fields = ['type', 'profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt',
         'max_retries', 'use_worktree', 'auto_commit', 'auto_pr', 'trigger_time', 'trigger_interval_minutes',
-        'trigger_every_day', 'icon', 'color', 'avatar'];
+        'trigger_every_day', 'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env', 'icon', 'color', 'avatar'];
       const copy = {};
       for (const key of fields) {
-        if (worker[key] !== undefined) copy[key] = worker[key];
+        if (worker[key] !== undefined) copy[key] = JSON.parse(JSON.stringify(worker[key]));
       }
       return copy;
     },

@@ -208,9 +208,13 @@ def _build_pasted_worker(source, coord, existing_names):
         suffix += 1
     existing_names.add(candidate)
 
-    if str(source.get("type") or "ai") == "ai":
+    source_type = str(source.get("type") or "").strip()
+    if not source_type and "command" in source:
+        source_type = "shell"
+    if (source_type or "ai") == "ai":
         worker = {k: v for k, v in source.items() if k in _AI_COPY_FIELDS}
     else:
+        source = {**source, "type": source_type}
         worker = copy_worker_slot(source, reset_runtime=True)
     worker = copy_worker_slot(worker, reset_runtime=True)
     worker["row"] = coord["row"]

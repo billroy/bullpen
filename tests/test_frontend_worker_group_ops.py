@@ -43,6 +43,14 @@ def test_bullpen_tab_pastes_group_workers_with_relative_offsets():
     assert "Cannot paste worker group here" in text
 
 
+def test_bullpen_tab_worker_clipboard_preserves_shell_fields():
+    text = _read("static/components/BullpenTab.js")
+    assert "workerFieldsForClipboard(worker)" in text
+    assert "'type', 'profile'" in text
+    assert "'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env'" in text
+    assert "copy[key] = JSON.parse(JSON.stringify(worker[key]));" in text
+
+
 def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
     text = _read("static/components/WorkerCard.js")
     assert "'buildWorkerDragPayload'" in text

@@ -452,6 +452,38 @@ class TestWorkerEvents:
         assert worker["state"] == "idle"
         assert "api_key" not in worker
 
+    def test_paste_shell_worker_preserves_type_and_shell_fields(self, client):
+        c, _ = client
+        c.emit("worker:paste", {
+            "coord": {"col": 5, "row": 2},
+            "worker": {
+                "type": "shell",
+                "name": "Shell Copy",
+                "activation": "on_drop",
+                "disposition": "review",
+                "max_retries": 0,
+                "command": "true",
+                "cwd": "tools",
+                "timeout_seconds": 45,
+                "ticket_delivery": "env-vars",
+                "env": [{"key": "FOO", "value": "bar"}],
+                "task_queue": ["secret-task"],
+                "state": "working",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        worker = next(s for s in layout["slots"] if s)
+        assert worker["type"] == "shell"
+        assert worker["name"] == "Shell Copy"
+        assert worker["activation"] == "on_drop"
+        assert worker["command"] == "true"
+        assert worker["cwd"] == "tools"
+        assert worker["timeout_seconds"] == 45
+        assert worker["ticket_delivery"] == "env-vars"
+        assert worker["env"] == [{"key": "FOO", "value": "bar"}]
+        assert worker["task_queue"] == []
+        assert worker["state"] == "idle"
+
     def test_paste_worker_group_pastes_all_members(self, client):
         c, _ = client
         c.emit("worker:paste_group", {"items": [
