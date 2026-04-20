@@ -73,6 +73,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **List view** -- switchable list view for the Tickets tab with sortable columns, full-text search, priority/status/type filters, timestamped Created column, and token-consumption display
 - **Worker grid** -- configurable grid of AI agent slots; drag tickets onto workers to assign them
 - **Agent execution** -- workers invoke Claude, Codex, or Gemini CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (structured stream parsing for Claude/Codex)
+- **Shell / Script workers** -- run a configured shell command against a ticket, pass ticket data as JSON/env/argv, capture output, and route or update the ticket from script output
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
 - **Live Agent Chat** -- interactive chat tabs for Claude, Codex, and Gemini with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
 - **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, and an in-browser editor with find/replace; clicking `.html` files opens them in the default browser
@@ -154,6 +155,169 @@ tests/                  # 465 tests passing (pytest)
 8. **Scheduled workers** can activate on a timer (specific time or interval) to process queued tickets or create their own ephemeral tickets
 9. **Chat directly** with Claude, Codex, or Gemini via the Live Agent Chat tab, with conversations logged to tickets
 10. **Open additional chat tabs** as needed to run parallel conversations with separate session histories
+
+## Shell / Script Workers
+
+Shell workers, also shown as script-style workers in some workflows, run one
+configured shell command against one ticket. Bullpen passes ticket data into the
+command, captures stdout/stderr, then uses the command's exit code and optional
+stdout JSON to decide what happens next.
+
+### Passing ticket data to a script
+
+Set **Pass ticket as** in the worker configuration.
+
+**`stdin-json`** is the default and usually the best choice. Bullpen writes one
+JSON object to stdin:
+
+```json
+{
+  "id": "ticket-id",
+  "title": "Ticket title",
+  "filename": "ticket-id.md",
+  "project": "/path/to/workspace",
+  "status": "assigned",
+  "type": "task",
+  "priority": "normal",
+  "tags": [],
+  "body": "ticket body markdown",
+  "history": [],
+  "worker": {
+    "name": "Script worker",
+    "slot_index": 3,
+    "coord": {"row": 0, "col": 3}
+  }
+}
+```
+
+Example:
+
+```bash
+jq -r '.title' >/tmp/ticket-title.txt
+```
+
+**`env-vars`** exposes scalar ticket fields as environment variables:
+
+```text
+BULLPEN_TICKET_ID
+BULLPEN_TICKET_TITLE
+BULLPEN_TICKET_FILENAME
+BULLPEN_PROJECT
+BULLPEN_TICKET_STATUS
+BULLPEN_TICKET_PRIORITY
+BULLPEN_TICKET_TAGS
+BULLPEN_TICKET_BODY_FILE
+```
+
+`BULLPEN_TICKET_TAGS` is a JSON array string. The ticket body is written to a
+temporary file, and `BULLPEN_TICKET_BODY_FILE` points to it.
+
+Example:
+
+```bash
+grep -q "security" "$BULLPEN_TICKET_BODY_FILE"
+```
+
+**`argv-json`** passes the same ticket JSON as a command-line argument. This is
+handy for small payloads, but operating systems have command-line length limits.
+If the payload is too large, Bullpen falls back to `stdin-json`.
+
+### Controlling the result
+
+The script's exit code is the primary signal:
+
+| Exit code | Result |
+|-----------|--------|
+| `0` | Success. Bullpen uses the worker's configured Output route unless stdout JSON overrides it. |
+| `78` | Intentional block. The ticket moves to Blocked without retry. |
+| Any other nonzero code | Error. Bullpen retries according to Max Retries, then moves the ticket to Blocked. |
+| Timeout | Error with reason `timeout`; retries according to Max Retries, then Blocked. |
+
+If the command exits `0` and prints nothing, Bullpen uses the worker's configured
+Output route. For example, this command succeeds and follows the default route:
+
+```bash
+true
+```
+
+On success, stdout may be a JSON object:
+
+```json
+{
+  "disposition": "review",
+  "reason": "optional note",
+  "ticket_updates": {
+    "title": "New title",
+    "priority": "high",
+    "tags": ["demo"],
+    "body_append": "Text appended to the ticket body"
+  }
+}
+```
+
+Supported `disposition` values include:
+
+```text
+review
+done
+blocked
+worker:Worker Name
+pass:left
+pass:right
+pass:up
+pass:down
+pass:random
+random:
+random:Worker Name
+```
+
+If `disposition` is omitted, Bullpen uses the worker's configured Output route.
+Script output can directly update these ticket fields:
+
+```text
+title
+priority
+tags
+body_append
+```
+
+Status changes go through `disposition`; stdout JSON cannot set `status`
+directly. It also cannot replace the whole ticket body or set arbitrary
+frontmatter keys.
+
+Examples:
+
+```bash
+# Default route, no ticket changes.
+true
+```
+
+```bash
+# Block intentionally.
+jq -n '{"disposition":"blocked","reason":"Demo block"}'
+```
+
+```bash
+# Append text and use the configured Output route.
+jq -n '{"ticket_updates":{"body_append":"Script worker touched this ticket."}}'
+```
+
+```bash
+# Change priority and pass right.
+jq -n '{"disposition":"pass:right","ticket_updates":{"priority":"high"}}'
+```
+
+For updates outside the stdout contract, use the server-backed ticket CLI from
+inside the script instead of editing `.bullpen/tasks/*.md` directly:
+
+```bash
+python3 bullpen.py ticket --workspace "$BULLPEN_PROJECT" update \
+  --id "$BULLPEN_TICKET_ID" \
+  --body "new body"
+```
+
+Direct writes under `.bullpen/tasks` bypass Bullpen's running Flask/Socket.IO
+server, so browser boards will not receive normal live update events.
 
 ## Supported Agents
 
