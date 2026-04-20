@@ -1,11 +1,13 @@
 """Tests for Service worker manual lifecycle."""
 
+import json
 import os
 import sys
 import time
 
 from server.init import init_workspace
 from server.persistence import read_json, write_json
+from server.tasks import create_task, read_task
 from server.service_worker import (
     get_controller,
     restart_service,
@@ -14,6 +16,7 @@ from server.service_worker import (
     stop_service,
     tail_service,
 )
+from server.workers import assign_task, start_worker, _load_layout
 
 
 class FakeSocket:
@@ -129,6 +132,106 @@ def test_service_pre_start_failure_crashes_without_main_process(tmp_workspace):
     snapshot = controller.state_snapshot()
     assert snapshot["pid"] is None
     assert "Pre-start exited" in snapshot["last_error"]
+
+
+def test_service_ticket_order_routes_and_injects_ticket_env(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    output_path = os.path.join(tmp_workspace, "service-env.json")
+    script = os.path.join(tmp_workspace, "ticket_service.py")
+    _write_script(
+        script,
+        "import json, os, time\n"
+        f"out = {output_path!r}\n"
+        "data = {key: os.environ.get(key, '') for key in [\n"
+        "    'BULLPEN_SERVICE_ORDER_ID', 'BULLPEN_SERVICE_COMMIT',\n"
+        "    'BULLPEN_TICKET_ID', 'BULLPEN_TICKET_TITLE', 'BULLPEN_TICKET_STATUS',\n"
+        "    'BULLPEN_TICKET_PRIORITY', 'BULLPEN_TICKET_TAGS']}\n"
+        "open(out, 'w', encoding='utf-8').write(json.dumps(data))\n"
+        "print('ticket-service-ready', flush=True)\n"
+        "time.sleep(30)\n",
+    )
+    _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        command=f'"{sys.executable}" "{script}"',
+        activation="manual",
+        disposition="review",
+        max_retries=0,
+    )
+    task = create_task(bp_dir, "Restart test server", description="commit: abcdef1\n")
+    assign_task(bp_dir, 0, task["id"])
+
+    start_worker(bp_dir, 0)
+
+    assert _wait_for(lambda: read_task(bp_dir, task["id"]).get("status") == "review") is True
+    updated = read_task(bp_dir, task["id"])
+    assert updated["assigned_to"] == ""
+    history = [row for row in updated.get("history", []) if row.get("event") == "service_order_succeeded"]
+    assert history
+    assert history[-1]["log_artifact"].startswith(".bullpen/logs/services/slot-0/")
+    layout = _load_layout(bp_dir)
+    assert layout["slots"][0]["task_queue"] == []
+    assert layout["slots"][0]["state"] == "idle"
+
+    assert _wait_for(lambda: os.path.exists(output_path)) is True
+    injected = json.loads(open(output_path, encoding="utf-8").read())
+    assert injected["BULLPEN_SERVICE_ORDER_ID"] == task["id"]
+    assert injected["BULLPEN_SERVICE_COMMIT"] == "abcdef1"
+    assert injected["BULLPEN_TICKET_ID"] == task["id"]
+    assert injected["BULLPEN_TICKET_TITLE"] == "Restart test server"
+    assert injected["BULLPEN_TICKET_STATUS"] == "in_progress"
+    assert injected["BULLPEN_TICKET_PRIORITY"] == "normal"
+
+    stop_service(bp_dir, None, 0)
+
+
+def test_service_ticket_order_restarts_running_service(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _install_service_worker(bp_dir, tmp_workspace, activation="manual", ticket_action="restart", max_retries=0)
+    socket = FakeSocket()
+    ws_id = "ws-service-ticket-restart"
+
+    start_service(bp_dir, ws_id, 0, socket)
+    controller = get_controller(bp_dir, ws_id, 0, socket)
+    assert _wait_for(lambda: controller.state_snapshot()["state"] == "running") is True
+    first_pid = controller.state_snapshot()["pid"]
+
+    task = create_task(bp_dir, "Restart running service")
+    assign_task(bp_dir, 0, task["id"], socket, ws_id)
+    start_worker(bp_dir, 0, socket, ws_id)
+    assert _wait_for(lambda: read_task(bp_dir, task["id"]).get("status") == "review") is True
+
+    snapshot = controller.state_snapshot()
+    assert snapshot["state"] == "running"
+    assert snapshot["pid"] != first_pid
+    history = [row for row in read_task(bp_dir, task["id"]).get("history", []) if row.get("event") == "service_order_succeeded"]
+    assert history[-1]["action"] == "restart"
+
+    stop_service(bp_dir, ws_id, 0, socket)
+
+
+def test_service_ticket_order_failure_blocks_and_records_history(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        activation="manual",
+        pre_start=f'"{sys.executable}" -c "import sys; sys.exit(4)"',
+        max_retries=0,
+    )
+    task = create_task(bp_dir, "Broken service")
+    assign_task(bp_dir, 0, task["id"])
+
+    start_worker(bp_dir, 0)
+
+    assert _wait_for(lambda: read_task(bp_dir, task["id"]).get("status") == "blocked") is True
+    updated = read_task(bp_dir, task["id"])
+    history = updated.get("history", [])
+    assert any(row.get("event") == "service_order_started" for row in history)
+    failed = [row for row in history if row.get("event") == "service_order_failed"]
+    assert failed
+    assert "Pre-start exited" in failed[-1]["reason"]
+    assert "Pre-start exited" in updated["body"]
 
 
 def teardown_module(_module):

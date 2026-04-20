@@ -51,7 +51,7 @@ const WorkerFocusView = {
   },
   computed: {
     isWorking() {
-      return ['working', 'starting', 'running'].includes(this.workerState);
+      return ['working', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState);
     },
     isService() {
       return this.worker?.type === 'service';

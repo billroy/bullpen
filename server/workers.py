@@ -325,6 +325,10 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     if worker_type.type_id == "shell":
         _run_shell_worker(bp_dir, slot_index, socketio, ws_id)
         return
+    if worker_type.type_id == "service":
+        from server import service_worker as service_worker_mod
+        service_worker_mod.run_service_order(bp_dir, slot_index, socketio, ws_id)
+        return
     # Unknown or not-yet-runnable types (eval, unknown) surface a toast and
     # never enter the lifecycle.
     if socketio:
@@ -2175,7 +2179,17 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
     assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
 
 
-def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="", ws_id=None, non_retryable=False):
+def _on_agent_error(
+    bp_dir,
+    slot_index,
+    task_id,
+    error_msg,
+    socketio,
+    output="",
+    ws_id=None,
+    non_retryable=False,
+    max_retries_override=None,
+):
     """Handle agent failure. Retry or block."""
     should_retry = False
     retry_delay = 0
@@ -2199,7 +2213,7 @@ def _on_agent_error(bp_dir, slot_index, task_id, error_msg, socketio, output="",
         if task_id not in queue:
             return
 
-        max_retries = worker.get("max_retries", 1)
+        max_retries = worker.get("max_retries", 1) if max_retries_override is None else max_retries_override
         task = task_mod.read_task(bp_dir, task_id)
         if not task:
             return

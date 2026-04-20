@@ -84,9 +84,7 @@ class ServiceWorkerType(WorkerType):
         return "service"
 
     def runnable(self):
-        # Phase 1 only persists/configures service slots. The lifecycle
-        # controller lands in the next phase.
-        return False
+        return True
 
 
 class EvalWorkerType(WorkerType):

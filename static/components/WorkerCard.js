@@ -121,7 +121,7 @@ const WorkerCard = {
       return !!(this.passDir && this.neighborSlots && this.neighborSlots[this.passDir] != null);
     },
     workerState() { return this.worker.service_state?.state || this.worker.state || 'idle'; },
-    isWorking() { return ['working', 'starting', 'running'].includes(this.workerState); },
+    isWorking() { return ['working', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState); },
     showOutputPane() {
       return this.layoutMode !== 'small';
     },
@@ -129,6 +129,8 @@ const WorkerCard = {
       if (this.isPaused) return 'PAUSED';
       if (this.isService && this.workerState === 'running') return `RUNNING ${this.elapsed}`;
       if (this.isService && this.workerState === 'starting') return `STARTING ${this.elapsed}`;
+      if (this.isService && this.workerState === 'healthy') return `HEALTHY ${this.elapsed}`;
+      if (this.isService && this.workerState === 'unhealthy') return `UNHEALTHY ${this.elapsed}`;
       if (this.isWorking) return `BUSY ${this.elapsed}`;
       return this.workerState.toUpperCase();
     },
@@ -144,11 +146,11 @@ const WorkerCard = {
       return this.workerState === 'idle' && !this.isDisabledType;
     },
     canStop() {
-      if (this.isService) return ['starting', 'running'].includes(this.workerState);
+      if (this.isService) return ['starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState);
       return this.isWorking;
     },
     canRestart() {
-      return this.isService && ['idle', 'stopped', 'running', 'crashed'].includes(this.workerState);
+      return this.isService && ['idle', 'stopped', 'running', 'healthy', 'unhealthy', 'crashed'].includes(this.workerState);
     },
     canWatch() {
       return this.isService || this.isWorking;

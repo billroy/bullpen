@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import time
 from datetime import datetime, timezone
 
 from server.persistence import read_json
+from server import tasks as task_mod
 from server.worker_types import normalize_layout
 
 
@@ -18,6 +20,9 @@ SERVICE_LOG_DEFAULT_MAX = 5 * 1024 * 1024
 SERVICE_SECRET_ENV_MARKERS = (
     "TOKEN", "SECRET", "KEY", "PASSWORD", "CREDENTIAL", "PASSPHRASE",
 )
+RUNNING_STATES = {"running", "healthy", "unhealthy"}
+BUSY_STATES = {"starting", "stopping"}
+COMMIT_LINE_RE = re.compile(r"^\s*commit\s*:\s*([0-9a-f]{7,40})\b", re.IGNORECASE | re.MULTILINE)
 
 _controllers = {}
 _controllers_lock = threading.Lock()
@@ -134,6 +139,220 @@ def _load_service_slot(bp_dir, slot_index):
     if worker.get("type") != "service":
         raise ValueError("Selected worker is not a Service worker.")
     return worker
+
+
+def _service_order_id(order):
+    return str((order or {}).get("id") or _event_id())
+
+
+def _ticket_commit(task):
+    if not task:
+        return ""
+    explicit = str(task.get("commit") or "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{7,40}", explicit):
+        return explicit
+    match = COMMIT_LINE_RE.search(task.get("body") or "")
+    return match.group(1) if match else ""
+
+
+def _ticket_env(task):
+    task = task or {}
+    return {
+        "BULLPEN_SERVICE_COMMIT": _ticket_commit(task),
+        "BULLPEN_TICKET_ID": str(task.get("id") or ""),
+        "BULLPEN_TICKET_TITLE": str(task.get("title") or ""),
+        "BULLPEN_TICKET_STATUS": str(task.get("status") or ""),
+        "BULLPEN_TICKET_PRIORITY": str(task.get("priority") or ""),
+        "BULLPEN_TICKET_TAGS": ",".join(str(tag) for tag in (task.get("tags") or [])),
+    }
+
+
+def _log_artifact(bp_dir, path):
+    return os.path.relpath(path, os.path.dirname(bp_dir)).replace(os.sep, "/")
+
+
+def _append_service_history(bp_dir, task_id, event, worker, slot_index, row):
+    task = task_mod.read_task(bp_dir, task_id)
+    if not task:
+        return
+    history = list(task.get("history") or [])
+    history.append({
+        "timestamp": _now_iso(),
+        "event": event,
+        "worker_type": "service",
+        "worker_name": worker.get("name", "Service"),
+        "worker_slot": slot_index,
+        "task_id": task_id,
+        **row,
+    })
+    task_mod.update_task(bp_dir, task_id, {"history": history})
+
+
+def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None):
+    """Start a ticket-triggered Service worker order from the normal queue."""
+    from server import workers as worker_mod
+
+    try:
+        layout = worker_mod._load_layout(bp_dir)
+    except FileNotFoundError:
+        return
+    slots = layout.get("slots", [])
+    if slot_index >= len(slots):
+        return
+    worker = slots[slot_index]
+    if not worker or worker.get("type") != "service":
+        return
+    if not worker.get("task_queue"):
+        return
+
+    errors = []
+    command = str(worker.get("command") or "").strip()
+    if not command:
+        errors.append("Service workers require a command.")
+    for item in worker.get("env") or []:
+        key = str((item or {}).get("key") or "").strip()
+        if key == "BULLPEN_MCP_TOKEN" or key.startswith("BULLPEN_"):
+            errors.append(f"{key} cannot be configured for Service workers.")
+    if errors:
+        worker_mod._block_agent_start_failure(
+            bp_dir, slot_index, worker["task_queue"][0], errors[0], socketio, ws_id,
+        )
+        return
+
+    begun = worker_mod._begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    if begun is None:
+        return
+    layout, worker, task, task_id = begun
+    worker_snapshot = dict(worker)
+    worker_mod._commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id)
+
+    thread = threading.Thread(
+        target=_run_service_order_thread,
+        args=(bp_dir, slot_index, task_id, worker_snapshot, socketio, ws_id),
+        daemon=True,
+    )
+    thread.start()
+
+
+def _run_service_order_thread(bp_dir, slot_index, task_id, worker_snapshot, socketio, ws_id):
+    from server import workers as worker_mod
+
+    started = time.time()
+    task = task_mod.read_task(bp_dir, task_id)
+    order = {
+        "id": task_id,
+        "task": task,
+    }
+    _append_service_history(
+        bp_dir,
+        task_id,
+        "service_order_started",
+        worker_snapshot,
+        slot_index,
+        {
+            "action": worker_snapshot.get("ticket_action", "start-if-stopped-else-restart"),
+            "log_artifact": _log_artifact(bp_dir, os.path.join(bp_dir, "logs", "services", f"slot-{slot_index}", "service.log")),
+        },
+    )
+
+    try:
+        controller = get_controller(bp_dir, ws_id, slot_index, socketio)
+        result = controller.run_ticket_order(order, worker_snapshot)
+        duration_ms = int((time.time() - started) * 1000)
+        if result.get("ok"):
+            snapshot = controller.state_snapshot()
+            _append_service_history(
+                bp_dir,
+                task_id,
+                "service_order_succeeded",
+                worker_snapshot,
+                slot_index,
+                {
+                    "action": result.get("action"),
+                    "state": snapshot.get("state"),
+                    "health": snapshot.get("health"),
+                    "pid": snapshot.get("pid"),
+                    "duration_ms": duration_ms,
+                    "exit_code": snapshot.get("exit_code"),
+                    "reason": None,
+                    "log_artifact": _log_artifact(bp_dir, controller.log_path),
+                    "config_hash": snapshot.get("active_config_hash"),
+                },
+            )
+            worker_mod._on_agent_success(
+                bp_dir,
+                slot_index,
+                task_id,
+                "",
+                socketio,
+                agent_cwd=None,
+                ws_id=ws_id,
+                usage={},
+                disposition_override=worker_snapshot.get("disposition", "review"),
+                output_appender=lambda _worker: None,
+                allow_auto_actions=False,
+            )
+            return
+
+        reason = result.get("reason") or "Service order failed."
+        _append_service_history(
+            bp_dir,
+            task_id,
+            "service_order_failed",
+            worker_snapshot,
+            slot_index,
+            {
+                "action": result.get("action"),
+                "state": result.get("state"),
+                "health": result.get("health"),
+                "pid": result.get("pid"),
+                "duration_ms": duration_ms,
+                "exit_code": result.get("exit_code"),
+                "reason": reason,
+                "log_artifact": _log_artifact(bp_dir, controller.log_path),
+            },
+        )
+        worker_mod._on_agent_error(
+            bp_dir,
+            slot_index,
+            task_id,
+            reason,
+            socketio,
+            output="",
+            ws_id=ws_id,
+            non_retryable=False,
+            max_retries_override=worker_snapshot.get("max_retries", 1),
+        )
+    except Exception as exc:
+        duration_ms = int((time.time() - started) * 1000)
+        _append_service_history(
+            bp_dir,
+            task_id,
+            "service_order_failed",
+            worker_snapshot,
+            slot_index,
+            {
+                "action": worker_snapshot.get("ticket_action", "start-if-stopped-else-restart"),
+                "state": "crashed",
+                "health": None,
+                "pid": None,
+                "duration_ms": duration_ms,
+                "exit_code": None,
+                "reason": str(exc),
+                "log_artifact": _log_artifact(bp_dir, os.path.join(bp_dir, "logs", "services", f"slot-{slot_index}", "service.log")),
+            },
+        )
+        worker_mod._on_agent_error(
+            bp_dir,
+            slot_index,
+            task_id,
+            str(exc),
+            socketio,
+            output="",
+            ws_id=ws_id,
+            non_retryable=False,
+            max_retries_override=worker_snapshot.get("max_retries", 1),
+        )
 
 
 class ServiceWorkerController:
@@ -294,10 +513,10 @@ class ServiceWorkerController:
                 setattr(self, f"_{key}", value)
         self.emit_state()
 
-    def _start_sequence(self):
-        order_id = _event_id()
+    def _start_sequence(self, order=None, worker_snapshot=None, result=None):
+        order_id = _service_order_id(order)
         try:
-            worker = _load_service_slot(self.bp_dir, self.slot_index)
+            worker = worker_snapshot or _load_service_slot(self.bp_dir, self.slot_index)
             command = str(worker.get("command") or "").strip()
             if not command:
                 raise ValueError("Service workers require a command.")
@@ -317,13 +536,8 @@ class ServiceWorkerController:
                 "BULLPEN_SERVICE_SLOT": str(self.slot_index),
                 "BULLPEN_SERVICE_NAME": str(worker.get("name") or ""),
                 "BULLPEN_SERVICE_ORDER_ID": order_id,
-                "BULLPEN_SERVICE_COMMIT": "",
-                "BULLPEN_TICKET_ID": "",
-                "BULLPEN_TICKET_TITLE": "",
-                "BULLPEN_TICKET_STATUS": "",
-                "BULLPEN_TICKET_PRIORITY": "",
-                "BULLPEN_TICKET_TAGS": "",
             })
+            env.update(_ticket_env((order or {}).get("task")))
 
             pre_start = str(worker.get("pre_start") or "").strip()
             if pre_start:
@@ -331,7 +545,9 @@ class ServiceWorkerController:
 
             if self._cancel.is_set():
                 self._set_state("stopped", pid=None, started_at=None)
-                return
+                if result is not None:
+                    result.update({"ok": False, "reason": "Service start was canceled."})
+                return False
 
             proc = subprocess.Popen(
                 _command_argv(command),
@@ -361,7 +577,9 @@ class ServiceWorkerController:
                 grace -= step
             if self._cancel.is_set():
                 self.stop()
-                return
+                if result is not None:
+                    result.update({"ok": False, "reason": "Service start was canceled."})
+                return False
             if proc.poll() is not None:
                 raise RuntimeError(f"Service exited during startup with code {proc.returncode}.")
             if time.monotonic() >= deadline:
@@ -369,16 +587,60 @@ class ServiceWorkerController:
             self._set_state("running")
             self._write_log("[bullpen] service running\n", emit=True)
             threading.Thread(target=self._monitor, args=(proc,), daemon=True).start()
+            if result is not None:
+                result.update({"ok": True, "state": self._state, "pid": proc.pid, "exit_code": None})
+            return True
         except Exception as exc:
             self._last_error = str(exc)
             self._write_log(f"[bullpen] service start failed: {exc}\n", emit=True)
             self._cleanup_failed_start()
             self._set_state("crashed", pid=None, started_at=None)
+            if result is not None:
+                result.update({"ok": False, "reason": str(exc), "state": "crashed", "exit_code": self._exit_code})
+            return False
 
-    def _restart_sequence(self):
+    def _restart_sequence(self, order=None, worker_snapshot=None, result=None):
         self.stop()
         self._cancel.clear()
-        self._start_sequence()
+        return self._start_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
+
+    def run_ticket_order(self, order, worker_snapshot):
+        order_id = _service_order_id(order)
+        action = str(worker_snapshot.get("ticket_action") or "start-if-stopped-else-restart")
+        if action not in {"start-if-stopped-else-restart", "restart", "start-if-stopped"}:
+            action = "start-if-stopped-else-restart"
+
+        with self._lock:
+            state = self._state
+        if state in BUSY_STATES:
+            reason = f"Service is busy ({state})."
+            self._write_log(f"[bullpen] service order {order_id} failed: {reason}\n", emit=True)
+            return {"ok": False, "reason": reason, "state": state, "action": action}
+
+        if action == "start-if-stopped" and state in RUNNING_STATES:
+            self._write_log(f"[bullpen] service order {order_id}: service already {state}\n", emit=True)
+            self.emit_state()
+            return {
+                "ok": True,
+                "state": state,
+                "health": self._health,
+                "pid": self._pid,
+                "exit_code": self._exit_code,
+                "action": action,
+            }
+
+        result = {"action": action}
+        if action == "restart" or (action == "start-if-stopped-else-restart" and state in RUNNING_STATES):
+            self._restart_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
+        else:
+            self._start_sequence(order=order, worker_snapshot=worker_snapshot, result=result)
+        result.setdefault("action", action)
+        snapshot = self.state_snapshot()
+        result.setdefault("state", snapshot.get("state"))
+        result.setdefault("health", snapshot.get("health"))
+        result.setdefault("pid", snapshot.get("pid"))
+        result.setdefault("exit_code", snapshot.get("exit_code"))
+        return result
 
     def _run_pre_start(self, command, cwd, env, deadline):
         self._write_log("[bullpen] running pre-start\n", emit=True)
@@ -450,6 +712,9 @@ class ServiceWorkerController:
         with self._lock:
             proc = self._proc
             pre = self._pre_start_proc
+            for candidate in (proc, pre):
+                if candidate and candidate.poll() is not None:
+                    self._exit_code = candidate.returncode
             self._proc = None
             self._pre_start_proc = None
             self._pid = None
@@ -520,7 +785,7 @@ class ServiceWorkerController:
 
 
 def get_controller(bp_dir, ws_id, slot, socketio=None):
-    key = (ws_id, int(slot))
+    key = (ws_id, os.path.realpath(bp_dir), int(slot))
     with _controllers_lock:
         controller = _controllers.get(key)
         if controller is None:
@@ -549,7 +814,7 @@ def tail_service(bp_dir, ws_id, slot, socketio=None, max_bytes=65536):
 
 def stop_workspace_services(ws_id, *, wait=True):
     with _controllers_lock:
-        controllers = [controller for (key_ws_id, _), controller in _controllers.items() if key_ws_id == ws_id]
+        controllers = [controller for (key_ws_id, _, _), controller in _controllers.items() if key_ws_id == ws_id]
     _stop_controllers(controllers, wait=wait)
 
 
