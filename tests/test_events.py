@@ -941,6 +941,10 @@ class TestConfigEvents:
 class TestProjectEvents:
     def test_project_new_writes_current_mcp_runtime_config(self, client):
         c, app = client
+        startup_config_path = os.path.join(app.config["bp_dir"], "config.json")
+        with open(startup_config_path, "r", encoding="utf-8") as f:
+            startup_config = json.load(f)
+        startup_token = startup_config["mcp_token"]
         with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
             path = os.path.join(parent, "new-mcp-project")
             c.emit("project:new", {"path": path})
@@ -954,7 +958,43 @@ class TestProjectEvents:
 
             assert config["server_host"] == app.config["host"]
             assert config["server_port"] == app.config["port"]
-            assert config["mcp_token"] == app.config["mcp_token"]
+            assert config["mcp_token"]
+            assert config["mcp_token"] != startup_token
+
+    def test_mcp_client_is_scoped_to_its_workspace(self, client):
+        c, app = client
+        with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
+            path = os.path.join(parent, "mcp-scoped-project")
+            c.emit("project:new", {"path": path})
+            events = c.get_received()
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            listed = project_updates[-1]["args"][0]
+            startup_ws_id = app.config["startup_workspace_id"]
+            other_ws_id = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+
+            config_path = os.path.join(path, ".bullpen", "config.json")
+            with open(config_path, "r", encoding="utf-8") as f:
+                token = json.load(f)["mcp_token"]
+
+            mcp_client = socketio.test_client(app, auth={"mcp_token": token})
+            try:
+                assert mcp_client.is_connected() is True
+                received = mcp_client.get_received()
+                state_events = [evt for evt in received if evt["name"] == "state:init"]
+                project_events = [evt for evt in received if evt["name"] == "projects:updated"]
+                assert [evt["args"][0]["workspaceId"] for evt in state_events] == [other_ws_id]
+                assert project_events == []
+
+                mcp_client.emit("project:join", {"workspaceId": startup_ws_id})
+                err = get_event(mcp_client, "error")
+                assert err is not None
+                assert "only authorized for workspace" in err["message"]
+
+                mcp_client.emit("project:list")
+                listed_projects = get_event(mcp_client, "projects:updated")
+                assert [project["id"] for project in listed_projects] == [other_ws_id]
+            finally:
+                mcp_client.disconnect()
 
     def test_chat_session_ids_are_scoped_by_workspace(self, client):
         c, app = client

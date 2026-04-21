@@ -46,6 +46,27 @@ def parse_args(argv=None):
         type=int,
         help="Bullpen Socket.IO port (default: read from .bullpen/config.json)",
     )
+    mcp_token_parser = subparsers.add_parser(
+        "mcp-token",
+        help="Manage workspace-scoped MCP authentication tokens",
+        description=(
+            "Inspect or rotate the MCP token stored in a workspace's "
+            ".bullpen/config.json runtime config."
+        ),
+    )
+    mcp_token_parser.add_argument(
+        "--workspace",
+        dest="mcp_token_workspace",
+        default=None,
+        help="Path to the workspace directory (default: current directory)",
+    )
+    mcp_token_parser.add_argument(
+        "--bp-dir",
+        dest="mcp_token_bp_dir",
+        help="Path to .bullpen directory (default: --workspace/.bullpen)",
+    )
+    mcp_token_subparsers = mcp_token_parser.add_subparsers(dest="mcp_token_action", required=True)
+    mcp_token_subparsers.add_parser("rotate", help="Rotate the workspace MCP token")
     ticket_parser = subparsers.add_parser(
         "ticket",
         help="Manage Bullpen tickets through the running server",
@@ -172,6 +193,9 @@ def parse_args(argv=None):
         args.bp_dir = args.mcp_bp_dir
         args.host = args.mcp_host
         args.port = args.mcp_port
+    elif args.command == "mcp-token":
+        args.workspace = args.mcp_token_workspace or args.workspace
+        args.bp_dir = args.mcp_token_bp_dir
     elif args.command == "ticket":
         args.workspace = args.ticket_workspace or args.workspace
         args.bp_dir = args.ticket_bp_dir
@@ -196,6 +220,30 @@ def run_mcp_cli(args):
         return 1
 
     mcp_tools.main(bp_dir, host, port)
+    return 0
+
+
+def run_mcp_token_cli(args):
+    """Rotate workspace-scoped MCP tokens from the shell."""
+    import json
+
+    from server import mcp_auth, mcp_tools
+
+    try:
+        bp_dir, host, port = mcp_tools.resolve_runtime_args(
+            bp_dir=args.bp_dir,
+            workspace=args.workspace,
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    if args.mcp_token_action != "rotate":
+        print(f"Error: unknown mcp-token action {args.mcp_token_action}", file=sys.stderr)
+        return 1
+
+    mcp_auth.rotate_workspace_mcp_token(bp_dir, host=host, port=port)
+    print(json.dumps({"ok": True, "workspace": os.path.abspath(args.workspace), "bp_dir": bp_dir}, indent=2))
     return 0
 
 
@@ -432,6 +480,8 @@ def main():
 
     if args.command == "mcp":
         sys.exit(run_mcp_cli(args))
+    if args.command == "mcp-token":
+        sys.exit(run_mcp_token_cli(args))
     if args.command == "ticket":
         sys.exit(run_ticket_cli(args))
 

@@ -9,11 +9,13 @@ we write a ``.env`` file into that patched directory *before* calling
 
 import os
 import tempfile
+import json
 
 import pytest
 
 import server.workspace_manager as wm
 from server import auth
+from server import mcp_auth
 from server.app import create_app, socketio
 
 
@@ -233,6 +235,35 @@ class TestSocketIoAuthEnabled:
         names = [e["name"] for e in events]
         assert "state:init" in names
         sio_client.disconnect()
+
+    def test_socketio_connect_mcp_token_accepted_without_session(self, auth_app):
+        config_path = os.path.join(auth_app.config["bp_dir"], "config.json")
+        with open(config_path, "r", encoding="utf-8") as f:
+            token = json.load(f)["mcp_token"]
+
+        client = socketio.test_client(auth_app, auth={"mcp_token": token})
+        assert client.is_connected() is True
+        events = client.get_received()
+        assert [e["name"] for e in events] == ["state:init"]
+        client.disconnect()
+
+    def test_socketio_rotated_mcp_token_invalidates_old_connects(self, auth_app):
+        config_path = os.path.join(auth_app.config["bp_dir"], "config.json")
+        with open(config_path, "r", encoding="utf-8") as f:
+            old_token = json.load(f)["mcp_token"]
+
+        new_token = mcp_auth.rotate_workspace_mcp_token(
+            auth_app.config["bp_dir"],
+            host=auth_app.config["host"],
+            port=auth_app.config["port"],
+        )
+
+        rejected = socketio.test_client(auth_app, auth={"mcp_token": old_token})
+        assert rejected.is_connected() is False
+
+        accepted = socketio.test_client(auth_app, auth={"mcp_token": new_token})
+        assert accepted.is_connected() is True
+        accepted.disconnect()
 
 
 # ---------------------------------------------------------------------------

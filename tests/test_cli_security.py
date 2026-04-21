@@ -1,6 +1,7 @@
 """CLI startup security checks."""
 
 import builtins
+import json
 
 import pytest
 
@@ -70,6 +71,14 @@ def test_parse_args_supports_mcp_subcommand():
     assert args.port == 5050
 
 
+def test_parse_args_supports_mcp_token_rotate_subcommand():
+    args = bullpen.parse_args(["mcp-token", "--workspace", "/tmp/project", "rotate"])
+
+    assert args.command == "mcp-token"
+    assert args.workspace == "/tmp/project"
+    assert args.mcp_token_action == "rotate"
+
+
 def test_parse_args_mcp_preserves_global_workspace_before_subcommand():
     args = bullpen.parse_args(["--workspace", "/tmp/project", "mcp"])
 
@@ -99,6 +108,29 @@ def test_run_mcp_cli_resolves_workspace_and_calls_mcp_main(tmp_path, monkeypatch
 
     assert rc == 0
     assert called["args"] == (str(bp_dir), "127.0.0.1", 5055)
+
+
+def test_run_mcp_token_cli_rotates_workspace_token(tmp_path, capsys):
+    workspace = tmp_path / "project"
+    bp_dir = workspace / ".bullpen"
+    bp_dir.mkdir(parents=True)
+    config_path = bp_dir / "config.json"
+    config_path.write_text(
+        '{"server_host":"127.0.0.1","server_port":5055,"mcp_token":"token-old"}\n',
+        encoding="utf-8",
+    )
+
+    args = bullpen.parse_args(["mcp-token", "--workspace", str(workspace), "rotate"])
+    rc = bullpen.run_mcp_token_cli(args)
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is True
+    assert payload["bp_dir"] == str(bp_dir)
+    updated = json.loads(config_path.read_text(encoding="utf-8"))
+    assert updated["server_host"] == "127.0.0.1"
+    assert updated["server_port"] == 5055
+    assert updated["mcp_token"] != "token-old"
 
 
 def test_set_password_cli_add_and_delete_users(tmp_path, monkeypatch):

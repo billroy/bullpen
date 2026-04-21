@@ -26,6 +26,7 @@ from server import workers as worker_mod
 from server import service_worker as service_worker_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
+from server import mcp_auth
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_coord, validate_worker_configure,
@@ -226,11 +227,17 @@ def _build_pasted_worker(source, coord, existing_names):
 
 def _write_runtime_mcp_config(app, bp_dir):
     """Write the current server connection metadata for MCP helper processes."""
-    config = read_json(os.path.join(bp_dir, "config.json"))
-    config["server_host"] = app.config.get("host", "127.0.0.1")
-    config["server_port"] = app.config.get("port", 5000)
-    config["mcp_token"] = app.config.get("mcp_token")
-    write_json(os.path.join(bp_dir, "config.json"), config)
+    manager = app.config["manager"]
+    token = mcp_auth.ensure_workspace_runtime_config(
+        bp_dir,
+        host=app.config.get("host", "127.0.0.1"),
+        port=app.config.get("port", 5000),
+        disallowed_tokens=mcp_auth.workspace_token_set(manager.all_workspaces(), exclude_bp_dir=bp_dir),
+    )
+    app.config.setdefault("mcp_tokens_by_workspace", {})
+    ws = next((workspace for workspace in manager.all_workspaces() if workspace.bp_dir == bp_dir), None)
+    if ws:
+        app.config["mcp_tokens_by_workspace"][ws.id] = token
 
 
 def register_events(socketio, app):
@@ -240,10 +247,31 @@ def register_events(socketio, app):
         """Resolve workspaceId from event data, return (workspace_id, bp_dir)."""
         manager = app.config["manager"]
         ws_id = data.get("workspaceId") if isinstance(data, dict) else None
+        from server.app import mcp_sid_workspace
+        bound_ws_id = mcp_sid_workspace.get(request.sid)
+        if bound_ws_id:
+            if ws_id and ws_id != bound_ws_id:
+                logging.warning(
+                    "Ignoring MCP request for workspace %s from sid %s; bound to %s",
+                    ws_id,
+                    request.sid,
+                    bound_ws_id,
+                )
+            ws_id = bound_ws_id
         if not ws_id:
             ws_id = app.config["startup_workspace_id"]
             logging.warning("_resolve() fallback to startup_workspace_id %s — caller sent no workspaceId", ws_id)
         return ws_id, manager.get_bp_dir(ws_id)
+
+    def _bound_mcp_workspace():
+        from server.app import mcp_sid_workspace
+        return mcp_sid_workspace.get(request.sid)
+
+    def _forbid_mcp_project_admin(event_name):
+        if not _bound_mcp_workspace():
+            return False
+        emit("error", {"message": f"{event_name} unavailable for MCP-authenticated clients"})
+        return True
 
     def _emit(event, payload, ws_id):
         """Emit an event with workspaceId attached, scoped to workspace room."""
@@ -960,6 +988,12 @@ def register_events(socketio, app):
     def on_project_join(data):
         manager = app.config["manager"]
         ws_id = data.get("workspaceId") if isinstance(data, dict) else None
+        bound_ws_id = _bound_mcp_workspace()
+        if bound_ws_id:
+            if ws_id and ws_id != bound_ws_id:
+                emit("error", {"message": f"MCP client is only authorized for workspace {bound_ws_id}"})
+                return
+            ws_id = bound_ws_id
         ws = manager.get_or_activate(ws_id) if ws_id else None
         if not ws:
             emit("error", {"message": "Unknown project"})
@@ -975,6 +1009,8 @@ def register_events(socketio, app):
     @socketio.on("project:add")
     @with_lock
     def on_project_add(data):
+        if _forbid_mcp_project_admin("project:add"):
+            return
         manager = app.config["manager"]
         path = data.get("path", "").strip()
         if not path:
@@ -991,6 +1027,8 @@ def register_events(socketio, app):
     @socketio.on("project:new")
     @with_lock
     def on_project_new(data):
+        if _forbid_mcp_project_admin("project:new"):
+            return
         manager = app.config["manager"]
         raw_path = data.get("path", "")
         path = os.path.abspath(raw_path.strip())
@@ -1028,6 +1066,8 @@ def register_events(socketio, app):
     @socketio.on("project:clone")
     @with_lock
     def on_project_clone(data):
+        if _forbid_mcp_project_admin("project:clone"):
+            return
         manager = app.config["manager"]
         url = (data.get("url") or "").strip()
         if not url:
@@ -1080,6 +1120,8 @@ def register_events(socketio, app):
     @socketio.on("project:remove")
     @with_lock
     def on_project_remove(data):
+        if _forbid_mcp_project_admin("project:remove"):
+            return
         manager = app.config["manager"]
         ws_id = data.get("workspaceId")
         if not ws_id:
@@ -1106,6 +1148,11 @@ def register_events(socketio, app):
     @socketio.on("project:list")
     def on_project_list(data=None):
         manager = app.config["manager"]
+        bound_ws_id = _bound_mcp_workspace()
+        if bound_ws_id:
+            ws = manager.get_or_activate(bound_ws_id)
+            emit("projects:updated", [ws.to_dict()] if ws else [])
+            return
         emit("projects:updated", manager.list_projects())
 
     @socketio.on("chat:tabs:request")

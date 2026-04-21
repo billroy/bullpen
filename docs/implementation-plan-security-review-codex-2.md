@@ -35,7 +35,7 @@ This keeps the highest-risk issues moving immediately while avoiding a large all
 
 - Tranche 1: Completed on 2026-04-21
 - Tranche 2: Completed on 2026-04-21
-- Tranche 3: Pending
+- Tranche 3: Completed on 2026-04-21
 - Tranche 4: Pending
 - Tranche 5: Pending
 - Tranche 6: Pending
@@ -131,6 +131,17 @@ Implemented:
 ## Tranche 3 — Per-Workspace MCP Authentication
 
 **Goal:** Restore workspace isolation for MCP-authenticated clients.
+**Status:** Completed on 2026-04-21
+
+Implemented:
+
+- Added a dedicated `server/mcp_auth.py` helper so workspace runtime config stamping, token lookup, and rotation all use one code path.
+- Replaced the shared MCP token bootstrap with distinct per-workspace tokens, including duplicate-token cleanup when active workspaces are stamped.
+- Socket.IO MCP auth now resolves a token to exactly one workspace and sends only that workspace's `state:init` payload.
+- MCP-authenticated sockets now stay scoped to their bound workspace and cannot use `project:join` or project-management events to widen access.
+- Added a CLI rotation path via `bullpen mcp-token rotate --workspace <path>`.
+- Preserved existing workspace tokens during import flows unless a collision forces replacement.
+- Added regression coverage for workspace scoping, rotated-token invalidation, distinct project tokens, and the new CLI behavior.
 
 ### T3.1 Generate and persist distinct tokens per workspace
 

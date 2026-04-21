@@ -7,6 +7,7 @@ import zipfile
 
 from server.app import create_app
 from server.init import init_workspace
+from server import mcp_auth
 from server.persistence import read_json, write_json
 
 
@@ -47,6 +48,7 @@ def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     client = app.test_client()
 
     original = read_json(os.path.join(bp_dir, "config.json"))
+    original_token = original["mcp_token"]
     assert original["name"] == "Bullpen"
 
     payload = {
@@ -64,7 +66,7 @@ def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     assert config["name"] == "Imported Workspace"
     assert config["server_host"] == app.config["host"]
     assert config["server_port"] == app.config["port"]
-    assert config["mcp_token"] == app.config["mcp_token"]
+    assert config["mcp_token"] == original_token
 
 
 def test_export_all_and_import_all_round_trip(tmp_workspace):
@@ -77,9 +79,32 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     bp2 = init_workspace(ws2)
     ws2_id = manager.register_project(ws2, name="workspace-two")
     ws1_id = app.config["startup_workspace_id"]
+    mcp_auth.ensure_workspace_runtime_config(bp2, host=app.config["host"], port=app.config["port"])
 
-    write_json(os.path.join(bp1, "config.json"), {"name": "One", "columns": [], "grid": {"rows": 4, "cols": 6}})
-    write_json(os.path.join(bp2, "config.json"), {"name": "Two", "columns": [], "grid": {"rows": 4, "cols": 6}})
+    write_json(
+        os.path.join(bp1, "config.json"),
+        {
+            "name": "One",
+            "columns": [],
+            "grid": {"rows": 4, "cols": 6},
+            "server_host": app.config["host"],
+            "server_port": app.config["port"],
+            "mcp_token": read_json(os.path.join(bp1, "config.json"))["mcp_token"],
+        },
+    )
+    write_json(
+        os.path.join(bp2, "config.json"),
+        {
+            "name": "Two",
+            "columns": [],
+            "grid": {"rows": 4, "cols": 6},
+            "server_host": app.config["host"],
+            "server_port": app.config["port"],
+            "mcp_token": read_json(os.path.join(bp2, "config.json"))["mcp_token"],
+        },
+    )
+    token_one = read_json(os.path.join(bp1, "config.json"))["mcp_token"]
+    token_two = read_json(os.path.join(bp2, "config.json"))["mcp_token"]
 
     client = app.test_client()
     export_resp = client.get("/api/export/all")
@@ -116,7 +141,8 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     for config in (config_one, config_two):
         assert config["server_host"] == app.config["host"]
         assert config["server_port"] == app.config["port"]
-        assert config["mcp_token"] == app.config["mcp_token"]
+    assert config_one["mcp_token"] == token_one
+    assert config_two["mcp_token"] == token_two
 
 
 def test_export_workers_returns_workers_payload(tmp_workspace):
@@ -159,6 +185,7 @@ def test_import_workers_replaces_layout_from_zip(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = app.test_client()
+    original_token = read_json(os.path.join(bp_dir, "config.json"))["mcp_token"]
 
     write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
     archive = _zip_bytes(
@@ -194,4 +221,4 @@ def test_import_workers_replaces_layout_from_zip(tmp_workspace):
     assert profile["id"] == "imported-profile"
     assert config["server_host"] == app.config["host"]
     assert config["server_port"] == app.config["port"]
-    assert config["mcp_token"] == app.config["mcp_token"]
+    assert config["mcp_token"] == original_token

@@ -37,6 +37,7 @@ from server.teams import list_teams
 from server.worker_types import ViewerContext, normalize_layout, serialize_layout
 from server.workspace_manager import WorkspaceManager
 from server import service_worker as service_worker_mod
+from server import mcp_auth
 
 
 socketio = SocketIO()
@@ -46,6 +47,7 @@ _service_worker_atexit_registered = False
 # Used by event handlers to distinguish agent-originated updates from user
 # updates so the agent can't accidentally yank its own running task.
 mcp_sids = set()
+mcp_sid_workspace = {}
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
@@ -206,42 +208,28 @@ def create_app(
             safe.pop(key, None)
         return safe
 
-    def _write_runtime_config(ws):
-        config_path = os.path.join(ws.bp_dir, "config.json")
-        config = read_json(config_path)
-        config["server_host"] = app.config.get("host", "127.0.0.1")
-        config["server_port"] = app.config.get("port", 5000)
-        config["mcp_token"] = app.config.get("mcp_token")
-        write_json(config_path, config)
+    def _write_runtime_config(ws, preferred_token=None):
+        token = mcp_auth.ensure_workspace_runtime_config(
+            ws.bp_dir,
+            host=app.config.get("host", "127.0.0.1"),
+            port=app.config.get("port", 5000),
+            disallowed_tokens=mcp_auth.workspace_token_set(manager.all_workspaces(), exclude_bp_dir=ws.bp_dir),
+            preferred_token=preferred_token,
+        )
+        app.config.setdefault("mcp_tokens_by_workspace", {})
+        app.config["mcp_tokens_by_workspace"][ws.id] = token
 
-    # Store server address and an MCP token so the stdio MCP server (which
-    # has no session cookie) can authenticate via Socket.IO ``auth``. Reuse
-    # any existing token found in a workspace config; only generate a fresh
-    # one if none is present. Rotating the token on every startup breaks
-    # any Bullpen already running against the same workspace — its MCP
-    # stdio clients would read the new token from config and fail to auth
-    # against the original server's in-memory token.
-    import secrets as _secrets
-    mcp_token = None
-    for ws in manager.all_workspaces():
-        try:
-            existing = read_json(os.path.join(ws.bp_dir, "config.json")).get("mcp_token")
-        except Exception:
-            existing = None
-        if existing:
-            mcp_token = existing
-            break
-    if not mcp_token:
-        mcp_token = _secrets.token_urlsafe(32)
     app.config["host"] = host
     app.config["port"] = port
     global _service_worker_atexit_registered
     if not _service_worker_atexit_registered:
         atexit.register(service_worker_mod.stop_all_services)
         _service_worker_atexit_registered = True
-    app.config["mcp_token"] = mcp_token
-    for ws in manager.all_workspaces():
-        _write_runtime_config(ws)
+    app.config["mcp_tokens_by_workspace"] = mcp_auth.initialize_workspace_runtime_configs(
+        manager.all_workspaces(),
+        host,
+        port,
+    )
 
     # Startup reconciliation for all registered workspaces
     for ws in manager.all_workspaces():
@@ -652,11 +640,12 @@ def create_app(
 
     def _replace_workspace_bp_dir(ws, source_bp_dir):
         bp_dir = ws.bp_dir
+        previous_token = mcp_auth.read_workspace_mcp_token(bp_dir)
         if os.path.exists(bp_dir):
             shutil.rmtree(bp_dir)
         shutil.copytree(source_bp_dir, bp_dir)
         init_workspace(ws.path)
-        _write_runtime_config(ws)
+        _write_runtime_config(ws, preferred_token=previous_token)
         reconcile(bp_dir)
         state = load_state(bp_dir, ws.path)
         state["workspaceId"] = ws.id
@@ -676,8 +665,9 @@ def create_app(
             raise ValueError("layout.json slots must be a list")
 
         bp_dir = ws.bp_dir
+        previous_token = mcp_auth.read_workspace_mcp_token(bp_dir)
         init_workspace(ws.path)
-        _write_runtime_config(ws)
+        _write_runtime_config(ws, preferred_token=previous_token)
         config = read_json(os.path.join(bp_dir, "config.json"))
         write_json(os.path.join(bp_dir, "layout.json"), normalize_layout({"slots": slots}, config=config))
 
@@ -833,14 +823,26 @@ def create_app(
         # by passing {"mcp_token": "<token>"} via Socket.IO ``auth``.  The
         # token is written to .bullpen/config.json on startup and is only
         # readable by processes with local filesystem access.
-        expected = app.config.get("mcp_token")
         token = (auth_data or {}).get("mcp_token") if isinstance(auth_data, dict) else None
-        is_mcp = bool(expected) and token == expected
+        mcp_ws_id = mcp_auth.find_workspace_id_for_token(manager.all_workspaces(), token)
+        is_mcp = bool(mcp_ws_id)
         if auth.auth_enabled() and not session.get("authenticated"):
             if not is_mcp:
                 return False
         if is_mcp:
             mcp_sids.add(request.sid)
+            mcp_sid_workspace[request.sid] = mcp_ws_id
+            ws = manager.get_or_activate(mcp_ws_id)
+            if not ws:
+                mcp_sids.discard(request.sid)
+                mcp_sid_workspace.pop(request.sid, None)
+                return False
+            join_room(ws.id)
+            state = load_state(ws.bp_dir, ws.path)
+            state["workspaceId"] = ws.id
+            socketio.emit("state:init", state, to=request.sid)
+            return
+
         join_room("authenticated")
         # Join rooms for all active workspaces
         for ws in manager.all_workspaces():
@@ -857,6 +859,7 @@ def create_app(
     @socketio.on("disconnect")
     def on_disconnect():
         mcp_sids.discard(request.sid)
+        mcp_sid_workspace.pop(request.sid, None)
 
     register_events(socketio, app)
 
