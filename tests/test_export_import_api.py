@@ -5,7 +5,11 @@ import json
 import os
 import zipfile
 
-from server.app import create_app
+from server.app import (
+    _MAX_IMPORT_ARCHIVE_FILES,
+    _MAX_IMPORT_COMPRESSION_RATIO,
+    create_app,
+)
 from server.init import init_workspace
 from server import mcp_auth
 from server.persistence import read_json, write_json
@@ -222,3 +226,69 @@ def test_import_workers_replaces_layout_from_zip(tmp_workspace):
     assert config["server_host"] == app.config["host"]
     assert config["server_port"] == app.config["port"]
     assert config["mcp_token"] == original_token
+
+
+def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    payload = {
+        ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
+    }
+    for idx in range(_MAX_IMPORT_ARCHIVE_FILES):
+        payload[f".bullpen/files/file-{idx}.txt"] = "ok"
+
+    resp = client.post(
+        "/api/import/workspace",
+        data={"file": (_zip_bytes(payload), "workspace.zip")},
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Archive contains too many files"
+
+
+def test_import_workspace_rejects_high_expansion_archive(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    bomb_payload = {
+        ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
+        ".bullpen/payload.txt": "A" * (_MAX_IMPORT_COMPRESSION_RATIO * 4096),
+    }
+
+    resp = client.post(
+        "/api/import/workspace",
+        data={"file": (_zip_bytes(bomb_payload), "workspace.zip")},
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Archive contains highly compressed entries"
+
+
+def test_import_workspace_rejects_nested_archive_files(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    resp = client.post(
+        "/api/import/workspace",
+        data={
+            "file": (
+                _zip_bytes(
+                    {
+                        ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
+                        ".bullpen/nested/archive.zip": "not really a zip, still blocked",
+                    }
+                ),
+                "workspace.zip",
+            )
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Archive contains nested archive files"

@@ -52,6 +52,24 @@ mcp_sid_workspace = {}
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
+_MAX_IMPORT_ARCHIVE_FILES = 1000
+_MAX_IMPORT_COMPRESSION_RATIO = 100
+_NESTED_ARCHIVE_SUFFIXES = (
+    ".zip",
+    ".tar",
+    ".tgz",
+    ".tar.gz",
+    ".tbz",
+    ".tbz2",
+    ".tar.bz2",
+    ".txz",
+    ".tar.xz",
+    ".gz",
+    ".bz2",
+    ".xz",
+    ".7z",
+    ".rar",
+)
 _LOGIN_THROTTLE_WINDOW_SECONDS = 5 * 60
 _LOGIN_THROTTLE_MAX_FAILURES = 5
 _LOGIN_THROTTLE_BLOCK_SECONDS = 60
@@ -664,18 +682,32 @@ def create_app(
 
     def _safe_extract_zip(zf, target_dir):
         total_size = 0
+        total_compressed_size = 0
+        file_count = 0
         for info in zf.infolist():
             name = (info.filename or "").replace("\\", "/")
             if not name or name.endswith("/"):
                 continue
+            file_count += 1
+            if file_count > _MAX_IMPORT_ARCHIVE_FILES:
+                raise ValueError("Archive contains too many files")
             parts = [p for p in name.split("/") if p not in ("", ".")]
             if any(p == ".." for p in parts):
                 raise ValueError("Archive contains invalid relative paths")
             if parts and parts[0].endswith(":"):
                 raise ValueError("Archive contains invalid absolute paths")
+            lower_name = "/".join(parts).lower()
+            if any(lower_name.endswith(suffix) for suffix in _NESTED_ARCHIVE_SUFFIXES):
+                raise ValueError("Archive contains nested archive files")
+            compressed_size = max(0, int(info.compress_size or 0))
+            total_compressed_size += max(1, compressed_size)
             total_size += max(0, int(info.file_size or 0))
             if total_size > _MAX_IMPORT_ARCHIVE_BYTES:
                 raise ValueError("Archive is too large")
+            if info.file_size > max(1, compressed_size) * _MAX_IMPORT_COMPRESSION_RATIO:
+                raise ValueError("Archive contains highly compressed entries")
+            if total_size > total_compressed_size * _MAX_IMPORT_COMPRESSION_RATIO:
+                raise ValueError("Archive compression ratio is too high")
             dest_path = os.path.join(target_dir, *parts)
             ensure_within(dest_path, target_dir)
             os.makedirs(os.path.dirname(dest_path), exist_ok=True)

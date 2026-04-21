@@ -39,7 +39,7 @@ This keeps the highest-risk issues moving immediately while avoiding a large all
 - Tranche 4: Completed on 2026-04-21
 - Tranche 5: Completed on 2026-04-21
 - Tranche 6: Completed on 2026-04-21
-- Tranche 7: Pending
+- Tranche 7: Completed on 2026-04-21
 
 ---
 
@@ -312,6 +312,14 @@ Implemented:
 ## Tranche 7 — Zip Import Availability Hardening
 
 **Goal:** Prevent archive-based resource exhaustion during import.
+**Status:** Completed on 2026-04-21
+
+Implemented:
+
+- Extended `_safe_extract_zip()` in `server/app.py` so all import routes now enforce a maximum extracted file count before touching disk.
+- Added per-entry and aggregate compression-ratio checks to reject highly compressed archives before extraction can consume significant local resources.
+- Rejected nested archive payloads inside imports to block simple archive-in-archive bomb variants that do not belong in Bullpen workspace state.
+- Added regression coverage for over-file-count imports, high-expansion imports, nested archive rejection, and the existing normal import/export flows.
 
 ### T7.1 Add file-count and expansion-ratio limits
 
