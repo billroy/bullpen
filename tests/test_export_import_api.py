@@ -20,7 +20,7 @@ def _zip_bytes(entries):
 
 
 def test_export_workspace_returns_zip_with_bullpen_dir(tmp_workspace):
-    init_workspace(tmp_workspace)
+    bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = app.test_client()
 
@@ -29,8 +29,16 @@ def test_export_workspace_returns_zip_with_bullpen_dir(tmp_workspace):
     assert resp.headers.get("Content-Type", "").startswith("application/zip")
     with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
         names = set(zf.namelist())
+        exported_config = json.loads(zf.read(".bullpen/config.json"))
     assert ".bullpen/config.json" in names
     assert ".bullpen/layout.json" in names
+    live_config = read_json(os.path.join(bp_dir, "config.json"))
+    assert "server_host" in live_config
+    assert "server_port" in live_config
+    assert "mcp_token" in live_config
+    assert "server_host" not in exported_config
+    assert "server_port" not in exported_config
+    assert "mcp_token" not in exported_config
 
 
 def test_import_workspace_replaces_config_from_zip(tmp_workspace):
@@ -54,6 +62,9 @@ def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     assert resp.status_code == 200
     config = read_json(os.path.join(bp_dir, "config.json"))
     assert config["name"] == "Imported Workspace"
+    assert config["server_host"] == app.config["host"]
+    assert config["server_port"] == app.config["port"]
+    assert config["mcp_token"] == app.config["mcp_token"]
 
 
 def test_export_all_and_import_all_round_trip(tmp_workspace):
@@ -76,10 +87,16 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     with zipfile.ZipFile(io.BytesIO(export_resp.data), "r") as zf:
         names = set(zf.namelist())
         manifest = json.loads(zf.read("bullpen-export.json"))
+        exported_one = json.loads(zf.read(f"workspaces/{ws1_id}/.bullpen/config.json"))
+        exported_two = json.loads(zf.read(f"workspaces/{ws2_id}/.bullpen/config.json"))
     assert f"workspaces/{ws1_id}/.bullpen/config.json" in names
     assert f"workspaces/{ws2_id}/.bullpen/config.json" in names
     for ws in manifest["workspaces"]:
         assert "path" not in ws
+    for exported in (exported_one, exported_two):
+        assert "server_host" not in exported
+        assert "server_port" not in exported
+        assert "mcp_token" not in exported
 
     import_archive = _zip_bytes({
         f"workspaces/{ws1_id}/.bullpen/config.json": json.dumps({"name": "Imported One", "columns": [], "grid": {"rows": 4, "cols": 6}}),
@@ -92,8 +109,14 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     )
     assert import_resp.status_code == 200
     assert import_resp.get_json()["imported"] == 2
-    assert read_json(os.path.join(bp1, "config.json"))["name"] == "Imported One"
-    assert read_json(os.path.join(bp2, "config.json"))["name"] == "Imported Two"
+    config_one = read_json(os.path.join(bp1, "config.json"))
+    config_two = read_json(os.path.join(bp2, "config.json"))
+    assert config_one["name"] == "Imported One"
+    assert config_two["name"] == "Imported Two"
+    for config in (config_one, config_two):
+        assert config["server_host"] == app.config["host"]
+        assert config["server_port"] == app.config["port"]
+        assert config["mcp_token"] == app.config["mcp_token"]
 
 
 def test_export_workers_returns_workers_payload(tmp_workspace):
@@ -166,5 +189,9 @@ def test_import_workers_replaces_layout_from_zip(tmp_workspace):
     assert resp.status_code == 200
     layout = read_json(os.path.join(bp_dir, "layout.json"))
     profile = read_json(os.path.join(bp_dir, "profiles", "imported-profile.json"))
+    config = read_json(os.path.join(bp_dir, "config.json"))
     assert layout["slots"][0]["name"] == "Imported Worker"
     assert profile["id"] == "imported-profile"
+    assert config["server_host"] == app.config["host"]
+    assert config["server_port"] == app.config["port"]
+    assert config["mcp_token"] == app.config["mcp_token"]

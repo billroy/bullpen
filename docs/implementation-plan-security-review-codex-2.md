@@ -34,7 +34,7 @@ This keeps the highest-risk issues moving immediately while avoiding a large all
 ## Progress
 
 - Tranche 1: Completed on 2026-04-21
-- Tranche 2: Pending
+- Tranche 2: Completed on 2026-04-21
 - Tranche 3: Pending
 - Tranche 4: Pending
 - Tranche 5: Pending
@@ -94,6 +94,13 @@ Implemented:
 ## Tranche 2 — Remove Runtime Secrets From Portable Workspace State
 
 **Goal:** Stop leaking live connection metadata through export/import and workspace files.
+**Status:** Completed on 2026-04-21
+
+Implemented:
+
+- Workspace and all-workspace exports now strip runtime-only config keys from archived `config.json`.
+- Workspace import paths now restamp live runtime metadata instead of trusting imported transport settings.
+- Added regression coverage for sanitized exports and runtime rewrite after import.
 
 ### T2.1 Filter runtime-only config keys on export
 

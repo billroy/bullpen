@@ -200,6 +200,20 @@ def create_app(
         engineio_logger=websocket_debug,
     )
 
+    def _portable_config(config):
+        safe = dict(config or {})
+        for key in ("server_host", "server_port", "mcp_token"):
+            safe.pop(key, None)
+        return safe
+
+    def _write_runtime_config(ws):
+        config_path = os.path.join(ws.bp_dir, "config.json")
+        config = read_json(config_path)
+        config["server_host"] = app.config.get("host", "127.0.0.1")
+        config["server_port"] = app.config.get("port", 5000)
+        config["mcp_token"] = app.config.get("mcp_token")
+        write_json(config_path, config)
+
     # Store server address and an MCP token so the stdio MCP server (which
     # has no session cookie) can authenticate via Socket.IO ``auth``. Reuse
     # any existing token found in a workspace config; only generate a fresh
@@ -227,11 +241,7 @@ def create_app(
         _service_worker_atexit_registered = True
     app.config["mcp_token"] = mcp_token
     for ws in manager.all_workspaces():
-        config = read_json(os.path.join(ws.bp_dir, "config.json"))
-        config["server_host"] = host
-        config["server_port"] = port
-        config["mcp_token"] = mcp_token
-        write_json(os.path.join(ws.bp_dir, "config.json"), config)
+        _write_runtime_config(ws)
 
     # Startup reconciliation for all registered workspaces
     for ws in manager.all_workspaces():
@@ -534,6 +544,10 @@ def create_app(
                     for filename in files:
                         full_path = os.path.join(root, filename)
                         rel_path = os.path.relpath(full_path, ws.path).replace(os.sep, "/")
+                        if rel_path == ".bullpen/config.json":
+                            config = _portable_config(read_json(full_path))
+                            zf.writestr(rel_path, json.dumps(config, indent=2))
+                            continue
                         zf.write(full_path, rel_path)
         mem.seek(0)
         return mem
@@ -586,6 +600,10 @@ def create_app(
                         full_path = os.path.join(root, filename)
                         rel_path = os.path.relpath(full_path, ws.bp_dir).replace(os.sep, "/")
                         arcname = f"workspaces/{ws.id}/.bullpen/{rel_path}"
+                        if rel_path == "config.json":
+                            config = _portable_config(read_json(full_path))
+                            zf.writestr(arcname, json.dumps(config, indent=2))
+                            continue
                         zf.write(full_path, arcname)
             manifest = {
                 "schema": "bullpen-export-all-v1",
@@ -638,6 +656,7 @@ def create_app(
             shutil.rmtree(bp_dir)
         shutil.copytree(source_bp_dir, bp_dir)
         init_workspace(ws.path)
+        _write_runtime_config(ws)
         reconcile(bp_dir)
         state = load_state(bp_dir, ws.path)
         state["workspaceId"] = ws.id
@@ -658,6 +677,7 @@ def create_app(
 
         bp_dir = ws.bp_dir
         init_workspace(ws.path)
+        _write_runtime_config(ws)
         config = read_json(os.path.join(bp_dir, "config.json"))
         write_json(os.path.join(bp_dir, "layout.json"), normalize_layout({"slots": slots}, config=config))
 
