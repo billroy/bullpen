@@ -259,12 +259,7 @@ const FilesTab = {
     },
     async openFile(node) {
       if (node.type !== 'file') return;
-      // Open HTML files in a new browser tab
       const ext = this.getExt(node.name);
-      if (ext === '.html' || ext === '.htm') {
-        window.open(this._filesUrl(node.path) + (this._filesUrl(node.path).includes('?') ? '&' : '?') + 'raw=1', '_blank');
-        return;
-      }
       const existing = this.openFiles.find(f => f.path === node.path);
       if (existing) {
         this.activeFile = existing;

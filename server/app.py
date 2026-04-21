@@ -48,7 +48,6 @@ _service_worker_atexit_registered = False
 mcp_sids = set()
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
-_TRUSTED_TUNNEL_SUFFIXES = (".ngrok-free.app", ".ngrok.app", ".ngrok.io", ".sprites.app")
 _MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
 
 
@@ -73,21 +72,51 @@ def _request_origin(environ, *, forwarded=False):
     return f"{scheme}://{host}" if scheme and host else ""
 
 
+def _normalize_origin(origin):
+    if not origin:
+        return ""
+    parsed = urlparse(origin)
+    scheme = (parsed.scheme or "").lower()
+    netloc = (parsed.netloc or "").lower()
+    if not scheme or not netloc:
+        return ""
+    return f"{scheme}://{netloc}"
+
+
+def _configured_allowed_origins():
+    raw = os.environ.get("BULLPEN_ALLOWED_ORIGINS", "")
+    allowed = set()
+    for item in raw.split(","):
+        normalized = _normalize_origin(item.strip())
+        if normalized:
+            allowed.add(normalized)
+    return allowed
+
+
 def _socketio_origin_allowed(origin, environ=None):
-    """Allow local Bullpen clients and trusted tunnel hosts without wildcard CORS."""
+    """Allow only local, same-origin, or explicitly configured origins.
+
+    Socket.IO event handlers trust an accepted handshake for the life of the
+    session, so we keep the origin policy tight here rather than relying on a
+    second per-event CSRF layer.
+    """
     if not origin:
         return True
 
-    origin_host = _origin_host(origin)
+    normalized_origin = _normalize_origin(origin)
+    if not normalized_origin:
+        return False
+
+    origin_host = _origin_host(normalized_origin)
     if origin_host in _LOOPBACK_HOSTS:
         return True
 
-    same_origin = _request_origin(environ)
-    forwarded_origin = _request_origin(environ, forwarded=True)
-    if origin in {same_origin, forwarded_origin}:
+    same_origin = _normalize_origin(_request_origin(environ))
+    forwarded_origin = _normalize_origin(_request_origin(environ, forwarded=True))
+    if normalized_origin in {same_origin, forwarded_origin}:
         return True
 
-    return any(origin_host.endswith(suffix) for suffix in _TRUSTED_TUNNEL_SUFFIXES)
+    return normalized_origin in _configured_allowed_origins()
 
 
 def create_app(
@@ -411,11 +440,13 @@ def create_app(
 
         # Serve the raw file directly (e.g. open HTML in browser)
         if request.args.get("raw"):
-            from flask import send_file
-            return send_file(full_path, mimetype=mime or "text/plain")
+            send_kwargs = {"mimetype": mime or "text/plain"}
+            if mime in {"text/html", "application/xhtml+xml"}:
+                send_kwargs["as_attachment"] = True
+                send_kwargs["download_name"] = os.path.basename(full_path)
+            return send_file(full_path, **send_kwargs)
 
         if mime and (mime.startswith("image/") or not mime.startswith("text/")):
-            from flask import send_file
             return send_file(full_path, mimetype=mime)
 
         try:

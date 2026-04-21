@@ -29,15 +29,27 @@ def test_socketio_origin_policy_allows_forwarded_same_origin():
     assert _socketio_origin_allowed("https://example.ngrok-free.app", environ)
 
 
-def test_socketio_origin_policy_allows_trusted_ngrok_tunnels_without_startup_url():
+def test_socketio_origin_policy_rejects_unrelated_tunnels_without_explicit_allowlist():
+    assert not _socketio_origin_allowed("https://abc123.ngrok-free.app")
+    assert not _socketio_origin_allowed("https://abc123.ngrok.app")
+    assert not _socketio_origin_allowed("https://abc123.ngrok.io")
+    assert not _socketio_origin_allowed("https://abc123.sprites.app")
+
+
+def test_socketio_origin_policy_allows_exact_explicit_allowlist(monkeypatch):
+    monkeypatch.setenv(
+        "BULLPEN_ALLOWED_ORIGINS",
+        "https://abc123.ngrok-free.app, https://codex.sprites.app",
+    )
     assert _socketio_origin_allowed("https://abc123.ngrok-free.app")
-    assert _socketio_origin_allowed("https://abc123.ngrok.app")
-    assert _socketio_origin_allowed("https://abc123.ngrok.io")
+    assert _socketio_origin_allowed("https://codex.sprites.app")
+    assert not _socketio_origin_allowed("https://other.ngrok-free.app")
 
 
 def test_socketio_origin_policy_rejects_unrelated_origins():
     assert not _socketio_origin_allowed("https://evil.example")
     assert not _socketio_origin_allowed("https://not-ngrok-free.app.evil.example")
+    assert not _socketio_origin_allowed("not-an-origin")
 
 
 def test_socketio_cors_is_not_wildcard_by_default():
