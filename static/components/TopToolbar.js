@@ -397,7 +397,7 @@ const TopToolbar = {
               <button class="project-menu-item" @click="triggerImportWorkspace"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Project</span></button>
               <button class="project-menu-item" @click="triggerImportWorkers"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Workers</span></button>
               <button class="project-menu-item" @click="triggerImportAll"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import All</span></button>
-              <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="github" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
+              <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="git-branch" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
             </div>
             <input
               ref="workersImportInput"

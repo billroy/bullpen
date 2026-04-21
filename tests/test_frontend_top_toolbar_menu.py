@@ -19,7 +19,7 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportAll\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
-    assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"github\"" in text
+    assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"git-branch\"" in text
     assert "<span class=\"menu-item-label\">Toggle Left Pane</span></button>" in text
     assert "<span class=\"menu-item-label\">Export Project</span></button>" in text
     assert "<span class=\"menu-item-label\">Export Workers</span></button>" in text
