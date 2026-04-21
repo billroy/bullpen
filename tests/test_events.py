@@ -11,6 +11,7 @@ import pytest
 from server.agents import register_adapter
 from server.agents.base import AgentAdapter
 from server.app import create_app, socketio
+from server import service_worker as service_worker_mod
 
 
 @pytest.fixture
@@ -569,6 +570,39 @@ class TestWorkerEvents:
         assert worker["env"] == [{"key": "HOSTED_PORT", "value": "3000"}]
         assert worker["task_queue"] == []
         assert worker["state"] == "idle"
+
+    def test_duplicate_service_worker_reemits_running_service_state(self, client):
+        c, app = client
+        c.emit("worker:paste", {
+            "coord": {"col": 0, "row": 0},
+            "worker": {
+                "type": "service",
+                "name": "Service",
+                "command_source": "procfile",
+                "procfile_process": "web",
+            },
+        })
+        c.get_received()
+
+        ws_id = app.config["startup_workspace_id"]
+        controller = service_worker_mod.get_controller(app.config["bp_dir"], ws_id, 0, socketio=None)
+        with controller._lock:
+            controller._state = "running"
+            controller._pid = 4242
+            controller._started_at = "2026-04-21T00:00:00Z"
+
+        c.emit("worker:duplicate", {"slot": 0})
+        events = c.get_received()
+
+        assert any(evt["name"] == "layout:updated" for evt in events)
+        service_states = [evt["args"][0] for evt in events if evt["name"] == "service:state"]
+        assert service_states
+        assert any(
+            state.get("slot") == 0
+            and state.get("state") == "running"
+            and state.get("pid") == 4242
+            for state in service_states
+        )
 
     def test_paste_worker_group_pastes_all_members(self, client):
         c, _ = client

@@ -306,6 +306,16 @@ def register_events(socketio, app):
         if isinstance(payload, dict):
             payload["workspaceId"] = ws_id
         socketio.emit(event, payload, to=ws_id)
+        # layout:updated replaces the client-side slot objects. Re-broadcast
+        # known service runtime state so running service cards do not appear to
+        # stop after duplicate/move/configure operations.
+        if event == "layout:updated":
+            try:
+                bp_dir = app.config["manager"].get_bp_dir(ws_id)
+            except Exception:
+                bp_dir = None
+            if bp_dir:
+                service_worker_mod.emit_workspace_states(bp_dir, ws_id, socketio=socketio)
 
     def _service_slot(data, event_name):
         try:

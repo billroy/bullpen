@@ -1216,6 +1216,21 @@ def stop_workspace_services(ws_id, *, wait=True):
     _stop_controllers(controllers, wait=wait)
 
 
+def emit_workspace_states(bp_dir, ws_id, socketio=None):
+    """Re-emit known service states for controllers in one workspace."""
+    root = os.path.realpath(bp_dir)
+    with _controllers_lock:
+        controllers = [
+            controller
+            for (key_ws_id, key_bp_dir, _), controller in _controllers.items()
+            if key_ws_id == ws_id and key_bp_dir == root
+        ]
+    for controller in controllers:
+        if socketio is not None:
+            controller.socketio = socketio
+        controller.emit_state()
+
+
 def stop_all_services(*, wait=True):
     with _controllers_lock:
         controllers = list(_controllers.values())
