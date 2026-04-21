@@ -2400,6 +2400,16 @@ body.worker-singleton-dragging * {
   flex: 1;
 }
 
+.worker-card-name--measure {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  visibility: hidden;
+  pointer-events: none;
+  width: auto;
+  max-width: none;
+}
+
 .worker-card-identity {
   display: flex;
   flex-direction: column;

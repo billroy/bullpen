@@ -20,8 +20,9 @@ def test_worker_config_modal_exposes_service_procfile_controls():
     assert "fetch('/api/service/preview'" in text
 
 
-def test_worker_card_shows_procfile_mode_and_port_badges():
+def test_worker_card_hides_procfile_badge_and_conditionally_appends_port_to_title():
     text = _read("static/components/WorkerCard.js")
-    assert "serviceModeBadge()" in text
-    assert "Procfile:${this.worker.procfile_process || 'web'}" in text
-    assert "servicePortLabel()" in text
+    assert "Procfile:${this.worker.procfile_process || 'web'}" not in text
+    assert "titlePortCandidate()" in text
+    assert "workerNameWithPort()" in text
+    assert "recalculateTitlePortVisibility()" in text

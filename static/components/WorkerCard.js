@@ -34,13 +34,10 @@ const WorkerCard = {
       <span v-if="passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
       <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
         <div class="worker-card-identity">
-          <div class="worker-card-title-row">
+          <div class="worker-card-title-row" ref="titleRow">
             <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
-            <span class="worker-card-name">{{ workerNameLabel }}</span>
-          </div>
-          <div v-if="serviceModeBadge || servicePortLabel" class="worker-card-service-meta">
-            <span v-if="serviceModeBadge" class="worker-type-badge">{{ serviceModeBadge }}</span>
-            <span v-if="servicePortLabel" class="worker-type-badge">{{ servicePortLabel }}</span>
+            <span class="worker-card-name" ref="nameLabel">{{ workerNameWithPort }}</span>
+            <span class="worker-card-name worker-card-name--measure" ref="nameMeasure" aria-hidden="true"></span>
           </div>
         </div>
         <div class="worker-card-actions">
@@ -101,12 +98,19 @@ const WorkerCard = {
       shiftDragIntent: false,
       isDragging: false,
       pointerWorkerDrag: null,
+      showTitlePort: false,
     };
   },
   mounted() {
     renderLucideIcons(this.$el);
     this._timer = setInterval(() => this.updateElapsed(), 1000);
     this.updateElapsed();
+    this.recalculateTitlePortVisibility();
+    if (typeof ResizeObserver !== 'undefined') {
+      this._titleResizeObserver = new ResizeObserver(() => this.recalculateTitlePortVisibility());
+      if (this.$refs.titleRow) this._titleResizeObserver.observe(this.$refs.titleRow);
+      if (this.$refs.nameLabel) this._titleResizeObserver.observe(this.$refs.nameLabel);
+    }
     this._closeMenu = (e) => {
       if (this.showMenu && !this.$el.contains(e.target)) {
         this.showMenu = false;
@@ -119,6 +123,7 @@ const WorkerCard = {
   },
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
+    if (this._titleResizeObserver) this._titleResizeObserver.disconnect();
     document.removeEventListener('click', this._closeMenu);
     document.body.classList.remove('worker-singleton-dragging');
     this.removeDragImage();
@@ -155,17 +160,15 @@ const WorkerCard = {
       const name = this.worker?.name || '';
       return this.taskQueueCount > 0 ? `${name} (${this.taskQueueCount})` : name;
     },
-    serviceModeBadge() {
+    titlePortCandidate() {
       if (!this.isService) return '';
-      if (this.worker.command_source === 'procfile') {
-        return `Procfile:${this.worker.procfile_process || 'web'}`;
-      }
-      return '';
-    },
-    servicePortLabel() {
-      if (!this.isService) return '';
-      const port = this.worker.port;
+      const port = this.worker?.port;
       return port ? `:${port}` : '';
+    },
+    workerNameWithPort() {
+      return this.showTitlePort && this.titlePortCandidate
+        ? `${this.workerNameLabel}${this.titlePortCandidate}`
+        : this.workerNameLabel;
     },
     canStart() {
       if (this.isService) return ['idle', 'stopped', 'crashed'].includes(this.workerState);
@@ -257,7 +260,33 @@ const WorkerCard = {
       return 'Idle';
     }
   },
+  watch: {
+    workerNameLabel() {
+      this.$nextTick(() => this.recalculateTitlePortVisibility());
+    },
+    titlePortCandidate() {
+      this.$nextTick(() => this.recalculateTitlePortVisibility());
+    },
+  },
   methods: {
+    recalculateTitlePortVisibility() {
+      const suffix = this.titlePortCandidate;
+      if (!suffix) {
+        if (this.showTitlePort) this.showTitlePort = false;
+        return;
+      }
+      const nameEl = this.$refs.nameLabel;
+      const measureEl = this.$refs.nameMeasure;
+      if (!nameEl || !measureEl) return;
+      const availableWidth = nameEl.clientWidth;
+      if (!availableWidth) {
+        if (this.showTitlePort) this.showTitlePort = false;
+        return;
+      }
+      measureEl.textContent = `${this.workerNameLabel}${suffix}`;
+      const fits = measureEl.offsetWidth <= availableWidth;
+      if (this.showTitlePort !== fits) this.showTitlePort = fits;
+    },
     onBodyClick() {
       if (this.isWorking || this.isService) {
         this.$emit('open-focus', this.slotIndex);
