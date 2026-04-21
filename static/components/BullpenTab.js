@@ -1141,6 +1141,7 @@ const BullpenTab = {
       this.closeLibrary();
     },
     addServiceWorker() {
+      const slot = this.nextEmptySlotIndex();
       this.$emit('add-worker', {
         coord: this.selectedAddCoord,
         type: 'service',
@@ -1150,7 +1151,13 @@ const BullpenTab = {
           ticket_action: 'start-if-stopped-else-restart',
         },
       });
+      this.$emit('configure-worker', slot);
       this.closeLibrary();
+    },
+    nextEmptySlotIndex() {
+      const slots = this.layout?.slots || [];
+      const idx = slots.findIndex(slot => !slot);
+      return idx >= 0 ? idx : slots.length;
     },
     workerFieldsForClipboard(worker) {
       const fields = ['type', 'profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt', 'trust_mode',

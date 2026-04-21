@@ -2370,7 +2370,8 @@ body.worker-singleton-dragging * {
   padding: 8px 10px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 8px;
   color: white;
   font-weight: 600;
   font-size: 12px;
@@ -2384,6 +2385,14 @@ body.worker-singleton-dragging * {
   cursor: grabbing;
 }
 
+.worker-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
 .worker-card-name {
   white-space: nowrap;
   overflow: hidden;
@@ -2393,10 +2402,24 @@ body.worker-singleton-dragging * {
 
 .worker-card-identity {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   min-width: 0;
   flex: 1;
+}
+
+.worker-card-service-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 22px;
+}
+
+.worker-card-service-meta .worker-type-badge {
+  margin-left: 0;
 }
 
 .worker-type-icon {
@@ -2430,6 +2453,7 @@ body.worker-singleton-dragging * {
   gap: 4px;
   align-items: center;
   flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .worker-card-header-status {

@@ -305,6 +305,74 @@ const WorkerConfigModal = {
                 <input class="form-input" :value="servicePreview?.procfile_path || 'Procfile will be read from <cwd>/Procfile'" readonly>
               </label>
             </div>
+            <div class="form-row">
+              <label class="form-label">
+                Input Trigger
+                <select class="form-select" v-model="form.activation">
+                  <option value="on_drop">On Drop</option>
+                  <option value="on_queue">On Queue (Watch Column)</option>
+                  <option value="manual">Manual</option>
+                  <option value="at_time">At Time</option>
+                  <option value="on_interval">On Interval</option>
+                </select>
+              </label>
+              <label class="form-label" v-if="form.activation === 'on_queue'">
+                Watch Column
+                <select class="form-select" v-model="form.watch_column">
+                  <option value="">None</option>
+                  <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
+                </select>
+              </label>
+              <label class="form-label" v-if="form.activation === 'at_time'">
+                Trigger Time (HH:MM, local)
+                <input class="form-input" v-model="form.trigger_time" placeholder="09:00" pattern="\\d{2}:\\d{2}">
+              </label>
+              <label class="form-label form-label-inline" v-if="form.activation === 'at_time'">
+                <input type="checkbox" v-model="form.trigger_every_day">
+                Repeat every day
+              </label>
+              <label class="form-label" v-if="form.activation === 'on_interval'">
+                Interval (minutes)
+                <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
+              </label>
+              <label class="form-label form-label-inline" v-if="form.activation === 'at_time' || form.activation === 'on_interval'">
+                <input type="checkbox" v-model="form.paused">
+                Paused
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                Output
+                <select class="form-select" v-model="form.disposition">
+                  <optgroup label="Columns">
+                    <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
+                  </optgroup>
+                  <optgroup label="Workers" v-if="otherWorkers.length">
+                    <option v-for="w in otherWorkers" :key="'worker:' + w.name" :value="'worker:' + w.name">\u2192 {{ w.name }}</option>
+                  </optgroup>
+                  <optgroup label="Pass">
+                    <option value="pass:up" :disabled="!passAvailability.up">\u2191 Up</option>
+                    <option value="pass:down" :disabled="!passAvailability.down">\u2193 Down</option>
+                    <option value="pass:left" :disabled="!passAvailability.left">\u2190 Left</option>
+                    <option value="pass:right" :disabled="!passAvailability.right">\u2192 Right</option>
+                    <option value="pass:random" :disabled="!passAvailability.any">? Random Direction</option>
+                  </optgroup>
+                  <optgroup label="Random">
+                    <option value="random:">? Random Worker</option>
+                  </optgroup>
+                </select>
+                <input v-if="form.disposition === 'random:'" class="form-input" v-model="form.random_name" placeholder="Worker name (blank matches all)" style="margin-top: 4px;">
+              </label>
+              <label class="form-label">
+                Max Retries
+                <select class="form-select" v-model.number="form.max_retries">
+                  <option :value="0">0</option>
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="3">3</option>
+                </select>
+              </label>
+            </div>
             <label class="form-label">
               Pre-start
               <textarea class="form-textarea form-textarea--mono" v-model="form.pre_start" rows="2"
@@ -416,7 +484,7 @@ const WorkerConfigModal = {
           </template>
 
           <!-- Shared: activation, disposition, max retries -->
-          <div class="form-row">
+          <div v-if="!isService" class="form-row">
             <label class="form-label">
               Input Trigger
               <select class="form-select" v-model="form.activation">
@@ -451,7 +519,7 @@ const WorkerConfigModal = {
               Paused
             </label>
           </div>
-          <div class="form-row">
+          <div v-if="!isService" class="form-row">
             <label class="form-label">
               Output
               <select class="form-select" v-model="form.disposition">

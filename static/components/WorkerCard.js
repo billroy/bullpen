@@ -34,10 +34,14 @@ const WorkerCard = {
       <span v-if="passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
       <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
         <div class="worker-card-identity">
-          <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
-          <span class="worker-card-name">{{ workerNameLabel }}</span>
-          <span v-if="serviceModeBadge" class="worker-type-badge">{{ serviceModeBadge }}</span>
-          <span v-if="servicePortLabel" class="worker-type-badge">{{ servicePortLabel }}</span>
+          <div class="worker-card-title-row">
+            <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
+            <span class="worker-card-name">{{ workerNameLabel }}</span>
+          </div>
+          <div v-if="serviceModeBadge || servicePortLabel" class="worker-card-service-meta">
+            <span v-if="serviceModeBadge" class="worker-type-badge">{{ serviceModeBadge }}</span>
+            <span v-if="servicePortLabel" class="worker-type-badge">{{ servicePortLabel }}</span>
+          </div>
         </div>
         <div class="worker-card-actions">
           <span class="worker-card-header-status">
