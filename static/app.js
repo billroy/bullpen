@@ -335,6 +335,12 @@ const app = createApp({
       _rememberLiveAgentTab(tabId);
     }
 
+    function focusWorkerGridSoon() {
+      if (activeTab.value === 'workers') {
+        Vue.nextTick(() => bullpenTabRef.value?.focusViewport?.());
+      }
+    }
+
     function addLiveAgentTab({ activate = true } = {}) {
       const wsId = activeWorkspaceId.value;
       if (!wsId) return null;  // chat tabs are strictly per-workspace
@@ -742,6 +748,22 @@ const app = createApp({
       transferSlot.value = slot;
       transferMode.value = mode;
     }
+    function closeCreateModal() {
+      showCreateModal.value = false;
+      focusWorkerGridSoon();
+    }
+    function closeColumnManager() {
+      showColumnManager.value = false;
+      focusWorkerGridSoon();
+    }
+    function closeWorkerConfig() {
+      configureSlot.value = null;
+      focusWorkerGridSoon();
+    }
+    function closeTransferModal() {
+      transferSlot.value = null;
+      focusWorkerGridSoon();
+    }
     async function transferWorker(payload) {
       try {
         const resp = await fetch('/api/worker/transfer', {
@@ -762,7 +784,7 @@ const app = createApp({
       } catch (e) {
         addToast('Transfer failed: ' + e.message, 'error');
       }
-      transferSlot.value = null;
+      closeTransferModal();
     }
     function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', _wsData({ slot, fields })); }
 
@@ -805,6 +827,7 @@ const app = createApp({
       if (idx >= 0) focusTabs.splice(idx, 1);
       if (activeTab.value === 'focus-' + slotIndex) {
         activeTab.value = 'workers';
+        focusWorkerGridSoon();
       }
       delete outputBuffers[slotIndex];
     }
@@ -857,6 +880,7 @@ const app = createApp({
         }
       }
       showColumnManager.value = false;
+      focusWorkerGridSoon();
     }
     function _hasPlaintextCommandWorkers() {
       const slots = state.layout?.slots || [];
@@ -1000,9 +1024,7 @@ const app = createApp({
         if (_isActive(activeWorkspaceId.value)) state.config = ws.config;
         updateConfig({ theme: next });
       }
-      if (options?.focusWorkerGrid && activeTab.value === 'workers') {
-        Vue.nextTick(() => bullpenTabRef.value?.focusViewport?.());
-      }
+      if (options?.focusWorkerGrid) focusWorkerGridSoon();
     }
     function setAmbientPreset(preset) {
       const next = _normalizeAmbientPreset(preset);
@@ -1239,6 +1261,7 @@ const app = createApp({
       stopWorkerSlot, restartServiceSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, multipleWorkspaces,
       transferSlot, transferMode, openTransfer, transferWorker,
+      closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
@@ -1414,7 +1437,7 @@ const app = createApp({
       </div>
       <TaskCreateModal
         :visible="showCreateModal"
-        @close="showCreateModal = false"
+        @close="closeCreateModal"
         @create="createTask"
       />
       <WorkerConfigModal
@@ -1424,7 +1447,7 @@ const app = createApp({
         :workers="state.layout.slots"
         :grid-rows="state.config.grid?.rows || 4"
         :grid-cols="state.config.grid?.cols || 6"
-        @close="configureSlot = null"
+        @close="closeWorkerConfig"
         @save="saveWorkerConfig"
         @remove="removeWorker"
         @save-profile="saveProfile"
@@ -1436,14 +1459,14 @@ const app = createApp({
         :mode="transferMode"
         :projects="projects"
         :active-workspace-id="activeWorkspaceId"
-        @close="transferSlot = null"
+        @close="closeTransferModal"
         @transfer="transferWorker"
       />
       <ColumnManagerModal
         :visible="showColumnManager"
         :columns="state.config.columns"
         :tasks="state.tasks"
-        @close="showColumnManager = false"
+        @close="closeColumnManager"
         @save="saveColumns"
       />
       <ToastContainer :toasts="toasts" @dismiss="dismissToast" />
