@@ -5,8 +5,6 @@ const WorkerConfigModal = {
     return {
       form: {},
       overlayMouseDown: false,
-      shellExamples: [],
-      selectedExampleId: '',
       servicePreview: null,
       servicePreviewError: '',
       servicePreviewLoading: false,
@@ -71,7 +69,6 @@ const WorkerConfigModal = {
             stop_timeout_seconds: w.stop_timeout_seconds ?? 5,
             log_max_bytes: w.log_max_bytes ?? 5242880,
           };
-          this.selectedExampleId = '';
           this.servicePreview = null;
           this.servicePreviewError = '';
           this.scheduleServicePreview();
@@ -84,9 +81,6 @@ const WorkerConfigModal = {
         this.scheduleServicePreview();
       },
     }
-  },
-  mounted() {
-    if (this.worker?.type === 'shell') this.loadShellExamples();
   },
   beforeUnmount() {
     if (this.servicePreviewTimer) clearTimeout(this.servicePreviewTimer);
@@ -136,11 +130,6 @@ const WorkerConfigModal = {
     },
     modelSelectValue() {
       return this.modelOptions.includes(this.form.model) ? this.form.model : '__custom__';
-    },
-    platformExamples() {
-      const isWin = (navigator.platform || '').toLowerCase().includes('win');
-      const current = isWin ? 'windows' : 'posix';
-      return this.shellExamples.filter(ex => !ex.platforms || ex.platforms.includes(current));
     },
     procfileProcessOptions() {
       const names = Array.isArray(this.servicePreview?.process_names)
@@ -204,21 +193,8 @@ const WorkerConfigModal = {
             </div>
           </template>
 
-          <!-- Shell-only: command, delivery, cwd, timeout, env, examples -->
+          <!-- Shell-only: command, delivery, cwd, timeout, env -->
           <template v-if="isShell">
-            <label class="form-label">
-              Start from example
-              <div class="shell-example-picker">
-                <select class="form-select" v-model="selectedExampleId">
-                  <option value="">(blank)</option>
-                  <option v-for="ex in platformExamples" :key="ex.id" :value="ex.id">
-                    {{ ex.name }} &mdash; {{ ex.description }}
-                  </option>
-                </select>
-                <button class="btn btn-sm" :disabled="!selectedExampleId" @click="applyExample">Apply</button>
-              </div>
-              <span class="form-hint">Overwrites command, delivery mode, and disposition defaults.</span>
-            </label>
             <label class="form-label">
               Command
               <textarea class="form-textarea form-textarea--mono" v-model="form.command" rows="3"
@@ -607,26 +583,6 @@ const WorkerConfigModal = {
     onOverlayClick() {
       if (this.overlayMouseDown) this.$emit('close');
       this.overlayMouseDown = false;
-    },
-    async loadShellExamples() {
-      if (this.shellExamples.length) return;
-      try {
-        const res = await fetch('/shell_worker_examples.json', { credentials: 'same-origin' });
-        if (!res.ok) return;
-        const data = await res.json();
-        this.shellExamples = Array.isArray(data?.examples) ? data.examples : [];
-      } catch (_err) { /* ignore */ }
-    },
-    applyExample() {
-      const ex = this.shellExamples.find(e => e.id === this.selectedExampleId);
-      if (!ex) return;
-      this.form.command = ex.command || '';
-      this.form.ticket_delivery = ex.ticket_delivery || 'stdin-json';
-      if (ex.disposition) this.form.disposition = ex.disposition;
-      if (Number.isFinite(ex.max_retries)) this.form.max_retries = ex.max_retries;
-      if (Array.isArray(ex.env)) {
-        this.form.env = ex.env.map(e => ({ key: e.key || '', value: e.value || '' }));
-      }
     },
     scheduleServicePreview() {
       if (!this.isService || this.slotIndex == null) return;

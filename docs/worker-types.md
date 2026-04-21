@@ -746,10 +746,10 @@ E2E coverage:
 
 ### 3.8 Example Shell Workers
 
-The Create Worker modal offers a "Start from example" picker when `type=shell`.
-It appears above the Command field as a dropdown plus **Apply** button. Apply
-overwrites Command, disposition, delivery mode, and relevant env defaults in
-place. There is no preview pane; browser undo is sufficient for v1.
+The Add Worker library offers Shell examples alongside the blank Shell worker.
+Choosing one creates a prefilled Shell worker whose command, disposition,
+delivery mode, and relevant env defaults can then be edited in the config
+modal.
 
 Examples live in `static/shell_worker_examples.json`.
 

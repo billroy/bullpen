@@ -15,7 +15,7 @@ implementation plan and the full specification, see
 
 1. Click an empty grid cell → **Add Worker**.
 2. Pick the **Shell** tab (AI is the default).
-3. Read the plaintext-storage warning, then click **Create Shell worker**.
+3. Choose **Blank shell worker** or one of the prefilled examples.
 4. The config modal opens. Set:
    - **Command** (required) — a single command line executed via `/bin/sh -c`
      on POSIX or `cmd.exe /c` on Windows.
@@ -30,8 +30,6 @@ implementation plan and the full specification, see
      the workspace; symlink escapes are rejected.
    - **Environment** — extra key/value pairs merged on top of a minimal
      inherited env.
-   - **Start from example** — optional dropdown that seeds Command, delivery
-     mode, and disposition from `static/shell_worker_examples.json`.
 5. Pick an **Input Trigger** and **Output disposition** (same options as AI
    workers).
 
@@ -199,7 +197,8 @@ emit site.
 
 ## Example library
 
-`static/shell_worker_examples.json` ships with nine starters:
+`static/shell_worker_examples.json` ships with nine starters that appear in the
+Add Worker library before you create the Shell worker:
 
 1. **Tag router** — pass bug tickets forward; others exit 78 (block).
 2. **Title length gate** — reject titles shorter than 10 chars.
@@ -216,10 +215,9 @@ emit site.
    create` to spawn a new ticket whose description is a random 1..10.
 9. **Ticket-to-file archiver** — append the ticket body to a workspace log.
 
-Pick one from the config modal's "Start from example" dropdown and click
-**Apply**. It overwrites Command, delivery mode, disposition defaults, and
-`max_retries`. There is no preview pane; use browser undo if you change your
-mind.
+Pick one from the Add Worker modal's **Shell** tab to create a prefilled worker.
+You can then adjust the generated command, delivery mode, disposition defaults,
+and `max_retries` in the config modal.
 
 Examples are filtered by platform. POSIX-only entries (those that rely on
 shell builtins or POSIX utilities) are hidden on Windows.
