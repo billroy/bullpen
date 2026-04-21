@@ -35,6 +35,8 @@ def test_worker_card_renders_drag_handles_only_for_existing_neighbors():
     assert "class=\"connect-handle\"" in text
     assert "@dragstart.stop=\"onHandleDragStart(dir, $event)\"" in text
     assert "@dragend.stop=\"onHandleDragEnd\"" in text
+    assert "class=\"connect-handle-arrow\"" in text
+    assert "connectHandleArrow(dir)" in text
 
 
 def test_worker_card_handle_dragstart_sets_connect_mime_and_target():
@@ -77,6 +79,7 @@ def test_pass_indicator_gets_connected_class_when_neighbor_exists():
 def test_connect_handle_and_target_styles_exist():
     text = _read("static/style.css")
     assert ".connect-handle {" in text
+    assert ".connect-handle-arrow {" in text
     assert ".connect-handle-up {" in text
     assert ".connect-handle-down {" in text
     assert ".connect-handle-left {" in text
@@ -99,6 +102,23 @@ def test_connect_handles_are_semicircular_inside_the_card():
     assert "border-radius: 12px 12px 0 0" in text  # down handle
     assert "border-radius: 0 12px 12px 0" in text  # left handle
     assert "border-radius: 12px 0 0 12px" in text  # right handle
+
+
+def test_worker_card_connect_handles_render_directional_arrows():
+    text = _read("static/components/WorkerCard.js")
+    assert "connectHandleArrow(dir)" in text
+    assert "up: '\\u2191'" in text
+    assert "down: '\\u2193'" in text
+    assert "left: '\\u2190'" in text
+    assert "right: '\\u2192'" in text
+
+
+def test_connect_handle_arrow_is_centered_inside_handle():
+    text = _read("static/style.css")
+    assert "display: flex;" in text
+    assert "align-items: center;" in text
+    assert "justify-content: center;" in text
+    assert "font-size: 9px;" in text
 
 
 def test_worker_card_does_not_force_grab_cursor_on_body():

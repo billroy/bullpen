@@ -25,7 +25,10 @@ const WorkerCard = {
              draggable="true"
              @dragstart.stop="onHandleDragStart(dir, $event)"
              @dragend.stop="onHandleDragEnd"
-             :title="'Drag to pass output ' + dir"></div>
+             :title="'Drag to pass output ' + dir"
+             :aria-label="'Drag to pass output ' + dir">
+          <span class="connect-handle-arrow" aria-hidden="true">{{ connectHandleArrow(dir) }}</span>
+        </div>
       </template>
       <span v-if="passDir === 'up'" class="pass-indicator pass-up" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
       <span v-if="passDir === 'down'" class="pass-indicator pass-down" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
@@ -303,6 +306,14 @@ const WorkerCard = {
     },
     canConnect(dir) {
       return !!(this.neighborSlots && this.neighborSlots[dir] != null);
+    },
+    connectHandleArrow(dir) {
+      return {
+        up: '\u2191',
+        down: '\u2193',
+        left: '\u2190',
+        right: '\u2192',
+      }[dir] || '';
     },
     onCardMouseMove(e) {
       // Reveal at most one drag handle — whichever edge the cursor is closest
