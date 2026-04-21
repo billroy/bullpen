@@ -7,6 +7,11 @@ const WorkerConfigModal = {
       overlayMouseDown: false,
       shellExamples: [],
       selectedExampleId: '',
+      servicePreview: null,
+      servicePreviewError: '',
+      servicePreviewLoading: false,
+      servicePreviewSeq: 0,
+      servicePreviewTimer: null,
     };
   },
   watch: {
@@ -49,6 +54,9 @@ const WorkerConfigModal = {
             ticket_delivery: w.ticket_delivery || 'stdin-json',
             env: Array.isArray(w.env) ? w.env.map(e => ({ key: e.key || '', value: e.value || '' })) : [],
             // Service-specific fields
+            command_source: w.command_source || 'manual',
+            procfile_process: w.procfile_process || 'web',
+            port: w.port ?? '',
             pre_start: w.pre_start || '',
             ticket_action: w.ticket_action || 'start-if-stopped-else-restart',
             startup_grace_seconds: w.startup_grace_seconds ?? 2,
@@ -64,12 +72,24 @@ const WorkerConfigModal = {
             log_max_bytes: w.log_max_bytes ?? 5242880,
           };
           this.selectedExampleId = '';
+          this.servicePreview = null;
+          this.servicePreviewError = '';
+          this.scheduleServicePreview();
         }
       }
+    },
+    form: {
+      deep: true,
+      handler() {
+        this.scheduleServicePreview();
+      },
     }
   },
   mounted() {
     if (this.worker?.type === 'shell') this.loadShellExamples();
+  },
+  beforeUnmount() {
+    if (this.servicePreviewTimer) clearTimeout(this.servicePreviewTimer);
   },
   computed: {
     isShell() {
@@ -77,6 +97,9 @@ const WorkerConfigModal = {
     },
     isService() {
       return this.form.type === 'service';
+    },
+    isProcfileService() {
+      return this.isService && this.form.command_source === 'procfile';
     },
     isAI() {
       return this.form.type === 'ai' || this.form.type == null;
@@ -118,6 +141,14 @@ const WorkerConfigModal = {
       const isWin = (navigator.platform || '').toLowerCase().includes('win');
       const current = isWin ? 'windows' : 'posix';
       return this.shellExamples.filter(ex => !ex.platforms || ex.platforms.includes(current));
+    },
+    procfileProcessOptions() {
+      const names = Array.isArray(this.servicePreview?.process_names)
+        ? [...this.servicePreview.process_names]
+        : [];
+      const current = String(this.form.procfile_process || '').trim();
+      if (current && !names.includes(current)) names.unshift(current);
+      return names;
     },
   },
   template: `
@@ -241,18 +272,57 @@ const WorkerConfigModal = {
 
           <!-- Service-only: command, lifecycle, health, env -->
           <template v-if="isService">
-            <label class="form-label">
+            <div class="form-row">
+              <label class="form-label">
+                Command Source
+                <select class="form-select" v-model="form.command_source">
+                  <option value="manual">Manual command</option>
+                  <option value="procfile">Procfile</option>
+                </select>
+              </label>
+              <label class="form-label">
+                Port
+                <input class="form-input" type="number" v-model="form.port" min="1" max="65535" placeholder="3000">
+                <span class="form-hint">Seeds <code>PORT</code> in the Service worker env.</span>
+              </label>
+            </div>
+            <label v-if="!isProcfileService" class="form-label">
               Command
               <textarea class="form-textarea form-textarea--mono" v-model="form.command" rows="3"
                         placeholder="python3 hosted-app.py --port=$HOSTED_PORT"></textarea>
               <span class="form-hint">Executed with <code>/bin/sh -c</code> (POSIX) or <code>cmd.exe /c</code> (Windows). Ticket fields are exposed through <code>BULLPEN_*</code> variables.</span>
             </label>
+            <div v-else class="form-row">
+              <label class="form-label">
+                Procfile process
+                <select v-if="procfileProcessOptions.length" class="form-select" v-model="form.procfile_process">
+                  <option v-for="name in procfileProcessOptions" :key="name" :value="name">{{ name }}</option>
+                </select>
+                <input v-else class="form-input" v-model="form.procfile_process" placeholder="web">
+              </label>
+              <label class="form-label">
+                Procfile path
+                <input class="form-input" :value="servicePreview?.procfile_path || 'Procfile will be read from <cwd>/Procfile'" readonly>
+              </label>
+            </div>
             <label class="form-label">
               Pre-start
               <textarea class="form-textarea form-textarea--mono" v-model="form.pre_start" rows="2"
                         placeholder="git fetch && git checkout &quot;$BULLPEN_SERVICE_COMMIT&quot;"></textarea>
               <span class="form-hint">Optional. Runs before the main service command and must finish successfully.</span>
             </label>
+            <div class="form-label">
+              <span>Resolved command preview</span>
+              <div class="shell-warning" v-if="servicePreviewError">{{ servicePreviewError }}</div>
+              <div class="shell-warning" v-else-if="servicePreviewLoading">Resolving command…</div>
+              <div class="shell-warning" v-else-if="servicePreview">
+                <div><strong>Raw:</strong> <code>{{ servicePreview.raw_command || '(none)' }}</code></div>
+                <div><strong>Resolved:</strong> <code>{{ servicePreview.resolved_command || '(none)' }}</code></div>
+                <div v-if="servicePreview.warnings?.length" style="margin-top: 6px;">
+                  <div v-for="warning in servicePreview.warnings" :key="warning">{{ warning }}</div>
+                </div>
+              </div>
+            </div>
             <div class="shell-warning">
               <strong>Stored in plaintext:</strong> command, pre-start, env values, and logs live under
               <code>.bullpen/</code>. Do not put real secrets here.
@@ -488,6 +558,55 @@ const WorkerConfigModal = {
       if (Number.isFinite(ex.max_retries)) this.form.max_retries = ex.max_retries;
       if (Array.isArray(ex.env)) {
         this.form.env = ex.env.map(e => ({ key: e.key || '', value: e.value || '' }));
+      }
+    },
+    scheduleServicePreview() {
+      if (!this.isService || this.slotIndex == null) return;
+      if (this.servicePreviewTimer) clearTimeout(this.servicePreviewTimer);
+      this.servicePreviewTimer = setTimeout(() => this.fetchServicePreview(), 120);
+    },
+    async fetchServicePreview() {
+      if (!this.isService || this.slotIndex == null) return;
+      const seq = ++this.servicePreviewSeq;
+      this.servicePreviewLoading = true;
+      this.servicePreviewError = '';
+      const fields = {
+        command: this.form.command,
+        command_source: this.form.command_source,
+        procfile_process: this.form.procfile_process,
+        port: this.form.port,
+        cwd: this.form.cwd,
+        pre_start: this.form.pre_start,
+        health_type: this.form.health_type,
+        health_command: this.form.health_command,
+        env: (this.form.env || []).map(e => ({ key: e.key || '', value: e.value || '' })),
+      };
+      try {
+        const resp = await fetch('/api/service/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            workspaceId: this.$root.activeWorkspaceId,
+            slot: this.slotIndex,
+            fields,
+          }),
+        });
+        const data = await resp.json();
+        if (seq !== this.servicePreviewSeq) return;
+        if (!resp.ok) {
+          this.servicePreview = null;
+          this.servicePreviewError = data.error || 'Preview unavailable';
+          return;
+        }
+        this.servicePreview = data;
+        this.servicePreviewError = '';
+      } catch (err) {
+        if (seq !== this.servicePreviewSeq) return;
+        this.servicePreview = null;
+        this.servicePreviewError = err.message || 'Preview unavailable';
+      } finally {
+        if (seq === this.servicePreviewSeq) this.servicePreviewLoading = false;
       }
     },
     addEnv() {

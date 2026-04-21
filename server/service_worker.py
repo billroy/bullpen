@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import re
 import signal
@@ -27,6 +28,8 @@ SERVICE_SECRET_ENV_MARKERS = (
 RUNNING_STATES = {"running", "healthy", "unhealthy"}
 BUSY_STATES = {"starting", "stopping"}
 COMMIT_LINE_RE = re.compile(r"^\s*commit\s*:\s*([0-9a-f]{7,40})\b", re.IGNORECASE | re.MULTILINE)
+PROCFILE_LINE_RE = re.compile(r"^\s*([A-Za-z0-9_-]+)\s*:\s*(.+?)\s*$")
+ENV_VAR_REF_RE = re.compile(r"\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
 
 _controllers = {}
 _controllers_lock = threading.Lock()
@@ -80,6 +83,14 @@ def _minimal_env(configured_env):
     return env
 
 
+def _service_port(worker):
+    try:
+        port = int(worker.get("port"))
+    except (TypeError, ValueError):
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
 def _resolve_cwd(workspace, configured_cwd):
     configured_cwd = str(configured_cwd or "").strip()
     cwd = os.path.join(workspace, configured_cwd) if configured_cwd and not os.path.isabs(configured_cwd) else (configured_cwd or workspace)
@@ -90,6 +101,160 @@ def _resolve_cwd(workspace, configured_cwd):
     if not os.path.isdir(real):
         raise ValueError("Service worker cwd does not exist.")
     return real
+
+
+def _procfile_path(cwd):
+    return os.path.join(cwd, "Procfile")
+
+
+def _parse_procfile(path):
+    if not os.path.exists(path):
+        raise ValueError(f"Procfile not found in {os.path.dirname(path)}")
+    entries = {}
+    process_names = []
+    warnings = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for lineno, raw_line in enumerate(handle, start=1):
+            line = raw_line.rstrip("\n")
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            match = PROCFILE_LINE_RE.match(line)
+            if not match:
+                warnings.append(f"Ignoring malformed Procfile line {lineno}")
+                continue
+            name = match.group(1)
+            command = match.group(2).strip()
+            if name in entries:
+                warnings.append(f"Procfile process '{name}' appears multiple times; using first entry.")
+                continue
+            entries[name] = command
+            process_names.append(name)
+    return entries, process_names, warnings
+
+
+def _interpolate_env_refs(text, env, *, context_label="command", warn_on_unset=True):
+    warnings = []
+    warned = set()
+
+    def _replace(match):
+        if match.group(0) == "$$":
+            return "$"
+        name = match.group(1) or match.group(2) or ""
+        value = env.get(name)
+        if value is None:
+            if warn_on_unset and name not in warned:
+                warnings.append(f"{context_label}: ${name} is unset; substituting empty string.")
+                warned.add(name)
+            return ""
+        return str(value)
+
+    return ENV_VAR_REF_RE.sub(_replace, str(text or "")), warnings
+
+
+def _redact_command_for_log(command, env):
+    redacted = str(command or "")
+    secret_values = []
+    for key, value in (env or {}).items():
+        if not _is_secret_env_name(key):
+            continue
+        value = str(value or "")
+        if value:
+            secret_values.append(value)
+    for value in sorted(secret_values, key=len, reverse=True):
+        redacted = redacted.replace(value, "••••")
+    return redacted
+
+
+def _service_command_source(worker):
+    source = str(worker.get("command_source") or "manual").strip()
+    return source if source in {"manual", "procfile"} else "manual"
+
+
+def _build_service_env(worker, workspace, slot_index, order=None):
+    env = _minimal_env(worker.get("env"))
+    port = _service_port(worker)
+    if port and "PORT" not in env:
+        env["PORT"] = str(port)
+    order_id = _service_order_id(order) if order is not None else ""
+    env.update({
+        "BULLPEN_WORKSPACE": workspace,
+        "BULLPEN_SERVICE_SLOT": str(slot_index),
+        "BULLPEN_SERVICE_NAME": str(worker.get("name") or ""),
+        "BULLPEN_SERVICE_ORDER_ID": order_id,
+    })
+    env.update(_ticket_env((order or {}).get("task")))
+    return env
+
+
+def resolve_service_preview(worker, workspace, slot_index, order=None):
+    cwd = _resolve_cwd(workspace, worker.get("cwd"))
+    env = _build_service_env(worker, workspace, slot_index, order=order)
+    command_source = _service_command_source(worker)
+    warnings = []
+    procfile_path = _procfile_path(cwd)
+    process_names = []
+    selected_process = None
+
+    if command_source == "procfile":
+        selected_process = str(worker.get("procfile_process") or "web").strip() or "web"
+        entries, process_names, parse_warnings = _parse_procfile(procfile_path)
+        warnings.extend(parse_warnings)
+        if selected_process not in entries:
+            raise ValueError(f"Procfile has no '{selected_process}:' process")
+        raw_command = entries[selected_process]
+    else:
+        raw_command = str(worker.get("command") or "").strip()
+        if not raw_command:
+            raise ValueError("Service workers require a command.")
+
+    resolved_command, interpolation_warnings = _interpolate_env_refs(
+        raw_command,
+        env,
+        context_label="command",
+        warn_on_unset=True,
+    )
+    warnings.extend(interpolation_warnings)
+
+    pre_start = str(worker.get("pre_start") or "").strip()
+    resolved_pre_start = ""
+    pre_start_warnings = []
+    if pre_start:
+        resolved_pre_start, pre_start_warnings = _interpolate_env_refs(
+            pre_start,
+            env,
+            context_label="pre_start",
+            warn_on_unset=True,
+        )
+        warnings.extend(pre_start_warnings)
+
+    health_command = str(worker.get("health_command") or "").strip()
+    resolved_health_command = ""
+    if health_command:
+        resolved_health_command, _ = _interpolate_env_refs(
+            health_command,
+            env,
+            context_label="health_command",
+            warn_on_unset=False,
+        )
+
+    return {
+        "cwd": cwd,
+        "procfile_path": procfile_path,
+        "command_source": command_source,
+        "process_names": process_names,
+        "selected_process": selected_process,
+        "raw_command": raw_command,
+        "resolved_command": resolved_command,
+        "resolved_command_redacted": _redact_command_for_log(resolved_command, env),
+        "pre_start": pre_start,
+        "resolved_pre_start": resolved_pre_start,
+        "resolved_pre_start_redacted": _redact_command_for_log(resolved_pre_start, env),
+        "health_command": health_command,
+        "resolved_health_command": resolved_health_command,
+        "warnings": warnings,
+        "env": env,
+    }
 
 
 def _popen_kwargs():
@@ -244,6 +409,7 @@ def _service_order_still_active(bp_dir, slot_index, task_id):
 def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None):
     """Start a ticket-triggered Service worker order from the normal queue."""
     from server import workers as worker_mod
+    from server.worker_types import get_worker_type
 
     try:
         layout = worker_mod._load_layout(bp_dir)
@@ -258,14 +424,7 @@ def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None):
     if not worker.get("task_queue"):
         return
 
-    errors = []
-    command = str(worker.get("command") or "").strip()
-    if not command:
-        errors.append("Service workers require a command.")
-    for item in worker.get("env") or []:
-        key = str((item or {}).get("key") or "").strip()
-        if key == "BULLPEN_MCP_TOKEN" or key.startswith("BULLPEN_"):
-            errors.append(f"{key} cannot be configured for Service workers.")
+    errors = get_worker_type("service").validate_config(worker)
     if errors:
         worker_mod._block_agent_start_failure(
             bp_dir, slot_index, worker["task_queue"][0], errors[0], socketio, ws_id,
@@ -601,10 +760,12 @@ class ServiceWorkerController:
     def _start_sequence(self, order=None, worker_snapshot=None, result=None):
         order_id = _service_order_id(order)
         try:
+            from server.worker_types import get_worker_type
+
             worker = worker_snapshot or _load_service_slot(self.bp_dir, self.slot_index)
-            command = str(worker.get("command") or "").strip()
-            if not command:
-                raise ValueError("Service workers require a command.")
+            errors = get_worker_type("service").validate_config(worker)
+            if errors:
+                raise ValueError(errors[0])
             self._config_hash = self._service_config_hash(worker)
             self._active_config_hash = self._config_hash
             self._exit_code = None
@@ -614,18 +775,23 @@ class ServiceWorkerController:
             self._write_log(f"[bullpen] starting service order {order_id}\n", emit=True)
 
             deadline = time.monotonic() + max(1, int(worker.get("startup_timeout_seconds", 60)))
-            cwd = _resolve_cwd(self.workspace, worker.get("cwd"))
-            env = _minimal_env(worker.get("env"))
-            env.update({
-                "BULLPEN_WORKSPACE": self.workspace,
-                "BULLPEN_SERVICE_SLOT": str(self.slot_index),
-                "BULLPEN_SERVICE_NAME": str(worker.get("name") or ""),
-                "BULLPEN_SERVICE_ORDER_ID": order_id,
-            })
-            env.update(_ticket_env((order or {}).get("task")))
+            preview = resolve_service_preview(worker, self.workspace, self.slot_index, order=order)
+            cwd = preview["cwd"]
+            env = preview["env"]
+            command = preview["resolved_command"]
+            for warning in preview["warnings"]:
+                self._write_log(f"[bullpen] {warning}\n", emit=True)
+            if preview["command_source"] == "procfile":
+                self._write_log(
+                    f"[bullpen] procfile {preview['selected_process']}: {preview['resolved_command_redacted']}\n",
+                    emit=True,
+                )
+            else:
+                self._write_log(f"[bullpen] command: {preview['resolved_command_redacted']}\n", emit=True)
 
-            pre_start = str(worker.get("pre_start") or "").strip()
+            pre_start = preview["resolved_pre_start"]
             if pre_start:
+                self._write_log(f"[bullpen] pre-start: {preview['resolved_pre_start_redacted']}\n", emit=True)
                 self._run_pre_start(pre_start, cwd, env, deadline)
 
             if self._cancel.is_set():
@@ -830,6 +996,12 @@ class ServiceWorkerController:
         command = str(command or "").strip()
         if not command:
             return False, "Shell health checks require a command."
+        command, _ = _interpolate_env_refs(
+            command,
+            env,
+            context_label="health_command",
+            warn_on_unset=False,
+        )
         try:
             proc = subprocess.Popen(
                 _command_argv(command),
@@ -993,7 +1165,8 @@ class ServiceWorkerController:
         fields = {
             key: worker.get(key)
             for key in (
-                "command", "cwd", "env", "pre_start", "ticket_action",
+                "command", "command_source", "procfile_process", "port",
+                "cwd", "env", "pre_start", "ticket_action",
                 "disposition", "max_retries", "startup_grace_seconds",
                 "startup_timeout_seconds", "health_type", "health_url",
                 "health_command", "health_interval_seconds",

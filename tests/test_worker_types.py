@@ -10,6 +10,7 @@ from server.validation import validate_worker_configure
 from server.worker_types import (
     ViewerContext,
     copy_worker_slot,
+    get_worker_type,
     normalize_layout,
     normalize_worker_slot,
     serialize_worker_slot,
@@ -249,6 +250,29 @@ def test_service_read_only_serialization_redacts_plaintext_command_fields(tmp_wo
     assert read_only["env"] == [{"key": "TOKEN", "value": "<redacted>"}]
 
 
+def test_service_worker_procfile_mode_defaults_and_validates(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = normalize_worker_slot(
+        {
+            "type": "service",
+            "row": 0,
+            "col": 0,
+            "name": "Procfile Service",
+            "command_source": "procfile",
+            "procfile_process": "",
+            "port": "3000",
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["command_source"] == "procfile"
+    assert slot["procfile_process"] == "web"
+    assert slot["port"] == 3000
+    assert get_worker_type("service").validate_config(slot) == []
+
+
 def test_service_worker_transfer_preserves_service_fields(tmp_path):
     ws_a = str(tmp_path / "a")
     ws_b = str(tmp_path / "b")
@@ -266,6 +290,9 @@ def test_service_worker_transfer_preserves_service_fields(tmp_path):
         "col": 0,
         "name": "Preview Server",
         "command": "python3 app.py",
+        "command_source": "procfile",
+        "procfile_process": "web",
+        "port": 3000,
         "pre_start": "git fetch",
         "ticket_action": "restart",
         "health_type": "http",
@@ -282,6 +309,9 @@ def test_service_worker_transfer_preserves_service_fields(tmp_path):
     dest = read_json(os.path.join(bp_b, "layout.json"))["slots"][result["dest_slot"]]
     assert dest["type"] == "service"
     assert dest["command"] == "python3 app.py"
+    assert dest["command_source"] == "procfile"
+    assert dest["procfile_process"] == "web"
+    assert dest["port"] == 3000
     assert dest["pre_start"] == "git fetch"
     assert dest["ticket_action"] == "restart"
     assert dest["health_url"] == "http://localhost:3000/health"

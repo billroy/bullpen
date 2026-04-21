@@ -5,12 +5,14 @@ import os
 import sys
 import time
 
+from server.app import create_app
 from server.init import init_workspace
 from server.persistence import read_json, write_json
 from server.tasks import create_task, read_task, update_task
 from server.service_worker import (
     get_controller,
     restart_service,
+    resolve_service_preview,
     start_service,
     stop_all_services,
     stop_service,
@@ -183,6 +185,98 @@ def test_service_ticket_order_routes_and_injects_ticket_env(tmp_workspace):
     assert injected["BULLPEN_TICKET_PRIORITY"] == "normal"
 
     stop_service(bp_dir, None, 0)
+
+
+def test_procfile_preview_resolves_selected_process_and_port(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    procfile_path = os.path.join(tmp_workspace, "Procfile")
+    _write_script(
+        procfile_path,
+        "# comment\n"
+        "web: python3 app.py --port=$PORT --workers=${WEB_CONCURRENCY}\n"
+        "worker: python3 jobs.py\n",
+    )
+    worker = _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        command="",
+        command_source="procfile",
+        procfile_process="web",
+        port=3100,
+        env=[{"key": "WEB_CONCURRENCY", "value": "2"}],
+    )
+
+    preview = resolve_service_preview(worker, tmp_workspace, 0)
+
+    assert preview["process_names"] == ["web", "worker"]
+    assert preview["selected_process"] == "web"
+    assert preview["raw_command"] == "python3 app.py --port=$PORT --workers=${WEB_CONCURRENCY}"
+    assert preview["resolved_command"] == "python3 app.py --port=3100 --workers=2"
+
+
+def test_service_preview_api_merges_unsaved_procfile_fields(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _write_script(os.path.join(tmp_workspace, "Procfile"), "web: python3 app.py --port=$PORT\n")
+    _install_service_worker(bp_dir, tmp_workspace, command="python3 old.py")
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    resp = client.post(
+        "/api/service/preview",
+        json={
+            "workspaceId": app.config["startup_workspace_id"],
+            "slot": 0,
+            "fields": {
+                "command_source": "procfile",
+                "procfile_process": "web",
+                "port": 3200,
+            },
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["command_source"] == "procfile"
+    assert data["selected_process"] == "web"
+    assert data["resolved_command"] == "python3 app.py --port=3200"
+
+
+def test_procfile_service_restart_rereads_procfile(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    output_path = os.path.join(tmp_workspace, "procfile-run.txt")
+    script = os.path.join(tmp_workspace, "procfile_runner.py")
+    _write_script(
+        script,
+        "import pathlib, sys, time\n"
+        f"path = pathlib.Path({output_path!r})\n"
+        "path.write_text(sys.argv[1], encoding='utf-8')\n"
+        "print(sys.argv[1], flush=True)\n"
+        "time.sleep(30)\n",
+    )
+    procfile_path = os.path.join(tmp_workspace, "Procfile")
+    _write_script(procfile_path, f'web: "{sys.executable}" "{script}" first\n')
+    _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        command="",
+        command_source="procfile",
+        procfile_process="web",
+        startup_grace_seconds=0,
+    )
+    socket = FakeSocket()
+    ws_id = "ws-service-procfile"
+
+    assert start_service(bp_dir, ws_id, 0, socket) is True
+    controller = get_controller(bp_dir, ws_id, 0, socket)
+    assert _wait_for(lambda: controller.state_snapshot()["state"] == "running") is True
+    assert _wait_for(lambda: os.path.exists(output_path) and open(output_path, encoding="utf-8").read() == "first") is True
+
+    _write_script(procfile_path, f'web: "{sys.executable}" "{script}" second\n')
+    assert restart_service(bp_dir, ws_id, 0, socket) is True
+    assert _wait_for(lambda: controller.state_snapshot()["state"] == "running") is True
+    assert _wait_for(lambda: os.path.exists(output_path) and open(output_path, encoding="utf-8").read() == "second") is True
+
+    stop_service(bp_dir, ws_id, 0, socket)
 
 
 def test_service_ticket_order_restarts_running_service(tmp_workspace):

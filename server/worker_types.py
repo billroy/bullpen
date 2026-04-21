@@ -14,6 +14,7 @@ RUNTIME_FIELDS = {"task_queue", "state", "started_at"}
 SERVICE_TICKET_ACTIONS = {"start-if-stopped-else-restart", "restart", "start-if-stopped"}
 SERVICE_HEALTH_TYPES = {"none", "http", "shell"}
 SERVICE_CRASH_POLICIES = {"stay-crashed"}
+SERVICE_COMMAND_SOURCES = {"manual", "procfile"}
 SERVICE_LOG_MAX_BYTES_DEFAULT = 5 * 1024 * 1024
 
 
@@ -65,12 +66,24 @@ class ServiceWorkerType(WorkerType):
 
     def validate_config(self, slot):
         errors = []
-        if not str(slot.get("command") or "").strip():
+        command_source = str(slot.get("command_source") or "manual")
+        if command_source not in SERVICE_COMMAND_SOURCES:
+            errors.append("Service workers require a valid command source.")
+        if command_source != "procfile" and not str(slot.get("command") or "").strip():
             errors.append("Service workers require a command.")
         for item in slot.get("env") or []:
             key = str((item or {}).get("key") or "").strip()
             if key == "BULLPEN_MCP_TOKEN" or key.startswith("BULLPEN_"):
                 errors.append(f"{key} cannot be configured for Service workers.")
+        port = slot.get("port")
+        if port not in (None, ""):
+            try:
+                port_num = int(port)
+            except (TypeError, ValueError):
+                errors.append("Service worker port must be an integer.")
+            else:
+                if port_num < 1 or port_num > 65535:
+                    errors.append("Service worker port must be between 1 and 65535.")
         health_type = str(slot.get("health_type") or "none")
         if health_type == "http" and not str(slot.get("health_url") or "").strip():
             errors.append("HTTP health checks require a URL.")
@@ -160,6 +173,15 @@ def _normalize_env(env):
     return normalized
 
 
+def _normalize_service_port(value):
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
 def normalize_worker_slot(raw, *, index, config):
     """Return a canonical worker slot, preserving unknown fields."""
     if raw is None:
@@ -213,7 +235,13 @@ def normalize_worker_slot(raw, *, index, config):
         slot["ticket_delivery"] = delivery
         slot["env"] = _normalize_env(slot.get("env"))
     elif type_id == "service":
+        command_source = str(slot.get("command_source") or "manual")
+        if command_source not in SERVICE_COMMAND_SOURCES:
+            command_source = "manual"
         slot["command"] = str(slot.get("command") or "")
+        slot["command_source"] = command_source
+        slot["procfile_process"] = str(slot.get("procfile_process") or "web").strip() or "web"
+        slot["port"] = _normalize_service_port(slot.get("port"))
         slot["cwd"] = str(slot.get("cwd") or "")
         slot["pre_start"] = str(slot.get("pre_start") or "")
         action = str(slot.get("ticket_action") or "start-if-stopped-else-restart")

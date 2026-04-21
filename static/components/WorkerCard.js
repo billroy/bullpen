@@ -36,6 +36,8 @@ const WorkerCard = {
         <div class="worker-card-identity">
           <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
           <span class="worker-card-name">{{ workerNameLabel }}</span>
+          <span v-if="serviceModeBadge" class="worker-type-badge">{{ serviceModeBadge }}</span>
+          <span v-if="servicePortLabel" class="worker-type-badge">{{ servicePortLabel }}</span>
         </div>
         <div class="worker-card-actions">
           <span class="worker-card-header-status">
@@ -148,6 +150,18 @@ const WorkerCard = {
     workerNameLabel() {
       const name = this.worker?.name || '';
       return this.taskQueueCount > 0 ? `${name} (${this.taskQueueCount})` : name;
+    },
+    serviceModeBadge() {
+      if (!this.isService) return '';
+      if (this.worker.command_source === 'procfile') {
+        return `Procfile:${this.worker.procfile_process || 'web'}`;
+      }
+      return '';
+    },
+    servicePortLabel() {
+      if (!this.isService) return '';
+      const port = this.worker.port;
+      return port ? `:${port}` : '';
     },
     canStart() {
       if (this.isService) return ['idle', 'stopped', 'crashed'].includes(this.workerState);

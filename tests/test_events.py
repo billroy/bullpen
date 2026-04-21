@@ -335,6 +335,9 @@ class TestWorkerEvents:
         assert worker["activation"] == "on_drop"
         assert worker["disposition"] == "review"
         assert worker["command"] == "python3 app.py"
+        assert worker["command_source"] == "manual"
+        assert worker["procfile_process"] == "web"
+        assert worker["port"] is None
         assert worker["pre_start"] == "git fetch"
         assert worker["ticket_action"] == "start-if-stopped-else-restart"
         assert worker["health_type"] == "http"
@@ -523,6 +526,9 @@ class TestWorkerEvents:
                 "disposition": "review",
                 "max_retries": 1,
                 "command": "python3 app.py",
+                "command_source": "procfile",
+                "procfile_process": "web",
+                "port": 3000,
                 "cwd": "server",
                 "pre_start": "git fetch",
                 "ticket_action": "restart",
@@ -545,6 +551,9 @@ class TestWorkerEvents:
         assert worker["type"] == "service"
         assert worker["name"] == "Service Copy"
         assert worker["command"] == "python3 app.py"
+        assert worker["command_source"] == "procfile"
+        assert worker["procfile_process"] == "web"
+        assert worker["port"] == 3000
         assert worker["cwd"] == "server"
         assert worker["pre_start"] == "git fetch"
         assert worker["ticket_action"] == "restart"
