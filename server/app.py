@@ -647,7 +647,7 @@ def create_app(
         init_workspace(ws.path)
         _write_runtime_config(ws, preferred_token=previous_token)
         reconcile(bp_dir)
-        state = load_state(bp_dir, ws.path)
+        state = load_state(bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws.id
         socketio.emit("state:init", state, to=ws.id)
         socketio.emit("files:changed", {"workspaceId": ws.id}, to=ws.id)
@@ -683,7 +683,7 @@ def create_app(
                 shutil.copy2(src_path, dst_path)
 
         reconcile(bp_dir)
-        state = load_state(bp_dir, ws.path)
+        state = load_state(bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws.id
         socketio.emit("state:init", state, to=ws.id)
 
@@ -844,17 +844,13 @@ def create_app(
             return
 
         join_room("authenticated")
-        # Join rooms for all active workspaces
-        for ws in manager.all_workspaces():
+        ws = manager.get_or_activate(startup_id)
+        if ws:
             join_room(ws.id)
-        # Send state for all active workspaces (to this client only)
-        sid = request.sid
-        for ws in manager.all_workspaces():
-            state = load_state(ws.bp_dir, ws.path)
+            state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
             state["workspaceId"] = ws.id
-            socketio.emit("state:init", state, to=sid)
-        # Send project list (to this client only)
-        socketio.emit("projects:updated", manager.list_projects(), to=sid)
+            socketio.emit("state:init", state, to=request.sid)
+        socketio.emit("projects:updated", manager.list_projects(include_path=False), to=request.sid)
 
     @socketio.on("disconnect")
     def on_disconnect():
@@ -1073,7 +1069,7 @@ def reconcile(bp_dir):
         worker_mod.check_watch_columns(bp_dir, col)
 
 
-def load_state(bp_dir, workspace):
+def load_state(bp_dir, workspace, workspace_display=None):
     """Load full app state from .bullpen/ files."""
     config = read_json(os.path.join(bp_dir, "config.json"))
     if not isinstance(config.get("theme"), str):
@@ -1105,7 +1101,7 @@ def load_state(bp_dir, workspace):
     teams = list_teams(bp_dir)
 
     return {
-        "workspace": workspace,
+        "workspace": workspace_display or workspace,
         "config": config,
         "layout": layout,
         "tasks": tasks,

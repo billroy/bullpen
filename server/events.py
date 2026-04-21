@@ -1005,13 +1005,13 @@ def register_events(socketio, app):
         reconcile(ws.bp_dir)
 
         # Send state for the new workspace to the requesting client
-        state = load_state(ws.bp_dir, ws.path)
+        state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws_id
         state["switchTo"] = True
         emit("state:init", state)
 
         # Broadcast updated project list to authenticated clients
-        socketio.emit("projects:updated", manager.list_projects(), to="authenticated")
+        socketio.emit("projects:updated", manager.list_projects(include_path=False), to="authenticated")
 
     @socketio.on("project:join")
     def on_project_join(data):
@@ -1030,7 +1030,7 @@ def register_events(socketio, app):
         join_room(ws_id)
 
         from server.app import load_state
-        state = load_state(ws.bp_dir, ws.path)
+        state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws_id
         emit("state:init", state)
         _emit_chat_tabs(ws_id, sid=request.sid)
@@ -1172,7 +1172,7 @@ def register_events(socketio, app):
                 _chat_session_ts.pop(key, None)
                 _chat_ticket_ids.pop(key, None)
         socketio.emit("project:removed", {"workspaceId": ws_id}, to="authenticated")
-        socketio.emit("projects:updated", manager.list_projects(), to="authenticated")
+        socketio.emit("projects:updated", manager.list_projects(include_path=False), to="authenticated")
 
     @socketio.on("project:list")
     def on_project_list(data=None):
@@ -1180,9 +1180,9 @@ def register_events(socketio, app):
         bound_ws_id = _bound_mcp_workspace()
         if bound_ws_id:
             ws = manager.get_or_activate(bound_ws_id)
-            emit("projects:updated", [ws.to_dict()] if ws else [])
+            emit("projects:updated", [ws.to_dict(include_path=False)] if ws else [])
             return
-        emit("projects:updated", manager.list_projects())
+        emit("projects:updated", manager.list_projects(include_path=False))
 
     @socketio.on("chat:tabs:request")
     def on_chat_tabs_request(data):

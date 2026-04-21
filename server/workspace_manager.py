@@ -26,8 +26,11 @@ class WorkspaceState:
         self.lock = threading.Lock()
         self.scheduler = None
 
-    def to_dict(self):
-        return {"id": self.id, "path": self.path, "name": self.name}
+    def to_dict(self, *, include_path=True):
+        data = {"id": self.id, "name": self.name}
+        if include_path:
+            data["path"] = self.path
+        return data
 
 
 class WorkspaceManager:
@@ -222,7 +225,7 @@ class WorkspaceManager:
         """Return list of all active workspace IDs."""
         return list(self._workspaces.keys())
 
-    def list_projects(self):
+    def list_projects(self, *, include_path=True):
         """Return registry entries for all registered projects.
 
         Each entry includes an ``available`` flag indicating whether the
@@ -230,7 +233,9 @@ class WorkspaceManager:
         """
         out = []
         for e in self._registry:
-            entry = e.copy()
+            entry = {"id": e["id"], "name": e["name"]}
+            if include_path:
+                entry["path"] = e["path"]
             entry["available"] = os.path.isdir(e["path"])
             out.append(entry)
         return out

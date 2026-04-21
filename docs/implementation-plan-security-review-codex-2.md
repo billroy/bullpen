@@ -37,7 +37,7 @@ This keeps the highest-risk issues moving immediately while avoiding a large all
 - Tranche 2: Completed on 2026-04-21
 - Tranche 3: Completed on 2026-04-21
 - Tranche 4: Completed on 2026-04-21
-- Tranche 5: Pending
+- Tranche 5: Completed on 2026-04-21
 - Tranche 6: Pending
 - Tranche 7: Pending
 
@@ -233,6 +233,17 @@ Implemented:
 ## Tranche 5 — Reduce Cross-Workspace Data Exposure
 
 **Goal:** Stop giving every connected client all workspace state and absolute paths by default.
+**Status:** Completed on 2026-04-21
+
+Implemented:
+
+- Browser Socket.IO bootstrap now sends only the startup workspace state instead of eagerly emitting every active workspace.
+- Browser sessions now join the startup workspace room on connect and load additional workspace state only after explicit `project:join`.
+- Public `projects:updated` payloads now omit absolute filesystem paths and expose only `id`, `name`, and `available`.
+- Browser `state:init` payloads now use the workspace name as the display label, while MCP clients still receive the real path needed for local workspace matching.
+- Updated the command-palette project-copy action to reflect the redacted public payloads.
+- Added regression coverage for single-workspace initial bootstrap, path-redacted project lists, and multi-project switching after explicit joins.
+- While validating the tranche, fixed a blocked-task write-order race so timeout/block messages are visible as soon as the task status flips to `blocked`.
 
 ### T5.1 Send one workspace on initial connect
 

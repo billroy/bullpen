@@ -247,7 +247,8 @@ class TestMultiProjectStartup:
         with open(projects_path, "w") as f:
             json.dump(raw, f, indent=2)
 
-        # Restart app; both projects should be activated and sent on connect.
+        # Restart app; both projects should be activated internally, but the
+        # browser bootstrap only receives the startup workspace state.
         app = create_app(ws_a, no_browser=True, global_dir=global_dir)
         c = socketio.test_client(app)
         received = c.get_received()
@@ -256,12 +257,14 @@ class TestMultiProjectStartup:
         init_events = [evt for evt in received if evt["name"] == "state:init"]
         projects_events = [evt for evt in received if evt["name"] == "projects:updated"]
 
-        assert len(init_events) == 2
+        assert len(init_events) == 1
+        assert init_events[0]["args"][0]["workspace"] == os.path.basename(ws_a)
         assert projects_events
         listed = projects_events[-1]["args"][0]
-        listed_paths = {os.path.realpath(p["path"]) for p in listed}
-        assert os.path.realpath(ws_a) in listed_paths
-        assert os.path.realpath(ws_b) in listed_paths
+        listed_names = {p["name"] for p in listed}
+        assert os.path.basename(ws_a) in listed_names
+        assert os.path.basename(ws_b) in listed_names
+        assert all("path" not in p for p in listed)
 
 
 class TestWorkerManagement:

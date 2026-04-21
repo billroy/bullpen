@@ -2257,15 +2257,15 @@ def _on_agent_error(
             if queue and queue[0] == task_id:
                 queue.pop(0)
 
-            task_mod.update_task(bp_dir, task_id, {
-                "status": "blocked",
-                "assigned_to": "",
-            })
-
             if output:
                 _append_output(bp_dir, task_id, worker, f"[BLOCKED] {error_msg}\n\n{output}")
             else:
                 _append_output(bp_dir, task_id, worker, f"[BLOCKED] {error_msg}")
+
+            task_mod.update_task(bp_dir, task_id, {
+                "status": "blocked",
+                "assigned_to": "",
+            })
 
             worker["state"] = "idle"
             _save_layout(bp_dir, layout)

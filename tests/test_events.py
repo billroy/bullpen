@@ -890,7 +890,7 @@ class TestChatEvents:
                 events = c1.get_received()
                 project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
                 listed = project_updates[-1]["args"][0]
-                ws_b = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+                ws_b = next(p["id"] for p in listed if p["name"] == "room-isolated-project")
 
                 c2.get_received()  # drain projects update
 
@@ -994,7 +994,7 @@ class TestProjectEvents:
             project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
             listed = project_updates[-1]["args"][0]
             startup_ws_id = app.config["startup_workspace_id"]
-            other_ws_id = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+            other_ws_id = next(p["id"] for p in listed if p["name"] == "mcp-scoped-project")
 
             config_path = os.path.join(path, ".bullpen", "config.json")
             with open(config_path, "r", encoding="utf-8") as f:
@@ -1030,7 +1030,7 @@ class TestProjectEvents:
             events = c.get_received()
             project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
             listed = project_updates[-1]["args"][0]
-            ws_b = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+            ws_b = next(p["id"] for p in listed if p["name"] == "new-chat-project")
 
             session_id = "same-browser-session-id"
             ws_a = app.config["startup_workspace_id"]
@@ -1083,8 +1083,8 @@ class TestProjectEvents:
             assert project_updates
 
             listed = project_updates[-1]["args"][0]
-            expected = os.path.realpath(path)
-            assert any(p["path"] == expected for p in listed)
+            assert any(p["name"] == "new-empty-project" for p in listed)
+            assert all("path" not in p for p in listed)
 
     def test_new_project_client_receives_task_created_without_refresh(self, client):
         c, _ = client
@@ -1092,9 +1092,8 @@ class TestProjectEvents:
             path = os.path.join(parent, "new-empty-project")
             c.emit("project:new", {"path": path})
             events = c.get_received()
-            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
-            listed = project_updates[-1]["args"][0]
-            ws_id = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+            state_inits = [evt for evt in events if evt["name"] == "state:init"]
+            ws_id = state_inits[-1]["args"][0]["workspaceId"]
 
             c.emit("task:create", {
                 "workspaceId": ws_id,
@@ -1115,9 +1114,8 @@ class TestProjectEvents:
             path = os.path.join(parent, "remove-me-project")
             c.emit("project:new", {"path": path})
             events = c.get_received()
-            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
-            listed = project_updates[-1]["args"][0]
-            ws_id = next(p["id"] for p in listed if p["path"] == os.path.realpath(path))
+            state_inits = [evt for evt in events if evt["name"] == "state:init"]
+            ws_id = state_inits[-1]["args"][0]["workspaceId"]
 
             c.emit("task:create", {"workspaceId": ws_id, "title": "Keep this task on disk"})
             created = get_event(c, "task:created")

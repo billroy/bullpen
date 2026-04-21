@@ -370,12 +370,12 @@
       }),
       command({
         id: 'project.copy_path',
-        title: 'Copy Workspace Path',
-        subtitle: 'Copy the active project path to the clipboard',
+        title: 'Copy Project Name',
+        subtitle: 'Copy the active project name to the clipboard',
         group: 'Help',
         aliases: ['copy path', 'workspace path'],
         available: requireWorkspace,
-        run: runCtx => runCtx.actions.copyText('Workspace path', runCtx.projectPath),
+        run: runCtx => runCtx.actions.copyText('Project name', runCtx.projectPath),
       }),
       command({
         id: 'project.copy_id',

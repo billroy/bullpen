@@ -75,7 +75,7 @@ const app = createApp({
     });
 
     const activeWorkspaceId = ref(null);
-    const projects = reactive([]);  // [{id, path, name}]
+    const projects = reactive([]);  // [{id, name, available}]
     const projectsLoaded = ref(false);  // true once server has delivered initial projects:updated
 
     function _defaultWsData() {
