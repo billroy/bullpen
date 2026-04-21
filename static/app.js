@@ -241,13 +241,16 @@ const app = createApp({
       activeWorkspaceId.value = wsId;
       workspaces[wsId].unseenActivity = 0;
       ticketListScope.value = 'live';
+      // Join the workspace room before emitting any workspace-scoped events
+      // (e.g. chat:tab:open from _ensureChatTabForWorkspace). The server
+      // rejects workspace-scoped events from clients not yet in the room.
+      if (socket?.connected) socket.emit('project:join', { workspaceId: wsId });
       const ensuredChatTab = _ensureChatTabForWorkspace(wsId);
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
       _applyWorkspaceAmbient(wsId);
       _applyWorkspaceProviderColors(wsId);
       _updateDocumentTitle();
-      if (socket?.connected) socket.emit('project:join', { workspaceId: wsId });
       if (wasLiveAgent) {
         const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);
         const fallback = preferred || ensuredChatTab || chatTabs.find(t => t.workspaceId === wsId);
