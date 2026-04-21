@@ -224,6 +224,7 @@ WORKSPACE_INPUT="$(prompt_default "Workspace path to mount into /workspace" "$PW
 [[ -e "$WORKSPACE_INPUT" ]] || die "Workspace path does not exist: $WORKSPACE_INPUT"
 [[ -d "$WORKSPACE_INPUT" ]] || die "Workspace path is not a directory: $WORKSPACE_INPUT"
 WORKSPACE_PATH="$(abs_path "$WORKSPACE_INPUT")"
+WORKSPACE_NAME="$(basename "$WORKSPACE_PATH")"
 
 BULLPEN_PORT="$(prompt_default "Bullpen web port" "$BULLPEN_PORT_DEFAULT")"
 APP_PORT="$(prompt_default "App port (for your project inside container)" "$APP_PORT_DEFAULT")"
@@ -342,6 +343,7 @@ DOCKER_RUN_ARGS=(
   -e "BULLPEN_PORT=${BULLPEN_PORT}"
   -e "APP_PORT=${APP_PORT}"
   -e "BULLPEN_WORKSPACE=/workspace"
+  -e "BULLPEN_WORKSPACE_NAME=${WORKSPACE_NAME}"
   -e "BULLPEN_PRODUCTION=${BULLPEN_PRODUCTION:-0}"
   -p "${BULLPEN_PORT}:${BULLPEN_PORT}"
   -p "${APP_PORT}:${APP_PORT}"

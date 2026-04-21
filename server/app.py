@@ -153,10 +153,11 @@ def create_app(
 ):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
+    startup_workspace_name = (os.environ.get("BULLPEN_WORKSPACE_NAME") or "").strip() or None
 
     # Initialize workspace manager and register startup project
     manager = WorkspaceManager(global_dir=global_dir)
-    startup_id = manager.register_project(workspace)
+    startup_id = manager.register_project(workspace, name=startup_workspace_name)
     # Activate all persisted projects so the UI can switch between them immediately.
     # The registry can contain projects from prior runs that need in-memory state.
     for entry in manager.list_projects():

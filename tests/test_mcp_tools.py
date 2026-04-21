@@ -389,6 +389,27 @@ def test_bullpen_client_selects_workspace_matching_bp_dir(monkeypatch, tmp_works
     assert client.workspace_id == "target-ws"
 
 
+def test_bullpen_client_trusts_server_workspace_id_for_token_auth(monkeypatch, tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config_path = bp_dir + "/config.json"
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+    config["mcp_token"] = "token-1"
+    with open(config_path, "w", encoding="utf-8") as f:
+        json.dump(config, f)
+
+    monkeypatch.setattr(
+        mcp_tools.socketio,
+        "Client",
+        lambda **_kwargs: _RecordingSio(),
+    )
+
+    client = mcp_tools.BullpenClient("127.0.0.1", 5050, bp_dir=bp_dir)
+
+    assert client._connect_best_effort() is True
+    assert client.workspace_id == "ws-1"
+
+
 def test_resolve_runtime_args_reads_workspace_config(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     config_path = bp_dir + "/config.json"

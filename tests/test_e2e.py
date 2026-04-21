@@ -84,6 +84,17 @@ class TestHappyPath:
         assert updated["status"] == "in-progress"
 
 
+def test_create_app_uses_configured_startup_workspace_name(tmp_workspace, monkeypatch):
+    monkeypatch.setenv("BULLPEN_WORKSPACE_NAME", "repo-name")
+
+    app = create_app(tmp_workspace, no_browser=True)
+    manager = app.config["manager"]
+    projects = manager.list_projects(include_path=False)
+
+    assert len(projects) == 1
+    assert projects[0]["name"] == "repo-name"
+
+
 class TestTeamWorkflow:
     """Load team → assign tasks → save as new team."""
 

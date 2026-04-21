@@ -237,6 +237,7 @@ class BullpenClient:
         self.port = port
         self.bp_dir = bp_dir
         self.workspace_path = os.path.realpath(os.path.dirname(os.path.abspath(bp_dir)))
+        self._auth_via_token = False
         self.sio = socketio.Client(logger=False, engineio_logger=False, reconnection=False)
         self.connected = False
         self.workspace_id: str | None = None
@@ -258,6 +259,9 @@ class BullpenClient:
         def _on_state_init(data: dict[str, Any]) -> None:
             workspace_id = data.get("workspaceId")
             if not workspace_id:
+                return
+            if self._auth_via_token:
+                self.workspace_id = workspace_id
                 return
             workspace = data.get("workspace")
             if isinstance(workspace, str) and workspace:
@@ -303,6 +307,7 @@ class BullpenClient:
         if self.connected:
             return True
         token = self._read_mcp_token()
+        self._auth_via_token = bool(token)
         auth_data = {"mcp_token": token} if token else None
         errors: list[str] = []
         for attempt in range(MAX_CONNECT_ATTEMPTS):
@@ -318,7 +323,7 @@ class BullpenClient:
                         self.connected = True
                         if self.workspace_id is None:
                             print(
-                                f"WARNING: MCP connected but no workspace matched path {self.workspace_path}",
+                                "WARNING: MCP connected but the server did not assign a workspace_id",
                                 file=sys.stderr,
                             )
                         return True
@@ -388,7 +393,7 @@ class BullpenClient:
         if not self._connect_best_effort():
             return None, self._connection_failure_message("create_ticket")
         if not self.workspace_id:
-            return None, "MCP client has no workspace_id — path matching failed for all workspaces"
+            return None, "MCP client has no workspace_id — server did not identify a workspace for this token"
 
         pending = self._prepare_pending("create")
         payload = {
@@ -416,7 +421,7 @@ class BullpenClient:
         if not self._connect_best_effort():
             return None, self._connection_failure_message("update_ticket")
         if not self.workspace_id:
-            return None, "MCP client has no workspace_id — path matching failed for all workspaces"
+            return None, "MCP client has no workspace_id — server did not identify a workspace for this token"
 
         pending = self._prepare_pending("update")
         payload = dict(args)
