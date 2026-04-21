@@ -317,6 +317,13 @@ def register_events(socketio, app):
             if bp_dir:
                 service_worker_mod.emit_workspace_states(bp_dir, ws_id, socketio=socketio)
 
+    def _default_service_command_source(fields, workspace_path):
+        explicit = str(fields.get("command_source") or "").strip()
+        if explicit:
+            return explicit
+        procfile_path = os.path.join(workspace_path, "Procfile")
+        return "procfile" if os.path.isfile(procfile_path) else "manual"
+
     def _service_slot(data, event_name):
         try:
             return validate_slot(data or {}, max_slots=200)
@@ -562,6 +569,7 @@ def register_events(socketio, app):
             }
         else:  # service
             base_name = fields.get("name") or "Service worker"
+            workspace_path = app.config["manager"].get_workspace_path(ws_id)
             worker = {
                 "type": "service",
                 "row": row,
@@ -579,7 +587,7 @@ def register_events(socketio, app):
                 "task_queue": [],
                 "state": "idle",
                 "command": str(fields.get("command", "") or ""),
-                "command_source": fields.get("command_source", "manual"),
+                "command_source": _default_service_command_source(fields, workspace_path),
                 "procfile_process": str(fields.get("procfile_process", "web") or "web"),
                 "port": fields.get("port"),
                 "cwd": str(fields.get("cwd", "") or ""),

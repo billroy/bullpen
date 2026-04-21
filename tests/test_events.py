@@ -346,6 +346,48 @@ class TestWorkerEvents:
         assert worker["state"] == "idle"
         assert worker["task_queue"] == []
 
+    def test_add_service_worker_defaults_to_procfile_mode_when_root_procfile_exists(self, client):
+        c, app = client
+        with open(os.path.join(app.config["workspace"], "Procfile"), "w", encoding="utf-8") as handle:
+            handle.write("web: python3 app.py\n")
+
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "service",
+            "fields": {
+                "name": "Procfile Service",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        worker = layout["slots"][0]
+        assert worker["type"] == "service"
+        assert worker["name"] == "Procfile Service"
+        assert worker["command_source"] == "procfile"
+        assert worker["procfile_process"] == "web"
+
+    def test_add_service_worker_respects_explicit_manual_command_source_even_with_root_procfile(self, client):
+        c, app = client
+        with open(os.path.join(app.config["workspace"], "Procfile"), "w", encoding="utf-8") as handle:
+            handle.write("web: python3 app.py\n")
+
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "service",
+            "fields": {
+                "name": "Manual Service",
+                "command": "python3 custom.py",
+                "command_source": "manual",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        worker = layout["slots"][0]
+        assert worker["type"] == "service"
+        assert worker["name"] == "Manual Service"
+        assert worker["command"] == "python3 custom.py"
+        assert worker["command_source"] == "manual"
+
     def test_add_worker_persists(self, client):
         c, app = client
         c.emit("worker:add", {"slot": 2, "profile": "code-reviewer"})
