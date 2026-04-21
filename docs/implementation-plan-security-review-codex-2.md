@@ -38,7 +38,7 @@ This keeps the highest-risk issues moving immediately while avoiding a large all
 - Tranche 3: Completed on 2026-04-21
 - Tranche 4: Completed on 2026-04-21
 - Tranche 5: Completed on 2026-04-21
-- Tranche 6: Pending
+- Tranche 6: Completed on 2026-04-21
 - Tranche 7: Pending
 
 ---
@@ -275,6 +275,14 @@ Implemented:
 ## Tranche 6 — Login Hardening
 
 **Goal:** Add low-cost protection around authenticated deployments.
+**Status:** Completed on 2026-04-21
+
+Implemented:
+
+- Added lightweight in-memory login throttling in `server/app.py` using per-IP and per-IP-plus-username failure buckets with a temporary lockout after repeated failures.
+- Preserved the existing form flow by redirecting throttled login attempts back to `/login?error=throttle` instead of introducing a new auth dependency or server-side state store.
+- Made `/logout` reject `GET` requests and require a valid CSRF token on `POST` before clearing an authenticated session.
+- Added regression coverage for repeated-login throttling, rejected logout-by-GET, and successful CSRF-backed logout.
 
 ### T6.1 Add login throttling
 

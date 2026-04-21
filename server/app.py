@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 import shutil
 import atexit
+from time import monotonic
 from urllib.parse import urlparse
 
 from flask import (
@@ -51,6 +52,9 @@ mcp_sid_workspace = {}
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
+_LOGIN_THROTTLE_WINDOW_SECONDS = 5 * 60
+_LOGIN_THROTTLE_MAX_FAILURES = 5
+_LOGIN_THROTTLE_BLOCK_SECONDS = 60
 
 
 def _origin_host(origin):
@@ -194,6 +198,50 @@ def create_app(
     app.config["bp_dir"] = bp_dir
     app.config["no_browser"] = no_browser
 
+    login_failures = {}
+
+    def _client_ip():
+        forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        return forwarded or request.remote_addr or "unknown"
+
+    def _login_throttle_keys(username):
+        normalized = (username or "").strip().lower() or "<blank>"
+        client_ip = _client_ip()
+        return (("ip", client_ip), ("user", client_ip, normalized))
+
+    def _login_bucket(key, now):
+        bucket = login_failures.setdefault(key, {"failures": [], "blocked_until": 0.0})
+        bucket["failures"] = [
+            ts for ts in bucket["failures"]
+            if now - ts <= _LOGIN_THROTTLE_WINDOW_SECONDS
+        ]
+        return bucket
+
+    def _login_is_throttled(username):
+        now = monotonic()
+        return any(
+            _login_bucket(key, now)["blocked_until"] > now
+            for key in _login_throttle_keys(username)
+        )
+
+    def _record_login_failure(username):
+        now = monotonic()
+        throttled = False
+        for key in _login_throttle_keys(username):
+            bucket = _login_bucket(key, now)
+            bucket["failures"].append(now)
+            if len(bucket["failures"]) >= _LOGIN_THROTTLE_MAX_FAILURES:
+                bucket["blocked_until"] = max(
+                    bucket["blocked_until"],
+                    now + _LOGIN_THROTTLE_BLOCK_SECONDS,
+                )
+                throttled = True
+        return throttled
+
+    def _clear_login_failures(username):
+        for key in _login_throttle_keys(username):
+            login_failures.pop(key, None)
+
     socketio.init_app(
         app,
         cors_allowed_origins=_socketio_origin_allowed,
@@ -304,27 +352,39 @@ def create_app(
 
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
+        if _login_is_throttled(username):
+            return redirect(url_for("login") + "?error=throttle")
         auth.load_credentials(manager.global_dir)
         expected_hash = auth.get_password_hash(username)
 
         # If the username does not exist expected_hash will be None.
         password_ok = auth.check_password(password, expected_hash)
         if not username or not password_ok:
-            return redirect(url_for("login") + "?error=1")
+            error = "throttle" if _record_login_failure(username) else "1"
+            return redirect(url_for("login") + f"?error={error}")
 
         session.clear()  # prevent session fixation
         session["authenticated"] = True
         session["username"] = username
         # Re-seed the CSRF token after login.
         auth.generate_csrf_token()
+        _clear_login_failures(username)
 
         next_url = request.form.get("next") or request.args.get("next") or ""
         if _is_safe_next(next_url):
             return redirect(next_url)
         return redirect(url_for("index"))
 
-    @app.route("/logout", methods=["GET", "POST"])
+    @app.route("/logout", methods=["GET"])
+    def logout_get():
+        abort(405)
+
+    @app.route("/logout", methods=["POST"])
     def logout():
+        if auth.auth_enabled():
+            submitted_token = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token", "")
+            if not auth.validate_csrf_token(submitted_token):
+                abort(403)
         session.clear()
         if auth.auth_enabled():
             return redirect(url_for("login"))

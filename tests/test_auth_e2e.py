@@ -93,6 +93,11 @@ def _login(client, username=USERNAME, password=PASSWORD):
     )
 
 
+def _csrf_token(client):
+    with client.session_transaction() as sess:
+        return sess.get("csrf_token") or ""
+
+
 # ---------------------------------------------------------------------------
 # Auth ENABLED — HTTP
 # ---------------------------------------------------------------------------
@@ -152,6 +157,22 @@ class TestHttpAuthEnabled:
         assert r.status_code == 302
         assert "error=1" in r.headers["Location"]
 
+    def test_login_throttles_after_repeated_failures(self, auth_client):
+        for _ in range(4):
+            r = _login(auth_client, password="nope")
+            assert r.status_code == 302
+            assert "error=1" in r.headers["Location"]
+
+        throttled = _login(auth_client, password="nope")
+        assert throttled.status_code == 302
+        assert "error=throttle" in throttled.headers["Location"]
+
+        still_throttled = _login(auth_client)
+        assert still_throttled.status_code == 302
+        assert "error=throttle" in still_throttled.headers["Location"]
+        with auth_client.session_transaction() as sess:
+            assert sess.get("authenticated") is not True
+
     def test_login_success_second_user(self, auth_client):
         r = _login(auth_client, username=SECOND_USERNAME, password=SECOND_PASSWORD)
         assert r.status_code == 302
@@ -171,10 +192,15 @@ class TestHttpAuthEnabled:
 
     def test_logout_clears_session(self, auth_client):
         _login(auth_client)
-        r = auth_client.get("/logout")
+        r = auth_client.post("/logout", data={"csrf_token": _csrf_token(auth_client)})
         assert r.status_code == 302
         with auth_client.session_transaction() as sess:
             assert sess.get("authenticated") is not True
+
+    def test_logout_get_rejected(self, auth_client):
+        _login(auth_client)
+        r = auth_client.get("/logout")
+        assert r.status_code == 405
 
     def test_api_files_unauthenticated_returns_401_when_xhr(self, auth_client):
         r = auth_client.get(
