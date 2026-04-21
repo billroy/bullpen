@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass
 
 from server.model_aliases import normalize_model
+from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
 
 
 VALID_WORKER_TYPES = {"ai", "shell", "service", "eval"}
@@ -195,9 +196,13 @@ def normalize_worker_slot(raw, *, index, config):
         slot["agent"] = str(slot.get("agent") or "claude")
         slot["model"] = normalize_model(slot["agent"], slot.get("model") or "claude-sonnet-4-6")
         slot["expertise_prompt"] = str(slot.get("expertise_prompt") or "")
+        slot["trust_mode"] = normalize_trust_mode(slot.get("trust_mode"), default=TRUST_MODE_TRUSTED)
         slot["use_worktree"] = bool(slot.get("use_worktree", False))
         slot["auto_commit"] = bool(slot.get("auto_commit", False))
         slot["auto_pr"] = bool(slot.get("auto_pr", False))
+        if slot["trust_mode"] == TRUST_MODE_UNTRUSTED:
+            slot["auto_commit"] = False
+            slot["auto_pr"] = False
     elif type_id == "shell":
         slot["command"] = str(slot.get("command") or "")
         slot["cwd"] = str(slot.get("cwd") or "")

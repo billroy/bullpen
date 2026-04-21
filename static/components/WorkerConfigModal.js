@@ -33,6 +33,7 @@ const WorkerConfigModal = {
             random_name: randomName,
             watch_column: w.watch_column || '',
             expertise_prompt: w.expertise_prompt || '',
+            trust_mode: w.trust_mode || 'trusted',
             max_retries: w.max_retries ?? (w.type === 'shell' ? 0 : 1),
             use_worktree: w.use_worktree || false,
             auto_commit: w.auto_commit || false,
@@ -79,6 +80,9 @@ const WorkerConfigModal = {
     },
     isAI() {
       return this.form.type === 'ai' || this.form.type == null;
+    },
+    isUntrustedAI() {
+      return this.isAI && this.form.trust_mode === 'untrusted';
     },
     otherWorkers() {
       if (!this.workers) return [];
@@ -138,6 +142,16 @@ const WorkerConfigModal = {
             <label class="form-label">
               Expertise Prompt
               <textarea class="form-textarea" v-model="form.expertise_prompt" rows="5"></textarea>
+            </label>
+            <label class="form-label">
+              Trust Mode
+              <select class="form-select" v-model="form.trust_mode" @change="onTrustModeChange">
+                <option value="untrusted">Untrusted (safer defaults)</option>
+                <option value="trusted">Trusted</option>
+              </select>
+              <span class="form-hint">
+                Untrusted mode treats ticket, chat, and repo content as lower-priority data and disables auto-commit / auto-PR.
+              </span>
             </label>
             <div class="form-row">
               <label class="form-label">
@@ -409,12 +423,12 @@ const WorkerConfigModal = {
               <span class="form-hint">(isolate agent work in a separate branch)</span>
             </label>
             <label class="form-label form-label-inline">
-              <input type="checkbox" v-model="form.auto_commit">
+              <input type="checkbox" v-model="form.auto_commit" :disabled="isUntrustedAI">
               Auto-Commit
               <span class="form-hint">(commit agent changes on success)</span>
             </label>
             <label class="form-label form-label-inline">
-              <input type="checkbox" v-model="form.auto_pr" :disabled="!form.use_worktree || !form.auto_commit">
+              <input type="checkbox" v-model="form.auto_pr" :disabled="isUntrustedAI || !form.use_worktree || !form.auto_commit">
               Auto-PR
               <span class="form-hint">(open PR after commit; requires worktree + auto-commit)</span>
             </label>
@@ -438,6 +452,12 @@ const WorkerConfigModal = {
     },
     onAgentChange() {
       this.form.model = this.modelOptions[0];
+    },
+    onTrustModeChange() {
+      if (this.form.trust_mode !== 'trusted') {
+        this.form.auto_commit = false;
+        this.form.auto_pr = false;
+      }
     },
     onModelSelect(e) {
       if (e.target.value === '__custom__') {
@@ -488,6 +508,7 @@ const WorkerConfigModal = {
         delete fields.agent;
         delete fields.model;
         delete fields.expertise_prompt;
+        delete fields.trust_mode;
         delete fields.use_worktree;
         delete fields.auto_commit;
         delete fields.auto_pr;
@@ -532,6 +553,10 @@ const WorkerConfigModal = {
         delete fields.on_crash;
         delete fields.stop_timeout_seconds;
         delete fields.log_max_bytes;
+        if (fields.trust_mode !== 'trusted') {
+          fields.auto_commit = false;
+          fields.auto_pr = false;
+        }
       }
       delete fields.type;
       this.$emit('save', { slot: this.slotIndex, fields });

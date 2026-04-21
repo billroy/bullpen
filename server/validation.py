@@ -3,6 +3,8 @@
 import re
 import sys
 
+from server.prompt_hardening import VALID_TRUST_MODES
+
 # Field constraints
 MAX_TITLE = 500
 MAX_DESCRIPTION = 50_000
@@ -213,6 +215,9 @@ def validate_worker_configure(data, max_slots=100):
     if "expertise_prompt" in fields:
         sanitized["expertise_prompt"] = _str(fields["expertise_prompt"], MAX_EXPERTISE_PROMPT, "expertise_prompt")
         consumed.add("expertise_prompt")
+    if "trust_mode" in fields:
+        sanitized["trust_mode"] = _enum(fields["trust_mode"], VALID_TRUST_MODES, "trust_mode")
+        consumed.add("trust_mode")
     if "max_retries" in fields:
         sanitized["max_retries"] = _int(fields["max_retries"], "max_retries", min_val=0, max_val=10)
         consumed.add("max_retries")

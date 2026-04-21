@@ -699,6 +699,30 @@ class TestWorkerEvents:
         layout = get_event(c, "layout:updated")
         assert layout["slots"][0]["model"] == "claude-haiku-4-5-20251001"
 
+    def test_new_ai_workers_default_to_untrusted_mode(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][0]["trust_mode"] == "untrusted"
+
+    def test_configure_untrusted_worker_disables_auto_actions(self, client):
+        c, _ = client
+        c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+        c.get_received()
+
+        c.emit("worker:configure", {"slot": 0, "fields": {
+            "trust_mode": "untrusted",
+            "auto_commit": True,
+            "auto_pr": True,
+            "use_worktree": True,
+        }})
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+        assert worker["trust_mode"] == "untrusted"
+        assert worker["use_worktree"] is True
+        assert worker["auto_commit"] is False
+        assert worker["auto_pr"] is False
+
 
 class TestChatEvents:
     def test_chat_logs_structured_usage_and_tokens(self, client):

@@ -27,6 +27,13 @@ from server import service_worker as service_worker_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server import mcp_auth
+from server.prompt_hardening import (
+    TRUST_MODE_UNTRUSTED,
+    harden_agent_argv,
+    normalize_trust_mode,
+    render_chat_trust_instructions,
+    render_untrusted_text_block,
+)
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_coord, validate_worker_configure,
@@ -37,14 +44,13 @@ from server.validation import (
 from server.worker_types import copy_worker_slot, normalize_layout, normalize_worker_slot
 
 
-_CLAUDE_FS_FALLBACK_TOOLS = "Bash,Read,Glob,Grep,Edit,Write,NotebookEdit"
 _CLAUDE_MCP_READY_STATES = {"connected", "ready", "ok"}
 _CLAUDE_MCP_PENDING_STATES = {"pending", "connecting", "initializing", "starting"}
 _CLAUDE_MCP_STARTUP_RETRIES = 3
 _CLAUDE_MCP_STARTUP_RETRY_BASE_DELAY = 0.75
 _AI_COPY_FIELDS = {
     "type", "row", "col", "profile", "name", "agent", "model", "activation",
-    "disposition", "watch_column", "expertise_prompt", "max_retries",
+    "disposition", "watch_column", "expertise_prompt", "trust_mode", "max_retries",
     "use_worktree", "auto_commit", "auto_pr", "trigger_time",
     "trigger_interval_minutes", "trigger_every_day", "last_trigger_time",
     "paused", "task_queue", "state", "icon", "color", "avatar",
@@ -53,14 +59,36 @@ _AI_COPY_FIELDS = {
 
 def _harden_live_agent_argv(provider, argv):
     """Apply Live Agent safety hardening for provider-specific runs."""
-    hardened = list(argv)
-    if provider != "claude":
-        return hardened
-    if "--strict-mcp-config" not in hardened:
-        hardened.append("--strict-mcp-config")
-    if "--disallowedTools" not in hardened and "--disallowed-tools" not in hardened:
-        hardened.extend(["--disallowedTools", _CLAUDE_FS_FALLBACK_TOOLS])
-    return hardened
+    return harden_agent_argv(provider, argv, trust_mode=TRUST_MODE_UNTRUSTED, chat=True)
+
+
+def _build_chat_prompt(history, message):
+    parts = [
+        "You are a Bullpen project assistant. You have MCP tools for managing tickets:",
+        "- list_tickets: List tickets, optionally filtered by status.",
+        "- list_tasks: Alias for list_tickets.",
+        "- list_tickets_by_title: List tickets by approximate title match.",
+        "- create_ticket: Create a new ticket.",
+        "- update_ticket: Update an existing ticket's fields.",
+        "",
+        "IMPORTANT: Always use these MCP tools for ticket operations. Do NOT read "
+        ".bullpen/tasks/ files directly — those are internal storage. The MCP tools "
+        "ensure the UI updates in real time.",
+        "",
+        render_chat_trust_instructions(),
+    ]
+    if history:
+        turns = []
+        for idx, turn in enumerate(history, start=1):
+            role = "User" if turn["role"] == "user" else "Assistant"
+            turns.append(f"[{idx}] {role}:\n{turn['content']}")
+        parts.append(render_untrusted_text_block(
+            "Conversation History",
+            "\n\n".join(turns),
+            "CHAT_HISTORY",
+        ))
+    parts.append(render_untrusted_text_block("Current User Message", message, "CHAT_USER_MESSAGE"))
+    return "\n\n".join([part for part in parts if part])
 
 
 def _claude_mcp_startup_state(line):
@@ -485,6 +513,7 @@ def register_events(socketio, app):
                 "disposition": profile.get("default_disposition", "review"),
                 "watch_column": None,
                 "expertise_prompt": profile.get("expertise_prompt", ""),
+                "trust_mode": normalize_trust_mode(fields.get("trust_mode"), default=TRUST_MODE_UNTRUSTED),
                 "max_retries": profile.get("default_max_retries", 1),
                 "use_worktree": False,
                 "auto_commit": False,
@@ -1584,28 +1613,7 @@ def register_events(socketio, app):
             _chat_session_ts[chat_key] = time.time()
             history = list(_chat_sessions[chat_key])
 
-        parts = [
-            "You are a Bullpen project assistant. You have MCP tools for managing tickets:",
-            "- list_tickets: List tickets, optionally filtered by status.",
-            "- list_tasks: Alias for list_tickets.",
-            "- list_tickets_by_title: List tickets by approximate title match.",
-            "- create_ticket: Create a new ticket.",
-            "- update_ticket: Update an existing ticket's fields.",
-            "",
-            "IMPORTANT: Always use these MCP tools for ticket operations. Do NOT read "
-            ".bullpen/tasks/ files directly — those are internal storage. The MCP tools "
-            "ensure the UI updates in real time.",
-            "",
-        ]
-        if history:
-            parts.append("Conversation history:")
-            parts.append("")
-            for turn in history:
-                role = "Human" if turn["role"] == "user" else "Assistant"
-                parts.append(f"{role}: {turn['content']}")
-            parts.append("")
-        parts.append(f"Human: {message}")
-        full_prompt = "\n".join(parts)
+        full_prompt = _build_chat_prompt(history, message)
 
         workspace = os.path.dirname(bp_dir)
         argv = adapter.build_argv(full_prompt, model, workspace, bp_dir=bp_dir)

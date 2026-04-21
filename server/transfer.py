@@ -9,7 +9,7 @@ from server.worker_types import copy_worker_slot, normalize_layout
 
 _AI_TRANSFER_FIELDS = {
     "type", "profile", "name", "agent", "model", "activation", "disposition",
-    "watch_column", "expertise_prompt", "max_retries", "use_worktree",
+    "watch_column", "expertise_prompt", "trust_mode", "max_retries", "use_worktree",
     "auto_commit", "auto_pr", "trigger_time", "trigger_interval_minutes",
     "trigger_every_day", "icon", "color", "avatar",
 }

@@ -1153,7 +1153,7 @@ const BullpenTab = {
       this.closeLibrary();
     },
     workerFieldsForClipboard(worker) {
-      const fields = ['type', 'profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt',
+      const fields = ['type', 'profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt', 'trust_mode',
         'max_retries', 'use_worktree', 'auto_commit', 'auto_pr', 'trigger_time', 'trigger_interval_minutes',
         'trigger_every_day', 'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env',
         'pre_start', 'ticket_action', 'startup_grace_seconds', 'startup_timeout_seconds',

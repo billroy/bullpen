@@ -36,7 +36,7 @@ This keeps the highest-risk issues moving immediately while avoiding a large all
 - Tranche 1: Completed on 2026-04-21
 - Tranche 2: Completed on 2026-04-21
 - Tranche 3: Completed on 2026-04-21
-- Tranche 4: Pending
+- Tranche 4: Completed on 2026-04-21
 - Tranche 5: Pending
 - Tranche 6: Pending
 - Tranche 7: Pending
@@ -175,6 +175,18 @@ Implemented:
 ## Tranche 4 — Harden Agent Handling of Untrusted Inputs
 
 **Goal:** Reduce prompt-injection risk when tickets, chat, and repo-controlled text are untrusted.
+**Status:** Completed on 2026-04-21
+
+Implemented:
+
+- Added shared prompt hardening helpers in `server/prompt_hardening.py` so worker and live-chat prompts both delimit untrusted content instead of interpolating it directly.
+- Worker prompts now prepend an explicit trust-boundary section and wrap workspace context, Bullpen context, and ticket bodies in marked untrusted blocks.
+- Live chat prompt assembly now applies the same pattern to chat history and the current user message.
+- Added a persisted AI-worker `trust_mode` field with `trusted` / `untrusted` values.
+- Existing workers without a stored value normalize to `trusted`, while newly created AI workers default to `untrusted`.
+- Untrusted AI workers now disable `auto_commit` and `auto_pr` in normalization, UI save flow, and success-path execution.
+- Claude-based runs now receive extra runtime hardening in untrusted/chat contexts via strict MCP config plus filesystem-tool disallow rules.
+- Added regression coverage for trust-mode validation, prompt delimiters, untrusted-worker defaults, blocked auto actions, and the new UI controls.
 
 ### T4.1 Delimit untrusted content in prompts
 

@@ -153,6 +153,14 @@ class TestWorkerConfigureValidation:
         with pytest.raises(ValidationError, match="expertise_prompt exceeds"):
             validate_worker_configure({"slot": 0, "fields": {"expertise_prompt": "x" * 100_001}})
 
+    def test_trust_mode_accepts_supported_values(self):
+        _, fields = validate_worker_configure({"slot": 0, "fields": {"trust_mode": "untrusted"}})
+        assert fields["trust_mode"] == "untrusted"
+
+    def test_trust_mode_rejects_unknown_values(self):
+        with pytest.raises(ValidationError, match="Invalid trust_mode"):
+            validate_worker_configure({"slot": 0, "fields": {"trust_mode": "mystery"}})
+
     def test_retries_out_of_range(self):
         with pytest.raises(ValidationError, match="must be <="):
             validate_worker_configure({"slot": 0, "fields": {"max_retries": 99}})

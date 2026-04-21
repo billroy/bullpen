@@ -26,6 +26,13 @@ from server.usage import (
 )
 from server import tasks as task_mod
 from server.model_aliases import normalize_model
+from server.prompt_hardening import (
+    TRUST_MODE_UNTRUSTED,
+    harden_agent_argv,
+    normalize_trust_mode,
+    render_untrusted_text_block,
+    render_worker_trust_instructions,
+)
 from server.worker_types import get_worker_type, normalize_layout
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
@@ -90,6 +97,14 @@ def _now_iso():
 
 def _timestamp_id():
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _worker_trust_mode(worker):
+    return normalize_trust_mode((worker or {}).get("trust_mode"))
+
+
+def _auto_actions_allowed(worker):
+    return _worker_trust_mode(worker) != TRUST_MODE_UNTRUSTED
 
 
 def _shell_workers_enabled(bp_dir):
@@ -453,6 +468,7 @@ def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
             return
 
     argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
+    argv = harden_agent_argv(agent_name, argv, trust_mode=_worker_trust_mode(worker))
 
     config = read_json(os.path.join(bp_dir, "config.json"))
     timeout = config.get("agent_timeout_seconds", 600)
@@ -849,21 +865,21 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
 
 def _assemble_prompt(bp_dir, worker, task):
     """Build the full prompt for the agent."""
-    parts = []
+    parts = [render_worker_trust_instructions(_worker_trust_mode(worker))]
 
     # Workspace prompt
     wp_path = os.path.join(bp_dir, "workspace_prompt.md")
     if os.path.exists(wp_path):
         wp = open(wp_path).read().strip()
         if wp:
-            parts.append(f"## Workspace Context\n\n{wp}")
+            parts.append(render_untrusted_text_block("Workspace Context", wp, "WORKSPACE_CONTEXT"))
 
     # Bullpen prompt
     bp_path = os.path.join(bp_dir, "bullpen_prompt.md")
     if os.path.exists(bp_path):
         bp = open(bp_path).read().strip()
         if bp:
-            parts.append(f"## Bullpen Context\n\n{bp}")
+            parts.append(render_untrusted_text_block("Bullpen Context", bp, "BULLPEN_CONTEXT"))
 
     # Expertise prompt
     expertise = worker.get("expertise_prompt", "")
@@ -871,7 +887,7 @@ def _assemble_prompt(bp_dir, worker, task):
         parts.append(f"## Your Role\n\n{expertise}")
 
     # Task body
-    parts.append(f"## Task: {task.get('title', 'Untitled')}\n")
+    parts.append(f"## Task Metadata\n\nTitle: {task.get('title', 'Untitled')}")
     if task.get("id"):
         parts.append(
             f"Task ID: `{task['id']}`. If you need to add notes or update "
@@ -885,7 +901,7 @@ def _assemble_prompt(bp_dir, worker, task):
     if task.get("tags"):
         parts.append(f"Tags: {', '.join(task['tags'])}")
     if task.get("body"):
-        parts.append(f"\n{task['body']}")
+        parts.append(render_untrusted_text_block("Ticket Body", task["body"], "TASK_BODY"))
 
     prompt = "\n\n".join(parts)
 
@@ -2001,7 +2017,7 @@ def _on_agent_success(
             _append_output(bp_dir, task_id, worker, output)
 
         # Auto-commit if enabled
-        if allow_auto_actions and worker.get("auto_commit") and agent_cwd:
+        if allow_auto_actions and _auto_actions_allowed(worker) and worker.get("auto_commit") and agent_cwd:
             task = task_mod.read_task(bp_dir, task_id)
             task_title = task.get("title", "untitled") if task else "untitled"
             commit_hash = _auto_commit(agent_cwd, task_title, task_id)

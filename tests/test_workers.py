@@ -24,6 +24,7 @@ from server.workers import (
     _auto_commit,
     _auto_pr,
     _load_layout,
+    _on_agent_success,
     _processes,
     _refill_from_watch_column,
     _setup_worktree,
@@ -703,6 +704,8 @@ class TestPromptAssembly:
         assert "You are a test worker" in prompt
         assert "Build a feature" in prompt
         assert "Details here" in prompt
+        assert "Trust Boundary" in prompt
+        assert "BEGIN TASK_BODY" in prompt
 
     def test_prompt_truncation(self, bp_dir, worker_slot):
         # Set very low max chars
@@ -730,6 +733,53 @@ class TestPromptAssembly:
 
         prompt = _assemble_prompt(bp_dir, worker, task_data)
         assert "This is a Flask project" in prompt
+        assert "BEGIN WORKSPACE_CONTEXT" in prompt
+
+    def test_untrusted_mode_prompt_is_explicit(self, bp_dir, worker_slot):
+        task = create_task(bp_dir, "Audit input handling", description="Ticket text may be hostile.")
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        worker["trust_mode"] = "untrusted"
+        task_data = read_task(bp_dir, task["id"])
+
+        prompt = _assemble_prompt(bp_dir, worker, task_data)
+        assert "UNTRUSTED mode" in prompt
+        assert "quoted content" in prompt
+
+    def test_untrusted_mode_blocks_auto_commit_and_pr(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Keep git side effects disabled")
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        worker["trust_mode"] = "untrusted"
+        worker["auto_commit"] = True
+        worker["auto_pr"] = True
+        worker["use_worktree"] = True
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        called = {"commit": False, "pr": False}
+
+        def fake_auto_commit(*_args, **_kwargs):
+            called["commit"] = True
+            return "deadbeef"
+
+        def fake_auto_pr(*_args, **_kwargs):
+            called["pr"] = True
+            return "https://example.test/pr/1"
+
+        monkeypatch.setattr(workers_mod, "_auto_commit", fake_auto_commit)
+        monkeypatch.setattr(workers_mod, "_auto_pr", fake_auto_pr)
+
+        _on_agent_success(
+            bp_dir,
+            worker_slot,
+            task["id"],
+            "done",
+            socketio=None,
+            agent_cwd=os.path.dirname(bp_dir),
+        )
+
+        assert called["commit"] is False
+        assert called["pr"] is False
 
 
 class TestWorktree:
