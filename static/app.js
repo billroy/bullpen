@@ -75,6 +75,7 @@ const app = createApp({
     });
 
     const activeWorkspaceId = ref(null);
+    const bullpenTabRef = ref(null);
     const projects = reactive([]);  // [{id, name, available}]
     const projectsLoaded = ref(false);  // true once server has delivered initial projects:updated
 
@@ -990,7 +991,7 @@ const app = createApp({
     }
 
     // Theme
-    function setTheme(themeId) {
+    function setTheme(themeId, options = {}) {
       const next = _normalizeTheme(themeId);
       _applyTheme(next);
       if (activeWorkspaceId.value) {
@@ -998,6 +999,9 @@ const app = createApp({
         ws.config = { ...(ws.config || {}), theme: next };
         if (_isActive(activeWorkspaceId.value)) state.config = ws.config;
         updateConfig({ theme: next });
+      }
+      if (options?.focusWorkerGrid && activeTab.value === 'workers') {
+        Vue.nextTick(() => bullpenTabRef.value?.focusViewport?.());
       }
     }
     function setAmbientPreset(preset) {
@@ -1238,6 +1242,7 @@ const app = createApp({
       outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
+      bullpenTabRef,
     };
   },
   mounted() {
@@ -1353,6 +1358,7 @@ const app = createApp({
             />
             <BullpenTab
               v-if="activeTab === 'workers'"
+              ref="bullpenTabRef"
               :layout="state.layout"
               :config="state.config"
               :profiles="state.profiles"

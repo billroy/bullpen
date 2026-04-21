@@ -183,6 +183,11 @@ const TopToolbar = {
       if (!value) return;
       this.$emit('set-provider-color', agent, value);
     },
+    onThemeSelect(event) {
+      const value = event?.target?.value;
+      if (!value) return;
+      this.$emit('set-theme', value, { focusWorkerGrid: true });
+    },
     onResetProviderColors() {
       this.$emit('reset-provider-colors');
     },
@@ -532,7 +537,7 @@ const TopToolbar = {
               </div>
             </div>
           </div>
-          <select class="form-select theme-select" :value="activeTheme" @change="$emit('set-theme', $event.target.value)" title="Theme">
+          <select class="form-select theme-select" :value="activeTheme" @change="onThemeSelect" title="Theme">
             <option v-for="t in themes || []" :key="t.id" :value="t.id">{{ t.label }}</option>
           </select>
           <span class="connection-dot" :class="{ connected }"></span>
