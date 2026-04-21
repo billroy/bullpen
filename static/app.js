@@ -193,9 +193,17 @@ const app = createApp({
       const prismLink = document.getElementById('prism-theme');
       if (prismLink) {
         const isLight = _themeMode(next) === 'light';
-        prismLink.href = isLight ? PRISM_LIGHT : PRISM_DARK;
-        prismLink.integrity = isLight ? PRISM_LIGHT_INTEGRITY : PRISM_DARK_INTEGRITY;
-        prismLink.setAttribute('crossorigin', 'anonymous');
+        const nextHref = isLight ? PRISM_LIGHT : PRISM_DARK;
+        const nextIntegrity = isLight ? PRISM_LIGHT_INTEGRITY : PRISM_DARK_INTEGRITY;
+        if (prismLink.href !== nextHref) {
+          const replacement = document.createElement('link');
+          replacement.id = 'prism-theme';
+          replacement.rel = 'stylesheet';
+          replacement.integrity = nextIntegrity;
+          replacement.crossOrigin = 'anonymous';
+          replacement.href = nextHref;
+          prismLink.parentNode.replaceChild(replacement, prismLink);
+        }
       }
     }
     function _applyWorkspaceTheme(wsId) {
