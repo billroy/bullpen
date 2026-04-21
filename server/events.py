@@ -575,7 +575,7 @@ def register_events(socketio, app):
                 "row": row,
                 "col": col,
                 "name": _unique_name(str(base_name)),
-                "activation": fields.get("activation", "on_drop"),
+                "activation": fields.get("activation", "manual"),
                 "disposition": fields.get("disposition", "review"),
                 "watch_column": None,
                 "max_retries": int(fields.get("max_retries", 1) or 1),

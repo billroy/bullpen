@@ -1147,7 +1147,7 @@ const BullpenTab = {
         type: 'service',
         fields: {
           name: 'Service worker',
-          activation: 'on_drop',
+          activation: 'manual',
           ticket_action: 'start-if-stopped-else-restart',
         },
       });

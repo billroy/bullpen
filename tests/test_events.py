@@ -333,7 +333,7 @@ class TestWorkerEvents:
         worker = layout["slots"][0]
         assert worker["type"] == "service"
         assert worker["name"] == "Preview Server"
-        assert worker["activation"] == "on_drop"
+        assert worker["activation"] == "manual"
         assert worker["disposition"] == "review"
         assert worker["command"] == "python3 app.py"
         assert worker["command_source"] == "manual"

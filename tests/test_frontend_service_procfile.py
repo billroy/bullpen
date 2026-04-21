@@ -18,6 +18,7 @@ def test_worker_config_modal_exposes_service_procfile_controls():
     assert "Procfile process" in text
     assert "Resolved command preview" in text
     assert "fetch('/api/service/preview'" in text
+    assert "activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop')" in text
 
 
 def test_worker_card_hides_procfile_badge_and_conditionally_appends_port_to_title():
@@ -26,3 +27,9 @@ def test_worker_card_hides_procfile_badge_and_conditionally_appends_port_to_titl
     assert "titlePortCandidate()" in text
     assert "workerNameWithPort()" in text
     assert "recalculateTitlePortVisibility()" in text
+
+
+def test_add_service_worker_defaults_to_manual_activation():
+    text = _read("static/components/BullpenTab.js")
+    assert "name: 'Service worker'" in text
+    assert "activation: 'manual'" in text

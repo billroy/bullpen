@@ -201,7 +201,8 @@ def normalize_worker_slot(raw, *, index, config):
     slot["row"] = _safe_int(slot.get("row"), default_row)
     slot["col"] = _safe_int(slot.get("col"), default_col)
     slot["name"] = str(slot.get("name") or "Worker")
-    slot["activation"] = str(slot.get("activation") or "on_drop")
+    default_activation = "manual" if type_id == "service" else "on_drop"
+    slot["activation"] = str(slot.get("activation") or default_activation)
     slot["disposition"] = str(slot.get("disposition") or "review")
     slot.setdefault("watch_column", None)
     slot["max_retries"] = max(0, _safe_int(slot.get("max_retries"), 1))
