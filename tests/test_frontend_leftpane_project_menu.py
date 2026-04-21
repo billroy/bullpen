@@ -74,6 +74,16 @@ def test_switching_projects_joins_project_socket_room():
     assert "socket.emit('project:join', { workspaceId: wsId });" in text
 
 
+def test_switch_workspace_does_not_early_return_on_unjoined_workspace():
+    """Regression: the server now sends state:init only for joined workspaces,
+    so clicking an unjoined project in the LeftPane used to hit an early
+    `if (!workspaces[wsId]) return;` guard before project:join was emitted —
+    nothing happened on click. switchWorkspace must proceed for any wsId that
+    appears in the project list so project:join can actually be sent."""
+    text = _read("static/app.js")
+    assert "if (!workspaces[wsId]) return;" not in text
+
+
 def test_project_menu_styles_exist():
     text = _read("static/style.css")
     assert ".project-menu-tooltip {" in text

@@ -225,7 +225,14 @@ const app = createApp({
     }
 
     function switchWorkspace(wsId) {
-      if (!workspaces[wsId]) return;
+      if (!wsId) return;
+      // Accept switches to workspaces the client has not yet joined. The server
+      // scopes state:init to joined rooms, so the local workspaces dict starts
+      // out only containing the initial workspace — guard against unknown ids
+      // by checking the project list, then lazily init so downstream access has
+      // a default entry until state:init arrives from the project:join below.
+      if (!workspaces[wsId] && !projects.some(p => p.id === wsId)) return;
+      _getWs(wsId);
       const currentChatTab = chatTabs.find(t => t.id === activeTab.value);
       if (currentChatTab?.workspaceId) {
         lastLiveAgentTabByWorkspace[currentChatTab.workspaceId] = currentChatTab.id;
