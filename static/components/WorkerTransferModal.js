@@ -24,7 +24,7 @@ const WorkerTransferModal = {
             <select class="form-select" v-model="selectedWorkspaceId" ref="wsSelect">
               <option :value="null" disabled>Select a workspace...</option>
               <option v-for="p in otherProjects" :key="p.id" :value="p.id">
-                {{ p.name }} &mdash; {{ p.path }}
+                {{ p.name }}
               </option>
             </select>
           </label>
