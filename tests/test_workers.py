@@ -1452,6 +1452,44 @@ class TestWatchColumn:
         assert updated_t1["status"] == "review"
         assert updated_t2["status"] == "review"
 
+    def test_check_watch_columns_skips_idle_watcher_with_existing_queue(self, bp_dir):
+        """A watcher with queued work must not claim another task just because
+        its state has not flipped to working yet."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        base = {
+            "profile": "test", "agent": "mock", "model": "mock-model",
+            "activation": "on_queue", "disposition": "review",
+            "watch_column": "approved", "expertise_prompt": "",
+            "max_retries": 0, "state": "idle", "paused": False,
+        }
+        layout["slots"] = [
+            {
+                **base,
+                "row": 0, "col": 0, "name": "W1",
+                "last_trigger_time": 50,
+                "task_queue": ["already-queued-task"],
+            },
+            {
+                **base,
+                "row": 0, "col": 1, "name": "W2",
+                "last_trigger_time": 100,
+                "task_queue": [],
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Approved task")
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "approved"})
+
+        check_watch_columns(bp_dir, "approved")
+
+        updated = read_task(bp_dir, task["id"])
+        layout = _load_layout(bp_dir)
+        assert str(updated["assigned_to"]) == "1"
+        assert task["id"] in layout["slots"][1].get("task_queue", [])
+        assert task["id"] not in layout["slots"][0].get("task_queue", [])
+
     def test_refill_from_watch_column(self, bp_dir, watcher_slot):
         """Idle on_queue worker with empty queue refills from watched column."""
         task = create_task(bp_dir, "Refill me")

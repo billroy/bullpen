@@ -160,13 +160,17 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
         return
     slots = layout.get("slots", [])
 
-    # Find eligible watchers: on_queue, watching this column, idle, not paused
+    # Find eligible watchers: on_queue, watching this column, idle, empty queue,
+    # not paused. An on_queue worker that already has a queued task is not
+    # available for a fresh claim, even if its state has not yet flipped from
+    # idle to working.
     watchers = []
     for i, slot in enumerate(slots):
         if (slot
                 and slot.get("activation") == "on_queue"
                 and slot.get("watch_column") == task_status
                 and slot.get("state") == "idle"
+                and not slot.get("task_queue")
                 and not slot.get("paused")):
             watchers.append((i, slot))
 
