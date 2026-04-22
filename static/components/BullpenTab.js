@@ -35,6 +35,9 @@ const BullpenTab = {
       draggingColumnWidth: null,
       rowResize: null,
       draggingRowHeight: null,
+      cardVerticalResize: null,
+      expandedWorkerCardSlot: null,
+      expandedWorkerCardDelta: 0,
       resizeTooltip: null,
     };
   },
@@ -102,7 +105,7 @@ const BullpenTab = {
             :key="item.slotIndex"
             :ref="el => setWorkerRef(el, item.slotIndex)"
             :style="cardStyle(item)"
-            :class="{ selected: isSelected(item.coord) }"
+            :class="{ selected: isSelected(item.coord), 'worker-card--expanded': cardHeightForSlot(item.slotIndex) > rowHeight }"
             :worker="item.worker"
             :slot-index="item.slotIndex"
             :tasks="tasks"
@@ -110,6 +113,9 @@ const BullpenTab = {
             :multiple-workspaces="multipleWorkspaces"
             :neighbor-slots="neighborSlotsMap[item.slotIndex]"
             :layout-mode="layoutMode"
+            :card-height="cardHeightForSlot(item.slotIndex)"
+            :is-selected="isSelected(item.coord)"
+            :is-vertical-resizing="cardVerticalResize && cardVerticalResize.slotIndex === item.slotIndex"
             :build-worker-drag-payload="buildWorkerDragPayload"
             :build-worker-drag-image="buildWorkerDragImage"
             :can-drop-worker-at-slot="canDropWorkerAtSlot"
@@ -126,6 +132,7 @@ const BullpenTab = {
             @open-focus="$emit('open-focus', $event)"
             @transfer="$emit('transfer-worker', $event)"
             @copy-worker="copyWorker"
+            @vertical-resize-start="onCardVerticalResizeStart(item, $event)"
             @menu-opened="selectWorker(item)"
             @menu-closed="focusViewport"
           />
@@ -552,6 +559,10 @@ const BullpenTab = {
       }
       return map;
     },
+    selectedWorkerSlot() {
+      const coord = this.selectedCell;
+      return coord ? this.itemAtCoord(coord)?.slotIndex ?? null : null;
+    },
     occupiedBounds() {
       return GridGeometry.occupiedBounds(this.workerItems.map(item => item.coord));
     },
@@ -603,6 +614,18 @@ const BullpenTab = {
     },
   },
   watch: {
+    rowHeight(next) {
+      const clamped = Math.max(0, Math.min(this.expandedWorkerCardDelta, Math.max(0, 480 - next)));
+      if (clamped !== this.expandedWorkerCardDelta) this.expandedWorkerCardDelta = clamped;
+      if (clamped === 0 && this.expandedWorkerCardSlot !== null && !this.cardVerticalResize) {
+        this.expandedWorkerCardSlot = null;
+      }
+    },
+    selectedWorkerSlot(next) {
+      if (next === this.expandedWorkerCardSlot) return;
+      if (this.cardVerticalResize) return;
+      this.clearExpandedWorkerCard();
+    },
     'config.grid.viewportOrigin': {
       immediate: true,
       deep: true,
@@ -634,6 +657,7 @@ const BullpenTab = {
     if (this._persistTimer) clearTimeout(this._persistTimer);
     this._teardownColumnResizeListeners?.();
     this._teardownRowResizeListeners?.();
+    this._teardownCardVerticalResizeListeners?.();
   },
   methods: {
     coordForSlot(worker, slotIndex) {
@@ -675,14 +699,26 @@ const BullpenTab = {
       if (this._persistTimer) clearTimeout(this._persistTimer);
       this._persistTimer = setTimeout(() => this.persistGrid({ viewportOrigin: this.viewportOrigin }), 120);
     },
+    cardExpansionLimit() {
+      return Math.max(0, 480 - this.rowHeight);
+    },
+    cardExpansionDeltaForSlot(slotIndex) {
+      if (this.expandedWorkerCardSlot !== slotIndex) return 0;
+      return Math.max(0, Math.min(this.expandedWorkerCardDelta, this.cardExpansionLimit()));
+    },
+    cardHeightForSlot(slotIndex) {
+      return this.rowHeight + this.cardExpansionDeltaForSlot(slotIndex);
+    },
     cardStyle(item) {
       const p = GridGeometry.coordToPixel(item.coord.col, item.coord.row, this.viewportOrigin, this.cardSize);
+      const expanded = this.cardExpansionDeltaForSlot(item.slotIndex);
       return {
         position: 'absolute',
         left: p.x + 'px',
         top: p.y + 'px',
         width: this.columnWidth + 'px',
-        height: this.rowHeight + 'px',
+        height: this.cardHeightForSlot(item.slotIndex) + 'px',
+        zIndex: expanded > 0 ? 6 : null,
       };
     },
     setOrigin(origin, persist = true) {
@@ -775,11 +811,15 @@ const BullpenTab = {
     },
     onWorkerClick(e, item) {
       if (window._bullpenSuppressWorkerClickUntil && Date.now() < window._bullpenSuppressWorkerClickUntil) return;
-      if (e.target.closest('.connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
+      if (e.target.closest('.card-height-resize-handle, .connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
         return;
       }
       this.selectWorker(item);
       this.focusViewport();
+    },
+    clearExpandedWorkerCard() {
+      this.expandedWorkerCardSlot = null;
+      this.expandedWorkerCardDelta = 0;
     },
     focusViewport() {
       this.$nextTick(() => {
@@ -1729,6 +1769,51 @@ const BullpenTab = {
       this.draggingRowHeight = null;
       this.resizeTooltip = null;
       this.persistGrid({ rowHeight: 140 });
+    },
+    onCardVerticalResizeStart(item, e) {
+      if (!item || e.button !== 0) return;
+      if (this.cardVerticalResize) return;
+      this.selectWorker(item);
+      const startDelta = this.cardExpansionDeltaForSlot(item.slotIndex);
+      this.expandedWorkerCardSlot = item.slotIndex;
+      this.expandedWorkerCardDelta = startDelta;
+      this.cardVerticalResize = {
+        slotIndex: item.slotIndex,
+        startY: e.clientY,
+        startDelta,
+        pointerId: e.pointerId,
+      };
+      this.updateResizeTooltip(e, `${this.cardHeightForSlot(item.slotIndex)}px visible`);
+      this._cardResizeMoveHandler = (ev) => this.onCardVerticalResizeMove(ev);
+      this._cardResizeUpHandler = (ev) => this.onCardVerticalResizeUp(ev);
+      window.addEventListener('pointermove', this._cardResizeMoveHandler);
+      window.addEventListener('pointerup', this._cardResizeUpHandler);
+      window.addEventListener('pointercancel', this._cardResizeUpHandler);
+    },
+    onCardVerticalResizeMove(e) {
+      if (!this.cardVerticalResize) return;
+      if (e.pointerId !== this.cardVerticalResize.pointerId) return;
+      const dy = e.clientY - this.cardVerticalResize.startY;
+      const next = this.cardVerticalResize.startDelta + dy;
+      this.expandedWorkerCardDelta = Math.max(0, Math.min(this.cardExpansionLimit(), Math.round(next)));
+      this.updateResizeTooltip(e, `${this.cardHeightForSlot(this.cardVerticalResize.slotIndex)}px visible`);
+    },
+    onCardVerticalResizeUp(e) {
+      if (!this.cardVerticalResize) return;
+      if (e && e.pointerId !== this.cardVerticalResize.pointerId) return;
+      this._teardownCardVerticalResizeListeners();
+      this.cardVerticalResize = null;
+      this.resizeTooltip = null;
+      if (this.expandedWorkerCardDelta <= 0) this.clearExpandedWorkerCard();
+    },
+    _teardownCardVerticalResizeListeners() {
+      if (this._cardResizeMoveHandler) {
+        window.removeEventListener('pointermove', this._cardResizeMoveHandler);
+        window.removeEventListener('pointerup', this._cardResizeUpHandler);
+        window.removeEventListener('pointercancel', this._cardResizeUpHandler);
+        this._cardResizeMoveHandler = null;
+        this._cardResizeUpHandler = null;
+      }
     },
     updateResizeTooltip(e, text) {
       this.resizeTooltip = { x: e.clientX + 14, y: e.clientY + 14, text };

@@ -1,9 +1,9 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
-  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'isVerticalResizing', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
+  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed', 'vertical-resize-start'],
   template: `
-    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': layoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
-         :style="layoutMode === 'small' ? { background: agentColor } : null"
+    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
+         :style="effectiveLayoutMode === 'small' ? { background: agentColor } : null"
          draggable="true"
          @pointerdown="onPointerDown"
          @pointermove="onPointerMove"
@@ -18,6 +18,13 @@ const WorkerCard = {
          @mousemove="onCardMouseMove"
          @mouseleave="onCardMouseLeave"
 >
+      <div v-if="isSelected"
+           class="card-height-resize-handle"
+           :class="{ 'card-height-resize-handle-active': showVerticalResizeHandle }"
+           :style="verticalResizeHandleStyle"
+           title="Drag to expand this card vertically"
+           aria-label="Drag to expand this card vertically"
+           @pointerdown.stop="onVerticalResizeHandleDown"></div>
       <template v-for="dir in ['up','down','left','right']" :key="'handle-' + dir">
         <div v-if="canConnect(dir)"
              class="connect-handle"
@@ -66,11 +73,11 @@ const WorkerCard = {
           </div>
         </div>
       </div>
-      <div v-if="layoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
+      <div v-if="effectiveLayoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
         <div v-if="isDisabledType" class="worker-card-disabled-badge" :title="disabledTypeMessage">
           {{ disabledTypeMessage }}
         </div>
-        <div class="worker-card-queue" v-if="layoutMode !== 'small' && queuedTasks.length">
+        <div class="worker-card-queue" v-if="effectiveLayoutMode !== 'small' && queuedTasks.length">
           <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
                @click.stop="$emit('select-task', t.id)">
             <i class="ticket-type-icon ticket-type-icon--worker-queue" data-lucide="tag" aria-hidden="true"></i>
@@ -102,6 +109,8 @@ const WorkerCard = {
       isDragging: false,
       pointerWorkerDrag: null,
       showTitlePort: false,
+      hoveredVerticalResize: false,
+      verticalResizeX: 0,
     };
   },
   mounted() {
@@ -132,6 +141,11 @@ const WorkerCard = {
     this.removeDragImage();
   },
   computed: {
+    effectiveLayoutMode() {
+      const rawHeight = Number(this.cardHeight);
+      const height = Number.isFinite(rawHeight) ? rawHeight : (this.layoutMode === 'small' ? 32 : 140);
+      return height < 40 ? 'small' : 'medium';
+    },
     passDir() {
       const d = this.worker.disposition || '';
       return d.startsWith('pass:') ? d.slice(5) : null;
@@ -142,10 +156,10 @@ const WorkerCard = {
     workerState() { return this.worker.service_state?.state || this.worker.state || 'idle'; },
     isWorking() { return ['working', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState); },
     showOutputPane() {
-      return this.layoutMode !== 'small';
+      return this.effectiveLayoutMode !== 'small';
     },
     pillInBody() {
-      return this.layoutMode !== 'small' && this.isService && (this.workerState !== 'idle' || this.isPaused);
+      return this.effectiveLayoutMode !== 'small' && this.isService && (this.workerState !== 'idle' || this.isPaused);
     },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
@@ -261,9 +275,24 @@ const WorkerCard = {
     emptyLabel() {
       if (this.isService) return this.workerState === 'idle' ? 'Stopped' : this.workerState;
       return 'Idle';
+    },
+    showVerticalResizeHandle() {
+      return !!(this.isSelected && (this.hoveredVerticalResize || this.isVerticalResizing));
+    },
+    verticalResizeHandleStyle() {
+      const width = 42;
+      const cardWidth = this.$el?.getBoundingClientRect?.().width || 220;
+      const x = Number.isFinite(this.verticalResizeX) && this.verticalResizeX > 0 ? this.verticalResizeX : cardWidth / 2;
+      return {
+        left: `${Math.max(6, Math.min(cardWidth - width - 6, x - (width / 2)))}px`,
+        bottom: '2px',
+      };
     }
   },
   watch: {
+    isSelected(next) {
+      if (!next) this.hoveredVerticalResize = false;
+    },
     workerNameLabel() {
       this.$nextTick(() => this.recalculateTitlePortVisibility());
     },
@@ -324,6 +353,14 @@ const WorkerCard = {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const threshold = 24;
+      const downHandleZone = this.canConnect('down') && Math.abs(x - (rect.width / 2)) <= 18;
+      if (this.isSelected && y >= rect.height - threshold && !downHandleZone) {
+        this.verticalResizeX = Math.max(21, Math.min(rect.width - 21, x));
+        this.hoveredVerticalResize = true;
+        this.hoveredHandle = null;
+        return;
+      }
+      this.hoveredVerticalResize = false;
       const distances = { up: y, down: rect.height - y, left: x, right: rect.width - x };
       let nearest = null;
       let nearestDist = Infinity;
@@ -339,10 +376,16 @@ const WorkerCard = {
     },
     onCardMouseLeave() {
       this.hoveredHandle = null;
+      this.hoveredVerticalResize = false;
+    },
+    onVerticalResizeHandleDown(e) {
+      if (!this.isSelected || e.button !== 0) return;
+      e.preventDefault();
+      this.$emit('vertical-resize-start', e);
     },
     onPointerDown(e) {
       if (e.button !== 0) return;
-      if (e.target.closest('.connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) return;
+      if (e.target.closest('.card-height-resize-handle, .connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) return;
       this.shiftDragIntent = !!e.shiftKey;
       if (!e.shiftKey || typeof this.buildWorkerDragPayload !== 'function') return;
       const payload = this.buildWorkerDragPayload(this.slotIndex, {
@@ -472,6 +515,7 @@ const WorkerCard = {
     },
     onDragOver(e) {
       const types = e.dataTransfer.types;
+      this.hoveredVerticalResize = false;
       if (types.includes('application/x-worker-connect')) {
         const drag = window._bullpenConnectDrag;
         if (drag && drag.target === this.slotIndex) {

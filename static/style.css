@@ -2229,6 +2229,33 @@ body.worker-singleton-dragging * {
   position: relative;
 }
 
+.card-height-resize-handle {
+  position: absolute;
+  width: 42px;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 72%, white 12%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  cursor: row-resize;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s, transform 0.12s;
+  z-index: 6;
+  transform: translateY(2px);
+}
+
+.card-height-resize-handle.card-height-resize-handle-active {
+  opacity: 0.92;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.worker-card.selected.worker-card--expanded {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 78%, white 8%),
+    0 12px 24px rgba(0, 0, 0, 0.18);
+}
+
 .pass-indicator {
   position: absolute;
   font-size: 9px;

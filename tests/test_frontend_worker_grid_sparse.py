@@ -98,7 +98,8 @@ def test_worker_card_has_header_status_and_copy_worker_menu():
     assert "Copy Worker" in text
     assert "menuCopyWorker()" in text
     assert "$emit('copy-worker', this.slotIndex)" in text
-    assert "v-if=\"layoutMode !== 'small'\"" in text
+    assert "effectiveLayoutMode()" in text
+    assert "v-if=\"effectiveLayoutMode !== 'small'\"" in text
 
 
 def test_worker_grid_styles_define_viewport_minimap_and_fixed_card_overflow():
