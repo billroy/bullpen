@@ -46,7 +46,12 @@ def test_service_site_opening_uses_shared_url_helper_and_root_action():
 
     assert "function openServiceSite(slot) {" in app
     assert "window.getServiceSiteUrl(worker, window.location)" in app
-    assert "window.open(url, '_blank', 'noopener,noreferrer')" in app
+    assert "const link = document.createElement('a');" in app
+    assert "link.target = '_blank';" in app
+    assert "link.rel = 'noopener noreferrer';" in app
+    assert "link.click();" in app
+    assert "window.open(url, '_blank', 'noopener,noreferrer')" not in app
+    assert "Browser blocked opening the service site" not in app
     assert "Service site is unavailable until this worker has a valid port" in app
 
 

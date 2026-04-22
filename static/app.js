@@ -811,8 +811,11 @@ const app = createApp({
         addToast('Service site is unavailable until this worker has a valid port', 'error');
         return;
       }
-      const opened = window.open(url, '_blank', 'noopener,noreferrer');
-      if (!opened) addToast('Browser blocked opening the service site', 'error');
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.click();
     }
 
     // Focus tab management
