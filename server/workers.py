@@ -58,7 +58,7 @@ def _normalize_worker_name(name):
     return (name or "").strip().casefold()
 
 
-def _terminate_proc(proc):
+def _terminate_proc(proc, *, force=False):
     """Terminate a subprocess, killing the full process tree where possible."""
     if sys.platform == "win32":
         subprocess.run(
@@ -69,14 +69,31 @@ def _terminate_proc(proc):
         try:
             pgid = os.getpgid(proc.pid)
             if pgid != os.getpgrp():
-                os.killpg(pgid, signal.SIGTERM)
+                os.killpg(pgid, signal.SIGKILL if force else signal.SIGTERM)
             else:
-                proc.terminate()
+                (proc.kill if force else proc.terminate)()
         except (ProcessLookupError, PermissionError, OSError):
             try:
-                proc.terminate()
+                (proc.kill if force else proc.terminate)()
             except OSError:
                 pass
+
+
+def _stop_proc_with_timeout(proc, *, graceful_timeout=5, force_timeout=5):
+    """Best-effort subprocess shutdown that never waits forever."""
+    if proc is None or proc.poll() is not None:
+        return True
+    _terminate_proc(proc)
+    try:
+        proc.wait(timeout=graceful_timeout)
+        return True
+    except subprocess.TimeoutExpired:
+        _terminate_proc(proc, force=True)
+        try:
+            proc.wait(timeout=force_timeout)
+            return True
+        except subprocess.TimeoutExpired:
+            return proc.poll() is not None
 
 
 # Active subprocesses keyed by (workspace_id, slot_index)
@@ -751,13 +768,7 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     with _process_lock:
         entry = _processes.get((ws_id, slot_index))
         proc = entry["proc"] if entry else None
-        if proc and proc.poll() is None:
-            _terminate_proc(proc)
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                _terminate_proc(proc)
-                proc.wait()
+        _stop_proc_with_timeout(proc)
 
     layout = _load_layout(bp_dir)
     worker = layout["slots"][slot_index]
@@ -838,13 +849,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
                     and e.get("task_id") == task_id
                 ), None)
             proc = entry["proc"] if entry else None
-            if proc and proc.poll() is None:
-                _terminate_proc(proc)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    _terminate_proc(proc)
-                    proc.wait()
+            _stop_proc_with_timeout(proc)
         worker["state"] = "idle"
 
     # Remove every stale queue reference, not just the first one found.
@@ -1199,8 +1204,7 @@ class SubprocessRunner:
         try:
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
-            _terminate_proc(proc)
-            proc.wait()
+            _stop_proc_with_timeout(proc)
         timer.cancel()
         stderr_thread.join(timeout=2)
 

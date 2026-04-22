@@ -28,6 +28,7 @@ from server.workers import (
     _processes,
     _refill_from_watch_column,
     _setup_worktree,
+    _stop_proc_with_timeout,
     is_non_retryable_provider_error,
 )
 from server.agents import get_adapter, register_adapter
@@ -635,6 +636,34 @@ class TestStopWorker:
 
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "assigned"
+
+    def test_stop_proc_with_timeout_escalates_to_force_kill(self):
+        class HungProc:
+            def __init__(self):
+                self.pid = os.getpid()
+                self._poll = None
+                self.term_calls = 0
+                self.kill_calls = 0
+
+            def poll(self):
+                return self._poll
+
+            def terminate(self):
+                self.term_calls += 1
+
+            def kill(self):
+                self.kill_calls += 1
+                self._poll = -9
+
+            def wait(self, timeout=None):
+                if self._poll is None:
+                    raise subprocess.TimeoutExpired(cmd="hung", timeout=timeout)
+                return self._poll
+
+        proc = HungProc()
+        assert _stop_proc_with_timeout(proc, graceful_timeout=0.01, force_timeout=0.01) is True
+        assert proc.term_calls >= 1
+        assert proc.kill_calls >= 1
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process-group behavior")
