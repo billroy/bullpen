@@ -62,6 +62,7 @@ const WorkerCard = {
             <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ isService ? 'Start' : 'Run' }}</span></button>
             <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
             <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
+            <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
             <button v-if="canStop" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
             <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
             <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
@@ -251,6 +252,9 @@ const WorkerCard = {
     },
     menuStyle() {
       return { top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
+    },
+    serviceSiteUrl() {
+      return window.getServiceSiteUrl ? window.getServiceSiteUrl(this.worker) : '';
     },
     lastOutput() {
       // Prefer live output buffer when working
@@ -601,7 +605,7 @@ const WorkerCard = {
       const btn = this.$refs.menuBtn;
       if (btn) {
         const rect = btn.getBoundingClientRect();
-        const menuWidth = 130;
+        const menuWidth = 210;
         let left = rect.right - menuWidth;
         if (left < 4) left = rect.left;
         this.menuPos = { top: rect.bottom + 4, left };
@@ -685,6 +689,10 @@ const WorkerCard = {
     menuWatch() {
       this.closeMenuAndRestoreFocus();
       this.$emit('open-focus', this.slotIndex);
+    },
+    menuOpenSite() {
+      this.closeMenuAndRestoreFocus();
+      this.$root.openServiceSite(this.slotIndex);
     },
     menuCopyTo() {
       this.closeMenuAndRestoreFocus();

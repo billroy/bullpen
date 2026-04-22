@@ -46,6 +46,25 @@ function isServiceWorker(worker) {
   return worker?.type === 'service';
 }
 
+function getServiceSiteUrl(worker, locationLike = window.location) {
+  if (!isServiceWorker(worker)) return '';
+  const port = Number(worker?.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return '';
+  const fallbackHost = String(locationLike?.hostname || '').trim() || '127.0.0.1';
+  let url;
+  try {
+    url = new URL(String(locationLike?.href || ''));
+  } catch (_err) {
+    url = new URL(`http://${fallbackHost}`);
+  }
+  url.protocol = 'http:';
+  url.port = String(port);
+  url.pathname = '/';
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
 function isEvalWorker(worker) {
   return worker?.type === 'eval';
 }
@@ -84,3 +103,5 @@ function renderLucideIcons(rootEl) {
   const root = rootEl?.querySelectorAll ? rootEl : document;
   window.lucide.createIcons({ attrs: { 'stroke-width': 2 }, root });
 }
+
+window.getServiceSiteUrl = getServiceSiteUrl;

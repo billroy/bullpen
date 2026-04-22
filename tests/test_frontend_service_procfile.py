@@ -30,6 +30,24 @@ def test_worker_card_hides_procfile_badge_and_conditionally_appends_port_to_titl
     assert "titlePortCandidate()" in text
     assert "workerNameWithPort()" in text
     assert "recalculateTitlePortVisibility()" in text
+    assert "serviceSiteUrl()" in text
+    assert "menuOpenSite()" in text
+
+
+def test_service_site_opening_uses_shared_url_helper_and_root_action():
+    utils = _read("static/utils.js")
+    app = _read("static/app.js")
+
+    assert "function getServiceSiteUrl(worker, locationLike = window.location) {" in utils
+    assert "url.protocol = 'http:';" in utils
+    assert "url.port = String(port);" in utils
+    assert "url.pathname = '/';" in utils
+    assert "window.getServiceSiteUrl = getServiceSiteUrl;" in utils
+
+    assert "function openServiceSite(slot) {" in app
+    assert "window.getServiceSiteUrl(worker, window.location)" in app
+    assert "window.open(url, '_blank', 'noopener,noreferrer')" in app
+    assert "Service site is unavailable until this worker has a valid port" in app
 
 
 def test_add_service_worker_defaults_to_manual_activation():

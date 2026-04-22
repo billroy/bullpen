@@ -15,6 +15,7 @@ def test_worker_card_menu_commands_render_icons_before_labels():
     assert "class=\"worker-menu-item\" @click=\"menuEdit\"><i class=\"menu-item-icon\" data-lucide=\"pencil\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuRun\"><i class=\"menu-item-icon\" data-lucide=\"play\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuWatch\"><i class=\"menu-item-icon\" data-lucide=\"eye\"" in text
+    assert "class=\"worker-menu-item\" :disabled=\"!serviceSiteUrl\" @click=\"menuOpenSite\"><i class=\"menu-item-icon\" data-lucide=\"external-link\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuStop\"><i class=\"menu-item-icon\" data-lucide=\"square\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuPause\"><i class=\"menu-item-icon\" data-lucide=\"pause\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuUnpause\"><i class=\"menu-item-icon\" data-lucide=\"play\"" in text
@@ -23,6 +24,7 @@ def test_worker_card_menu_commands_render_icons_before_labels():
     assert "class=\"worker-menu-item\" @click=\"menuCopyTo\"><i class=\"menu-item-icon\" data-lucide=\"copy\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuMoveTo\"><i class=\"menu-item-icon\" data-lucide=\"arrow-right\"" in text
     assert "class=\"worker-menu-item worker-menu-danger\" @click=\"menuDelete\"><i class=\"menu-item-icon\" data-lucide=\"trash-2\"" in text
+    assert "<span class=\"menu-item-label\">Open site in browser</span></button>" in text
     assert "<span class=\"menu-item-label\">Move to workspace&hellip;</span></button>" in text
 
 

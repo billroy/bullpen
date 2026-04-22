@@ -804,6 +804,16 @@ const app = createApp({
     function restartServiceSlot(slot) {
       socket.emit('service:restart', _wsData({ slot }));
     }
+    function openServiceSite(slot) {
+      const worker = _workerAt(slot);
+      const url = window.getServiceSiteUrl ? window.getServiceSiteUrl(worker, window.location) : '';
+      if (!url) {
+        addToast('Service site is unavailable until this worker has a valid port', 'error');
+        return;
+      }
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) addToast('Browser blocked opening the service site', 'error');
+    }
 
     // Focus tab management
     function openFocusTab(slotIndex) {
@@ -1258,7 +1268,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, selectTask, addWorker, removeWorker, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, restartServiceSlot, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, restartServiceSlot, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, multipleWorkspaces,
       transferSlot, transferMode, openTransfer, transferWorker,
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
