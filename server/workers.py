@@ -2105,107 +2105,120 @@ def _on_agent_success(
     """Handle successful agent completion."""
     if _consume_cancelled_run(run_id):
         return
-    with _write_lock:
-        layout = _load_layout(bp_dir)
-        worker = layout["slots"][slot_index]
-        if not worker:
-            return
+    try:
+        with _write_lock:
+            layout = _load_layout(bp_dir)
+            worker = layout["slots"][slot_index]
+            if not worker:
+                return
 
-        # Accumulate structured model usage and backward-compatible token totals.
-        if usage:
-            task = task_mod.read_task(bp_dir, task_id)
-            if task:
-                usage_entry = build_usage_entry(
-                    source="worker",
-                    provider=worker.get("agent", ""),
-                    model=worker.get("model"),
-                    slot=slot_index,
-                    usage=usage,
-                )
-                if usage_entry:
-                    usage_update = build_usage_update(task, usage_entry)
-                    if usage_update:
-                        task_mod.update_task(bp_dir, task_id, usage_update)
+            # Accumulate structured model usage and backward-compatible token totals.
+            if usage:
+                task = task_mod.read_task(bp_dir, task_id)
+                if task:
+                    usage_entry = build_usage_entry(
+                        source="worker",
+                        provider=worker.get("agent", ""),
+                        model=worker.get("model"),
+                        slot=slot_index,
+                        usage=usage,
+                    )
+                    if usage_entry:
+                        usage_update = build_usage_update(task, usage_entry)
+                        if usage_update:
+                            task_mod.update_task(bp_dir, task_id, usage_update)
 
-        # Append output to task. Shell workers write structured Worker Output
-        # blocks before entering this shared success path.
-        if output_appender:
-            output_appender(worker)
+            # Append output to task. Shell workers write structured Worker Output
+            # blocks before entering this shared success path.
+            if output_appender:
+                output_appender(worker)
+            else:
+                _append_output(bp_dir, task_id, worker, output)
+
+            # Auto-commit if enabled
+            if allow_auto_actions and _auto_actions_allowed(worker) and worker.get("auto_commit") and agent_cwd:
+                task = task_mod.read_task(bp_dir, task_id)
+                task_title = task.get("title", "untitled") if task else "untitled"
+                commit_hash = _auto_commit(agent_cwd, task_title, task_id)
+                if commit_hash:
+                    _append_output(bp_dir, task_id, worker, f"Commit: {commit_hash}")
+
+                    # Auto-PR if enabled (requires worktree + auto-commit)
+                    if worker.get("auto_pr") and worker.get("use_worktree"):
+                        branch_name = f"bullpen/{task_id}"
+                        pr_result = _auto_pr(agent_cwd, task_title, task_id, branch_name)
+                        _append_output(bp_dir, task_id, worker, f"PR: {pr_result}")
+
+            # Remove from queue
+            queue = worker.get("task_queue", [])
+            if queue and queue[0] == task_id:
+                queue.pop(0)
+
+            # Disposition: move task to target column or hand off to another worker
+            disposition = disposition_override or worker.get("disposition", "review")
+            handed_off = False
+            if disposition.startswith("worker:"):
+                target_name = disposition[len("worker:"):].strip()
+                # Set worker idle BEFORE handoff (which saves its own layout)
+                worker["state"] = "idle"
+                _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id)
+                handed_off = True
+            elif disposition.startswith("pass:"):
+                direction = disposition[len("pass:"):]
+                worker["state"] = "idle"
+                _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id)
+                handed_off = True
+            elif disposition.startswith("random:"):
+                target_name = disposition[len("random:"):].strip()
+                worker["state"] = "idle"
+                _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id)
+                handed_off = True
+            else:
+                task_mod.update_task(bp_dir, task_id, {
+                    "status": disposition,
+                    "assigned_to": "",
+                    "handoff_depth": 0,
+                })
+
+            if not handed_off:
+                # Set worker idle and save (handoff path already did this)
+                worker["state"] = "idle"
+                _save_layout(bp_dir, layout)
+
+            if socketio:
+                task = task_mod.read_task(bp_dir, task_id)
+                # Reload layout after potential handoff to get current state
+                layout = _load_layout(bp_dir) if handed_off else layout
+                _ws_emit(socketio, "task:updated", task, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id)
+                _ws_emit(socketio, "files:changed", {}, ws_id)
+
+            has_more = queue and worker.get("activation") in ("on_drop", "on_queue")
+            disposition_status = None if handed_off else disposition
+
+        # Outside lock to avoid deadlock with start_worker / assign_task
+        if has_more:
+            start_worker(bp_dir, slot_index, socketio, ws_id)
         else:
-            _append_output(bp_dir, task_id, worker, output)
+            # Idle refill: if this on_queue worker's queue is empty, look for more
+            _refill_from_watch_column(bp_dir, slot_index, socketio, ws_id)
 
-        # Auto-commit if enabled
-        if allow_auto_actions and _auto_actions_allowed(worker) and worker.get("auto_commit") and agent_cwd:
-            task = task_mod.read_task(bp_dir, task_id)
-            task_title = task.get("title", "untitled") if task else "untitled"
-            commit_hash = _auto_commit(agent_cwd, task_title, task_id)
-            if commit_hash:
-                _append_output(bp_dir, task_id, worker, f"Commit: {commit_hash}")
-
-                # Auto-PR if enabled (requires worktree + auto-commit)
-                if worker.get("auto_pr") and worker.get("use_worktree"):
-                    branch_name = f"bullpen/{task_id}"
-                    pr_result = _auto_pr(agent_cwd, task_title, task_id, branch_name)
-                    _append_output(bp_dir, task_id, worker, f"PR: {pr_result}")
-
-        # Remove from queue
-        queue = worker.get("task_queue", [])
-        if queue and queue[0] == task_id:
-            queue.pop(0)
-
-        # Disposition: move task to target column or hand off to another worker
-        disposition = disposition_override or worker.get("disposition", "review")
-        handed_off = False
-        if disposition.startswith("worker:"):
-            target_name = disposition[len("worker:"):].strip()
-            # Set worker idle BEFORE handoff (which saves its own layout)
-            worker["state"] = "idle"
-            _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id)
-            handed_off = True
-        elif disposition.startswith("pass:"):
-            direction = disposition[len("pass:"):]
-            worker["state"] = "idle"
-            _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id)
-            handed_off = True
-        elif disposition.startswith("random:"):
-            target_name = disposition[len("random:"):].strip()
-            worker["state"] = "idle"
-            _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id)
-            handed_off = True
-        else:
-            task_mod.update_task(bp_dir, task_id, {
-                "status": disposition,
-                "assigned_to": "",
-                "handoff_depth": 0,
-            })
-
-        if not handed_off:
-            # Set worker idle and save (handoff path already did this)
-            worker["state"] = "idle"
-            _save_layout(bp_dir, layout)
-
-        if socketio:
-            task = task_mod.read_task(bp_dir, task_id)
-            # Reload layout after potential handoff to get current state
-            layout = _load_layout(bp_dir) if handed_off else layout
-            _ws_emit(socketio, "task:updated", task, ws_id)
-            _ws_emit(socketio, "layout:updated", layout, ws_id)
-            _ws_emit(socketio, "files:changed", {}, ws_id)
-
-        has_more = queue and worker.get("activation") in ("on_drop", "on_queue")
-        disposition_status = None if handed_off else disposition
-
-    # Outside lock to avoid deadlock with start_worker / assign_task
-    if has_more:
-        start_worker(bp_dir, slot_index, socketio, ws_id)
-    else:
-        # Idle refill: if this on_queue worker's queue is empty, look for more
-        _refill_from_watch_column(bp_dir, slot_index, socketio, ws_id)
-
-    # Notify watchers of the disposition column (e.g. worker A finishes → "review",
-    # worker B watches "review" → auto-claims)
-    if disposition_status:
-        check_watch_columns(bp_dir, disposition_status, socketio, ws_id)
+        # Notify watchers of the disposition column (e.g. worker A finishes → "review",
+        # worker B watches "review" → auto-claims)
+        if disposition_status:
+            check_watch_columns(bp_dir, disposition_status, socketio, ws_id)
+    except Exception as exc:
+        _on_agent_error(
+            bp_dir,
+            slot_index,
+            task_id,
+            str(exc),
+            socketio,
+            ws_id=ws_id,
+            non_retryable=True,
+            max_retries_override=0,
+            run_id=run_id,
+        )
 
 
 def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):

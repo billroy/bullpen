@@ -885,6 +885,45 @@ class TestPromptAssembly:
         assert called["commit"] is False
         assert called["pr"] is False
 
+    def test_success_finalization_exception_blocks_instead_of_leaving_in_progress(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Success path should fail closed")
+        assign_task(bp_dir, worker_slot, task["id"])
+        from server.tasks import update_task
+        update_task(bp_dir, task["id"], {"status": "in_progress"})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "working"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        original_update = update_task
+
+        def flaky_update(bp_dir_arg, task_id_arg, fields):
+            if (
+                task_id_arg == task["id"]
+                and fields.get("status") == "review"
+            ):
+                raise RuntimeError("simulated disposition write failure")
+            return original_update(bp_dir_arg, task_id_arg, fields)
+
+        monkeypatch.setattr("server.tasks.update_task", flaky_update)
+
+        _on_agent_success(
+            bp_dir,
+            worker_slot,
+            task["id"],
+            "done",
+            socketio=None,
+            agent_cwd=None,
+        )
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "blocked"
+        assert updated["assigned_to"] == ""
+        assert "[BLOCKED] simulated disposition write failure" in updated["body"]
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert task["id"] not in updated_layout["slots"][worker_slot]["task_queue"]
+
 
 class TestWorktree:
     def test_worktree_created(self, tmp_workspace):
