@@ -33,6 +33,7 @@ def test_app_wires_top_toolbar_palette_events_to_registry_handlers():
     assert "function runPaletteCommand(commandId, args = '') {" in text
     assert "function runPaletteInput(input) {" in text
     assert "function runCommandBar(input) {" not in text
+    assert "Disconnected from Bullpen server. Ticket was not created." in text
 
 
 def test_command_registry_supports_ticket_and_ui_commands():

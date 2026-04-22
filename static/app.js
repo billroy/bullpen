@@ -423,8 +423,25 @@ const app = createApp({
 
     if (window.EventSounds) window.EventSounds.init(socket);
 
-    socket.on('connect', () => { connected.value = true; });
-    socket.on('disconnect', () => { connected.value = false; });
+    let hasConnectedOnce = false;
+    let disconnectToastId = null;
+    socket.on('connect', () => {
+      const wasDisconnected = hasConnectedOnce && !connected.value;
+      connected.value = true;
+      if (disconnectToastId != null) {
+        dismissToast(disconnectToastId);
+        disconnectToastId = null;
+      }
+      if (wasDisconnected) addToast('Reconnected to Bullpen server');
+      hasConnectedOnce = true;
+    });
+    socket.on('disconnect', () => {
+      const wasConnected = connected.value;
+      connected.value = false;
+      if (wasConnected) {
+        disconnectToastId = addToast('Disconnected from Bullpen server. Changes are paused until connection is restored.', 'error');
+      }
+    });
     // If the server rejects the upgrade (e.g. unauthenticated session),
     // Socket.IO emits connect_error. Bounce the user to the login page.
     socket.on('connect_error', (err) => {
@@ -661,32 +678,69 @@ const app = createApp({
       return { ...data, workspaceId: activeWorkspaceId.value };
     }
 
+    function emitSocketAction(eventName, data, { offlineMessage = 'Disconnected from Bullpen server. Changes are paused until connection is restored.' } = {}) {
+      if (!socket?.connected) {
+        addToast(offlineMessage, 'error');
+        return false;
+      }
+      socket.emit(eventName, _wsData(data));
+      return true;
+    }
+
     // Task actions
-    function createTask(data) { socket.emit('task:create', _wsData(data)); }
+    function createTask(data) {
+      return emitSocketAction('task:create', data, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket was not created.',
+      });
+    }
     function quickCreateTask(payload) {
       const title = typeof payload === 'string' ? payload.trim() : (payload?.title || '').trim();
       const description = typeof payload === 'string' ? '' : (payload?.description || '').trim();
       if (!title) return;
-      pendingQuickCreates.push({ title, description });
-      socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));
+      const created = emitSocketAction('task:create', {
+        title, type: 'task', priority: 'normal', tags: [], description,
+      }, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket was not created.',
+      });
+      if (created) pendingQuickCreates.push({ title, description });
     }
-    function updateTask(data) { socket.emit('task:update', _wsData(data)); }
+    function updateTask(data) {
+      return emitSocketAction('task:update', data, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket changes were not saved.',
+      });
+    }
     function deleteTask(id) {
       const task = state.tasks.find(t => t.id === id);
       if (task && (task.status === 'assigned' || task.status === 'in-progress')) {
         if (!confirm(`Task "${task.title}" is ${task.status}. Delete anyway?`)) return;
       }
-      socket.emit('task:delete', _wsData({ id }));
+      return emitSocketAction('task:delete', { id }, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket was not deleted.',
+      });
     }
-    function archiveTask(id) { socket.emit('task:archive', _wsData({ id })); }
+    function archiveTask(id) {
+      return emitSocketAction('task:archive', { id }, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket was not archived.',
+      });
+    }
     function archiveDone() {
       const count = state.tasks.filter(t => t.status === 'done').length;
       if (count && confirm(`Archive ${count} done task(s)?`)) {
-        socket.emit('task:archive-done', _wsData({}));
+        return emitSocketAction('task:archive-done', {}, {
+          offlineMessage: 'Disconnected from Bullpen server. Done tickets were not archived.',
+        });
       }
     }
-    function clearTaskOutput(id) { socket.emit('task:clear_output', _wsData({ id })); }
-    function moveTask({ id, status }) { socket.emit('task:update', _wsData({ id, status })); }
+    function clearTaskOutput(id) {
+      return emitSocketAction('task:clear_output', { id }, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket output was not cleared.',
+      });
+    }
+    function moveTask({ id, status }) {
+      return emitSocketAction('task:update', { id, status }, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket move was not saved.',
+      });
+    }
     function selectTask(payload, options = {}) {
       if (!payload) {
         selectedTaskId.value = null;
@@ -1240,6 +1294,7 @@ const app = createApp({
           if (idx >= 0) toasts.splice(idx, 1);
         }, 5000);
       }
+      return id;
     }
 
     function dismissToast(id) {

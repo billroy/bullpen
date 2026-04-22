@@ -30,7 +30,19 @@ def test_kanban_forwards_task_card_update_event():
 def test_app_wires_kanban_update_task_event_to_socket_update():
     text = _read("static/app.js")
     assert "@update-task=\"updateTask\"" in text
-    assert "function updateTask(data) { socket.emit('task:update', _wsData(data)); }" in text
+    assert "function emitSocketAction(eventName, data" in text
+    assert "function updateTask(data) {" in text
+    assert "emitSocketAction('task:update', data" in text
+    assert "Ticket changes were not saved." in text
+
+
+def test_app_guards_task_creates_and_disconnects_show_toasts():
+    text = _read("static/app.js")
+    assert "Disconnected from Bullpen server. Changes are paused until connection is restored." in text
+    assert "Reconnected to Bullpen server" in text
+    assert "emitSocketAction('task:create', {" in text
+    assert "Ticket was not created." in text
+    assert "return id;" in text
 
 
 def test_task_card_popup_styles_exist():
