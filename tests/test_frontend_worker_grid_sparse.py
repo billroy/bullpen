@@ -16,6 +16,13 @@ def test_grid_geometry_loaded_before_bullpen_tab():
     assert text.index('/gridGeometry.js') < text.index('/components/BullpenTab.js')
 
 
+def test_vue_cdn_is_pinned_and_has_matching_sri():
+    text = _read("static/index.html")
+    assert 'https://unpkg.com/vue@3.5.33/dist/vue.global.prod.js' in text
+    assert 'integrity="sha384-DwljJiymYj3bq9J96m+aFUFsrBcnOhe+J38t7gF769KS7nPRyMft5bWqWkhwEFUW"' in text
+    assert 'https://unpkg.com/vue@3/dist/vue.global.prod.js' not in text
+
+
 def test_bullpen_tab_uses_sparse_coordinate_rendering():
     text = _read("static/components/BullpenTab.js")
     assert "v-for=\"item in visibleWorkers\"" in text
