@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import ipaddress
 import json
 import os
@@ -89,6 +90,69 @@ def _service_port(worker):
     except (TypeError, ValueError):
         return None
     return port if 1 <= port <= 65535 else None
+
+
+def _configured_service_ports(layout, *, ignore_slot=None):
+    reserved = set()
+    slots = layout.get("slots", []) if isinstance(layout, dict) else []
+    for slot_index, worker in enumerate(slots):
+        if slot_index == ignore_slot or not isinstance(worker, dict):
+            continue
+        if worker.get("type") != "service":
+            continue
+        port = _service_port(worker)
+        if port:
+            reserved.add(port)
+    return reserved
+
+
+def _port_is_bindable(port):
+    if not isinstance(port, int) or port < 1 or port > 65535:
+        return False
+
+    targets = [(socket.AF_INET, ("127.0.0.1", port))]
+    if getattr(socket, "has_ipv6", False):
+        targets.append((socket.AF_INET6, ("::1", port, 0, 0)))
+
+    bound_any = False
+    for family, address in targets:
+        sock = None
+        try:
+            sock = socket.socket(family, socket.SOCK_STREAM)
+            if family == socket.AF_INET6:
+                try:
+                    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                except (AttributeError, OSError):
+                    pass
+            sock.bind(address)
+            bound_any = True
+        except OSError as exc:
+            if family == socket.AF_INET6 and exc.errno in {
+                errno.EADDRNOTAVAIL,
+                errno.EAFNOSUPPORT,
+                errno.EPROTONOSUPPORT,
+            }:
+                continue
+            return False
+        finally:
+            if sock is not None:
+                sock.close()
+    return bound_any
+
+
+def suggest_service_port(layout, *, ignore_slot=None, start=3000, end=65535):
+    start_port = max(1, int(start or 3000))
+    end_port = min(65535, int(end or 65535))
+    if start_port > end_port:
+        return None
+
+    reserved = _configured_service_ports(layout, ignore_slot=ignore_slot)
+    for port in range(start_port, end_port + 1):
+        if port in reserved:
+            continue
+        if _port_is_bindable(port):
+            return port
+    return None
 
 
 def _resolve_cwd(workspace, configured_cwd):

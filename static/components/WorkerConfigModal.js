@@ -8,6 +8,8 @@ const WorkerConfigModal = {
       servicePreview: null,
       servicePreviewError: '',
       servicePreviewLoading: false,
+      serviceSuggestedPort: null,
+      servicePortAutoFilled: false,
       servicePreviewSeq: 0,
       servicePreviewTimer: null,
     };
@@ -71,6 +73,8 @@ const WorkerConfigModal = {
           };
           this.servicePreview = null;
           this.servicePreviewError = '';
+          this.serviceSuggestedPort = null;
+          this.servicePortAutoFilled = false;
           this.scheduleServicePreview();
         }
       }
@@ -258,8 +262,11 @@ const WorkerConfigModal = {
               </label>
               <label class="form-label">
                 Port
-                <input class="form-input" type="number" v-model="form.port" min="1" max="65535" placeholder="3000">
-                <span class="form-hint">Seeds <code>PORT</code> in the Service worker env.</span>
+                <input class="form-input" type="number" v-model="form.port" min="1" max="65535" :placeholder="serviceSuggestedPort ? String(serviceSuggestedPort) : '3000'">
+                <span class="form-hint">
+                  <span v-if="serviceSuggestedPort">Suggested open port: <code>{{ serviceSuggestedPort }}</code>. </span>
+                  Seeds <code>PORT</code> in the Service worker env.
+                </span>
               </label>
             </div>
             <label v-if="!isProcfileService" class="form-label">
@@ -623,8 +630,13 @@ const WorkerConfigModal = {
           this.servicePreviewError = data.error || 'Preview unavailable';
           return;
         }
+        this.serviceSuggestedPort = Number.isInteger(data.suggested_port) ? data.suggested_port : null;
         this.servicePreview = data;
         this.servicePreviewError = '';
+        if (!this.form.port && this.serviceSuggestedPort && !this.servicePortAutoFilled) {
+          this.servicePortAutoFilled = true;
+          this.form.port = this.serviceSuggestedPort;
+        }
       } catch (err) {
         if (seq !== this.servicePreviewSeq) return;
         this.servicePreview = null;

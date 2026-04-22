@@ -859,6 +859,9 @@ def create_app(
             preview = service_worker_mod.resolve_service_preview(worker, ws.path, slot)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
+        suggested_port = None
+        if worker.get("port") is None:
+            suggested_port = service_worker_mod.suggest_service_port(layout, ignore_slot=slot)
 
         return jsonify({
             "cwd": preview["cwd"],
@@ -866,6 +869,7 @@ def create_app(
             "command_source": preview["command_source"],
             "process_names": preview["process_names"],
             "selected_process": preview["selected_process"],
+            "suggested_port": suggested_port,
             "raw_command": preview["raw_command"],
             "resolved_command": preview["resolved_command_redacted"],
             "warnings": preview["warnings"],

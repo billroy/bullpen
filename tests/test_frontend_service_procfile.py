@@ -18,6 +18,9 @@ def test_worker_config_modal_exposes_service_procfile_controls():
     assert "Procfile process" in text
     assert "Resolved command preview" in text
     assert "fetch('/api/service/preview'" in text
+    assert "Suggested open port:" in text
+    assert "data.suggested_port" in text
+    assert "servicePortAutoFilled" in text
     assert "activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop')" in text
 
 
