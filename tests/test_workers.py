@@ -24,6 +24,7 @@ from server.workers import (
     _auto_commit,
     _auto_pr,
     _load_layout,
+    _on_agent_error,
     _on_agent_success,
     _processes,
     _refill_from_watch_column,
@@ -349,6 +350,80 @@ class TestWorkerReconcile:
         updated_layout = _load_layout(bp_dir)
         assert updated_layout["slots"][worker_slot]["state"] == "idle"
         assert updated_layout["slots"][worker_slot]["task_queue"] == []
+
+    def test_yank_detaches_run_and_ignores_late_success(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Late success yank")
+        update_task(bp_dir, task["id"], {"status": "in_progress", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "working"
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        stop_calls = []
+
+        class FakeProc:
+            def poll(self):
+                return None
+
+        monkeypatch.setattr(workers_mod, "_request_process_shutdown", lambda proc: stop_calls.append(proc))
+        fake_proc = FakeProc()
+        _processes[(None, worker_slot)] = {
+            "proc": fake_proc,
+            "buffer": [],
+            "buffer_size": 0,
+            "task_id": task["id"],
+            "run_id": "run-yank-1",
+        }
+
+        assert yank_from_worker(bp_dir, task["id"]) is True
+        update_task(bp_dir, task["id"], {"status": "review", "assigned_to": ""})
+        _on_agent_success(bp_dir, worker_slot, task["id"], "late output", None, run_id="run-yank-1")
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "review"
+        assert updated["assigned_to"] == ""
+        assert updated_layout["slots"][worker_slot]["task_queue"] == []
+        assert (None, worker_slot) not in _processes
+        assert stop_calls == [fake_proc]
+
+    def test_stop_detaches_run_and_ignores_late_error(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Late error stop")
+        assign_task(bp_dir, worker_slot, task["id"])
+        update_task(bp_dir, task["id"], {"status": "in_progress"})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "working"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        stop_calls = []
+
+        class FakeProc:
+            def poll(self):
+                return None
+
+        monkeypatch.setattr(workers_mod, "_request_process_shutdown", lambda proc: stop_calls.append(proc))
+        fake_proc = FakeProc()
+        _processes[(None, worker_slot)] = {
+            "proc": fake_proc,
+            "buffer": [],
+            "buffer_size": 0,
+            "task_id": task["id"],
+            "run_id": "run-stop-1",
+        }
+
+        stop_worker(bp_dir, worker_slot)
+        _on_agent_error(bp_dir, worker_slot, task["id"], "late failure", None, run_id="run-stop-1")
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "assigned"
+        assert str(updated["assigned_to"]) == str(worker_slot)
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert updated_layout["slots"][worker_slot]["task_queue"] == [task["id"]]
+        assert (None, worker_slot) not in _processes
+        assert stop_calls == [fake_proc]
 
 
 class TestStartWorker:

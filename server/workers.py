@@ -99,6 +99,61 @@ def _stop_proc_with_timeout(proc, *, graceful_timeout=5, force_timeout=5):
 # Active subprocesses keyed by (workspace_id, slot_index)
 _processes = {}
 _process_lock = threading.Lock()
+_cancelled_runs = set()
+
+
+def _request_process_shutdown(proc):
+    """Stop a subprocess in the background so UI actions can return immediately."""
+    if proc is None or proc.poll() is not None:
+        return
+
+    def _shutdown():
+        _stop_proc_with_timeout(proc)
+
+    threading.Thread(target=_shutdown, daemon=True).start()
+
+
+def _detach_process_entry(ws_id, slot_index=None, *, task_id=None):
+    """Remove a tracked process entry and mark that specific run cancelled."""
+    with _process_lock:
+        target_key = None
+        target_entry = None
+
+        if slot_index is not None:
+            entry = _processes.get((ws_id, slot_index))
+            if entry and (task_id is None or entry.get("task_id") == task_id):
+                target_key = (ws_id, slot_index)
+                target_entry = entry
+
+        if target_entry is None:
+            for key, entry in list(_processes.items()):
+                proc_ws_id, proc_slot = key
+                if ws_id is not None and proc_ws_id != ws_id:
+                    continue
+                if slot_index is not None and proc_slot != slot_index:
+                    continue
+                if task_id is not None and entry.get("task_id") != task_id:
+                    continue
+                target_key = key
+                target_entry = entry
+                break
+
+        if target_key is not None:
+            _processes.pop(target_key, None)
+        if target_entry and target_entry.get("run_id"):
+            _cancelled_runs.add(target_entry["run_id"])
+        return target_entry
+
+
+def _consume_cancelled_run(run_id):
+    """Return True exactly once for runs a human explicitly stopped/yanked."""
+    if not run_id:
+        return False
+    with _process_lock:
+        if run_id not in _cancelled_runs:
+            return False
+        _cancelled_runs.remove(run_id)
+        return True
 
 
 def _ws_emit(socketio, event, payload, ws_id=None):
@@ -765,26 +820,28 @@ def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=
 
 def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Stop a working agent. Task goes back to Assigned."""
-    with _process_lock:
-        entry = _processes.get((ws_id, slot_index))
-        proc = entry["proc"] if entry else None
-        _stop_proc_with_timeout(proc)
-
     layout = _load_layout(bp_dir)
     worker = layout["slots"][slot_index]
+    proc = None
     if worker:
         worker["state"] = "idle"
         queue = worker.get("task_queue", [])
         if queue:
             task_id = queue[0]
+            entry = _detach_process_entry(ws_id, slot_index, task_id=task_id)
+            proc = entry["proc"] if entry else None
             task_mod.update_task(bp_dir, task_id, {"status": "assigned"})
             if socketio:
                 task = task_mod.read_task(bp_dir, task_id)
                 _ws_emit(socketio, "task:updated", task, ws_id)
+        else:
+            entry = _detach_process_entry(ws_id, slot_index)
+            proc = entry["proc"] if entry else None
 
         _save_layout(bp_dir, layout)
         if socketio:
             _ws_emit(socketio, "layout:updated", layout, ws_id)
+    _request_process_shutdown(proc)
 
 
 def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
@@ -835,21 +892,15 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
     )
 
     # Kill the subprocess if this task is actively running
+    proc = None
     if is_running:
         if worker.get("type") == "service":
             from server import service_worker as service_worker_mod
             service_worker_mod.cancel_service_order(bp_dir, ws_id, slot_index, task_id, socketio)
-        with _process_lock:
-            entry = _processes.get((ws_id, slot_index))
-            if entry is None:
-                entry = next((
-                    e for (proc_ws_id, proc_slot), e in _processes.items()
-                    if proc_slot == slot_index
-                    and (ws_id is None or proc_ws_id == ws_id)
-                    and e.get("task_id") == task_id
-                ), None)
-            proc = entry["proc"] if entry else None
-            _stop_proc_with_timeout(proc)
+        entry = _detach_process_entry(ws_id, slot_index, task_id=task_id)
+        if entry is None:
+            entry = _detach_process_entry(ws_id, task_id=task_id)
+        proc = entry["proc"] if entry else None
         worker["state"] = "idle"
 
     # Remove every stale queue reference, not just the first one found.
@@ -868,6 +919,8 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
     # If worker was running this task and has more queued, advance
     if is_running and queue and worker.get("activation") in ("on_drop", "on_queue"):
         start_worker(bp_dir, slot_index, socketio, ws_id)
+
+    _request_process_shutdown(proc)
 
     return True
 
@@ -1066,6 +1119,8 @@ class SubprocessRunner:
         self.line_formatter = line_formatter or (lambda line: line.rstrip("\n"))
         self.line_observer = line_observer
         self.timed_out = False
+        self.run_id = None
+        self.proc = None
 
     def run(self):
         popen_kwargs = {}
@@ -1085,8 +1140,16 @@ class SubprocessRunner:
             bufsize=1,
             **popen_kwargs,
         )
+        self.proc = proc
+        self.run_id = _timestamp_id()
 
-        entry = {"proc": proc, "buffer": [], "task_id": self.task_id, "buffer_size": 0}
+        entry = {
+            "proc": proc,
+            "buffer": [],
+            "task_id": self.task_id,
+            "buffer_size": 0,
+            "run_id": self.run_id,
+        }
         with _process_lock:
             _processes[(self.ws_id, self.slot_index)] = entry
 
@@ -1230,6 +1293,7 @@ class SubprocessRunner:
 
 def _run_shell(bp_dir, slot_index, task_id, worker_snapshot, prepared, socketio, ws_id=None):
     started = time.time()
+    runner = None
     try:
         prelude = "\n".join(prepared.prelude_lines or [])
         runner = SubprocessRunner(
@@ -1292,6 +1356,7 @@ def _run_shell(bp_dir, slot_index, task_id, worker_snapshot, prepared, socketio,
                 disposition_override=result.disposition,
                 output_appender=lambda _worker: None,
                 allow_auto_actions=False,
+                run_id=runner.run_id,
             )
         elif result.outcome == "reroute":
             _on_agent_error(
@@ -1303,6 +1368,7 @@ def _run_shell(bp_dir, slot_index, task_id, worker_snapshot, prepared, socketio,
                 output="",
                 ws_id=ws_id,
                 non_retryable=True,
+                run_id=runner.run_id,
             )
         else:
             _on_agent_error(
@@ -1314,9 +1380,18 @@ def _run_shell(bp_dir, slot_index, task_id, worker_snapshot, prepared, socketio,
                 output="",
                 ws_id=ws_id,
                 non_retryable=False,
+                run_id=runner.run_id,
             )
     except Exception as exc:
-        _on_agent_error(bp_dir, slot_index, task_id, str(exc), socketio, ws_id=ws_id)
+        _on_agent_error(
+            bp_dir,
+            slot_index,
+            task_id,
+            str(exc),
+            socketio,
+            ws_id=ws_id,
+            run_id=runner.run_id if runner else None,
+        )
     finally:
         if prepared.body_file:
             try:
@@ -1324,7 +1399,9 @@ def _run_shell(bp_dir, slot_index, task_id, worker_snapshot, prepared, socketio,
             except OSError:
                 pass
         with _process_lock:
-            _processes.pop((ws_id, slot_index), None)
+            entry = _processes.get((ws_id, slot_index))
+            if entry and entry.get("run_id") == (runner.run_id if runner else None):
+                _processes.pop((ws_id, slot_index), None)
 
 
 def _parse_shell_result(bp_dir, worker, completed):
@@ -1681,6 +1758,7 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message):
 
 def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None):
     """Run agent subprocess with streaming stdout and handle completion."""
+    runner = None
     try:
         force_fail_message = [None]
         live_usage = [{}]
@@ -1775,7 +1853,15 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         stderr = completed.stderr
 
         if completed.timed_out:
-            _on_agent_error(bp_dir, slot_index, task_id, "Agent timed out", socketio, ws_id=ws_id)
+            _on_agent_error(
+                bp_dir,
+                slot_index,
+                task_id,
+                "Agent timed out",
+                socketio,
+                ws_id=ws_id,
+                run_id=runner.run_id if runner else None,
+            )
             return
 
         stdout = completed.stdout
@@ -1798,7 +1884,17 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             _ws_emit(socketio, "worker:output:done", {"slot": slot_index, "lines": final_lines}, ws_id)
 
         if result["success"]:
-            _on_agent_success(bp_dir, slot_index, task_id, result["output"], socketio, workspace, ws_id, result.get("usage", {}))
+            _on_agent_success(
+                bp_dir,
+                slot_index,
+                task_id,
+                result["output"],
+                socketio,
+                workspace,
+                ws_id,
+                result.get("usage", {}),
+                run_id=runner.run_id if runner else None,
+            )
         else:
             error_text = result.get("error", "Unknown error")
             output_text = result.get("output", "")
@@ -1811,13 +1907,24 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 output_text,
                 ws_id,
                 non_retryable=is_non_retryable_provider_error(adapter.name, error_text, output_text, stderr),
+                run_id=runner.run_id if runner else None,
             )
 
     except Exception as e:
-        _on_agent_error(bp_dir, slot_index, task_id, str(e), socketio, ws_id=ws_id)
+        _on_agent_error(
+            bp_dir,
+            slot_index,
+            task_id,
+            str(e),
+            socketio,
+            ws_id=ws_id,
+            run_id=runner.run_id if runner else None,
+        )
     finally:
         with _process_lock:
-            _processes.pop((ws_id, slot_index), None)
+            entry = _processes.get((ws_id, slot_index))
+            if entry and entry.get("run_id") == (runner.run_id if runner else None):
+                _processes.pop((ws_id, slot_index), None)
         # Clean up temp MCP config file if one was generated
         for i, arg in enumerate(argv):
             if arg == "--mcp-config" and i + 1 < len(argv):
@@ -1993,8 +2100,11 @@ def _on_agent_success(
     disposition_override=None,
     output_appender=None,
     allow_auto_actions=True,
+    run_id=None,
 ):
     """Handle successful agent completion."""
+    if _consume_cancelled_run(run_id):
+        return
     with _write_lock:
         layout = _load_layout(bp_dir)
         worker = layout["slots"][slot_index]
@@ -2216,8 +2326,11 @@ def _on_agent_error(
     ws_id=None,
     non_retryable=False,
     max_retries_override=None,
+    run_id=None,
 ):
     """Handle agent failure. Retry or block."""
+    if _consume_cancelled_run(run_id):
+        return
     should_retry = False
     retry_delay = 0
     should_advance = False
