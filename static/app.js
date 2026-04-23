@@ -287,7 +287,8 @@ const app = createApp({
     const pendingQuickCreates = reactive([]);
 
     // Worker Focus Mode state
-    const outputBuffers = reactive({});  // keyed by slot index
+    const outputBuffers = reactive({});  // keyed by workspaceId + slot index
+    const outputBufferMeta = reactive({});
     const focusTabs = reactive([]);      // [{slotIndex, workspaceId, label}]
     const chatTabs = reactive([]);
     const lastLiveAgentTabByWorkspace = reactive({});
@@ -665,8 +666,39 @@ const app = createApp({
 
     // Worker output streaming
     const OUTPUT_BUFFER_CAP = 5000;
-    function _ensureBuffer(slot) {
-      if (!outputBuffers[slot]) outputBuffers[slot] = reactive([]);
+    function _outputBufferKey(slot, workspaceId = activeWorkspaceId.value) {
+      return `${workspaceId || 'default'}:${slot}`;
+    }
+    function _ensureBuffer(slot, workspaceId = activeWorkspaceId.value) {
+      const key = _outputBufferKey(slot, workspaceId);
+      if (!outputBuffers[key]) outputBuffers[key] = reactive([]);
+      if (!outputBufferMeta[key]) {
+        outputBufferMeta[key] = reactive({
+          loaded: false,
+          requestedAt: 0,
+        });
+      }
+      return key;
+    }
+    function outputLinesForSlot(slot, workspaceId = activeWorkspaceId.value) {
+      return outputBuffers[_outputBufferKey(slot, workspaceId)] || [];
+    }
+    function requestOutputCatchup(slot, options = {}) {
+      const workspaceId = options.workspaceId || activeWorkspaceId.value;
+      if (slot == null || !workspaceId) return;
+      const key = _ensureBuffer(slot, workspaceId);
+      const meta = outputBufferMeta[key];
+      const now = Date.now();
+      if (!options.force) {
+        if (meta.loaded) return;
+        if (meta.requestedAt && now - meta.requestedAt < 1500) return;
+      }
+      meta.requestedAt = now;
+      if ((options.workerType || '').toLowerCase() === 'service') {
+        socket.emit('service:tail', { workspaceId, slot });
+      } else {
+        socket.emit('worker:output:request', { workspaceId, slot });
+      }
     }
     // Safe append: spreading a huge array into push() overflows V8's argument
     // stack (~100k–500k args). Trim to the cap first, then push one-by-one.
@@ -682,20 +714,28 @@ const app = createApp({
     }
     socket.on('worker:output', (data) => {
       const slot = data.slot;
-      _ensureBuffer(slot);
-      _appendLines(outputBuffers[slot], data.lines);
+      const wsId = data.workspaceId || activeWorkspaceId.value;
+      const key = _ensureBuffer(slot, wsId);
+      _appendLines(outputBuffers[key], data.lines);
+      outputBufferMeta[key].loaded = true;
     });
     socket.on('worker:output:catchup', (data) => {
       const slot = data.slot;
-      _ensureBuffer(slot);
-      outputBuffers[slot].length = 0;
-      _appendLines(outputBuffers[slot], data.lines || []);
+      const wsId = data.workspaceId || activeWorkspaceId.value;
+      const key = _ensureBuffer(slot, wsId);
+      outputBuffers[key].length = 0;
+      _appendLines(outputBuffers[key], data.lines || []);
+      outputBufferMeta[key].loaded = true;
+      outputBufferMeta[key].requestedAt = 0;
     });
     socket.on('worker:output:done', (data) => {
       const slot = data.slot;
-      _ensureBuffer(slot);
-      outputBuffers[slot].length = 0;
-      _appendLines(outputBuffers[slot], data.lines || []);
+      const wsId = data.workspaceId || activeWorkspaceId.value;
+      const key = _ensureBuffer(slot, wsId);
+      outputBuffers[key].length = 0;
+      _appendLines(outputBuffers[key], data.lines || []);
+      outputBufferMeta[key].loaded = true;
+      outputBufferMeta[key].requestedAt = 0;
     });
     socket.on('service:state', (data) => {
       const wsId = data.workspaceId || activeWorkspaceId.value;
@@ -711,9 +751,12 @@ const app = createApp({
     });
     socket.on('service:log', (data) => {
       const slot = data.slot;
-      _ensureBuffer(slot);
-      if (data.reset) outputBuffers[slot].length = 0;
-      _appendLines(outputBuffers[slot], data.lines || []);
+      const wsId = data.workspaceId || activeWorkspaceId.value;
+      const key = _ensureBuffer(slot, wsId);
+      if (data.reset) outputBuffers[key].length = 0;
+      _appendLines(outputBuffers[key], data.lines || []);
+      outputBufferMeta[key].loaded = true;
+      outputBufferMeta[key].requestedAt = 0;
     });
 
     // Helper to attach workspaceId to outgoing events
@@ -924,13 +967,11 @@ const app = createApp({
         focusTabs.push({ slotIndex, workspaceId: activeWorkspaceId.value, label: worker.name });
       }
       activeTab.value = 'focus-' + slotIndex;
-      // Ensure reactive buffer and request catchup
-      _ensureBuffer(slotIndex);
-      if (worker.type === 'service') {
-        socket.emit('service:tail', _wsData({ slot: slotIndex }));
-      } else {
-        socket.emit('worker:output:request', _wsData({ slot: slotIndex }));
-      }
+      requestOutputCatchup(slotIndex, {
+        workspaceId: activeWorkspaceId.value,
+        workerType: worker.type,
+        force: true,
+      });
     }
     function closeFocusTab(slotIndex) {
       const idx = focusTabs.findIndex(t => t.slotIndex === slotIndex);
@@ -939,7 +980,6 @@ const app = createApp({
         activeTab.value = 'workers';
         focusWorkerGridSoon();
       }
-      delete outputBuffers[slotIndex];
     }
     function focusTask(slotIndex) {
       const worker = state.layout?.slots?.[slotIndex];
@@ -1373,7 +1413,7 @@ const app = createApp({
       duplicateWorker, multipleWorkspaces,
       transferSlot, transferMode, openTransfer, transferWorker,
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
-      outputBuffers, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
+      outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
       bullpenTabRef,
@@ -1498,6 +1538,7 @@ const app = createApp({
               :profiles="state.profiles"
               :tasks="state.tasks"
               :workspace="state.workspace"
+              :workspace-id="activeWorkspaceId"
               :multiple-workspaces="multipleWorkspaces"
               @add-worker="addWorker"
               @configure-worker="configureSlot = $event"
@@ -1527,7 +1568,7 @@ const app = createApp({
               :worker="state.layout?.slots?.[ft.slotIndex]"
               :slot-index="ft.slotIndex"
               :task="focusTask(ft.slotIndex)"
-              :output-lines="outputBuffers[ft.slotIndex]"
+              :output-lines="outputLinesForSlot(ft.slotIndex, ft.workspaceId)"
               @stop="stopWorkerSlot(ft.slotIndex)"
               @close="closeFocusTab(ft.slotIndex)"
             />

@@ -1,5 +1,5 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'isVerticalResizing', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed', 'vertical-resize-start'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
@@ -119,6 +119,7 @@ const WorkerCard = {
     this._timer = setInterval(() => this.updateElapsed(), 1000);
     this.updateElapsed();
     this.recalculateTitlePortVisibility();
+    this.ensureOutputCatchup();
     if (typeof ResizeObserver !== 'undefined') {
       this._titleResizeObserver = new ResizeObserver(() => this.recalculateTitlePortVisibility());
       if (this.$refs.titleRow) this._titleResizeObserver.observe(this.$refs.titleRow);
@@ -300,6 +301,12 @@ const WorkerCard = {
     showVerticalResizeHandle() {
       return !!(this.isSelected && (this.hoveredVerticalResize || this.isVerticalResizing));
     },
+    outputRequestToken() {
+      const taskId = this.worker?.task_queue?.[0] || '';
+      const startedAt = this.worker?.started_at || '';
+      const serviceStartedAt = this.worker?.service_state?.started_at || '';
+      return `${this.workerState}|${taskId}|${startedAt}|${serviceStartedAt}`;
+    },
     verticalResizeHandleStyle() {
       const width = 42;
       const cardWidth = this.$el?.getBoundingClientRect?.().width || 220;
@@ -320,8 +327,27 @@ const WorkerCard = {
     titlePortCandidate() {
       this.$nextTick(() => this.recalculateTitlePortVisibility());
     },
+    showOutputPane() {
+      this.$nextTick(() => this.ensureOutputCatchup());
+    },
+    workerState() {
+      this.$nextTick(() => this.ensureOutputCatchup(true));
+    },
+    outputRequestToken() {
+      this.$nextTick(() => this.ensureOutputCatchup(true));
+    },
   },
   methods: {
+    ensureOutputCatchup(force = false) {
+      if (typeof this.requestOutputCatchup !== 'function') return;
+      if (!this.showOutputPane) return;
+      if (!(this.isWorking || this.isService)) return;
+      this.requestOutputCatchup(this.slotIndex, {
+        workspaceId: this.workspaceId,
+        workerType: this.worker?.type,
+        force,
+      });
+    },
     recalculateTitlePortVisibility() {
       const suffix = this.titlePortCandidate;
       if (!suffix) {

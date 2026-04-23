@@ -27,6 +27,19 @@ def test_worker_focus_template_and_stream_handlers_exist():
     assert "<WorkerFocusView" in text, "WorkerFocusView should be rendered from root template"
     assert "socket.on('worker:output'" in text, "worker:output handler must exist"
     assert "socket.on('worker:output:done'" in text, "worker:output:done handler must exist"
+    assert "function _outputBufferKey(slot, workspaceId = activeWorkspaceId.value)" in text
+    assert "function outputLinesForSlot(slot, workspaceId = activeWorkspaceId.value)" in text
+    assert "const wsId = data.workspaceId || activeWorkspaceId.value;" in text
+    assert ":output-lines=\"outputLinesForSlot(ft.slotIndex, ft.workspaceId)\"" in text
+
+
+def test_worker_focus_and_card_preview_share_workspace_scoped_catchup_requests():
+    text = _app_js_text()
+    assert "function requestOutputCatchup(slot, options = {})" in text
+    assert "socket.emit('service:tail', { workspaceId, slot });" in text
+    assert "socket.emit('worker:output:request', { workspaceId, slot });" in text
+    assert "requestOutputCatchup(slotIndex, {" in text
+    assert "force: true," in text
 
 
 def test_worker_focus_terminal_colors_are_theme_driven():

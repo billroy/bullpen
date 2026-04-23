@@ -15,8 +15,13 @@ def test_worker_card_accepts_selected_card_height_and_resize_props():
     assert "'cardHeight'" in text
     assert "'isSelected'" in text
     assert "'isVerticalResizing'" in text
+    assert "'workspaceId'" in text
+    assert "'requestOutputCatchup'" in text
     assert "'vertical-resize-start'" in text
     assert "effectiveLayoutMode()" in text
+    assert "this.ensureOutputCatchup();" in text
+    assert "outputRequestToken()" in text
+    assert "this.requestOutputCatchup(this.slotIndex, {" in text
 
 
 def test_worker_card_bottom_hover_prefers_vertical_resize_outside_pass_down_zone():
@@ -43,6 +48,9 @@ def test_bullpen_tab_wires_resize_events_and_clamps_to_global_height_limits():
     text = _read("static/components/BullpenTab.js")
     assert ":card-height=\"cardHeightForSlot(item.slotIndex)\"" in text
     assert ":is-vertical-resizing=\"cardVerticalResize && cardVerticalResize.slotIndex === item.slotIndex\"" in text
+    assert ":output-lines=\"$root.outputLinesForSlot(item.slotIndex, workspaceId)\"" in text
+    assert ":workspace-id=\"workspaceId\"" in text
+    assert ":request-output-catchup=\"$root.requestOutputCatchup\"" in text
     assert "@vertical-resize-start=\"onCardVerticalResizeStart(item, $event)\"" in text
     assert "cardExpansionLimit()" in text
     assert "Math.max(0, 480 - this.rowHeight)" in text

@@ -3,7 +3,7 @@ const BullpenTab = {
   HEADER_WIDTH: 40,
   HEADER_HEIGHT: 24,
   MINIMAP_HEADER_PX: 30,
-  props: ['layout', 'config', 'profiles', 'tasks', 'workspace', 'multipleWorkspaces'],
+  props: ['layout', 'config', 'profiles', 'tasks', 'workspace', 'workspaceId', 'multipleWorkspaces'],
   emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker'],
   components: { WorkerCard },
   data() {
@@ -109,13 +109,15 @@ const BullpenTab = {
             :worker="item.worker"
             :slot-index="item.slotIndex"
             :tasks="tasks"
-            :output-lines="$root.outputBuffers?.[item.slotIndex] || []"
+            :output-lines="$root.outputLinesForSlot(item.slotIndex, workspaceId)"
             :multiple-workspaces="multipleWorkspaces"
             :neighbor-slots="neighborSlotsMap[item.slotIndex]"
             :layout-mode="layoutMode"
             :card-height="cardHeightForSlot(item.slotIndex)"
             :is-selected="isSelected(item.coord)"
             :is-vertical-resizing="cardVerticalResize && cardVerticalResize.slotIndex === item.slotIndex"
+            :workspace-id="workspaceId"
+            :request-output-catchup="$root.requestOutputCatchup"
             :build-worker-drag-payload="buildWorkerDragPayload"
             :build-worker-drag-image="buildWorkerDragImage"
             :can-drop-worker-at-slot="canDropWorkerAtSlot"
