@@ -1157,9 +1157,19 @@ const BullpenTab = {
       this.selectedAddCoord = null;
       this.$nextTick(() => this.$refs.viewport?.focus());
     },
-    addFromLibrary(profileId) {
-      this.$emit('add-worker', { coord: this.selectedAddCoord, profile: profileId, type: 'ai' });
+    createWorkerAndOpenConfig({ type, profile, fields }) {
+      const slot = this.nextEmptySlotIndex();
+      this.$emit('add-worker', {
+        coord: this.selectedAddCoord,
+        profile,
+        type,
+        fields,
+      });
+      this.$emit('configure-worker', slot);
       this.closeLibrary();
+    },
+    addFromLibrary(profileId) {
+      this.createWorkerAndOpenConfig({ profile: profileId, type: 'ai' });
     },
     addShellWorker(example) {
       const fields = { name: 'Shell worker', activation: 'on_drop' };
@@ -1175,17 +1185,13 @@ const BullpenTab = {
             .map(e => ({ key: String(e.key), value: String(e.value || '') }));
         }
       }
-      this.$emit('add-worker', {
-        coord: this.selectedAddCoord,
+      this.createWorkerAndOpenConfig({
         type: 'shell',
         fields,
       });
-      this.closeLibrary();
     },
     addServiceWorker() {
-      const slot = this.nextEmptySlotIndex();
-      this.$emit('add-worker', {
-        coord: this.selectedAddCoord,
+      this.createWorkerAndOpenConfig({
         type: 'service',
         fields: {
           name: 'Service worker',
@@ -1193,8 +1199,6 @@ const BullpenTab = {
           ticket_action: 'start-if-stopped-else-restart',
         },
       });
-      this.$emit('configure-worker', slot);
-      this.closeLibrary();
     },
     nextEmptySlotIndex() {
       const slots = this.layout?.slots || [];
