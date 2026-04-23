@@ -39,6 +39,7 @@ from server.worker_types import ViewerContext, get_worker_type, normalize_layout
 from server.workspace_manager import WorkspaceManager
 from server import service_worker as service_worker_mod
 from server import mcp_auth
+from server import worktrees as worktree_mod
 
 
 socketio = SocketIO()
@@ -1214,6 +1215,12 @@ def reconcile(bp_dir):
             watched_columns.add(slot["watch_column"])
     for col in watched_columns:
         worker_mod.check_watch_columns(bp_dir, col)
+
+    workspace = os.path.dirname(bp_dir)
+    try:
+        worktree_mod.reconcile_worktrees(workspace, bp_dir)
+    except Exception:
+        pass
 
 
 def load_state(bp_dir, workspace, workspace_display=None):

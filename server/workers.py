@@ -25,6 +25,7 @@ from server.usage import (
     usage_to_legacy_tokens,
 )
 from server import tasks as task_mod
+from server import worktrees as worktree_mod
 from server.model_aliases import normalize_model
 from server.prompt_hardening import (
     TRUST_MODE_UNTRUSTED,
@@ -100,6 +101,8 @@ def _stop_proc_with_timeout(proc, *, graceful_timeout=5, force_timeout=5):
 _processes = {}
 _process_lock = threading.Lock()
 _cancelled_runs = set()
+_deferred_start_threads = set()
+_deferred_start_lock = threading.Lock()
 
 
 def _request_process_shutdown(proc):
@@ -109,6 +112,39 @@ def _request_process_shutdown(proc):
 
     def _shutdown():
         _stop_proc_with_timeout(proc)
+
+    threading.Thread(target=_shutdown, daemon=True).start()
+
+
+def _request_process_shutdown_and_cleanup(bp_dir, entry):
+    """Stop a subprocess and best-effort remove its worktree if it had one."""
+    if not entry:
+        return
+
+    proc = entry.get("proc")
+    uses_worktree = bool(entry.get("uses_worktree"))
+    task_id = entry.get("task_id")
+    worktree_path = entry.get("worktree_path")
+
+    if not uses_worktree:
+        _request_process_shutdown(proc)
+        return
+
+    def _shutdown():
+        _stop_proc_with_timeout(proc)
+        if not uses_worktree or not task_id:
+            return
+        try:
+            workspace = os.path.dirname(bp_dir)
+            worktree_mod.remove_worktree(
+                workspace,
+                bp_dir,
+                task_id,
+                worktree_dir=worktree_path,
+            )
+        except Exception:
+            # Explicit stop/yank cleanup is best-effort; startup reconcile is the backstop.
+            pass
 
     threading.Thread(target=_shutdown, daemon=True).start()
 
@@ -171,12 +207,59 @@ def _timestamp_id():
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
 
 
+def _persist_git_metadata(bp_dir, task_id, *, branch_name=None, commit_hash=None, pr_url=None):
+    """Write durable Git outputs back to the ticket when present."""
+    fields = {}
+    if branch_name:
+        fields["branch_name"] = branch_name
+    if commit_hash:
+        fields["commit_hash"] = commit_hash
+    if pr_url:
+        fields["pr_url"] = pr_url
+    if fields:
+        task_mod.update_task(bp_dir, task_id, fields)
+
+
+def _cleanup_run_worktree(bp_dir, task_id, worktree_info):
+    """Remove the ephemeral worktree for a run."""
+    if not worktree_info:
+        return
+    workspace = os.path.dirname(bp_dir)
+    worktree_mod.remove_worktree(
+        workspace,
+        bp_dir,
+        task_id,
+        worktree_dir=worktree_info.get("path"),
+    )
+
+
 def _worker_trust_mode(worker):
     return normalize_trust_mode((worker or {}).get("trust_mode"))
 
 
 def _auto_actions_allowed(worker):
     return _worker_trust_mode(worker) != TRUST_MODE_UNTRUSTED
+
+
+def _history_detail_single_line(value):
+    """Flatten multiline text so inline frontmatter objects stay parseable."""
+    return " ".join(str(value or "").splitlines()).strip()
+
+
+def _normalize_history_rows(raw_history):
+    """Return a list of dict rows even when legacy/broken entries exist."""
+    if not isinstance(raw_history, list):
+        return []
+    normalized = []
+    for row in raw_history:
+        if isinstance(row, dict):
+            normalized.append(row)
+        elif row not in (None, ""):
+            normalized.append({
+                "event": "legacy",
+                "detail": _history_detail_single_line(row),
+            })
+    return normalized
 
 
 def _shell_workers_enabled(bp_dir):
@@ -348,6 +431,48 @@ def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None,
     return task
 
 
+def _defer_start_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_task_id=None):
+    """Start a worker after the current event path unwinds.
+
+    This avoids re-entering worker startup from inside Socket.IO handlers that
+    already hold the shared write lock. The deferred runner re-checks that the
+    worker is still idle and still has queued work before starting.
+    """
+    def _run():
+        try:
+            time.sleep(0)
+            if not os.path.isdir(bp_dir):
+                return
+            if not os.path.exists(os.path.join(bp_dir, "layout.json")):
+                return
+            if not os.path.exists(os.path.join(bp_dir, "config.json")):
+                return
+            try:
+                layout = _load_layout(bp_dir)
+            except FileNotFoundError:
+                return
+            slots = layout.get("slots", [])
+            if slot_index >= len(slots):
+                return
+            worker = slots[slot_index]
+            if not worker or worker.get("state") != "idle":
+                return
+            queue = worker.get("task_queue", [])
+            if not queue:
+                return
+            if expected_task_id and expected_task_id not in queue:
+                return
+            start_worker(bp_dir, slot_index, socketio, ws_id)
+        finally:
+            with _deferred_start_lock:
+                _deferred_start_threads.discard(threading.current_thread())
+
+    thread = threading.Thread(target=_run, daemon=True)
+    with _deferred_start_lock:
+        _deferred_start_threads.add(thread)
+    thread.start()
+
+
 def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None, preserve_handoff_depth=False):
     """Add task to worker's queue, update ticket status.
 
@@ -382,7 +507,7 @@ def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None, preserve
     # Check if worker should auto-start
     activation = worker.get("activation", "on_drop")
     if activation in ("on_drop", "on_queue") and worker.get("state") == "idle":
-        start_worker(bp_dir, slot_index, socketio, ws_id)
+        _defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=task_id)
     elif activation == "manual" and socketio:
         _ws_emit(socketio, "toast", {
             "message": f"Task queued on {worker.get('name', 'worker')}. Use Run to start this manual worker.",
@@ -495,6 +620,7 @@ def _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id):
     """
     worker["state"] = "working"
     worker["started_at"] = _now_iso()
+    worker["last_trigger_time"] = int(time.time())
     task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
     _save_layout(bp_dir, layout)
 
@@ -536,22 +662,37 @@ def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
     workspace = os.path.dirname(bp_dir)  # workspace is parent of .bullpen
 
     agent_cwd = workspace
+    worktree_info = None
     if worker.get("use_worktree"):
         try:
-            agent_cwd = _setup_worktree(workspace, bp_dir, task_id)
+            worktree_info = worktree_mod.setup_worktree(workspace, bp_dir, task_id)
+            agent_cwd = worktree_info["path"]
         except Exception as e:
-            _on_agent_error(bp_dir, slot_index, task_id, f"Worktree setup failed: {e}", socketio, ws_id=ws_id)
+            _on_agent_error(
+                bp_dir,
+                slot_index,
+                task_id,
+                f"Worktree setup failed: {e}",
+                socketio,
+                ws_id=ws_id,
+                non_retryable=True,
+                max_retries_override=0,
+                worktree_info=worktree_info,
+            )
             return
 
     argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
     argv = harden_agent_argv(agent_name, argv, trust_mode=_worker_trust_mode(worker))
 
-    config = read_json(os.path.join(bp_dir, "config.json"))
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except FileNotFoundError:
+        return
     timeout = config.get("agent_timeout_seconds", 600)
 
     thread = threading.Thread(
         target=_run_agent,
-        args=(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, agent_cwd, socketio, ws_id),
+        args=(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, agent_cwd, socketio, ws_id, worktree_info),
         daemon=True,
     )
     thread.start()
@@ -822,26 +963,36 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Stop a working agent. Task goes back to Assigned."""
     layout = _load_layout(bp_dir)
     worker = layout["slots"][slot_index]
-    proc = None
+    entry = None
     if worker:
         worker["state"] = "idle"
         queue = worker.get("task_queue", [])
         if queue:
             task_id = queue[0]
             entry = _detach_process_entry(ws_id, slot_index, task_id=task_id)
-            proc = entry["proc"] if entry else None
+            if entry is None:
+                entry = _detach_process_entry(ws_id, task_id=task_id)
+            if entry is None:
+                entry = _detach_process_entry(None, slot_index, task_id=task_id)
+            if entry is None:
+                entry = _detach_process_entry(None, task_id=task_id)
             task_mod.update_task(bp_dir, task_id, {"status": "assigned"})
             if socketio:
                 task = task_mod.read_task(bp_dir, task_id)
                 _ws_emit(socketio, "task:updated", task, ws_id)
         else:
             entry = _detach_process_entry(ws_id, slot_index)
-            proc = entry["proc"] if entry else None
+            if entry is None:
+                entry = _detach_process_entry(ws_id)
+            if entry is None:
+                entry = _detach_process_entry(None, slot_index)
+            if entry is None:
+                entry = _detach_process_entry(None)
 
         _save_layout(bp_dir, layout)
         if socketio:
             _ws_emit(socketio, "layout:updated", layout, ws_id)
-    _request_process_shutdown(proc)
+    _request_process_shutdown_and_cleanup(bp_dir, entry)
 
 
 def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
@@ -892,7 +1043,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
     )
 
     # Kill the subprocess if this task is actively running
-    proc = None
+    entry = None
     if is_running:
         if worker.get("type") == "service":
             from server import service_worker as service_worker_mod
@@ -900,7 +1051,6 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
         entry = _detach_process_entry(ws_id, slot_index, task_id=task_id)
         if entry is None:
             entry = _detach_process_entry(ws_id, task_id=task_id)
-        proc = entry["proc"] if entry else None
         worker["state"] = "idle"
 
     # Remove every stale queue reference, not just the first one found.
@@ -920,7 +1070,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
     if is_running and queue and worker.get("activation") in ("on_drop", "on_queue"):
         start_worker(bp_dir, slot_index, socketio, ws_id)
 
-    _request_process_shutdown(proc)
+    _request_process_shutdown_and_cleanup(bp_dir, entry)
 
     return True
 
@@ -982,14 +1132,14 @@ def _assemble_prompt(bp_dir, worker, task):
 
 
 def _auto_commit(cwd, task_title, task_id):
-    """Stage all changes and commit. Returns commit hash or None."""
+    """Stage all changes and commit. Returns commit hash or None for no-op."""
     # Stage all changes
     result = subprocess.run(
         ["git", "add", "-A"],
         cwd=cwd, capture_output=True, text=True,
     )
     if result.returncode != 0:
-        return None
+        raise RuntimeError(f"git add failed: {result.stderr.strip()}")
 
     # Check if there's anything to commit
     result = subprocess.run(
@@ -999,6 +1149,8 @@ def _auto_commit(cwd, task_title, task_id):
     if result.returncode == 0:
         # Nothing staged
         return None
+    if result.returncode not in (0, 1):
+        raise RuntimeError(f"git diff --cached failed: {result.stderr.strip()}")
 
     # Commit
     msg = f"bullpen: {task_title} [{task_id}]"
@@ -1007,20 +1159,22 @@ def _auto_commit(cwd, task_title, task_id):
         cwd=cwd, capture_output=True, text=True,
     )
     if result.returncode != 0:
-        return None
+        raise RuntimeError(f"git commit failed: {result.stderr.strip()}")
 
     # Get commit hash
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=cwd, capture_output=True, text=True,
     )
-    return result.stdout.strip() if result.returncode == 0 else None
+    if result.returncode != 0:
+        raise RuntimeError(f"git rev-parse failed: {result.stderr.strip()}")
+    return result.stdout.strip()
 
 
 def _auto_pr(cwd, task_title, task_id, branch_name):
-    """Push branch and create PR. Returns PR URL or error string."""
+    """Push branch and create PR. Returns PR URL."""
     if not shutil.which("gh"):
-        return "Error: gh CLI not available"
+        raise RuntimeError("gh CLI not available")
 
     # Push branch
     result = subprocess.run(
@@ -1028,7 +1182,7 @@ def _auto_pr(cwd, task_title, task_id, branch_name):
         cwd=cwd, capture_output=True, text=True,
     )
     if result.returncode != 0:
-        return f"Push failed: {result.stderr.strip()}"
+        raise RuntimeError(f"Push failed: {result.stderr.strip()}")
 
     # Create PR
     result = subprocess.run(
@@ -1038,34 +1192,14 @@ def _auto_pr(cwd, task_title, task_id, branch_name):
         cwd=cwd, capture_output=True, text=True,
     )
     if result.returncode != 0:
-        return f"PR creation failed: {result.stderr.strip()}"
+        raise RuntimeError(f"PR creation failed: {result.stderr.strip()}")
 
     return result.stdout.strip()
 
 
 def _setup_worktree(workspace, bp_dir, task_id):
     """Create a git worktree for isolated agent execution. Returns worktree path."""
-    # Verify workspace is a git repo
-    result = subprocess.run(
-        ["git", "rev-parse", "--git-dir"],
-        cwd=workspace, capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError("Workspace is not a git repository")
-
-    worktree_dir = os.path.join(bp_dir, "worktrees", task_id)
-    branch_name = f"bullpen/{task_id}"
-
-    os.makedirs(os.path.dirname(worktree_dir), exist_ok=True)
-
-    result = subprocess.run(
-        ["git", "worktree", "add", worktree_dir, "-b", branch_name],
-        cwd=workspace, capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"git worktree add failed: {result.stderr.strip()}")
-
-    return worktree_dir
+    return worktree_mod.setup_worktree(workspace, bp_dir, task_id)["path"]
 
 
 MAX_OUTPUT_BUFFER = 100_000  # 100KB server-side buffer for live display
@@ -1105,6 +1239,7 @@ class SubprocessRunner:
         ws_id=None,
         line_formatter=None,
         line_observer=None,
+        worktree_info=None,
     ):
         self.bp_dir = bp_dir
         self.slot_index = slot_index
@@ -1118,6 +1253,7 @@ class SubprocessRunner:
         self.ws_id = ws_id
         self.line_formatter = line_formatter or (lambda line: line.rstrip("\n"))
         self.line_observer = line_observer
+        self.worktree_info = worktree_info or {}
         self.timed_out = False
         self.run_id = None
         self.proc = None
@@ -1149,6 +1285,9 @@ class SubprocessRunner:
             "task_id": self.task_id,
             "buffer_size": 0,
             "run_id": self.run_id,
+            "uses_worktree": bool(self.worktree_info),
+            "worktree_path": self.worktree_info.get("path"),
+            "branch_name": self.worktree_info.get("branch_name"),
         }
         with _process_lock:
             _processes[(self.ws_id, self.slot_index)] = entry
@@ -1576,7 +1715,7 @@ def _append_shell_run_record(bp_dir, task_id, worker, slot_index, result, comple
     stdout_rel = os.path.relpath(stdout_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
     stderr_rel = os.path.relpath(stderr_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
     timestamp = _now_iso()
-    history = list(task.get("history") or [])
+    history = _normalize_history_rows(task.get("history") or [])
     row = {
         "timestamp": timestamp,
         "event": "worker_run",
@@ -1756,7 +1895,7 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message):
             pass
 
 
-def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None):
+def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None, worktree_info=None):
     """Run agent subprocess with streaming stdout and handle completion."""
     runner = None
     try:
@@ -1842,11 +1981,21 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 ws_id=ws_id,
                 line_formatter=adapter.format_stream_line,
                 line_observer=_observe_agent_line,
+                worktree_info=worktree_info,
             )
             completed = runner.run()
         except FileNotFoundError:
-            _block_agent_start_failure(
-                bp_dir, slot_index, task_id, adapter.unavailable_message(), socketio, ws_id,
+            _on_agent_error(
+                bp_dir,
+                slot_index,
+                task_id,
+                adapter.unavailable_message(),
+                socketio,
+                ws_id=ws_id,
+                non_retryable=True,
+                max_retries_override=0,
+                run_id=runner.run_id if runner else None,
+                worktree_info=worktree_info,
             )
             return
 
@@ -1861,6 +2010,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 socketio,
                 ws_id=ws_id,
                 run_id=runner.run_id if runner else None,
+                worktree_info=worktree_info,
             )
             return
 
@@ -1894,6 +2044,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 ws_id,
                 result.get("usage", {}),
                 run_id=runner.run_id if runner else None,
+                worktree_info=worktree_info,
             )
         else:
             error_text = result.get("error", "Unknown error")
@@ -1908,6 +2059,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 ws_id,
                 non_retryable=is_non_retryable_provider_error(adapter.name, error_text, output_text, stderr),
                 run_id=runner.run_id if runner else None,
+                worktree_info=worktree_info,
             )
 
     except Exception as e:
@@ -1919,6 +2071,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             socketio,
             ws_id=ws_id,
             run_id=runner.run_id if runner else None,
+            worktree_info=worktree_info,
         )
     finally:
         with _process_lock:
@@ -2101,10 +2254,12 @@ def _on_agent_success(
     output_appender=None,
     allow_auto_actions=True,
     run_id=None,
+    worktree_info=None,
 ):
     """Handle successful agent completion."""
     if _consume_cancelled_run(run_id):
         return
+    cleanup_pending = bool(worktree_info)
     try:
         with _write_lock:
             layout = _load_layout(bp_dir)
@@ -2135,6 +2290,10 @@ def _on_agent_success(
             else:
                 _append_output(bp_dir, task_id, worker, output)
 
+            branch_name = worktree_info.get("branch_name") if worktree_info else None
+            commit_hash = None
+            pr_url = None
+
             # Auto-commit if enabled
             if allow_auto_actions and _auto_actions_allowed(worker) and worker.get("auto_commit") and agent_cwd:
                 task = task_mod.read_task(bp_dir, task_id)
@@ -2145,9 +2304,27 @@ def _on_agent_success(
 
                     # Auto-PR if enabled (requires worktree + auto-commit)
                     if worker.get("auto_pr") and worker.get("use_worktree"):
-                        branch_name = f"bullpen/{task_id}"
-                        pr_result = _auto_pr(agent_cwd, task_title, task_id, branch_name)
-                        _append_output(bp_dir, task_id, worker, f"PR: {pr_result}")
+                        branch_name = branch_name or f"bullpen/{task_id}"
+                        pr_url = _auto_pr(agent_cwd, task_title, task_id, branch_name)
+                        _append_output(bp_dir, task_id, worker, f"PR: {pr_url}")
+
+            _persist_git_metadata(
+                bp_dir,
+                task_id,
+                branch_name=branch_name,
+                commit_hash=commit_hash,
+                pr_url=pr_url,
+            )
+
+        if cleanup_pending:
+            _cleanup_run_worktree(bp_dir, task_id, worktree_info)
+            cleanup_pending = False
+
+        with _write_lock:
+            layout = _load_layout(bp_dir)
+            worker = layout["slots"][slot_index]
+            if not worker:
+                return
 
             # Remove from queue
             queue = worker.get("task_queue", [])
@@ -2218,6 +2395,7 @@ def _on_agent_success(
             non_retryable=True,
             max_retries_override=0,
             run_id=run_id,
+            worktree_info=worktree_info if cleanup_pending else None,
         )
 
 
@@ -2340,10 +2518,18 @@ def _on_agent_error(
     non_retryable=False,
     max_retries_override=None,
     run_id=None,
+    worktree_info=None,
 ):
     """Handle agent failure. Retry or block."""
     if _consume_cancelled_run(run_id):
         return
+    if worktree_info:
+        try:
+            _cleanup_run_worktree(bp_dir, task_id, worktree_info)
+        except Exception as cleanup_exc:
+            error_msg = f"{error_msg}\nWorktree cleanup failed: {cleanup_exc}"
+            non_retryable = True
+            max_retries_override = 0
     should_retry = False
     retry_delay = 0
     should_advance = False
@@ -2372,13 +2558,17 @@ def _on_agent_error(
             return
 
         # Count existing retries from history
-        history = task.get("history", [])
+        history = _normalize_history_rows(task.get("history", []))
         retry_count = sum(1 for h in history if h.get("event") == "retry")
 
         if (not non_retryable) and retry_count < max_retries:
             # Retry with backoff
             retry_delay = 5 * (retry_count + 1)
-            history.append({"timestamp": _now_iso(), "event": "retry", "detail": error_msg})
+            history.append({
+                "timestamp": _now_iso(),
+                "event": "retry",
+                "detail": _history_detail_single_line(error_msg),
+            })
             task_mod.update_task(bp_dir, task_id, {"history": history})
 
             if output:

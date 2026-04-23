@@ -13,6 +13,7 @@ from server.init import init_workspace
 from server.persistence import read_json, write_json
 from server.app import reconcile
 from server.tasks import create_task, read_task, update_task
+from server.worktrees import remove_worktree, reconcile_worktrees, setup_worktree
 from server.workers import (
     assign_task,
     check_watch_columns,
@@ -41,8 +42,11 @@ def _wait_for_worker_threads(timeout=3.0):
     deadline = time.time() + timeout
     while time.time() < deadline:
         with workers_mod._process_lock:
-            if not _processes:
-                return True
+            no_processes = not _processes
+        with workers_mod._deferred_start_lock:
+            active_deferred = [t for t in workers_mod._deferred_start_threads if t.is_alive()]
+        if no_processes and not active_deferred:
+            return True
         time.sleep(0.02)
     return False
 
@@ -387,6 +391,86 @@ class TestWorkerReconcile:
         assert updated_layout["slots"][worker_slot]["task_queue"] == []
         assert (None, worker_slot) not in _processes
         assert stop_calls == [fake_proc]
+
+    def test_stop_falls_back_to_task_lookup_when_ws_id_mismatch(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Stop fallback task")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "working"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        stop_calls = []
+
+        class FakeProc:
+            def poll(self):
+                return None
+
+        monkeypatch.setattr(workers_mod, "_request_process_shutdown", lambda proc: stop_calls.append(proc))
+        fake_proc = FakeProc()
+        _processes[(None, worker_slot)] = {
+            "proc": fake_proc,
+            "buffer": [],
+            "buffer_size": 0,
+            "task_id": task["id"],
+            "run_id": "run-stop-fallback-1",
+        }
+
+        stop_worker(bp_dir, worker_slot, ws_id="real-workspace")
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "assigned"
+        assert str(updated["assigned_to"]) == str(worker_slot)
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert (None, worker_slot) not in _processes
+        assert stop_calls == [fake_proc]
+
+    def test_on_agent_error_normalizes_string_history_rows(self, bp_dir, worker_slot):
+        task = create_task(bp_dir, "Malformed history task")
+        update_task(bp_dir, task["id"], {
+            "status": "in_progress",
+            "assigned_to": str(worker_slot),
+            "history": ["{timestamp: broken, event: retry, detail: multiline error}"],
+        })
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "working"
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        _on_agent_error(
+            bp_dir,
+            worker_slot,
+            task["id"],
+            "Worktree setup failed:\nbranch already exists",
+            None,
+            non_retryable=True,
+            max_retries_override=0,
+        )
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+        assert all(isinstance(row, dict) for row in updated.get("history", []))
+
+    def test_worktree_setup_failure_is_non_retryable(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Worktree failure task")
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["use_worktree"] = True
+        layout["slots"][worker_slot]["max_retries"] = 3
+        layout["slots"][worker_slot]["activation"] = "on_drop"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        monkeypatch.setattr(workers_mod, "_setup_worktree", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("branch exists")))
+
+        assign_task(bp_dir, worker_slot, task["id"])
+        time.sleep(0.3)
+
+        updated = read_task(bp_dir, task["id"])
+        history = updated.get("history", [])
+        retries = [row for row in history if row.get("event") == "retry"]
+        assert updated["status"] == "blocked"
+        assert retries == []
 
     def test_stop_detaches_run_and_ignores_late_error(self, bp_dir, worker_slot, monkeypatch):
         task = create_task(bp_dir, "Late error stop")
@@ -947,6 +1031,25 @@ class TestWorktree:
         )
         assert "bullpen/test-task-1" in result.stdout
 
+        remove_worktree(tmp_workspace, bp_dir, "test-task-1")
+
+    def test_worktree_reuses_existing_branch_with_fresh_checkout(self, tmp_workspace):
+        subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
+
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+
+        first = setup_worktree(tmp_workspace, bp_dir, "test-task-branch-reuse")
+        assert os.path.isdir(first["path"])
+        remove_worktree(tmp_workspace, bp_dir, "test-task-branch-reuse", worktree_dir=first["path"])
+
+        second = setup_worktree(tmp_workspace, bp_dir, "test-task-branch-reuse")
+        assert os.path.isdir(second["path"])
+        assert second["branch_name"] == "bullpen/test-task-branch-reuse"
+
+        remove_worktree(tmp_workspace, bp_dir, "test-task-branch-reuse", worktree_dir=second["path"])
+
     def test_worktree_not_git_repo(self, tmp_workspace):
         """Worktree setup fails gracefully when not a git repo."""
         bp_dir = os.path.join(tmp_workspace, ".bullpen")
@@ -956,19 +1059,30 @@ class TestWorktree:
             _setup_worktree(tmp_workspace, bp_dir, "test-task-2")
 
     def test_worktree_path_passed_as_cwd(self, tmp_workspace):
-        """Worker with use_worktree passes worktree path as agent cwd."""
+        """Worker with use_worktree passes worktree path as agent cwd and cleans it up."""
         subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
         subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
 
         bp_dir = init_workspace(tmp_workspace)
-        register_adapter("mock", MockAdapter(output="Worktree output"))
+        captured = {}
+
+        class CwdCapturingAdapter(MockAdapter):
+            @property
+            def name(self):
+                return "cwd-capturing"
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                captured["cwd"] = workspace
+                return super().build_argv(prompt, model, workspace, bp_dir=bp_dir)
+
+        register_adapter("cwd-capturing", CwdCapturingAdapter(output="Worktree output"))
 
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{
             "row": 0, "col": 0,
             "profile": "test",
             "name": "Worktree Worker",
-            "agent": "mock",
+            "agent": "cwd-capturing",
             "model": "mock-model",
             "activation": "manual",
             "disposition": "review",
@@ -986,9 +1100,26 @@ class TestWorktree:
         start_worker(bp_dir, 0)
         time.sleep(0.5)
 
-        # Verify worktree directory was created
         worktree_path = os.path.join(bp_dir, "worktrees", task["id"])
-        assert os.path.isdir(worktree_path)
+        updated = read_task(bp_dir, task["id"])
+        assert captured["cwd"] == worktree_path
+        assert not os.path.exists(worktree_path)
+        assert updated["branch_name"] == f"bullpen/{task['id']}"
+
+    def test_reconcile_worktrees_removes_stale_directory(self, tmp_workspace):
+        subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
+
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        stale = os.path.join(bp_dir, "worktrees", "stale-task")
+        os.makedirs(stale, exist_ok=True)
+        with open(os.path.join(stale, "junk.txt"), "w") as handle:
+            handle.write("stale")
+
+        notes = reconcile_worktrees(tmp_workspace, bp_dir)
+
+        assert any("Removed stale worktree directory" in note for note in notes)
+        assert not os.path.exists(stale)
 
 
 class TestAutoCommit:
@@ -1021,25 +1152,25 @@ class TestAutoCommit:
         assert commit_hash is None
 
     def test_auto_commit_not_git_repo(self, tmp_workspace):
-        """Auto-commit returns None gracefully when not a git repo."""
+        """Auto-commit raises when the run cwd is not a git repo."""
         with open(os.path.join(tmp_workspace, "output.txt"), "w") as f:
             f.write("agent output")
 
-        commit_hash = _auto_commit(tmp_workspace, "Test Task", "task-789")
-        assert commit_hash is None
+        with pytest.raises(RuntimeError, match="git add failed"):
+            _auto_commit(tmp_workspace, "Test Task", "task-789")
 
 
 class TestAutoPR:
     def test_auto_pr_no_gh(self, tmp_workspace, monkeypatch):
-        """Auto-PR returns error when gh CLI is not available."""
+        """Auto-PR raises when gh CLI is not available."""
         import shutil as _shutil
         monkeypatch.setattr(_shutil, "which", lambda x: None)
         from server.workers import _auto_pr
-        result = _auto_pr(tmp_workspace, "Test", "task-1", "bullpen/task-1")
-        assert "gh CLI not available" in result
+        with pytest.raises(RuntimeError, match="gh CLI not available"):
+            _auto_pr(tmp_workspace, "Test", "task-1", "bullpen/task-1")
 
     def test_auto_pr_push_failure(self, tmp_workspace):
-        """Auto-PR returns error when push fails (no remote)."""
+        """Auto-PR raises when push fails (no remote)."""
         subprocess.run(["git", "init"], cwd=tmp_workspace, capture_output=True)
         subprocess.run(["git", "commit", "--allow-empty", "-m", "init"], cwd=tmp_workspace, capture_output=True)
 
@@ -1047,8 +1178,8 @@ class TestAutoPR:
         if not shutil.which("gh"):
             pytest.skip("gh CLI not available")
 
-        result = _auto_pr(tmp_workspace, "Test", "task-1", "main")
-        assert "Push failed" in result or "Error" in result
+        with pytest.raises(RuntimeError, match="Push failed|Error"):
+            _auto_pr(tmp_workspace, "Test", "task-1", "main")
 
 
 class TestHandoff:
@@ -1595,6 +1726,39 @@ class TestWatchColumn:
         assert updated_t1["status"] == "review"
         assert updated_t2["status"] == "review"
 
+    def test_sequential_watch_claims_rotate_by_last_trigger_time(self, bp_dir):
+        """Sequential claims should rotate to the least-recently-triggered watcher."""
+        register_adapter("mock", MockAdapter(output="Sequential output"))
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        base = {
+            "profile": "test", "agent": "mock", "model": "mock-model",
+            "activation": "on_queue", "disposition": "review",
+            "watch_column": "approved", "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+            "paused": False, "last_trigger_time": None,
+        }
+        layout["slots"] = [
+            {**base, "row": 0, "col": 0, "name": "W1"},
+            {**base, "row": 0, "col": 1, "name": "W2"},
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        from server.tasks import update_task
+        t1 = create_task(bp_dir, "First approved")
+        update_task(bp_dir, t1["id"], {"status": "approved"})
+        check_watch_columns(bp_dir, "approved")
+        time.sleep(0.5)
+
+        t2 = create_task(bp_dir, "Second approved")
+        update_task(bp_dir, t2["id"], {"status": "approved"})
+        check_watch_columns(bp_dir, "approved")
+        time.sleep(0.5)
+
+        updated_t1 = read_task(bp_dir, t1["id"])
+        updated_t2 = read_task(bp_dir, t2["id"])
+        assert "W1" in (updated_t1.get("body") or "")
+        assert "W2" in (updated_t2.get("body") or "")
+
     def test_check_watch_columns_skips_idle_watcher_with_existing_queue(self, bp_dir):
         """A watcher with queued work must not claim another task just because
         its state has not flipped to working yet."""
@@ -1632,6 +1796,7 @@ class TestWatchColumn:
         assert str(updated["assigned_to"]) == "1"
         assert task["id"] in layout["slots"][1].get("task_queue", [])
         assert task["id"] not in layout["slots"][0].get("task_queue", [])
+        _wait_for_worker_threads()
 
     def test_refill_from_watch_column(self, bp_dir, watcher_slot):
         """Idle on_queue worker with empty queue refills from watched column."""
@@ -1645,6 +1810,7 @@ class TestWatchColumn:
         updated = read_task(bp_dir, task["id"])
         # Task was claimed and processed
         assert str(updated["assigned_to"]) == "0" or updated["status"] == "review"
+        _wait_for_worker_threads()
 
     def test_refill_skips_nonempty_queue(self, bp_dir, watcher_slot):
         """Refill does nothing when worker already has tasks queued."""
