@@ -28,6 +28,16 @@ def test_worker_card_menu_commands_render_icons_before_labels():
     assert "<span class=\"menu-item-label\">Move to workspace&hellip;</span></button>" in text
 
 
+def test_worker_card_menu_is_teleported_and_uses_root_menu_ref():
+    text = _read("static/components/WorkerCard.js")
+    assert "<Teleport to=\"body\">" in text
+    assert "ref=\"menu\" class=\"worker-menu\"" in text
+    assert "menuItems()" in text
+    assert "const [first] = this.menuItems();" in text
+    assert "const items = this.menuItems();" in text
+    assert "const clickedInsideMenu = menu && typeof menu.contains === 'function' && menu.contains(e.target);" in text
+
+
 def test_empty_slot_menu_commands_render_icons_before_labels():
     text = _read("static/components/BullpenTab.js")
     assert "class=\"worker-menu-item\" @click=\"openLibraryForCoord(ghostCell)\"><i class=\"menu-item-icon\" data-lucide=\"user-plus\"" in text
@@ -49,3 +59,9 @@ def test_worker_menu_item_styles_support_icon_and_label_layout():
     assert "display: flex;" in text
     assert "align-items: center;" in text
     assert "gap: 6px;" in text
+
+
+def test_worker_menu_uses_high_overlay_z_index():
+    text = _read("static/style.css")
+    assert ".worker-menu {" in text
+    assert "z-index: 1000;" in text

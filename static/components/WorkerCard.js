@@ -1,6 +1,6 @@
 const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
-  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-closed', 'vertical-resize-start'],
+  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
          :style="effectiveLayoutMode === 'small' ? { background: agentColor } : null"
@@ -57,23 +57,25 @@ const WorkerCard = {
             </span>
           </span>
           <button class="worker-menu-btn" ref="menuBtn" @click.stop="toggleMenu" title="Actions">&hellip;</button>
-          <div v-if="showMenu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
-            <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
-            <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ isService ? 'Start' : 'Run' }}</span></button>
-            <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
-            <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
-            <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
-            <button v-if="canStop" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
-            <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
-            <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
-            <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
-            <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
-            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
-            <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
-            <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete</span></button>
-          </div>
         </div>
       </div>
+      <Teleport to="body">
+        <div v-if="showMenu" ref="menu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
+          <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
+          <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ isService ? 'Start' : 'Run' }}</span></button>
+          <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
+          <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
+          <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
+          <button v-if="canStop" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
+          <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
+          <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
+          <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
+          <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
+          <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
+          <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
+          <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete</span></button>
+        </div>
+      </Teleport>
       <div v-if="effectiveLayoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
         <div v-if="isDisabledType" class="worker-card-disabled-badge" :title="disabledTypeMessage">
           {{ disabledTypeMessage }}
@@ -126,7 +128,9 @@ const WorkerCard = {
       if (this.$refs.nameLabel) this._titleResizeObserver.observe(this.$refs.nameLabel);
     }
     this._closeMenu = (e) => {
-      if (this.showMenu && !this.$el.contains(e.target)) {
+      const menu = this.$refs.menu;
+      const clickedInsideMenu = menu && typeof menu.contains === 'function' && menu.contains(e.target);
+      if (this.showMenu && !this.$el.contains(e.target) && !clickedInsideMenu) {
         this.showMenu = false;
       }
     };
@@ -134,6 +138,7 @@ const WorkerCard = {
   },
   updated() {
     renderLucideIcons(this.$el);
+    if (this.$refs.menu) renderLucideIcons(this.$refs.menu);
   },
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
@@ -338,6 +343,11 @@ const WorkerCard = {
     },
   },
   methods: {
+    menuItems() {
+      const menu = this.$refs.menu;
+      if (!menu || typeof menu.querySelectorAll !== 'function') return [];
+      return Array.from(menu.querySelectorAll('.worker-menu-item:not([disabled])'));
+    },
     ensureOutputCatchup(force = false) {
       if (typeof this.requestOutputCatchup !== 'function') return;
       if (!this.showOutputPane) return;
@@ -656,7 +666,7 @@ const WorkerCard = {
       this.showMenu = true;
       this.$emit('menu-opened');
       this.$nextTick(() => {
-        const first = this.$el.querySelector('.worker-menu .worker-menu-item:not([disabled])');
+        const [first] = this.menuItems();
         if (first) first.focus();
       });
     },
@@ -674,7 +684,7 @@ const WorkerCard = {
         this.closeMenuAndRestoreFocus();
         return;
       }
-      const items = Array.from(this.$el.querySelectorAll('.worker-menu .worker-menu-item:not([disabled])'));
+      const items = this.menuItems();
       if (!items.length) return;
       const currentIdx = items.indexOf(document.activeElement);
       if (e.key === 'ArrowDown') {
