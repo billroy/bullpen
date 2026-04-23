@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_codex_model_options_include_current_gpt5_family():
     text = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
+    assert "codex: ['gpt-5.5'" in text
     assert "'gpt-5.4'" in text
     assert "'gpt-5.4-mini'" in text
     assert "'gpt-5.3-codex'" in text
