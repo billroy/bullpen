@@ -1,4 +1,5 @@
 window.BULLPEN_TASK_DND_MIME = 'application/x-bullpen-task-id';
+window.BULLPEN_TASK_DRAG_ACTIVE = false;
 
 const MODEL_OPTIONS = {
   claude: [

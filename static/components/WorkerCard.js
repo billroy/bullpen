@@ -572,6 +572,7 @@ const WorkerCard = {
     },
     onDragOver(e) {
       const types = e.dataTransfer.types;
+      const isTaskDrag = types.includes(window.BULLPEN_TASK_DND_MIME) || (window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain'));
       this.hoveredVerticalResize = false;
       if (types.includes('application/x-worker-connect')) {
         const drag = window._bullpenConnectDrag;
@@ -586,8 +587,7 @@ const WorkerCard = {
         return;
       }
       if (
-        types.includes(window.BULLPEN_TASK_DND_MIME) ||
-        types.includes('text/plain') ||
+        isTaskDrag ||
         types.includes('application/x-worker-slot') ||
         types.includes('application/x-worker-group') ||
         window._bullpenWorkerDrag
@@ -644,7 +644,8 @@ const WorkerCard = {
         }
         return;
       }
-      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
+        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
       if (taskId) {
         e.stopPropagation();
         this.$root.assignTask(taskId, this.slotIndex);

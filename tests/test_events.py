@@ -201,6 +201,20 @@ class TestTaskEvents:
         err = get_event(c, "error")
         assert err is not None
 
+    def test_assign_rejects_invalid_task_id(self, client):
+        c, _ = client
+        c.emit("task:assign", {"task_id": "…", "slot": 0})
+        err = get_event(c, "error")
+        assert err is not None
+        assert "Invalid task_id" in err["message"]
+
+    def test_assign_rejects_missing_task(self, client):
+        c, _ = client
+        c.emit("task:assign", {"task_id": "missing_task", "slot": 0})
+        err = get_event(c, "error")
+        assert err is not None
+        assert err["message"] == "Task not found: missing_task"
+
     def test_full_lifecycle(self, client):
         """Create → update → delete lifecycle."""
         c, app = client

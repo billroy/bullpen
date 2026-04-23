@@ -328,9 +328,11 @@ const app = createApp({
 
     window.addEventListener('bullpen:task-drag:start', () => {
       taskDragActive = true;
+      window.BULLPEN_TASK_DRAG_ACTIVE = true;
     });
     window.addEventListener('bullpen:task-drag:end', () => {
       taskDragActive = false;
+      window.BULLPEN_TASK_DRAG_ACTIVE = false;
       _flushDeferredTaskUpdates();
     });
 

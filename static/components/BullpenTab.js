@@ -157,7 +157,7 @@ const BullpenTab = {
                @click.stop="openEmptyMenu(ghostCell, $event)"
                @dragover="onEmptyDragOver($event, ghostCell)"
                @drop.stop.prevent="onDropOnEmpty($event, ghostCell)">
-            <button class="empty-slot-menu-btn" title="Empty cell actions" @click.stop="openEmptyMenu(ghostCell, $event)">&hellip;</button>
+            <button class="empty-slot-menu-btn" draggable="false" title="Empty cell actions" @click.stop="openEmptyMenu(ghostCell, $event)">&hellip;</button>
           </div>
           <div v-if="ghostCell && emptyMenuOpenFor(ghostCell)"
                class="worker-menu empty-slot-menu"

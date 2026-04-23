@@ -2200,6 +2200,8 @@ body.worker-singleton-dragging * {
   background: color-mix(in srgb, var(--accent) 16%, var(--bg-secondary));
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .worker-grid-drop-target-overlay {

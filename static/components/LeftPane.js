@@ -247,7 +247,8 @@ const LeftPane = {
       this.$emit('clone-project', { url: url.trim(), path: (path || '').trim() || null });
     },
     onRosterDragOver(e, w) {
-      if (e.dataTransfer.types.includes('text/plain')) {
+      const types = e.dataTransfer.types;
+      if (types.includes(window.BULLPEN_TASK_DND_MIME) || (window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain'))) {
         e.dataTransfer.dropEffect = 'move';
         this.rosterDragSlot = w.slot;
       }
@@ -258,7 +259,8 @@ const LeftPane = {
     onRosterDrop(e, slot) {
       e.preventDefault();
       this.rosterDragSlot = null;
-      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
+        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
       if (taskId) {
         this.$root.assignTask(taskId, slot);
       }

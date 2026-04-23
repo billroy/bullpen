@@ -37,6 +37,7 @@ def test_empty_cells_use_single_ghost_target_and_clipboard_does_not_materialize_
     text = _read("static/components/BullpenTab.js")
     assert "v-if=\"ghostCell\"" in text
     assert "worker-grid-ghost-cell" in text
+    assert "class=\"empty-slot-menu-btn\" draggable=\"false\"" in text
     assert "one reusable" not in text  # implementation should be structural, not comment-only
     assert "this.clipboardWorker" in text
     assert "canPasteAt(coord)" in text

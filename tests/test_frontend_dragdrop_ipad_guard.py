@@ -13,9 +13,13 @@ def _read(rel_path: str) -> str:
 
 def test_task_drag_uses_custom_mime_and_plaintext_fallback():
     utils = _read("static/utils.js")
+    app = _read("static/app.js")
     task_card = _read("static/components/TaskCard.js")
     left_pane = _read("static/components/LeftPane.js")
     assert f"window.BULLPEN_TASK_DND_MIME = '{TASK_DND_MIME}';" in utils
+    assert "window.BULLPEN_TASK_DRAG_ACTIVE = false;" in utils
+    assert "window.BULLPEN_TASK_DRAG_ACTIVE = true;" in app
+    assert "window.BULLPEN_TASK_DRAG_ACTIVE = false;" in app
     assert "setData(window.BULLPEN_TASK_DND_MIME, this.task.id)" in task_card
     assert "window.dispatchEvent(new Event('bullpen:task-drag:start'))" in task_card
     assert "window.dispatchEvent(new Event('bullpen:task-drag:end'))" in task_card
@@ -31,13 +35,16 @@ def test_drop_targets_prevent_default_and_read_custom_mime():
 
     assert "@drop.prevent=\"onDrop($event, col.key)\"" in kanban
     assert "e.preventDefault();" in kanban
-    assert "getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in kanban
+    assert "window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain')" in kanban
+    assert "getData(window.BULLPEN_TASK_DND_MIME)\n        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '')" in kanban
 
     assert "@drop.prevent=\"onDrop\"" in worker
-    assert "getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in worker
+    assert "window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain')" in worker
+    assert "getData(window.BULLPEN_TASK_DND_MIME)\n        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '')" in worker
 
     assert "e.preventDefault();" in left_pane
-    assert "getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain')" in left_pane
+    assert "window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain')" in left_pane
+    assert "getData(window.BULLPEN_TASK_DND_MIME)\n        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '')" in left_pane
 
 
 def test_task_dnd_mime_is_not_redeclared_in_global_component_scripts():

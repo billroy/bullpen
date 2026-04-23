@@ -356,6 +356,11 @@ const KanbanTab = {
         e.dataTransfer.dropEffect = 'none';
         return;
       }
+      const types = e.dataTransfer.types;
+      if (!(types.includes(window.BULLPEN_TASK_DND_MIME) || (window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain')))) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
       e.dataTransfer.dropEffect = 'move';
       e.currentTarget.classList.add('drag-over');
     },
@@ -366,7 +371,8 @@ const KanbanTab = {
       e.preventDefault();
       e.currentTarget.classList.remove('drag-over');
       if (this.isWorkerColumn(colKey)) return;
-      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME) || e.dataTransfer.getData('text/plain');
+      const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
+        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
       if (!taskId) return;
       const oldStatus = this.taskStatus(taskId);
       if (oldStatus === 'in_progress') {

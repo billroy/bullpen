@@ -944,10 +944,10 @@ def register_events(socketio, app):
     @with_lock
     def on_task_assign(data):
         ws_id, bp_dir = _resolve(data)
-        task_id = data.get("task_id")
-        slot = data.get("slot")
-        if task_id is None or slot is None:
-            emit("error", {"message": "task:assign requires task_id and slot"})
+        task_id = validate_id(data or {}, "task_id")
+        slot = validate_slot(data or {}, max_slots=200)
+        if not task_mod.read_task(bp_dir, task_id):
+            emit("error", {"message": f"Task not found: {task_id}"})
             return
         worker_mod.assign_task(bp_dir, slot, task_id, socketio, ws_id)
 
