@@ -41,6 +41,7 @@ const TaskCard = {
     <div class="task-card"
          draggable="true"
          @dragstart="onDragStart"
+         @dragend="onDragEnd"
          @click="selectTask">
       <div class="task-card-title">
         <i class="ticket-type-icon ticket-type-icon--card" data-lucide="tag" aria-hidden="true"></i>
@@ -136,9 +137,13 @@ const TaskCard = {
     },
     onDragStart(e) {
       this.closePopup();
+      window.dispatchEvent(new Event('bullpen:task-drag:start'));
       e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, this.task.id);
       e.dataTransfer.setData('text/plain', this.task.id);
       e.dataTransfer.effectAllowed = 'move';
+    },
+    onDragEnd() {
+      window.dispatchEvent(new Event('bullpen:task-drag:end'));
     }
   }
 };

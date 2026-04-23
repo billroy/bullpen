@@ -11,7 +11,10 @@ import pytest
 from server.agents import register_adapter
 from server.agents.base import AgentAdapter
 from server.app import create_app, socketio
+from server.persistence import read_json, write_json
 from server import service_worker as service_worker_mod
+import server.workers as workers_mod
+from tests.conftest import MockAdapter
 
 
 @pytest.fixture
@@ -197,6 +200,100 @@ class TestTaskEvents:
         # Verify gone from disk
         path = os.path.join(app.config["bp_dir"], "tasks", f"{task_id}.md")
         assert not os.path.exists(path)
+
+    def test_update_into_watched_column_claims_second_ticket_with_other_idle_watcher(self, client):
+        """A second ticket entering a watched column while the first watcher is
+        busy should be claimed through the real task:update event path."""
+        class SlowAdapter(MockAdapter):
+            @property
+            def name(self):
+                return "slow-mock"
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                return [sys.executable, "-c", "import time; time.sleep(5)"]
+
+        c, app = client
+        register_adapter("slow-mock", SlowAdapter(output="slow"))
+        register_adapter("mock", MockAdapter(output="fast"))
+
+        bp_dir = app.config["bp_dir"]
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        base = {
+            "profile": "test", "activation": "on_queue",
+            "disposition": "implemented", "watch_column": "approved",
+            "expertise_prompt": "", "max_retries": 0,
+            "paused": False, "task_queue": [], "state": "idle",
+            "last_trigger_time": None,
+        }
+        layout["slots"] = [
+            {**base, "row": 0, "col": 0, "name": "W1", "agent": "slow-mock", "model": "mock-model"},
+            {**base, "row": 0, "col": 1, "name": "W2", "agent": "mock", "model": "mock-model"},
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        c.emit("task:create", {"title": "Task 1"})
+        task1 = get_event(c, "task:created")
+        c.emit("task:update", {"id": task1["id"], "status": "approved"})
+        time.sleep(0.4)
+        c.get_received()
+
+        c.emit("task:create", {"title": "Task 2"})
+        task2 = get_event(c, "task:created")
+        c.emit("task:update", {"id": task2["id"], "status": "approved"})
+        time.sleep(0.6)
+
+        updates = [
+            evt["args"][0]
+            for evt in c.get_received()
+            if evt["name"] == "task:updated" and evt["args"] and evt["args"][0].get("id") == task2["id"]
+        ]
+        assert any(update.get("status") == "approved" for update in updates)
+        assert any(update.get("status") == "assigned" and str(update.get("assigned_to")) == "1" for update in updates)
+        assert any(update.get("status") == "in_progress" and str(update.get("assigned_to")) == "1" for update in updates)
+
+    def test_update_into_watched_column_does_not_deadlock_on_start_failure(self, client, monkeypatch):
+        """Watch-column auto-start failures must not deadlock later UI events."""
+        c, app = client
+        register_adapter("mock", MockAdapter(output="fast"))
+
+        bp_dir = app.config["bp_dir"]
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0,
+            "profile": "test", "name": "Watcher",
+            "agent": "mock", "model": "mock-model",
+            "activation": "on_queue", "disposition": "review",
+            "watch_column": "approved", "expertise_prompt": "",
+            "max_retries": 0, "task_queue": [], "state": "idle",
+            "paused": False, "last_trigger_time": None,
+            "use_worktree": True,
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        monkeypatch.setattr(workers_mod, "_setup_worktree", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
+
+        c.emit("task:create", {"title": "Task 1"})
+        task1 = get_event(c, "task:created")
+        c.emit("task:update", {"id": task1["id"], "status": "approved"})
+
+        blocked = None
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            for evt in c.get_received():
+                if evt["name"] == "task:updated":
+                    payload = evt["args"][0]
+                    if payload.get("id") == task1["id"] and payload.get("status") == "blocked":
+                        blocked = payload
+                        break
+            if blocked:
+                break
+            time.sleep(0.05)
+
+        assert blocked is not None
+
+        c.emit("task:create", {"title": "Task 2"})
+        task2 = get_event(c, "task:created")
+        assert task2 is not None
 
     def test_archive_task(self, client):
         c, app = client

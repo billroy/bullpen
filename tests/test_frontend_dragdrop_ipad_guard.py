@@ -17,7 +17,11 @@ def test_task_drag_uses_custom_mime_and_plaintext_fallback():
     left_pane = _read("static/components/LeftPane.js")
     assert f"window.BULLPEN_TASK_DND_MIME = '{TASK_DND_MIME}';" in utils
     assert "setData(window.BULLPEN_TASK_DND_MIME, this.task.id)" in task_card
+    assert "window.dispatchEvent(new Event('bullpen:task-drag:start'))" in task_card
+    assert "window.dispatchEvent(new Event('bullpen:task-drag:end'))" in task_card
     assert "setData(window.BULLPEN_TASK_DND_MIME, taskId)" in left_pane
+    assert "window.dispatchEvent(new Event('bullpen:task-drag:start'))" in left_pane
+    assert "window.dispatchEvent(new Event('bullpen:task-drag:end'))" in left_pane
 
 
 def test_drop_targets_prevent_default_and_read_custom_mime():

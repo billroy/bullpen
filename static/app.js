@@ -291,7 +291,47 @@ const app = createApp({
     const focusTabs = reactive([]);      // [{slotIndex, workspaceId, label}]
     const chatTabs = reactive([]);
     const lastLiveAgentTabByWorkspace = reactive({});
+    let taskDragActive = false;
+    const deferredTaskUpdates = new Map();
     let toastId = 0;
+
+    function _taskUpdateKey(wsId, taskId) {
+      return `${wsId || ''}:${taskId || ''}`;
+    }
+
+    function _sameTaskExceptTokens(current, next) {
+      if (!current || !next) return false;
+      const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+      keys.delete('tokens');
+      for (const key of keys) {
+        if (JSON.stringify(current[key]) !== JSON.stringify(next[key])) return false;
+      }
+      return true;
+    }
+
+    function _applyTaskUpdateToWorkspace(ws, task) {
+      const idx = ws.tasks.findIndex(t => t.id === task.id);
+      if (idx >= 0) ws.tasks[idx] = task;
+      else ws.tasks.push(task);
+    }
+
+    function _flushDeferredTaskUpdates() {
+      if (!deferredTaskUpdates.size) return;
+      for (const task of deferredTaskUpdates.values()) {
+        const wsId = task.workspaceId || activeWorkspaceId.value;
+        const ws = _getWs(wsId);
+        _applyTaskUpdateToWorkspace(ws, task);
+      }
+      deferredTaskUpdates.clear();
+    }
+
+    window.addEventListener('bullpen:task-drag:start', () => {
+      taskDragActive = true;
+    });
+    window.addEventListener('bullpen:task-drag:end', () => {
+      taskDragActive = false;
+      _flushDeferredTaskUpdates();
+    });
 
     function _newChatSessionId() {
       return 'chat-' + crypto.randomUUID();
@@ -500,9 +540,12 @@ const app = createApp({
     socket.on('task:updated', (task) => {
       const wsId = task.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
-      const idx = ws.tasks.findIndex(t => t.id === task.id);
-      if (idx >= 0) ws.tasks[idx] = task;
-      else ws.tasks.push(task);
+      const current = ws.tasks.find(t => t.id === task.id);
+      if (taskDragActive && current && _sameTaskExceptTokens(current, task)) {
+        deferredTaskUpdates.set(_taskUpdateKey(wsId, task.id), task);
+        return;
+      }
+      _applyTaskUpdateToWorkspace(ws, task);
       if (_isActive(wsId)) {
         // state.tasks is the same array ref, already updated
       } else {

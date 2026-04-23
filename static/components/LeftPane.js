@@ -54,6 +54,7 @@ const LeftPane = {
                class="inbox-item"
                draggable="true"
                @dragstart="onDragStart($event, task.id)"
+               @dragend="onDragEnd"
                @click="$emit('select-task', task.id)">
             <span class="inbox-title-wrap">
               <i class="ticket-type-icon ticket-type-icon--inbox" data-lucide="tag" aria-hidden="true"></i>
@@ -175,9 +176,13 @@ const LeftPane = {
       this.showEmptyProjectHint = false;
     },
     onDragStart(e, taskId) {
+      window.dispatchEvent(new Event('bullpen:task-drag:start'));
       e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, taskId);
       e.dataTransfer.setData('text/plain', taskId);
       e.dataTransfer.effectAllowed = 'move';
+    },
+    onDragEnd() {
+      window.dispatchEvent(new Event('bullpen:task-drag:end'));
     },
     agentColor(agent) {
       return agentColor(agent);
