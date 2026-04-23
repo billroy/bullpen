@@ -3,7 +3,7 @@ const LeftPane = {
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible }">
-      <div v-if="projects" class="left-pane-section" :class="{ 'project-add-only': projects.length <= 1 }">
+      <div v-if="projects" class="left-pane-section" :class="{ 'project-add-only': projects.length === 0 }">
         <div class="section-header">
           <h3>Projects</h3>
           <div class="project-menu-wrap" @click.stop>
@@ -18,7 +18,7 @@ const LeftPane = {
             </div>
           </div>
         </div>
-        <div v-if="projects.length > 1" class="project-list">
+        <div v-if="projects.length > 0" class="project-list">
           <div v-for="p in projects" :key="p.id"
                class="project-item"
                :class="{ active: p.id === activeWorkspaceId, unavailable: p.available === false }"

@@ -50,11 +50,11 @@ def test_app_tracks_projects_loaded_and_passes_to_leftpane():
     assert ':projects-loaded="projectsLoaded"' in text
 
 
-def test_leftpane_projects_header_remains_visible_in_empty_state():
+def test_leftpane_projects_header_and_list_conditions_support_single_project():
     text = _read("static/components/LeftPane.js")
-    assert "v-if=\"projects\" class=\"left-pane-section\" :class=\"{ 'project-add-only': projects.length <= 1 }\"" in text
+    assert "v-if=\"projects\" class=\"left-pane-section\" :class=\"{ 'project-add-only': projects.length === 0 }\"" in text
     assert "<h3>Projects</h3>" in text
-    assert "v-if=\"projects.length > 1\" class=\"project-list\"" in text
+    assert "v-if=\"projects.length > 0\" class=\"project-list\"" in text
 
 
 def test_leftpane_emits_new_project_and_registers_menu_dismiss_listener():
