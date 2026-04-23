@@ -53,6 +53,14 @@ class AgentAdapter(ABC):
         """Return True when the shared runner should write the prompt to stdin."""
         return True
 
+    def prepare_env(self, workspace, bp_dir=None, task_id=None):
+        """Return a subprocess env override, or `(env, cleanup_path)`.
+
+        Adapters can override this to isolate temp space or inject launcher
+        settings. Returning `None` inherits the parent process environment.
+        """
+        return None
+
     def unavailable_message(self):
         """Return a user-facing setup message when this adapter is unavailable."""
         return f"{self.name} agent executable was not found. Install it or add it to PATH."

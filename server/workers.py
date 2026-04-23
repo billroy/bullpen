@@ -1898,6 +1898,8 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message):
 def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None, worktree_info=None):
     """Run agent subprocess with streaming stdout and handle completion."""
     runner = None
+    env = None
+    env_cleanup_path = None
     try:
         force_fail_message = [None]
         live_usage = [{}]
@@ -1964,6 +1966,11 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             _emit_token_update(tokens)
 
         try:
+            prepared_env = adapter.prepare_env(workspace, bp_dir=bp_dir, task_id=task_id)
+            if isinstance(prepared_env, tuple):
+                env, env_cleanup_path = prepared_env
+            else:
+                env = prepared_env
             stdin_text = prompt if adapter.prompt_via_stdin() else None
             def _observe_agent_line(line, stream, proc):
                 _maybe_emit_live_usage(line)
@@ -1975,6 +1982,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 task_id=task_id,
                 argv=argv,
                 cwd=workspace,
+                env=env,
                 stdin_text=stdin_text,
                 timeout=timeout,
                 socketio=socketio,
@@ -2074,6 +2082,8 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             worktree_info=worktree_info,
         )
     finally:
+        if env_cleanup_path:
+            shutil.rmtree(env_cleanup_path, ignore_errors=True)
         with _process_lock:
             entry = _processes.get((ws_id, slot_index))
             if entry and entry.get("run_id") == (runner.run_id if runner else None):

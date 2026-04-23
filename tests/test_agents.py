@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 
 import pytest
 
@@ -59,6 +60,19 @@ class TestClaudeAdapter:
         finally:
             if os.path.exists(cfg_path):
                 os.unlink(cfg_path)
+
+    def test_prepare_env_isolates_tmpdir(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+        env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
+        try:
+            assert cleanup_path.startswith(str(tmp_path))
+            assert os.path.isdir(cleanup_path)
+            assert env["TMPDIR"] == cleanup_path
+            assert env["TMP"] == cleanup_path
+            assert env["TEMP"] == cleanup_path
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
 
     def test_parse_success(self):
         adapter = ClaudeAdapter()

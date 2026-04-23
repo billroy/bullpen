@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 import pytest
@@ -155,6 +156,29 @@ class ThrottledTokenStreamAdapter(MockAdapter):
             "error": None if exit_code == 0 else (stderr.strip() or f"Exit code {exit_code}"),
             "usage": {},
         }
+
+
+class TempEnvAdapter(MockAdapter):
+    @property
+    def name(self):
+        return "temp-env"
+
+    def prepare_env(self, workspace, bp_dir=None, task_id=None):
+        run_tmp = tempfile.mkdtemp(prefix="bullpen-agent-env-", dir=os.environ.get("TMPDIR"))
+        env = os.environ.copy()
+        env["TMPDIR"] = run_tmp
+        env["TMP"] = run_tmp
+        env["TEMP"] = run_tmp
+        return env, run_tmp
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        capture_path = os.path.join(bp_dir or workspace, "tmpdir-capture.txt")
+        script = (
+            "import os;"
+            f"open({capture_path!r}, 'w').write(os.environ.get('TMPDIR', ''));"
+            "print('captured')"
+        )
+        return [sys.executable, "-c", script]
 
 
 class CapturingSocket:
@@ -652,6 +676,35 @@ class TestStartWorker:
             assert updated_layout["slots"][worker_slot]["model"] == "claude-haiku-4-5-20251001"
         finally:
             register_adapter("claude", previous)
+
+    def test_start_worker_cleans_adapter_temp_env_after_run(self, bp_dir, worker_slot, monkeypatch, tmp_path):
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        previous = get_adapter("temp-env")
+        register_adapter("temp-env", TempEnvAdapter(output="temp env output"))
+        try:
+            layout = _load_layout(bp_dir)
+            layout["slots"][worker_slot]["agent"] = "temp-env"
+            layout["slots"][worker_slot]["model"] = "temp-model"
+            write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+            task = create_task(bp_dir, "Temp env task")
+            assign_task(bp_dir, worker_slot, task["id"])
+
+            capture_path = os.path.join(bp_dir, "tmpdir-capture.txt")
+            start_worker(bp_dir, worker_slot)
+            assert _wait_for_path(capture_path)
+            assert _wait_for_worker_threads()
+
+            updated = read_task(bp_dir, task["id"])
+            final_layout = _load_layout(bp_dir)
+            captured_tmpdir = open(capture_path, encoding="utf-8").read()
+            assert "bullpen-agent-env-" in captured_tmpdir
+            assert updated["status"] == "review"
+            assert final_layout["slots"][worker_slot]["state"] == "idle"
+            assert not list(tmp_path.glob("bullpen-agent-env-*"))
+        finally:
+            if previous is not None:
+                register_adapter("temp-env", previous)
 
     def test_worker_success_appends_structured_usage_and_keeps_tokens_compatible(self, bp_dir, worker_slot):
         register_adapter("usage-mock", UsageAdapter(output="Usage output"))

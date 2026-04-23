@@ -46,6 +46,22 @@ def _find_claude():
     return None
 
 
+def _make_isolated_tmpdir(prefix):
+    """Create a private temp directory, preferring the current TMPDIR root."""
+    candidates = [os.environ.get("TMPDIR"), tempfile.gettempdir()]
+    seen = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            return tempfile.mkdtemp(prefix=prefix, dir=candidate)
+        except OSError:
+            continue
+    return tempfile.mkdtemp(prefix=prefix)
+
+
 class ClaudeAdapter(AgentAdapter):
 
     @property
@@ -82,6 +98,15 @@ class ClaudeAdapter(AgentAdapter):
             argv.extend(["--mcp-config", config])
         # Prompt is delivered via stdin in _run_agent
         return argv
+
+    def prepare_env(self, workspace, bp_dir=None, task_id=None):
+        """Run Claude with a private temp root to avoid launcher collisions."""
+        run_tmp = _make_isolated_tmpdir("bullpen-claude-")
+        env = os.environ.copy()
+        env["TMPDIR"] = run_tmp
+        env["TMP"] = run_tmp
+        env["TEMP"] = run_tmp
+        return env, run_tmp
 
     def _mcp_config(self, bp_dir):
         """Generate a temporary MCP config file pointing to bullpen tools."""
