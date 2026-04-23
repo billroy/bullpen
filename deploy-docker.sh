@@ -217,6 +217,7 @@ require_command docker
 
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or not reachable."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCAL_PROJECT_PATH_DEFAULT="$(dirname "$SCRIPT_DIR")/$(basename "$SCRIPT_DIR")-project"
 
 printf '\n\033[1mBullpen Docker Deployer\033[0m\n\n'
 
@@ -224,13 +225,19 @@ CONTAINER_NAME="$(prompt_default "Container name" "$CONTAINER_NAME_DEFAULT")"
 if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
   warn "Running deploy-docker.sh from the Bullpen repo root."
   warn "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."
-  while true; do
-    read -rp "Project path to mount into /workspace (required): " WORKSPACE_INPUT
-    if [[ -n "$WORKSPACE_INPUT" ]]; then
-      break
-    fi
-    warn "Project path is required. Type . if you intentionally want to mount the Bullpen repo itself."
-  done
+  warn "You can also create or reuse a local project directory at ${LOCAL_PROJECT_PATH_DEFAULT}."
+  if prompt_yes_no "Create or use local project directory ${LOCAL_PROJECT_PATH_DEFAULT}?" "Y"; then
+    mkdir -p "$LOCAL_PROJECT_PATH_DEFAULT"
+    WORKSPACE_INPUT="$LOCAL_PROJECT_PATH_DEFAULT"
+  else
+    while true; do
+      read -rp "Project path to mount into /workspace (required): " WORKSPACE_INPUT
+      if [[ -n "$WORKSPACE_INPUT" ]]; then
+        break
+      fi
+      warn "Project path is required. Type . if you intentionally want to mount the Bullpen repo itself."
+    done
+  fi
 else
   WORKSPACE_INPUT="$(prompt_default "Project path to mount into /workspace" "$PWD")"
 fi
