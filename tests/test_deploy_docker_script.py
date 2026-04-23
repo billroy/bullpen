@@ -21,3 +21,8 @@ def test_deploy_docker_requires_explicit_project_path_from_repo_root():
 def test_deploy_docker_hides_unavailable_projects_in_container():
     text = _read("deploy-docker.sh")
     assert '-e "BULLPEN_HIDE_UNAVAILABLE_PROJECTS=1"' in text
+
+
+def test_docker_compose_hides_unavailable_projects_in_container():
+    text = _read("docker-compose.yml")
+    assert 'BULLPEN_HIDE_UNAVAILABLE_PROJECTS: "1"' in text
