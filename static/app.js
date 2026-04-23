@@ -959,7 +959,7 @@ const app = createApp({
     }
 
     const allTabs = computed(() => {
-      const activeWorkerCount = (state.layout?.slots || []).filter(s => s?.state === 'working').length;
+      const activeWorkerCount = (state.layout?.slots || []).filter(s => ['working', 'retrying'].includes(s?.state)).length;
       const workersLabel = activeWorkerCount > 0 ? `Workers (${activeWorkerCount})` : 'Workers';
       const tabs = [
         { id: 'tasks', label: 'Tickets', icon: 'tag' },

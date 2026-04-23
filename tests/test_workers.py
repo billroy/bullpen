@@ -30,6 +30,7 @@ from server.workers import (
     _on_agent_success,
     _processes,
     _refill_from_watch_column,
+    _retry_worker_after_delay,
     _setup_worktree,
     _stop_proc_with_timeout,
     is_non_retryable_provider_error,
@@ -477,6 +478,44 @@ class TestWorkerReconcile:
         assert updated["status"] == "blocked"
         assert all(isinstance(row, dict) for row in updated.get("history", []))
 
+    def test_retryable_error_marks_worker_retrying_and_appends_retry_message(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Retrying task")
+        update_task(bp_dir, task["id"], {"status": "in_progress", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "working"
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        layout["slots"][worker_slot]["max_retries"] = 2
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        thread_targets = []
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                self.target = target
+                self.args = args
+                self.daemon = daemon
+
+            def start(self):
+                thread_targets.append((self.target, self.args))
+
+        monkeypatch.setattr(workers_mod.threading, "Thread", FakeThread)
+
+        _on_agent_error(bp_dir, worker_slot, task["id"], "temporary failure", None)
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        worker = updated_layout["slots"][worker_slot]
+
+        assert updated["status"] == "in_progress"
+        assert "[RETRYING in 5s] temporary failure" in updated["body"]
+        assert sum(1 for h in updated.get("history", []) if h.get("event") == "retry") == 1
+        assert worker["state"] == "retrying"
+        assert worker["retry_attempt"] == 1
+        assert worker["retry_max"] == 2
+        assert worker["retry_delay_seconds"] == 5
+        assert thread_targets and thread_targets[0][0] == _retry_worker_after_delay
+
     def test_worktree_setup_failure_is_non_retryable(self, bp_dir, worker_slot, monkeypatch):
         task = create_task(bp_dir, "Worktree failure task")
         layout = _load_layout(bp_dir)
@@ -495,6 +534,31 @@ class TestWorkerReconcile:
         retries = [row for row in history if row.get("event") == "retry"]
         assert updated["status"] == "blocked"
         assert retries == []
+
+    def test_stop_cancels_scheduled_retry_restart(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Retry stop task")
+        update_task(bp_dir, task["id"], {"status": "in_progress", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "retrying"
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        layout["slots"][worker_slot]["retry_attempt"] = 1
+        layout["slots"][worker_slot]["retry_max"] = 2
+        layout["slots"][worker_slot]["retry_delay_seconds"] = 5
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        restart_calls = []
+        monkeypatch.setattr(workers_mod.time, "sleep", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(workers_mod, "start_worker", lambda *args, **kwargs: restart_calls.append((args, kwargs)))
+
+        stop_worker(bp_dir, worker_slot)
+        _retry_worker_after_delay(bp_dir, worker_slot, task["id"], 5)
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "assigned"
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert restart_calls == []
 
     def test_stop_detaches_run_and_ignores_late_error(self, bp_dir, worker_slot, monkeypatch):
         task = create_task(bp_dir, "Late error stop")

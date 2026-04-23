@@ -59,6 +59,25 @@ def _normalize_worker_name(name):
     return (name or "").strip().casefold()
 
 
+def _clear_worker_retry_state(worker):
+    """Remove transient retry/backoff fields from a worker layout entry."""
+    if not worker:
+        return
+    for key in ("retry_at", "retry_delay_seconds", "retry_attempt", "retry_max", "retry_error"):
+        worker.pop(key, None)
+
+
+def _set_worker_retry_state(worker, *, retry_delay, retry_attempt, retry_max, error_msg):
+    """Store live retry/backoff state on the worker layout entry."""
+    retry_at = time.time() + max(0, int(retry_delay))
+    worker["state"] = "retrying"
+    worker["retry_at"] = _iso_at_epoch(retry_at)
+    worker["retry_delay_seconds"] = max(0, int(retry_delay))
+    worker["retry_attempt"] = max(1, int(retry_attempt))
+    worker["retry_max"] = max(1, int(retry_max))
+    worker["retry_error"] = _history_detail_single_line(error_msg)
+
+
 def _terminate_proc(proc, *, force=False):
     """Terminate a subprocess, killing the full process tree where possible."""
     if sys.platform == "win32":
@@ -201,6 +220,10 @@ def _ws_emit(socketio, event, payload, ws_id=None):
 
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _iso_at_epoch(epoch_seconds):
+    return datetime.fromtimestamp(epoch_seconds, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _timestamp_id():
@@ -621,6 +644,7 @@ def _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id):
     worker["state"] = "working"
     worker["started_at"] = _now_iso()
     worker["last_trigger_time"] = int(time.time())
+    _clear_worker_retry_state(worker)
     task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
     _save_layout(bp_dir, layout)
 
@@ -945,6 +969,7 @@ def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=
         if task_id in queue:
             queue.remove(task_id)
         worker["state"] = "idle"
+        _clear_worker_retry_state(worker)
         _save_layout(bp_dir, layout)
 
     task_mod.update_task(bp_dir, task_id, {
@@ -966,6 +991,7 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     entry = None
     if worker:
         worker["state"] = "idle"
+        _clear_worker_retry_state(worker)
         queue = worker.get("task_queue", [])
         if queue:
             task_id = queue[0]
@@ -1052,6 +1078,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
         if entry is None:
             entry = _detach_process_entry(ws_id, task_id=task_id)
         worker["state"] = "idle"
+        _clear_worker_retry_state(worker)
 
     # Remove every stale queue reference, not just the first one found.
     for slot in slots:
@@ -2348,16 +2375,19 @@ def _on_agent_success(
                 target_name = disposition[len("worker:"):].strip()
                 # Set worker idle BEFORE handoff (which saves its own layout)
                 worker["state"] = "idle"
+                _clear_worker_retry_state(worker)
                 _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id)
                 handed_off = True
             elif disposition.startswith("pass:"):
                 direction = disposition[len("pass:"):]
                 worker["state"] = "idle"
+                _clear_worker_retry_state(worker)
                 _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id)
                 handed_off = True
             elif disposition.startswith("random:"):
                 target_name = disposition[len("random:"):].strip()
                 worker["state"] = "idle"
+                _clear_worker_retry_state(worker)
                 _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id)
                 handed_off = True
             else:
@@ -2370,6 +2400,7 @@ def _on_agent_success(
             if not handed_off:
                 # Set worker idle and save (handoff path already did this)
                 worker["state"] = "idle"
+                _clear_worker_retry_state(worker)
                 _save_layout(bp_dir, layout)
 
             if socketio:
@@ -2543,6 +2574,7 @@ def _on_agent_error(
     should_retry = False
     retry_delay = 0
     should_advance = False
+    retry_task_updated = None
 
     with _write_lock:
         try:
@@ -2579,10 +2611,25 @@ def _on_agent_error(
                 "event": "retry",
                 "detail": _history_detail_single_line(error_msg),
             })
-            task_mod.update_task(bp_dir, task_id, {"history": history})
-
+            retry_message = f"[RETRYING in {retry_delay}s] {error_msg}"
             if output:
-                _append_output(bp_dir, task_id, worker, f"[ERROR] {error_msg}\n\n{output}")
+                _append_output(bp_dir, task_id, worker, f"{retry_message}\n\n{output}")
+            else:
+                _append_output(bp_dir, task_id, worker, retry_message)
+            task_mod.update_task(bp_dir, task_id, {"history": history})
+            retry_task_updated = task_mod.read_task(bp_dir, task_id)
+            _set_worker_retry_state(
+                worker,
+                retry_delay=retry_delay,
+                retry_attempt=retry_count + 1,
+                retry_max=max_retries,
+                error_msg=error_msg,
+            )
+            _save_layout(bp_dir, layout)
+
+            if socketio:
+                _ws_emit(socketio, "task:updated", retry_task_updated, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id)
 
             should_retry = True
         else:
@@ -2602,6 +2649,7 @@ def _on_agent_error(
             })
 
             worker["state"] = "idle"
+            _clear_worker_retry_state(worker)
             _save_layout(bp_dir, layout)
 
             if socketio:
@@ -2613,10 +2661,11 @@ def _on_agent_error(
 
     # Schedule retry or advance outside lock
     if should_retry:
-        def do_retry():
-            time.sleep(retry_delay)
-            start_worker(bp_dir, slot_index, socketio, ws_id)
-        threading.Thread(target=do_retry, daemon=True).start()
+        threading.Thread(
+            target=_retry_worker_after_delay,
+            args=(bp_dir, slot_index, task_id, retry_delay, socketio, ws_id),
+            daemon=True,
+        ).start()
     elif should_advance:
         start_worker(bp_dir, slot_index, socketio, ws_id)
     else:
@@ -2626,6 +2675,28 @@ def _on_agent_error(
     # Notify watchers of "blocked" column (unlikely but consistent)
     if not should_retry:
         check_watch_columns(bp_dir, "blocked", socketio, ws_id)
+
+
+def _retry_worker_after_delay(bp_dir, slot_index, task_id, retry_delay, socketio=None, ws_id=None):
+    """Retry a failed worker only if it is still waiting on the same task."""
+    time.sleep(max(0, retry_delay))
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
+    slots = layout.get("slots", [])
+    if slot_index >= len(slots):
+        return
+    worker = slots[slot_index]
+    if not worker or worker.get("state") != "retrying":
+        return
+    queue = worker.get("task_queue", [])
+    if not queue or queue[0] != task_id:
+        return
+    task = task_mod.read_task(bp_dir, task_id)
+    if not task or str(task.get("assigned_to")) != str(slot_index):
+        return
+    start_worker(bp_dir, slot_index, socketio, ws_id)
 
 
 def _append_output(bp_dir, task_id, worker, output):

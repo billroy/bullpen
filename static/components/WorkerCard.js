@@ -155,7 +155,7 @@ const WorkerCard = {
       return !!(this.passDir && this.neighborSlots && this.neighborSlots[this.passDir] != null);
     },
     workerState() { return this.worker.service_state?.state || this.worker.state || 'idle'; },
-    isWorking() { return ['working', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState); },
+    isWorking() { return ['working', 'retrying', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState); },
     showOutputPane() {
       return this.effectiveLayoutMode !== 'small';
     },
@@ -164,12 +164,29 @@ const WorkerCard = {
     },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
+      if (this.workerState === 'retrying') {
+        return `RETRY${this.retryAttemptLabel}${this.retryCountdownLabel}`;
+      }
       if (this.isService && this.workerState === 'running') return `RUNNING ${this.elapsed}`;
       if (this.isService && this.workerState === 'starting') return `STARTING ${this.elapsed}`;
       if (this.isService && this.workerState === 'healthy') return `HEALTHY ${this.elapsed}`;
       if (this.isService && this.workerState === 'unhealthy') return `UNHEALTHY ${this.elapsed}`;
       if (this.isWorking) return `BUSY ${this.elapsed}`;
       return this.workerState.toUpperCase();
+    },
+    retryAttemptLabel() {
+      if (this.workerState !== 'retrying') return '';
+      const attempt = Number(this.worker?.retry_attempt || 0);
+      const max = Number(this.worker?.retry_max || 0);
+      if (!attempt || !max) return '';
+      return ` ${attempt}/${max}`;
+    },
+    retryCountdownLabel() {
+      if (this.workerState !== 'retrying') return '';
+      const retryAt = this.worker?.retry_at ? new Date(this.worker.retry_at).getTime() : NaN;
+      if (!Number.isFinite(retryAt)) return '';
+      const remaining = Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+      return ` ${remaining}s`;
     },
     taskQueueCount() {
       return Array.isArray(this.worker?.task_queue) ? this.worker.task_queue.length : 0;

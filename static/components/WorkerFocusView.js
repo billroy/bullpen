@@ -34,6 +34,7 @@ const WorkerFocusView = {
           <span class="status-pill" :class="'status-' + workerState">
             {{ workerState.toUpperCase() }}
           </span>
+          <span v-if="workerState === 'retrying' && retryCountdown">{{ retryCountdown }} until retry</span>
           <span v-if="isWorking && elapsed">{{ elapsed }} elapsed</span>
           <span v-if="!isWorking && !isService && workerState === 'idle'">Completed</span>
         </span>
@@ -51,7 +52,7 @@ const WorkerFocusView = {
   },
   computed: {
     isWorking() {
-      return ['working', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState);
+      return ['working', 'retrying', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState);
     },
     isService() {
       return this.worker?.type === 'service';
@@ -61,6 +62,13 @@ const WorkerFocusView = {
     },
     outputText() {
       return (this.outputLines || []).join('\n');
+    },
+    retryCountdown() {
+      if (this.workerState !== 'retrying') return '';
+      const retryAt = this.worker?.retry_at ? new Date(this.worker.retry_at).getTime() : NaN;
+      if (!Number.isFinite(retryAt)) return '';
+      const remaining = Math.max(0, Math.ceil((retryAt - Date.now()) / 1000));
+      return `${remaining}s`;
     },
     renderedDescription() {
       if (!this.task?.body) return '';

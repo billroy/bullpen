@@ -113,6 +113,9 @@ const LeftPane = {
           slot: i,
           name: s.name,
           state: s.state || 'idle',
+          retry_at: s.retry_at,
+          retry_attempt: s.retry_attempt,
+          retry_max: s.retry_max,
           agent: s.agent,
           type: s.type,
           taskQueueLength: Array.isArray(s.task_queue) ? s.task_queue.length : 0,
@@ -195,6 +198,11 @@ const LeftPane = {
     },
     workerStatusLabel(worker) {
       const state = (worker?.state || 'idle').toUpperCase();
+      if (state === 'RETRYING') {
+        const attempt = Number(worker?.retry_attempt || 0);
+        const max = Number(worker?.retry_max || 0);
+        return attempt && max ? `${state} (${attempt}/${max})` : state;
+      }
       if (state !== 'WORKING') return state;
       const queueCount = Math.max(1, Number(worker?.taskQueueLength || 0));
       return `${state} (${queueCount})`;

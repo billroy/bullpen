@@ -354,6 +354,7 @@
 [data-theme="light"] .priority-urgent { background: #fee2e2; color: #991b1b; }
 [data-theme="light"] .status-pill.status-idle { background: #e5e7eb; color: #4b5563; }
 [data-theme="light"] .status-pill.status-working { background: #dbeafe; color: #1d4ed8; }
+[data-theme="light"] .status-pill.status-retrying { background: #fef3c7; color: #92400e; }
 [data-theme="light"] .status-pill.status-queued { background: #ede9fe; color: #5b21b6; }
 [data-theme="light"] .badge.type-task { background: #e5e7eb; color: #4b5563; }
 [data-theme="light"] .badge.type-bug { background: #fee2e2; color: #991b1b; }
@@ -378,6 +379,9 @@
 [data-theme="light-ethereal"] .status-pill.status-working,
 [data-theme="light-stone-teal"] .status-pill.status-working,
 [data-theme="light-ivory-olive"] .status-pill.status-working { background: #d7ead9; color: #2d6140; }
+[data-theme="light-ethereal"] .status-pill.status-retrying,
+[data-theme="light-stone-teal"] .status-pill.status-retrying,
+[data-theme="light-ivory-olive"] .status-pill.status-retrying { background: #f1dfbb; color: #8c5c1b; }
 [data-theme="light-ethereal"] .status-pill.status-queued,
 [data-theme="light-stone-teal"] .status-pill.status-queued,
 [data-theme="light-ivory-olive"] .status-pill.status-queued { background: #e8ddf2; color: #5f3d83; }
@@ -400,6 +404,7 @@
 [data-theme="eyeshade"] .priority-urgent { background: #e8c0b0; color: #7a2a1a; }
 [data-theme="eyeshade"] .status-pill.status-idle { background: #c8cead; color: #3a4020; }
 [data-theme="eyeshade"] .status-pill.status-working { background: #b0daa8; color: #1a4a12; }
+[data-theme="eyeshade"] .status-pill.status-retrying { background: #e8dda0; color: #5a5010; }
 [data-theme="eyeshade"] .status-pill.status-queued { background: #e8dda0; color: #5a5010; }
 [data-theme="eyeshade"] .badge.type-task { background: #c8cead; color: #3a4020; }
 [data-theme="eyeshade"] .badge.type-bug { background: #e8c0b0; color: #7a2a1a; }
@@ -412,6 +417,7 @@
 [data-theme="eyeshade-dark"] .priority-urgent { background: #4b2a24; color: #f4c7bf; }
 [data-theme="eyeshade-dark"] .status-pill.status-idle { background: #2b3226; color: #d0d7c3; }
 [data-theme="eyeshade-dark"] .status-pill.status-working { background: #1f3f29; color: #d6f5ce; }
+[data-theme="eyeshade-dark"] .status-pill.status-retrying { background: #4a3a1f; color: #f7ddae; }
 [data-theme="eyeshade-dark"] .status-pill.status-queued { background: #3f3a23; color: #f2e7b8; }
 [data-theme="eyeshade-dark"] .badge.type-task { background: #2b3226; color: #d0d7c3; }
 [data-theme="eyeshade-dark"] .badge.type-bug { background: #4b2a24; color: #f4c7bf; }
@@ -2609,6 +2615,7 @@ body.worker-singleton-dragging * {
 
 .status-pill.status-idle { background: #374151; color: #9CA3AF; }
 .status-pill.status-working { background: #1e3a5f; color: #60a5fa; animation: pulse 2s infinite; }
+.status-pill.status-retrying { background: #5a3b12; color: #fbbf24; animation: pulse 2s infinite; }
 .status-pill.status-queued { background: #312e81; color: #a78bfa; }
 
 @keyframes pulse {
