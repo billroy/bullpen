@@ -225,7 +225,7 @@ class WorkspaceManager:
         """Return list of all active workspace IDs."""
         return list(self._workspaces.keys())
 
-    def list_projects(self, *, include_path=True):
+    def list_projects(self, *, include_path=True, include_unavailable=True):
         """Return registry entries for all registered projects.
 
         Each entry includes an ``available`` flag indicating whether the
@@ -233,12 +233,23 @@ class WorkspaceManager:
         """
         out = []
         for e in self._registry:
+            available = os.path.isdir(e["path"])
+            if not include_unavailable and not available:
+                continue
             entry = {"id": e["id"], "name": e["name"]}
             if include_path:
                 entry["path"] = e["path"]
-            entry["available"] = os.path.isdir(e["path"])
+            entry["available"] = available
             out.append(entry)
         return out
+
+    def list_visible_projects(self, *, include_path=True):
+        """Return the user-facing project list for the current runtime."""
+        hide_unavailable = os.environ.get("BULLPEN_HIDE_UNAVAILABLE_PROJECTS") == "1"
+        return self.list_projects(
+            include_path=include_path,
+            include_unavailable=not hide_unavailable,
+        )
 
     @property
     def default_id(self):

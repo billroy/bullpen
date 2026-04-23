@@ -998,7 +998,7 @@ def create_app(
             state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
             state["workspaceId"] = ws.id
             socketio.emit("state:init", state, to=request.sid)
-        socketio.emit("projects:updated", manager.list_projects(include_path=False), to=request.sid)
+        socketio.emit("projects:updated", manager.list_visible_projects(include_path=False), to=request.sid)
 
     @socketio.on("disconnect")
     def on_disconnect():

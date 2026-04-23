@@ -216,11 +216,24 @@ PY'
 require_command docker
 
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or not reachable."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 printf '\n\033[1mBullpen Docker Deployer\033[0m\n\n'
 
 CONTAINER_NAME="$(prompt_default "Container name" "$CONTAINER_NAME_DEFAULT")"
-WORKSPACE_INPUT="$(prompt_default "Workspace path to mount into /workspace" "$PWD")"
+if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
+  warn "Running deploy-docker.sh from the Bullpen repo root."
+  warn "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."
+  while true; do
+    read -rp "Project path to mount into /workspace (required): " WORKSPACE_INPUT
+    if [[ -n "$WORKSPACE_INPUT" ]]; then
+      break
+    fi
+    warn "Project path is required. Type . if you intentionally want to mount the Bullpen repo itself."
+  done
+else
+  WORKSPACE_INPUT="$(prompt_default "Project path to mount into /workspace" "$PWD")"
+fi
 [[ -e "$WORKSPACE_INPUT" ]] || die "Workspace path does not exist: $WORKSPACE_INPUT"
 [[ -d "$WORKSPACE_INPUT" ]] || die "Workspace path is not a directory: $WORKSPACE_INPUT"
 WORKSPACE_PATH="$(abs_path "$WORKSPACE_INPUT")"
@@ -342,6 +355,7 @@ DOCKER_RUN_ARGS=(
   -e "BULLPEN_BOOTSTRAP_FORCE=1"
   -e "BULLPEN_PORT=${BULLPEN_PORT}"
   -e "APP_PORT=${APP_PORT}"
+  -e "BULLPEN_HIDE_UNAVAILABLE_PROJECTS=1"
   -e "BULLPEN_WORKSPACE=/workspace"
   -e "BULLPEN_WORKSPACE_NAME=${WORKSPACE_NAME}"
   -e "BULLPEN_PRODUCTION=${BULLPEN_PRODUCTION:-0}"

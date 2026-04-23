@@ -277,6 +277,42 @@ class TestMultiProjectStartup:
         assert os.path.basename(ws_b) in listed_names
         assert all("path" not in p for p in listed)
 
+    def test_connect_hides_unavailable_projects_when_configured(self, tmp_path, monkeypatch):
+        global_dir = str(tmp_path / "global")
+        os.makedirs(global_dir, exist_ok=True)
+        monkeypatch.setenv("BULLPEN_HIDE_UNAVAILABLE_PROJECTS", "1")
+
+        ws_a = str(tmp_path / "workspace_a")
+        ws_b = str(tmp_path / "workspace_b")
+        os.makedirs(ws_a, exist_ok=True)
+        os.makedirs(ws_b, exist_ok=True)
+
+        app = create_app(ws_a, no_browser=True, global_dir=global_dir)
+
+        projects_path = os.path.join(global_dir, "projects.json")
+        with open(projects_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        raw["projects"].append({
+            "id": "ws-b",
+            "path": os.path.realpath(ws_b),
+            "name": "workspace_b",
+        })
+        with open(projects_path, "w", encoding="utf-8") as f:
+            json.dump(raw, f, indent=2)
+        os.rmdir(ws_b)
+
+        app = create_app(ws_a, no_browser=True, global_dir=global_dir)
+        c = socketio.test_client(app)
+        received = c.get_received()
+        c.disconnect()
+
+        projects_events = [evt for evt in received if evt["name"] == "projects:updated"]
+        assert projects_events
+        listed = projects_events[-1]["args"][0]
+        listed_names = {p["name"] for p in listed}
+        assert os.path.basename(ws_a) in listed_names
+        assert "workspace_b" not in listed_names
+
 
 class TestWorkerManagement:
     """Worker add/remove/move/configure flows."""

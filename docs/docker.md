@@ -7,13 +7,17 @@ Use the interactive deploy script from the repo root:
 ```
 
 The script handles deployment end-to-end:
-- prompts for container name, workspace path, ports, and Bullpen admin credentials
+- prompts for container name, project path, ports, and Bullpen admin credentials
 - builds the Docker image when needed
 - starts/replaces the container with the correct runtime settings
 - updates Bullpen login credentials to match the admin username/password entered for this deploy
 - verifies inside the container that the entered admin password matches the stored Bullpen credentials
 - auto-loads provider credentials by mounting local auth directories and forwarding detected API/token environment variables
 - falls back to secure credential prompts only when no credentials are detected
+
+When you run `./deploy-docker.sh` from the Bullpen repo root, it now requires
+an explicit project path instead of defaulting to the Bullpen source tree.
+Type `.` only if you intentionally want the container to mount Bullpen itself.
 
 After deployment, the script prints URLs and operational commands (`docker logs`, `docker exec`, remove/redeploy).
 

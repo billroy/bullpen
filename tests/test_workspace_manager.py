@@ -263,3 +263,23 @@ def test_unavailable_project_stays_in_registry_across_restarts(tmp_path):
     m3 = WorkspaceManager(global_dir=str(global_dir))
     projects = m3.list_projects()
     assert projects[0]["available"] is True
+
+
+def test_list_visible_projects_can_hide_unavailable_entries(tmp_path, monkeypatch):
+    global_dir = tmp_path / "global"
+    available = tmp_path / "available"
+    missing = tmp_path / "missing"
+    available.mkdir()
+    missing.mkdir()
+
+    m = WorkspaceManager(global_dir=str(global_dir))
+    m.register_project(str(available), name="available")
+    m.register_project(str(missing), name="missing")
+    shutil.rmtree(missing)
+
+    monkeypatch.setenv("BULLPEN_HIDE_UNAVAILABLE_PROJECTS", "1")
+
+    projects = m.list_visible_projects()
+    assert len(projects) == 1
+    assert projects[0]["name"] == "available"
+    assert projects[0]["available"] is True

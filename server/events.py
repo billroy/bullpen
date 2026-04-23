@@ -1050,7 +1050,7 @@ def register_events(socketio, app):
         emit("state:init", state)
 
         # Broadcast updated project list to authenticated clients
-        socketio.emit("projects:updated", manager.list_projects(include_path=False), to="authenticated")
+        socketio.emit("projects:updated", manager.list_visible_projects(include_path=False), to="authenticated")
 
     @socketio.on("project:join")
     def on_project_join(data):
@@ -1211,7 +1211,7 @@ def register_events(socketio, app):
                 _chat_session_ts.pop(key, None)
                 _chat_ticket_ids.pop(key, None)
         socketio.emit("project:removed", {"workspaceId": ws_id}, to="authenticated")
-        socketio.emit("projects:updated", manager.list_projects(include_path=False), to="authenticated")
+        socketio.emit("projects:updated", manager.list_visible_projects(include_path=False), to="authenticated")
 
     @socketio.on("project:list")
     def on_project_list(data=None):
@@ -1221,7 +1221,7 @@ def register_events(socketio, app):
             ws = manager.get_or_activate(bound_ws_id)
             emit("projects:updated", [ws.to_dict(include_path=False)] if ws else [])
             return
-        emit("projects:updated", manager.list_projects(include_path=False))
+        emit("projects:updated", manager.list_visible_projects(include_path=False))
 
     @socketio.on("chat:tabs:request")
     def on_chat_tabs_request(data):
