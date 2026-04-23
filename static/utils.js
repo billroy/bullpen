@@ -12,11 +12,12 @@ const MODEL_OPTIONS = {
   gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'],
 };
 
-const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', shell: '#64748b', service: '#0f766e' };
+const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', shell: '#64748b', service: '#0f766e', marker: '#c8b38c' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
   ? window.Vue.reactive({ overrides: {} })
   : { overrides: {} };
+const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 function agentColor(agent) {
   const overrides = window.BULLPEN_AGENT_COLORS.overrides || {};
@@ -26,18 +27,21 @@ function agentColor(agent) {
 function workerColorKey(worker) {
   if (worker?.type === 'shell') return 'shell';
   if (worker?.type === 'service') return 'service';
+  if (worker?.type === 'marker') return 'marker';
   return worker?.agent;
 }
 
 function workerColor(worker) {
-  return agentColor(workerColorKey(worker));
+  const configured = typeof worker?.color === 'string' ? worker.color.trim() : '';
+  if (configured && HEX_COLOR_RE.test(configured)) return configured.toLowerCase();
+  return agentColor(configured || workerColorKey(worker));
 }
 
 function isHumanWorker(worker) {
   return worker?.is_human === true || worker?.type === 'human' || worker?.agent === 'human';
 }
 
-const BUILTIN_WORKER_TYPES = new Set(['ai', 'shell', 'service', 'eval', 'human']);
+const BUILTIN_WORKER_TYPES = new Set(['ai', 'shell', 'service', 'marker', 'eval', 'human']);
 
 function isShellWorker(worker) {
   return worker?.type === 'shell';
@@ -45,6 +49,10 @@ function isShellWorker(worker) {
 
 function isServiceWorker(worker) {
   return worker?.type === 'service';
+}
+
+function isMarkerWorker(worker) {
+  return worker?.type === 'marker';
 }
 
 function getServiceSiteUrl(worker, locationLike = window.location) {
@@ -77,9 +85,11 @@ function isUnknownWorkerType(worker) {
 }
 
 function getWorkerTypeIcon(worker) {
+  if (worker?.icon) return worker.icon;
   if (isHumanWorker(worker)) return 'user';
   if (isShellWorker(worker)) return 'terminal';
   if (isServiceWorker(worker)) return 'server-cog';
+  if (isMarkerWorker(worker)) return 'square-dot';
   if (isEvalWorker(worker)) return 'flask-conical';
   if (isUnknownWorkerType(worker)) return 'circle-help';
   return 'bot';
@@ -88,6 +98,7 @@ function getWorkerTypeIcon(worker) {
 function workerTypeLabel(worker) {
   if (isShellWorker(worker)) return 'Shell';
   if (isServiceWorker(worker)) return 'Service';
+  if (isMarkerWorker(worker)) return 'Marker';
   if (isEvalWorker(worker)) return 'Eval';
   if (isHumanWorker(worker)) return 'Human';
   if (isUnknownWorkerType(worker)) return worker.type;

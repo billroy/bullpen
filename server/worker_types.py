@@ -9,7 +9,7 @@ from server.model_aliases import normalize_model
 from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
 
 
-VALID_WORKER_TYPES = {"ai", "shell", "service", "eval"}
+VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "eval"}
 RUNTIME_FIELDS = {"task_queue", "state", "started_at"}
 SERVICE_TICKET_ACTIONS = {"start-if-stopped-else-restart", "restart", "start-if-stopped"}
 SERVICE_HEALTH_TYPES = {"none", "http", "shell"}
@@ -101,6 +101,24 @@ class ServiceWorkerType(WorkerType):
         return True
 
 
+class MarkerWorkerType(WorkerType):
+    type_id = "marker"
+
+    def validate_config(self, slot):
+        if not str(slot.get("name") or "").strip():
+            return ["Marker workers require a name."]
+        return []
+
+    def default_icon(self):
+        return "square-dot"
+
+    def default_color(self):
+        return "marker"
+
+    def runnable(self):
+        return True
+
+
 class EvalWorkerType(WorkerType):
     type_id = "eval"
 
@@ -132,6 +150,7 @@ WORKER_TYPES = {
     "ai": AIWorkerType(),
     "shell": ShellWorkerType(),
     "service": ServiceWorkerType(),
+    "marker": MarkerWorkerType(),
     "eval": EvalWorkerType(),
 }
 
@@ -203,7 +222,10 @@ def normalize_worker_slot(raw, *, index, config):
     slot["name"] = str(slot.get("name") or "Worker")
     default_activation = "manual" if type_id == "service" else "on_drop"
     slot["activation"] = str(slot.get("activation") or default_activation)
-    slot["disposition"] = str(slot.get("disposition") or "review")
+    if type_id == "marker" and "disposition" in raw:
+        slot["disposition"] = str(raw.get("disposition") or "")
+    else:
+        slot["disposition"] = str(slot.get("disposition") or "review")
     slot.setdefault("watch_column", None)
     slot["max_retries"] = max(0, _safe_int(slot.get("max_retries"), 1))
     slot.setdefault("trigger_time", None)
@@ -267,6 +289,11 @@ def normalize_worker_slot(raw, *, index, config):
         slot["stop_timeout_seconds"] = max(0, min(_safe_int(slot.get("stop_timeout_seconds"), 5), 3600))
         slot["log_max_bytes"] = max(1024, min(_safe_int(slot.get("log_max_bytes"), SERVICE_LOG_MAX_BYTES_DEFAULT), 1024 * 1024 * 1024))
         slot["env"] = _normalize_env(slot.get("env"))
+    elif type_id == "marker":
+        slot["note"] = str(slot.get("note") or "")
+        slot["icon"] = str(slot.get("icon") or "square-dot").strip() or "square-dot"
+        slot["color"] = str(slot.get("color") or "marker").strip() or "marker"
+        slot["max_retries"] = 0
 
     return slot
 

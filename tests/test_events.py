@@ -521,6 +521,29 @@ class TestWorkerEvents:
         assert worker["command"] == "python3 custom.py"
         assert worker["command_source"] == "manual"
 
+    def test_add_marker_worker_persists_marker_defaults(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "marker",
+            "fields": {
+                "name": "Deploy Marker",
+                "note": "staging + release path",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        worker = layout["slots"][0]
+        assert worker["type"] == "marker"
+        assert worker["name"] == "Deploy Marker"
+        assert worker["note"] == "staging + release path"
+        assert worker["activation"] == "on_drop"
+        assert worker["disposition"] == "review"
+        assert worker["icon"] == "square-dot"
+        assert worker["color"] == "marker"
+        assert worker["state"] == "idle"
+        assert worker["task_queue"] == []
+
     def test_add_worker_persists(self, client):
         c, app = client
         c.emit("worker:add", {"slot": 2, "profile": "code-reviewer"})

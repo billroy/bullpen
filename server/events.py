@@ -495,7 +495,7 @@ def register_events(socketio, app):
         if not worker_type:
             worker_type = "ai" if profile_id is not None else ""
 
-        if worker_type not in ("ai", "shell", "service"):
+        if worker_type not in ("ai", "shell", "service", "marker"):
             emit("error", {"message": "worker:add requires a supported type"})
             return
 
@@ -585,7 +585,7 @@ def register_events(socketio, app):
                 "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
                 "ticket_delivery": fields.get("ticket_delivery", "stdin-json"),
             }
-        else:  # service
+        elif worker_type == "service":
             base_name = fields.get("name") or "Service worker"
             workspace_path = app.config["manager"].get_workspace_path(ws_id)
             worker = {
@@ -623,6 +623,28 @@ def register_events(socketio, app):
                 "stop_timeout_seconds": int(fields.get("stop_timeout_seconds", 5) or 5),
                 "log_max_bytes": int(fields.get("log_max_bytes", 5 * 1024 * 1024) or 5 * 1024 * 1024),
                 "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
+            }
+        else:  # marker
+            base_name = fields.get("name") or "Marker"
+            worker = {
+                "type": "marker",
+                "row": row,
+                "col": col,
+                "name": _unique_name(str(base_name)),
+                "note": str(fields.get("note", "") or ""),
+                "activation": fields.get("activation", "on_drop"),
+                "disposition": fields.get("disposition", "review"),
+                "watch_column": None,
+                "max_retries": 0,
+                "trigger_time": None,
+                "trigger_interval_minutes": None,
+                "trigger_every_day": False,
+                "last_trigger_time": None,
+                "paused": False,
+                "task_queue": [],
+                "state": "idle",
+                "icon": str(fields.get("icon", "square-dot") or "square-dot"),
+                "color": str(fields.get("color", "marker") or "marker"),
             }
 
         # Ensure slots list is large enough

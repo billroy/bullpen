@@ -20,7 +20,10 @@ const WorkerConfigModal = {
       handler(w, oldW) {
         if (w) {
           if (!oldW) {
-            this.$nextTick(() => { if (this.$refs.overlay) this.$refs.overlay.focus(); });
+            this.$nextTick(() => {
+              if (this.$refs.nameInput) this.$refs.nameInput.focus();
+              else if (this.$refs.overlay) this.$refs.overlay.focus();
+            });
           }
           let disposition = w.disposition || 'review';
           let randomName = '';
@@ -31,6 +34,7 @@ const WorkerConfigModal = {
           this.form = {
             type: w.type || 'ai',
             name: w.name || '',
+            note: w.note || '',
             agent: w.agent || 'claude',
             model: w.model || 'claude-sonnet-4-6',
             activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop'),
@@ -39,7 +43,7 @@ const WorkerConfigModal = {
             watch_column: w.watch_column || '',
             expertise_prompt: w.expertise_prompt || '',
             trust_mode: w.trust_mode || 'trusted',
-            max_retries: w.max_retries ?? (w.type === 'shell' ? 0 : 1),
+            max_retries: w.max_retries ?? ((w.type === 'shell' || w.type === 'marker') ? 0 : 1),
             use_worktree: w.use_worktree || false,
             auto_commit: w.auto_commit || false,
             auto_pr: w.auto_pr || false,
@@ -47,6 +51,8 @@ const WorkerConfigModal = {
             trigger_interval_minutes: w.trigger_interval_minutes || 60,
             trigger_every_day: w.trigger_every_day || false,
             paused: w.paused || false,
+            icon: w.icon || '',
+            color: w.color || '',
             // Shell-specific fields
             command: w.command || '',
             cwd: w.cwd || '',
@@ -95,6 +101,9 @@ const WorkerConfigModal = {
     },
     isService() {
       return this.form.type === 'service';
+    },
+    isMarker() {
+      return this.form.type === 'marker';
     },
     isProcfileService() {
       return this.isService && this.form.command_source === 'procfile';
@@ -152,14 +161,35 @@ const WorkerConfigModal = {
             Configure: {{ form.name }}
             <span v-if="isShell" class="worker-type-badge">Shell</span>
             <span v-if="isService" class="worker-type-badge">Service</span>
+            <span v-if="isMarker" class="worker-type-badge">Marker</span>
           </h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
         </div>
         <div class="modal-body">
           <label class="form-label">
             Name
-            <input class="form-input" v-model="form.name">
+            <input class="form-input" v-model="form.name" ref="nameInput">
           </label>
+
+          <template v-if="isMarker">
+            <label class="form-label">
+              Note
+              <textarea class="form-textarea" v-model="form.note" rows="3" maxlength="500"
+                        placeholder="Optional label note or routing hint"></textarea>
+            </label>
+            <div class="form-row">
+              <label class="form-label">
+                Icon
+                <input class="form-input" v-model="form.icon" placeholder="square-dot">
+                <span class="form-hint">Lucide icon name.</span>
+              </label>
+              <label class="form-label">
+                Color
+                <input class="form-input" v-model="form.color" placeholder="marker or #c8b38c">
+                <span class="form-hint">Named worker color key or hex color.</span>
+              </label>
+            </div>
+          </template>
 
           <!-- AI-only: expertise prompt, agent, model -->
           <template v-if="isAI">
@@ -504,7 +534,7 @@ const WorkerConfigModal = {
           </div>
           <div v-if="!isService" class="form-row">
             <label class="form-label">
-              Output
+              {{ isMarker ? 'Pass tickets to' : 'Output' }}
               <select class="form-select" v-model="form.disposition">
                 <optgroup label="Columns">
                   <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
@@ -525,7 +555,7 @@ const WorkerConfigModal = {
               </select>
               <input v-if="form.disposition === 'random:'" class="form-input" v-model="form.random_name" placeholder="Worker name (blank matches all)" style="margin-top: 4px;">
             </label>
-            <label class="form-label">
+            <label v-if="!isMarker" class="form-label">
               Max Retries
               <select class="form-select" v-model.number="form.max_retries">
                 <option :value="0">0</option>
@@ -657,9 +687,45 @@ const WorkerConfigModal = {
         fields.disposition = 'random:' + (fields.random_name || '').trim();
       }
       delete fields.random_name;
-      if (this.isShell || this.isService) {
+      if (this.isMarker) {
+        delete fields.agent;
+        delete fields.model;
+        delete fields.expertise_prompt;
+        delete fields.trust_mode;
+        delete fields.max_retries;
+        delete fields.use_worktree;
+        delete fields.auto_commit;
+        delete fields.auto_pr;
+        delete fields.command;
+        delete fields.cwd;
+        delete fields.timeout_seconds;
+        delete fields.ticket_delivery;
+        delete fields.env;
+        delete fields.command_source;
+        delete fields.procfile_process;
+        delete fields.port;
+        delete fields.pre_start;
+        delete fields.ticket_action;
+        delete fields.startup_grace_seconds;
+        delete fields.startup_timeout_seconds;
+        delete fields.health_type;
+        delete fields.health_url;
+        delete fields.health_command;
+        delete fields.health_interval_seconds;
+        delete fields.health_timeout_seconds;
+        delete fields.health_failure_threshold;
+        delete fields.on_crash;
+        delete fields.stop_timeout_seconds;
+        delete fields.log_max_bytes;
+        fields.note = String(fields.note || '');
+        fields.icon = String(fields.icon || '').trim();
+        fields.color = String(fields.color || '').trim();
+      } else if (this.isShell || this.isService) {
         // Drop AI-only fields from the payload so server-side normalization
         // never writes them onto a non-AI slot.
+        delete fields.note;
+        delete fields.icon;
+        delete fields.color;
         delete fields.agent;
         delete fields.model;
         delete fields.expertise_prompt;
@@ -690,6 +756,9 @@ const WorkerConfigModal = {
         }
       } else {
         // Drop non-AI fields from AI payloads.
+        delete fields.note;
+        delete fields.icon;
+        delete fields.color;
         delete fields.command;
         delete fields.cwd;
         delete fields.timeout_seconds;

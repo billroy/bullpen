@@ -133,6 +133,23 @@ class TestStartWorkerIsPureDispatcher:
         start_worker(bp_dir, 0)
         assert [c[0] for c in calls] == ["shell"]
 
+    def test_marker_type_dispatches_to_marker_backend(self, bp_dir, monkeypatch):
+        _install_slots(bp_dir, [{
+            "type": "marker", "row": 0, "col": 0, "name": "Marker",
+            "note": "", "activation": "manual", "disposition": "review",
+            "watch_column": None, "max_retries": 0, "task_queue": [], "state": "idle",
+            "icon": "square-dot", "color": "marker",
+        }])
+        calls = []
+        monkeypatch.setattr(workers_mod, "_run_ai_worker",
+                            lambda *a, **kw: calls.append(("ai", a, kw)))
+        monkeypatch.setattr(workers_mod, "_run_shell_worker",
+                            lambda *a, **kw: calls.append(("shell", a, kw)))
+        monkeypatch.setattr(workers_mod, "_run_marker_worker",
+                            lambda *a, **kw: calls.append(("marker", a, kw)))
+        start_worker(bp_dir, 0)
+        assert [c[0] for c in calls] == ["marker"]
+
     def test_eval_type_never_dispatches(self, bp_dir, monkeypatch):
         _install_slots(bp_dir, [{
             "type": "eval", "row": 0, "col": 0, "name": "Eval",

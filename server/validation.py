@@ -11,13 +11,14 @@ MAX_DESCRIPTION = 50_000
 MAX_TAG_LEN = 50
 MAX_TAGS = 20
 MAX_EXPERTISE_PROMPT = 100_000
+MAX_WORKER_NOTE = 500
 MAX_SLUG = 80
 MAX_PAYLOAD_SIZE = 1_000_000  # 1MB
 
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
 VALID_AGENTS = {"claude", "codex", "gemini"}
-VALID_WORKER_COLOR_KEYS = {"claude", "codex", "gemini", "shell", "service"}
+VALID_WORKER_COLOR_KEYS = {"claude", "codex", "gemini", "shell", "service", "marker"}
 VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval"}
 VALID_DISPOSITIONS = {"review", "done"}
 VALID_THEMES = {
@@ -194,6 +195,9 @@ def validate_worker_configure(data, max_slots=100):
     if "name" in fields:
         sanitized["name"] = _str(fields["name"], MAX_TITLE, "name")
         consumed.add("name")
+    if "note" in fields:
+        sanitized["note"] = _str(fields["note"], MAX_WORKER_NOTE, "note")
+        consumed.add("note")
     if "type" in fields:
         sanitized["type"] = _str(fields["type"], 80, "type").strip() or "ai"
         consumed.add("type")

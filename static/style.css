@@ -2667,6 +2667,20 @@ body.worker-singleton-dragging * {
   padding: 8px 0;
 }
 
+.worker-card-empty--marker {
+  text-align: left;
+  padding: 8px 4px;
+  color: var(--text-secondary);
+}
+
+.worker-card-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .worker-card-output {
   margin-top: 1px;
   flex: 1 1 0;

@@ -311,11 +311,11 @@ const BullpenTab = {
               <i data-lucide="server-cog" aria-hidden="true"></i>
               <span>Service</span>
             </button>
-            <button class="worker-type-tab worker-type-tab--disabled"
-                    role="tab" aria-selected="false" disabled
-                    title="Reserved for a future release">
-              <i data-lucide="flask-conical" aria-hidden="true"></i>
-              <span>Eval</span>
+            <button class="worker-type-tab" :class="{ active: libraryMode === 'marker' }"
+                    role="tab" :aria-selected="libraryMode === 'marker'"
+                    @click="libraryMode = 'marker'">
+              <i data-lucide="square-dot" aria-hidden="true"></i>
+              <span>Marker</span>
             </button>
           </div>
           <div v-if="libraryMode === 'ai'" class="modal-body profile-library">
@@ -345,6 +345,13 @@ const BullpenTab = {
                  @click="addServiceWorker()">
               <span class="profile-name">Blank service worker</span>
               <span class="profile-agent">long-running process</span>
+            </div>
+          </div>
+          <div v-else-if="libraryMode === 'marker'" class="modal-body profile-library">
+            <div class="profile-item profile-item--blank"
+                 @click="addMarkerWorker()">
+              <span class="profile-name">Blank marker worker</span>
+              <span class="profile-agent">label, jump target, pass-through</span>
             </div>
           </div>
         </div>
@@ -1200,13 +1207,26 @@ const BullpenTab = {
         },
       });
     },
+    addMarkerWorker() {
+      this.createWorkerAndOpenConfig({
+        type: 'marker',
+        fields: {
+          name: 'Marker',
+          note: '',
+          activation: 'on_drop',
+          disposition: 'review',
+          icon: 'square-dot',
+          color: 'marker',
+        },
+      });
+    },
     nextEmptySlotIndex() {
       const slots = this.layout?.slots || [];
       const idx = slots.findIndex(slot => !slot);
       return idx >= 0 ? idx : slots.length;
     },
     workerFieldsForClipboard(worker) {
-      const fields = ['type', 'profile', 'name', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt', 'trust_mode',
+      const fields = ['type', 'profile', 'name', 'note', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt', 'trust_mode',
         'max_retries', 'use_worktree', 'auto_commit', 'auto_pr', 'trigger_time', 'trigger_interval_minutes',
         'trigger_every_day', 'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env',
         'pre_start', 'ticket_action', 'startup_grace_seconds', 'startup_timeout_seconds',

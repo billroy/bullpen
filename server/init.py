@@ -12,6 +12,7 @@ DEFAULT_PROVIDER_COLORS = {
     "gemini": "#3c7bf4",
     "shell": "#64748b",
     "service": "#0f766e",
+    "marker": "#c8b38c",
 }
 
 DEFAULT_CONFIG = {

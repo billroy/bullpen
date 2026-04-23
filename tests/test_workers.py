@@ -1701,6 +1701,105 @@ class TestHandoff:
         assert updated["status"] == "blocked"
 
 
+class TestMarkerWorker:
+    def test_marker_routes_directly_to_column_without_subprocess(self, bp_dir):
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "type": "marker",
+            "row": 0, "col": 0,
+            "name": "Review Marker",
+            "note": "review intake",
+            "activation": "manual",
+            "disposition": "review",
+            "watch_column": None,
+            "max_retries": 0,
+            "task_queue": [],
+            "state": "idle",
+            "icon": "square-dot",
+            "color": "marker",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Marker review task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.2)
+
+        updated = read_task(bp_dir, task["id"])
+        final_layout = _load_layout(bp_dir)
+        assert updated["status"] == "review"
+        assert updated["assigned_to"] == ""
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert final_layout["slots"][0]["task_queue"] == []
+        with workers_mod._process_lock:
+            assert not _processes
+
+    def test_marker_handoff_to_named_worker(self, bp_dir):
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "type": "marker",
+                "row": 0, "col": 0,
+                "name": "Deploy Marker",
+                "note": "",
+                "activation": "manual",
+                "disposition": "worker:Deploy Worker",
+                "watch_column": None,
+                "max_retries": 0,
+                "task_queue": [],
+                "state": "idle",
+                "icon": "square-dot",
+                "color": "marker",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Deploy Worker", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Marker handoff task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.2)
+
+        updated_layout = _load_layout(bp_dir)
+        updated = read_task(bp_dir, task["id"])
+        assert task["id"] in updated_layout["slots"][1]["task_queue"]
+        assert updated_layout["slots"][0]["state"] == "idle"
+        assert updated.get("handoff_depth", 0) == 1
+
+    def test_marker_blank_disposition_blocks(self, bp_dir):
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "type": "marker",
+            "row": 0, "col": 0,
+            "name": "Broken Marker",
+            "note": "",
+            "activation": "manual",
+            "disposition": "",
+            "watch_column": None,
+            "max_retries": 0,
+            "task_queue": [],
+            "state": "idle",
+            "icon": "square-dot",
+            "color": "marker",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Broken marker task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.2)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+        assert "Marker workers require Pass tickets to" in updated["body"]
+
+
 class TestWatchColumn:
     """Tests for on_queue / watch_column task claiming."""
 

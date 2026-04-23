@@ -87,6 +87,10 @@ const WorkerCard = {
             <span class="worker-queue-title">{{ t.title }}</span>
           </div>
         </div>
+        <div v-else-if="isMarker" class="worker-card-empty worker-card-empty--marker">
+          <div v-if="markerNote" class="worker-card-note">{{ markerNote }}</div>
+          <template v-else>{{ emptyLabel }}</template>
+        </div>
         <div v-else class="worker-card-empty">
           <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
             {{ statusLabel }}
@@ -252,6 +256,9 @@ const WorkerCard = {
     isService() {
       return isServiceWorker(this.worker);
     },
+    isMarker() {
+      return isMarkerWorker(this.worker);
+    },
     isEval() {
       return isEvalWorker(this.worker);
     },
@@ -300,8 +307,12 @@ const WorkerCard = {
       return lines.slice(-5).join('\n');
     },
     emptyLabel() {
+      if (this.isMarker) return 'Marker';
       if (this.isService) return this.workerState === 'idle' ? 'Stopped' : this.workerState;
       return 'Idle';
+    },
+    markerNote() {
+      return String(this.worker?.note || '').trim();
     },
     showVerticalResizeHandle() {
       return !!(this.isSelected && (this.hoveredVerticalResize || this.isVerticalResizing));

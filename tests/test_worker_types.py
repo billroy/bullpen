@@ -162,6 +162,39 @@ def test_service_slot_normalizes_defaults_and_round_trips_through_team(tmp_works
     assert loaded["slots"][0]["state"] == "idle"
 
 
+def test_marker_slot_normalizes_defaults_and_resets_runtime_on_copy(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = normalize_worker_slot(
+        {
+            "type": "marker",
+            "row": 0,
+            "col": 0,
+            "name": "Deploy Marker",
+            "note": "staging + release path",
+            "activation": "manual",
+            "disposition": "worker:Deploy Worker",
+            "task_queue": ["ticket-1"],
+            "state": "working",
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["type"] == "marker"
+    assert slot["note"] == "staging + release path"
+    assert slot["icon"] == "square-dot"
+    assert slot["color"] == "marker"
+    assert slot["max_retries"] == 0
+
+    clone = copy_worker_slot(slot, reset_runtime=True)
+    assert clone["type"] == "marker"
+    assert clone["note"] == "staging + release path"
+    assert clone["task_queue"] == []
+    assert clone["state"] == "idle"
+    assert clone["paused"] is False
+
+
 def test_unknown_worker_type_transfer_preserves_fields(tmp_path):
     ws_a = str(tmp_path / "a")
     ws_b = str(tmp_path / "b")

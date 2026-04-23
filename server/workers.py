@@ -568,6 +568,9 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         from server import service_worker as service_worker_mod
         service_worker_mod.run_service_order(bp_dir, slot_index, socketio, ws_id)
         return
+    if worker_type.type_id == "marker":
+        _run_marker_worker(bp_dir, slot_index, socketio, ws_id)
+        return
     # Unknown or not-yet-runnable types (eval, unknown) surface a toast and
     # never enter the lifecycle.
     if socketio:
@@ -802,6 +805,60 @@ def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     thread.start()
 
 
+def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+    """Marker worker backend: no subprocess, immediate disposition application."""
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    if begun is None:
+        return
+    _layout, worker, _task, task_id = begun
+
+    disposition = str(worker.get("disposition") or "").strip()
+    if not disposition:
+        _block_marker_run_failure(
+            bp_dir,
+            slot_index,
+            task_id,
+            "Marker workers require Pass tickets to before they can run.",
+            socketio,
+            ws_id,
+        )
+        return
+    if not _valid_disposition(bp_dir, disposition):
+        _block_marker_run_failure(
+            bp_dir,
+            slot_index,
+            task_id,
+            f"Invalid disposition: {disposition}",
+            socketio,
+            ws_id,
+        )
+        return
+
+    with _write_lock:
+        layout = _load_layout(bp_dir)
+        slots = layout.get("slots", [])
+        if slot_index >= len(slots):
+            return
+        worker = slots[slot_index]
+        if not worker:
+            return
+        worker["last_trigger_time"] = int(time.time())
+        _clear_worker_retry_state(worker)
+        _save_layout(bp_dir, layout)
+
+    _on_agent_success(
+        bp_dir,
+        slot_index,
+        task_id,
+        "",
+        socketio,
+        ws_id=ws_id,
+        disposition_override=disposition,
+        output_appender=lambda _worker: None,
+        allow_auto_actions=False,
+    )
+
+
 def _validate_shell_worker(worker, bp_dir):
     errors = []
     if not str(worker.get("command") or "").strip():
@@ -982,6 +1039,17 @@ def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=
         task = task_mod.read_task(bp_dir, task_id)
         _ws_emit(socketio, "task:updated", task, ws_id)
         _ws_emit(socketio, "layout:updated", layout, ws_id)
+
+
+def _block_marker_run_failure(bp_dir, slot_index, task_id, error_msg, socketio=None, ws_id=None):
+    """Block a marker task on deterministic routing/configuration failures."""
+    _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio, ws_id)
+    if socketio:
+        task = task_mod.read_task(bp_dir, task_id)
+        _ws_emit(socketio, "toast", {
+            "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: {error_msg}",
+            "level": "warning",
+        }, ws_id)
 
 
 def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
@@ -2708,7 +2776,9 @@ def _append_output(bp_dir, task_id, worker, output):
     body = task.get("body", "")
     timestamp = _now_iso()
     worker_name = worker.get("name", "Agent")
-    agent_info = f"{worker.get('agent', '?')}/{worker.get('model', '?')}"
+    provider = str(worker.get("agent") or worker.get("type") or "worker")
+    model = str(worker.get("model") or "").strip()
+    agent_info = f"{provider}/{model}" if model else provider
 
     header = f"\n### {timestamp} — {worker_name} ({agent_info})\n\n"
 

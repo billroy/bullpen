@@ -19,3 +19,4 @@ def test_worker_library_creation_paths_share_add_and_configure_helper():
     assert "this.createWorkerAndOpenConfig({" in text
     assert "type: 'shell'," in text
     assert "type: 'service'," in text
+    assert "type: 'marker'," in text
