@@ -130,6 +130,28 @@ class TestTaskEvents:
         assert updated["priority"] == "urgent"
         assert updated["title"] == "Update Me"
 
+    def test_create_task_auto_joins_target_workspace_on_first_action(self, client):
+        c, app = client
+        c2 = socketio.test_client(app)
+        c2.get_received()
+        with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
+            path = os.path.join(parent, "auto-join-project")
+            c.emit("project:new", {"path": path})
+            events = c.get_received()
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            listed = project_updates[-1]["args"][0]
+            ws_id = next(p["id"] for p in listed if p["name"] == "auto-join-project")
+
+            c2.emit("task:create", {"workspaceId": ws_id, "title": "Cross-workspace create"})
+            created = get_event(c2, "task:created")
+            err = get_event(c2, "error")
+
+            assert err is None
+            assert created is not None
+            assert created["title"] == "Cross-workspace create"
+            assert created["workspaceId"] == ws_id
+        c2.disconnect()
+
     def test_delete_task(self, client):
         c, app = client
         c.emit("task:create", {"title": "Delete Me"})

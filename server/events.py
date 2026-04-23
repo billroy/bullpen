@@ -301,6 +301,26 @@ def register_events(socketio, app):
         emit("error", {"message": f"{event_name} unavailable for MCP-authenticated clients"})
         return True
 
+    def _ensure_workspace_membership(ws_id):
+        """Ensure the current socket is joined to the target workspace room.
+
+        Client-side project switches emit `project:join`, but the first action
+        after a switch can race that join. Auto-join valid workspaces here so a
+        transient room-membership race does not reject the action.
+        """
+        if not ws_id:
+            emit("error", {"message": "Missing workspaceId"})
+            return False
+        if ws_id in rooms(request.sid):
+            return True
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("error", {"message": f"Unknown workspace: {ws_id}"})
+            return False
+        join_room(ws_id)
+        return True
+
     def _emit(event, payload, ws_id):
         """Emit an event with workspaceId attached, scoped to workspace room."""
         if isinstance(payload, dict):
@@ -351,8 +371,7 @@ def register_events(socketio, app):
     @with_lock
     def on_task_create(data):
         ws_id, bp_dir = _resolve(data)
-        if ws_id not in rooms(request.sid):
-            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+        if not _ensure_workspace_membership(ws_id):
             return
         clean = validate_task_create(data)
         kwargs = {
@@ -377,8 +396,7 @@ def register_events(socketio, app):
     @with_lock
     def on_task_update(data):
         ws_id, bp_dir = _resolve(data)
-        if ws_id not in rooms(request.sid):
-            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+        if not _ensure_workspace_membership(ws_id):
             return
         task_id, fields = validate_task_update(data)
 
@@ -1208,8 +1226,7 @@ def register_events(socketio, app):
     @socketio.on("chat:tabs:request")
     def on_chat_tabs_request(data):
         ws_id, _ = _resolve(data or {})
-        if ws_id not in rooms(request.sid):
-            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+        if not _ensure_workspace_membership(ws_id):
             return
         _evict_stale_chat_sessions()
         if not _chat_tabs.get(ws_id):
@@ -1220,8 +1237,7 @@ def register_events(socketio, app):
     @socketio.on("chat:tab:open")
     def on_chat_tab_open(data):
         ws_id, _ = _resolve(data or {})
-        if ws_id not in rooms(request.sid):
-            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+        if not _ensure_workspace_membership(ws_id):
             return
         session_id = (data or {}).get("sessionId")
         if not str(session_id or "").strip():
@@ -1239,8 +1255,7 @@ def register_events(socketio, app):
     @socketio.on("chat:tab:close")
     def on_chat_tab_close(data):
         ws_id, _ = _resolve(data or {})
-        if ws_id not in rooms(request.sid):
-            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+        if not _ensure_workspace_membership(ws_id):
             return
         session_id = (data or {}).get("sessionId")
         if not str(session_id or "").strip():
@@ -1589,8 +1604,8 @@ def register_events(socketio, app):
         message = (data.get("message") or "").strip()
         ws_id, bp_dir = _resolve(data)
         manager = app.config["manager"]
-        if ws_id not in rooms(request.sid):
-            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": f"Not a member of workspace {ws_id}"})
+        if not _ensure_workspace_membership(ws_id):
+            emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": f"Unknown workspace: {ws_id}"})
             return
         if not manager.get_bp_dir(ws_id):
             emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": f"Unknown workspace: {ws_id}"})
@@ -1653,8 +1668,7 @@ def register_events(socketio, app):
     def on_chat_clear(data):
         session_id = data.get("sessionId", "")
         ws_id = data.get("workspaceId") if isinstance(data, dict) else None
-        if ws_id and ws_id not in rooms(request.sid):
-            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+        if ws_id and not _ensure_workspace_membership(ws_id):
             return
         touched = set()
         with _chat_lock:
@@ -1682,8 +1696,7 @@ def register_events(socketio, app):
     def on_chat_stop(data):
         session_id = data.get("sessionId", "")
         ws_id = data.get("workspaceId") if isinstance(data, dict) else None
-        if ws_id and ws_id not in rooms(request.sid):
-            emit("error", {"message": f"Not a member of workspace {ws_id}"})
+        if ws_id and not _ensure_workspace_membership(ws_id):
             return
         proc_key = _chat_key(ws_id, session_id) if ws_id else None
         with _chat_proc_lock:
