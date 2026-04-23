@@ -313,6 +313,38 @@ class TestMultiProjectStartup:
         assert os.path.basename(ws_a) in listed_names
         assert "workspace_b" not in listed_names
 
+    def test_connect_selects_startup_project_even_if_registry_lists_another_first(self, tmp_path):
+        global_dir = str(tmp_path / "global")
+        os.makedirs(global_dir, exist_ok=True)
+
+        ws_a = str(tmp_path / "workspace_a")
+        ws_b = str(tmp_path / "workspace_b")
+        os.makedirs(ws_a, exist_ok=True)
+        os.makedirs(ws_b, exist_ok=True)
+
+        projects_path = os.path.join(global_dir, "projects.json")
+        with open(projects_path, "w", encoding="utf-8") as f:
+            json.dump({
+                "version": 1,
+                "projects": [
+                    {"id": "ws-b", "path": os.path.realpath(ws_b), "name": "workspace_b"},
+                    {"id": "ws-a", "path": os.path.realpath(ws_a), "name": "workspace_a"},
+                ],
+            }, f, indent=2)
+
+        app = create_app(ws_a, no_browser=True, global_dir=global_dir)
+        assert app.config["startup_workspace_id"] == "ws-a"
+
+        c = socketio.test_client(app)
+        received = c.get_received()
+        c.disconnect()
+
+        init_events = [evt for evt in received if evt["name"] == "state:init"]
+        assert len(init_events) == 1
+        startup_state = init_events[0]["args"][0]
+        assert startup_state["workspaceId"] == "ws-a"
+        assert startup_state["workspace"] == "workspace_a"
+
 
 class TestWorkerManagement:
     """Worker add/remove/move/configure flows."""
