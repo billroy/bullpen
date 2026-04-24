@@ -152,21 +152,24 @@ const WorkerConfigModal = {
       if (current && !names.includes(current)) names.unshift(current);
       return names;
     },
-    workerColorChoices() {
-      return ['claude', 'codex', 'gemini', 'shell', 'service', 'marker'].map((key) => ({
-        key,
-        label: key,
-        value: (this.providerColors && this.providerColors[key])
-          || (this.defaultProviderColors && this.defaultProviderColors[key])
-          || '#6B7280',
-      }));
-    },
     selectedWorkerColorOverride() {
       return typeof this.form.color === 'string' ? this.form.color.trim() : '';
     },
     workerColorDefaultLabel() {
       const key = workerColorKey(this.worker) || 'worker';
       return key === 'marker' ? 'marker' : key;
+    },
+    workerColorDefaultValue() {
+      const key = workerColorKey(this.worker) || 'worker';
+      return (this.providerColors && this.providerColors[key])
+        || (this.defaultProviderColors && this.defaultProviderColors[key])
+        || '#6B7280';
+    },
+    workerColorPreviewValue() {
+      return this.resolveWorkerColorValue(this.selectedWorkerColorOverride) || this.workerColorDefaultValue;
+    },
+    workerColorPickerValue() {
+      return this.normalizeHexColor(this.selectedWorkerColorOverride) || this.workerColorPreviewValue;
     },
   },
   template: `
@@ -189,24 +192,31 @@ const WorkerConfigModal = {
 
           <div v-if="!isMarker" class="form-label">
             <span>Card Color</span>
-            <div class="worker-color-override-grid">
+            <div class="worker-color-override-controls">
               <button
                 type="button"
-                class="worker-color-override-option"
-                :class="{ 'worker-color-override-option-active': selectedWorkerColorOverride === choice.key }"
-                v-for="choice in workerColorChoices"
-                :key="choice.key"
-                @click="form.color = choice.key"
+                class="worker-color-override-trigger"
+                @click="openWorkerColorPicker"
+                :aria-label="selectedWorkerColorOverride ? 'Choose a different card color override' : 'Choose a card color override'"
               >
-                <span class="worker-color-override-swatch" :style="{ background: choice.value }" aria-hidden="true"></span>
-                <span class="worker-color-override-label">{{ choice.label }}</span>
+                <i data-lucide="palette" aria-hidden="true"></i>
+                <span class="worker-color-override-swatch" :style="{ background: workerColorPreviewValue }" aria-hidden="true"></span>
+                <span class="worker-color-override-label">{{ selectedWorkerColorOverride ? 'Override active' : 'Pick override' }}</span>
               </button>
-            </div>
-            <div class="worker-color-override-actions">
+              <input
+                ref="workerColorInput"
+                class="worker-color-override-input"
+                type="color"
+                :value="workerColorPickerValue"
+                @input="onWorkerColorInput"
+                tabindex="-1"
+                aria-hidden="true"
+              >
+              <code class="worker-color-override-code">{{ selectedWorkerColorOverride || workerColorDefaultValue }}</code>
               <button type="button" class="btn btn-sm" @click="onRestoreDefaultColor" :disabled="!selectedWorkerColorOverride">Restore Default</button>
             </div>
             <span class="form-hint">
-              Default uses the workspace <code>{{ workerColorDefaultLabel }}</code> color. Selecting a palette color overrides this card only.
+              Default uses the workspace <code>{{ workerColorDefaultLabel }}</code> color. Use the palette button to pick any per-card override.
             </span>
           </div>
 
@@ -636,6 +646,37 @@ const WorkerConfigModal = {
     </div>
   `,
   methods: {
+    normalizeHexColor(value) {
+      const text = String(value || '').trim();
+      if (!text) return '';
+      const shortMatch = text.match(/^#([0-9a-fA-F]{3})$/);
+      if (shortMatch) {
+        return `#${shortMatch[1].split('').map(ch => ch + ch).join('').toLowerCase()}`;
+      }
+      const longMatch = text.match(/^#([0-9a-fA-F]{6})$/);
+      return longMatch ? `#${longMatch[1].toLowerCase()}` : '';
+    },
+    resolveWorkerColorValue(value) {
+      const normalized = this.normalizeHexColor(value);
+      if (normalized) return normalized;
+      const key = String(value || '').trim();
+      if (!key) return '';
+      return (this.providerColors && this.providerColors[key])
+        || (this.defaultProviderColors && this.defaultProviderColors[key])
+        || '';
+    },
+    openWorkerColorPicker() {
+      const input = this.$refs.workerColorInput;
+      if (!input) return;
+      if (typeof input.showPicker === 'function') {
+        input.showPicker();
+        return;
+      }
+      input.click();
+    },
+    onWorkerColorInput(e) {
+      this.form.color = this.normalizeHexColor(e?.target?.value) || '';
+    },
     onPrimaryShortcut(e) {
       e.preventDefault();
       this.onSave();

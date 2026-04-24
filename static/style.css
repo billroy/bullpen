@@ -3418,14 +3418,15 @@ body.worker-singleton-dragging * {
   flex: 1;
 }
 
-.worker-color-override-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 8px;
+.worker-color-override-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.worker-color-override-option {
-  display: flex;
+.worker-color-override-trigger {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
@@ -3434,18 +3435,17 @@ body.worker-singleton-dragging * {
   background: var(--bg-primary);
   color: var(--text-primary);
   cursor: pointer;
-  text-transform: capitalize;
   transition: border-color 0.15s, background 0.15s;
 }
 
-.worker-color-override-option:hover {
+.worker-color-override-trigger:hover {
   border-color: var(--accent);
   background: var(--bg-hover);
 }
 
-.worker-color-override-option-active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary));
+.worker-color-override-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  outline-offset: 2px;
 }
 
 .worker-color-override-swatch {
@@ -3460,9 +3460,24 @@ body.worker-singleton-dragging * {
   min-width: 0;
 }
 
-.worker-color-override-actions {
-  display: flex;
-  justify-content: flex-end;
+.worker-color-override-code {
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.worker-color-override-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
 }
 
 .form-input, .form-select, .form-textarea {

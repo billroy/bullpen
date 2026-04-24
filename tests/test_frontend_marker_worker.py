@@ -33,8 +33,10 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
     assert "isMarker()" in modal
     assert "<span v-if=\"isMarker\" class=\"worker-type-badge\">Marker</span>" in modal
     assert "v-if=\"!isMarker\" class=\"form-label\"" in modal
+    assert "class=\"worker-color-override-trigger\"" in modal
+    assert "ref=\"workerColorInput\"" in modal
     assert "Restore Default" in modal
-    assert "Selecting a palette color overrides this card only." in modal
+    assert "Use the palette button to pick any per-card override." in modal
     assert "Pass tickets to" in modal
     assert "placeholder=\"square-dot\"" in modal
     assert "placeholder=\"marker or #c8b38c\"" in modal
@@ -58,5 +60,5 @@ def test_marker_worker_card_renders_note_without_output_focus_affordances():
     assert "if (this.isMarker) return 'Marker';" in text
     assert ".worker-card-empty--marker {" in style
     assert ".worker-card-note {" in style
-    assert ".worker-color-override-grid {" in style
-    assert ".worker-color-override-option-active {" in style
+    assert ".worker-color-override-controls {" in style
+    assert ".worker-color-override-trigger {" in style
