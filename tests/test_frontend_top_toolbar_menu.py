@@ -62,6 +62,12 @@ def test_worker_colors_menu_includes_marker():
     assert "['claude','codex','gemini','shell','service','marker']" in text
 
 
+def test_worker_config_modal_receives_workspace_palette_colors():
+    text = _read("static/app.js")
+    assert ":provider-colors=\"currentProviderColors\"" in text
+    assert ":default-provider-colors=\"defaultProviderColors\"" in text
+
+
 def test_toolbar_menu_css_anchors_from_left_edge():
     text = _read("static/style.css")
     assert ".toolbar-menu {" in text

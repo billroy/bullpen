@@ -32,9 +32,21 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
 
     assert "isMarker()" in modal
     assert "<span v-if=\"isMarker\" class=\"worker-type-badge\">Marker</span>" in modal
+    assert "v-if=\"!isMarker\" class=\"form-label\"" in modal
+    assert "Restore Default" in modal
+    assert "Selecting a palette color overrides this card only." in modal
     assert "Pass tickets to" in modal
     assert "placeholder=\"square-dot\"" in modal
     assert "placeholder=\"marker or #c8b38c\"" in modal
+
+
+def test_non_marker_worker_modal_preserves_color_override_on_save():
+    modal = _read("static/components/WorkerConfigModal.js")
+
+    assert "fields.color = String(fields.color || '').trim();" in modal
+    assert "delete fields.color;" not in modal.split("} else if (this.isShell || this.isService) {", 1)[1].split("} else {", 1)[0]
+    assert "delete fields.color;" not in modal.split("} else {", 1)[1]
+    assert "onRestoreDefaultColor()" in modal
 
 
 def test_marker_worker_card_renders_note_without_output_focus_affordances():
@@ -46,3 +58,5 @@ def test_marker_worker_card_renders_note_without_output_focus_affordances():
     assert "if (this.isMarker) return 'Marker';" in text
     assert ".worker-card-empty--marker {" in style
     assert ".worker-card-note {" in style
+    assert ".worker-color-override-grid {" in style
+    assert ".worker-color-override-option-active {" in style

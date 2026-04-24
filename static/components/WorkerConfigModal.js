@@ -1,5 +1,5 @@
 const WorkerConfigModal = {
-  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols'],
+  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors'],
   emits: ['close', 'save', 'remove', 'save-profile'],
   data() {
     return {
@@ -152,6 +152,22 @@ const WorkerConfigModal = {
       if (current && !names.includes(current)) names.unshift(current);
       return names;
     },
+    workerColorChoices() {
+      return ['claude', 'codex', 'gemini', 'shell', 'service', 'marker'].map((key) => ({
+        key,
+        label: key,
+        value: (this.providerColors && this.providerColors[key])
+          || (this.defaultProviderColors && this.defaultProviderColors[key])
+          || '#6B7280',
+      }));
+    },
+    selectedWorkerColorOverride() {
+      return typeof this.form.color === 'string' ? this.form.color.trim() : '';
+    },
+    workerColorDefaultLabel() {
+      const key = workerColorKey(this.worker) || 'worker';
+      return key === 'marker' ? 'marker' : key;
+    },
   },
   template: `
     <div v-if="worker" class="modal-overlay" @mousedown.self="overlayMouseDown = true" @click.self="onOverlayClick" @keydown.escape="$emit('close')" @keydown.meta.enter="onPrimaryShortcut" tabindex="0" ref="overlay">
@@ -170,6 +186,29 @@ const WorkerConfigModal = {
             Name
             <input class="form-input" v-model="form.name" ref="nameInput">
           </label>
+
+          <div v-if="!isMarker" class="form-label">
+            <span>Card Color</span>
+            <div class="worker-color-override-grid">
+              <button
+                type="button"
+                class="worker-color-override-option"
+                :class="{ 'worker-color-override-option-active': selectedWorkerColorOverride === choice.key }"
+                v-for="choice in workerColorChoices"
+                :key="choice.key"
+                @click="form.color = choice.key"
+              >
+                <span class="worker-color-override-swatch" :style="{ background: choice.value }" aria-hidden="true"></span>
+                <span class="worker-color-override-label">{{ choice.label }}</span>
+              </button>
+            </div>
+            <div class="worker-color-override-actions">
+              <button type="button" class="btn btn-sm" @click="onRestoreDefaultColor" :disabled="!selectedWorkerColorOverride">Restore Default</button>
+            </div>
+            <span class="form-hint">
+              Default uses the workspace <code>{{ workerColorDefaultLabel }}</code> color. Selecting a palette color overrides this card only.
+            </span>
+          </div>
 
           <template v-if="isMarker">
             <label class="form-label">
@@ -725,7 +764,6 @@ const WorkerConfigModal = {
         // never writes them onto a non-AI slot.
         delete fields.note;
         delete fields.icon;
-        delete fields.color;
         delete fields.agent;
         delete fields.model;
         delete fields.expertise_prompt;
@@ -733,6 +771,7 @@ const WorkerConfigModal = {
         delete fields.use_worktree;
         delete fields.auto_commit;
         delete fields.auto_pr;
+        fields.color = String(fields.color || '').trim();
         fields.env = (fields.env || [])
           .filter(e => e && String(e.key || '').trim())
           .map(e => ({ key: String(e.key).trim(), value: String(e.value || '') }));
@@ -758,7 +797,6 @@ const WorkerConfigModal = {
         // Drop non-AI fields from AI payloads.
         delete fields.note;
         delete fields.icon;
-        delete fields.color;
         delete fields.command;
         delete fields.cwd;
         delete fields.timeout_seconds;
@@ -777,6 +815,7 @@ const WorkerConfigModal = {
         delete fields.on_crash;
         delete fields.stop_timeout_seconds;
         delete fields.log_max_bytes;
+        fields.color = String(fields.color || '').trim();
         if (fields.trust_mode !== 'trusted') {
           fields.auto_commit = false;
           fields.auto_pr = false;
@@ -789,6 +828,9 @@ const WorkerConfigModal = {
     onRemove() {
       this.$emit('remove', this.slotIndex);
       this.$emit('close');
+    },
+    onRestoreDefaultColor() {
+      this.form.color = '';
     },
     onSaveProfile() {
       const id = this.form.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');

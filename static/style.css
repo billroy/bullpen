@@ -3418,6 +3418,53 @@ body.worker-singleton-dragging * {
   flex: 1;
 }
 
+.worker-color-override-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+.worker-color-override-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-transform: capitalize;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.worker-color-override-option:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.worker-color-override-option-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary));
+}
+
+.worker-color-override-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.worker-color-override-label {
+  min-width: 0;
+}
+
+.worker-color-override-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .form-input, .form-select, .form-textarea {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
