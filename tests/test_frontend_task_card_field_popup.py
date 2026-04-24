@@ -23,7 +23,7 @@ def test_task_card_exposes_popup_controls_for_priority_and_type():
 
 def test_kanban_forwards_task_card_update_event():
     text = _read("static/components/KanbanTab.js")
-    assert "emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope', 'update-task']" in text
+    assert "emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope', 'update-task', 'update-shown-count']" in text
     assert "@update-task=\"$emit('update-task', $event)\"" in text
 
 

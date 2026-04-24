@@ -858,6 +858,10 @@ const app = createApp({
       }
     }
 
+    function setTicketListShownCount(count) {
+      ticketListShownCount.value = Number.isFinite(count) ? count : 0;
+    }
+
     // Worker actions
     function addWorker({ slot, coord, profile, type, fields }) {
       socket.emit('worker:add', _wsData({ slot, coord, profile, type, fields }));
@@ -1003,9 +1007,11 @@ const app = createApp({
 
     const allTabs = computed(() => {
       const activeWorkerCount = (state.layout?.slots || []).filter(s => ['working', 'retrying'].includes(s?.state)).length;
+      const shownTicketCount = Number.isFinite(ticketListShownCount.value) ? ticketListShownCount.value : visibleTicketTasks.value.length;
+      const ticketsLabel = ticketsViewMode.value === 'list' ? `Tickets (${shownTicketCount})` : 'Tickets';
       const workersLabel = activeWorkerCount > 0 ? `Workers (${activeWorkerCount})` : 'Workers';
       const tabs = [
-        { id: 'tasks', label: 'Tickets', icon: 'tag' },
+        { id: 'tasks', label: ticketsLabel, icon: 'tag' },
         { id: 'workers', label: workersLabel, icon: 'bot' },
         { id: 'files', label: 'Files', icon: 'folder' },
         { id: 'commits', label: 'Commits', icon: 'git-commit' },
@@ -1361,6 +1367,7 @@ const app = createApp({
     const currentProviderColors = computed(() => _normalizeProviderColors(state.config?.provider_colors));
     const defaultProviderColors = computed(() => ({ ...(window.DEFAULT_AGENT_COLORS || {}) }));
     const activeProjectName = computed(() => _workspaceBaseName(state.workspace));
+    const ticketListShownCount = ref(null);
     const visibleTicketTasks = computed(() => {
       if (ticketsViewMode.value === 'list' && ticketListScope.value === 'archived') {
         const ws = activeWorkspaceId.value ? _getWs(activeWorkspaceId.value) : null;
@@ -1532,6 +1539,7 @@ const app = createApp({
               @archive-done="archiveDone"
               @new-task="showCreateModal = true"
               @update-list-scope="setTicketListScope"
+              @update-shown-count="setTicketListShownCount"
             />
             <BullpenTab
               v-if="activeTab === 'workers'"

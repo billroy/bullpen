@@ -1,6 +1,6 @@
 const KanbanTab = {
   props: ['tasks', 'columns', 'layout', 'viewMode', 'listScope'],
-  emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope', 'update-task'],
+  emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope', 'update-task', 'update-shown-count'],
   components: { TaskCard },
   template: `
     <div v-if="viewMode !== 'list'" class="kanban-board">
@@ -153,6 +153,14 @@ const KanbanTab = {
   },
   updated() {
     renderLucideIcons(this.$el);
+  },
+  watch: {
+    filteredTasks: {
+      immediate: true,
+      handler(tasks) {
+        this.$emit('update-shown-count', Array.isArray(tasks) ? tasks.length : 0);
+      },
+    },
   },
   computed: {
     priorityOptions() {

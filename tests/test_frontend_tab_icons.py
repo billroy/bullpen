@@ -12,7 +12,8 @@ def _read(rel_path: str) -> str:
 
 def test_app_shell_tabs_define_relevant_icons():
     text = _read("static/app.js")
-    assert "{ id: 'tasks', label: 'Tickets', icon: 'tag' }" in text
+    assert "const ticketsLabel = ticketsViewMode.value === 'list' ? `Tickets (${shownTicketCount})` : 'Tickets';" in text
+    assert "{ id: 'tasks', label: ticketsLabel, icon: 'tag' }" in text
     assert "{ id: 'workers', label: workersLabel, icon: 'bot' }" in text
     assert "{ id: 'files', label: 'Files', icon: 'folder' }" in text
     assert "{ id: 'commits', label: 'Commits', icon: 'git-commit' }" in text
