@@ -7,6 +7,7 @@ const app = createApp({
     KanbanTab,
     BullpenTab,
     FilesTab,
+    StatsTab,
     CommitsTab,
     LiveAgentChatTab,
     WorkerFocusView,
@@ -252,6 +253,9 @@ const app = createApp({
       _applyWorkspaceAmbient(wsId);
       _applyWorkspaceProviderColors(wsId);
       _updateDocumentTitle();
+      if (activeTab.value === 'stats') {
+        socket.emit('task:list', _wsData({ scope: 'archived' }));
+      }
       if (wasLiveAgent) {
         const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);
         const fallback = preferred || ensuredChatTab || chatTabs.find(t => t.workspaceId === wsId);
@@ -376,6 +380,9 @@ const app = createApp({
     function setActiveTab(tabId) {
       activeTab.value = tabId;
       _rememberLiveAgentTab(tabId);
+      if (tabId === 'stats' && activeWorkspaceId.value) {
+        socket.emit('task:list', _wsData({ scope: 'archived' }));
+      }
     }
 
     function focusWorkerGridSoon() {
@@ -568,6 +575,9 @@ const app = createApp({
         selectedTaskMode.value = 'edit';
       }
       if (_isActive(wsId) && ticketListScope.value === 'archived') {
+        socket.emit('task:list', _wsData({ scope: 'archived' }));
+      }
+      if (_isActive(wsId) && activeTab.value === 'stats') {
         socket.emit('task:list', _wsData({ scope: 'archived' }));
       }
     });
@@ -1001,6 +1011,7 @@ const app = createApp({
         tasks: 'tag',
         workers: 'bot',
         files: 'folder',
+        stats: 'chart-no-axes-column',
         commits: 'git-commit',
       })[tab.id] || 'circle';
     }
@@ -1014,6 +1025,7 @@ const app = createApp({
         { id: 'tasks', label: ticketsLabel, icon: 'tag' },
         { id: 'workers', label: workersLabel, icon: 'bot' },
         { id: 'files', label: 'Files', icon: 'folder' },
+        { id: 'stats', label: 'Stats', icon: 'chart-no-axes-column' },
         { id: 'commits', label: 'Commits', icon: 'git-commit' },
       ];
       const wsId = activeWorkspaceId.value;
@@ -1558,6 +1570,15 @@ const app = createApp({
               @transfer-worker="openTransfer"
             />
             <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" :workspace-id="activeWorkspaceId" :key="'files-' + (activeWorkspaceId || 'none')" />
+            <StatsTab
+              v-if="activeTab === 'stats'"
+              :tasks="state.tasks"
+              :archived-tasks="workspaces[activeWorkspaceId]?.archivedTasks || []"
+              :columns="state.config.columns"
+              :layout="state.layout"
+              :workspace-id="activeWorkspaceId"
+              @select-task="selectTask"
+            />
             <CommitsTab
               v-if="activeTab === 'commits'"
               :workspace-id="activeWorkspaceId"

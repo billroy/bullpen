@@ -16,6 +16,7 @@ def test_app_shell_tabs_define_relevant_icons():
     assert "{ id: 'tasks', label: ticketsLabel, icon: 'tag' }" in text
     assert "{ id: 'workers', label: workersLabel, icon: 'bot' }" in text
     assert "{ id: 'files', label: 'Files', icon: 'folder' }" in text
+    assert "{ id: 'stats', label: 'Stats', icon: 'chart-no-axes-column' }" in text
     assert "{ id: 'commits', label: 'Commits', icon: 'git-commit' }" in text
     assert "isChat: true, canClose: wsChatTabs.length > 1, icon: 'message-square'" in text
     assert "isFocus: true, slotIndex: ft.slotIndex, icon: 'terminal'" in text
