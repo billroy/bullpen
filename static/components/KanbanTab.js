@@ -31,9 +31,9 @@ const KanbanTab = {
           />
         </div>
       </div>
-    </div>
-    <div v-else class="ticket-list">
-      <div class="ticket-list-filters">
+      </div>
+      <div v-else class="ticket-list">
+        <div class="ticket-list-filters">
         <label class="ticket-list-filter ticket-list-filter-search">
           <span class="ticket-list-filter-label">Search</span>
           <input
@@ -74,6 +74,10 @@ const KanbanTab = {
             <option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
         </label>
+        <div class="ticket-list-summary" aria-live="polite">
+          <span class="ticket-list-summary-label">All ticket time</span>
+          <span class="ticket-list-summary-value">{{ formatTaskTime(totalTaskTimeMs) }}</span>
+        </div>
       </div>
       <table class="ticket-list-table">
         <thead>
@@ -96,6 +100,9 @@ const KanbanTab = {
             <th class="ticket-list-col-date ticket-list-th-sortable" @click="setSort('created_at')">
               Created<span class="sort-indicator">{{ sortIndicator('created_at') }}</span>
             </th>
+            <th class="ticket-list-col-task-time ticket-list-th-sortable" @click="setSort('task_time_ms')">
+              Task Time<span class="sort-indicator">{{ sortIndicator('task_time_ms') }}</span>
+            </th>
             <th class="ticket-list-col-tokens ticket-list-th-sortable" @click="setSort('tokens')">
               Tokens<span class="sort-indicator">{{ sortIndicator('tokens') }}</span>
             </th>
@@ -103,7 +110,7 @@ const KanbanTab = {
         </thead>
         <tbody>
           <tr v-if="sortedTasks.length === 0">
-            <td colspan="7" class="ticket-list-empty">No tickets</td>
+            <td colspan="8" class="ticket-list-empty">No tickets</td>
           </tr>
           <tr
             v-for="task in sortedTasks"
@@ -132,6 +139,7 @@ const KanbanTab = {
             </td>
             <td class="ticket-list-col-worker">{{ workerName(task) || '—' }}</td>
             <td class="ticket-list-col-date">{{ formatDate(task.created_at) }}</td>
+            <td class="ticket-list-col-task-time">{{ formatTaskTime(displayTaskTimeMs(task)) }}</td>
             <td class="ticket-list-col-tokens">{{ task.tokens ? formatTokens(task.tokens) : '—' }}</td>
           </tr>
         </tbody>
@@ -146,10 +154,21 @@ const KanbanTab = {
       priorityFilter: 'all',
       statusFilter: 'all',
       typeFilter: 'all',
+      nowMs: Date.now(),
+      taskTimeTimer: null,
     };
   },
   mounted() {
+    this.taskTimeTimer = window.setInterval(() => {
+      this.nowMs = Date.now();
+    }, 1000);
     renderLucideIcons(this.$el);
+  },
+  beforeUnmount() {
+    if (this.taskTimeTimer) {
+      window.clearInterval(this.taskTimeTimer);
+      this.taskTimeTimer = null;
+    }
   },
   updated() {
     renderLucideIcons(this.$el);
@@ -216,6 +235,9 @@ const KanbanTab = {
         return haystack.includes(query);
       });
     },
+    totalTaskTimeMs() {
+      return (this.tasks || []).reduce((sum, task) => sum + this.displayTaskTimeMs(task), 0);
+    },
     sortedTasks() {
       const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       const colOrder = {};
@@ -255,6 +277,9 @@ const KanbanTab = {
           }
           case 'created_at':
             cmp = (a.created_at || '').localeCompare(b.created_at || '');
+            break;
+          case 'task_time_ms':
+            cmp = this.displayTaskTimeMs(a) - this.displayTaskTimeMs(b);
             break;
           case 'tokens':
             cmp = (a.tokens || 0) - (b.tokens || 0);
@@ -318,7 +343,7 @@ const KanbanTab = {
         this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
       } else {
         this.sortField = field;
-        this.sortDir = (field === 'created_at' || field === 'tokens') ? 'desc' : 'asc';
+        this.sortDir = (field === 'created_at' || field === 'task_time_ms' || field === 'tokens') ? 'desc' : 'asc';
       }
     },
     sortIndicator(field) {
@@ -345,6 +370,15 @@ const KanbanTab = {
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
       if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
       return String(n);
+    },
+    displayTaskTimeMs(task) {
+      const base = Number(task?.task_time_ms) || 0;
+      const startedMs = Date.parse(task?.active_task_started_at || '');
+      if (!Number.isFinite(startedMs)) return base;
+      return base + Math.max(this.nowMs - startedMs, 0);
+    },
+    formatTaskTime(ms) {
+      return formatTaskDuration(ms);
     },
     workerName(task) {
       if (task.assigned_to == null) return null;

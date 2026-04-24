@@ -18,10 +18,14 @@ from server.agents import get_adapter
 from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
 from server.usage import (
+    ACTIVE_TASK_TIME_FIELD,
     TOKEN_FIELDS,
     build_usage_entry,
+    build_task_time_update,
     build_usage_update,
+    elapsed_task_time_ms,
     extract_stream_usage_event,
+    task_time_ms_value,
     usage_to_legacy_tokens,
 )
 from server import tasks as task_mod
@@ -216,6 +220,33 @@ def _ws_emit(socketio, event, payload, ws_id=None):
     if ws_id and isinstance(payload, dict):
         payload["workspaceId"] = ws_id
     socketio.emit(event, payload, to=ws_id)
+
+
+def _live_task_time_ms(task):
+    """Return persisted plus current in-flight task time."""
+    if not isinstance(task, dict):
+        return 0
+    total = task_time_ms_value(task)
+    started_at = task.get(ACTIVE_TASK_TIME_FIELD)
+    if started_at:
+        total += elapsed_task_time_ms(started_at)
+    return total
+
+
+def _finalize_task_time(bp_dir, task_id):
+    """Persist elapsed active time for the current run and clear live state."""
+    task = task_mod.read_task(bp_dir, task_id)
+    if not task:
+        return None
+    started_at = task.get(ACTIVE_TASK_TIME_FIELD)
+    if not started_at:
+        return task
+    update = build_task_time_update(
+        task,
+        elapsed_task_time_ms(started_at),
+        active_started_at="",
+    )
+    return task_mod.update_task(bp_dir, task_id, update)
 
 
 def _now_iso():
@@ -644,11 +675,15 @@ def _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id):
     Called by type-specific runners after preflight succeeds and they are
     committed to launching a subprocess.
     """
+    started_at = _now_iso()
     worker["state"] = "working"
-    worker["started_at"] = _now_iso()
+    worker["started_at"] = started_at
     worker["last_trigger_time"] = int(time.time())
     _clear_worker_retry_state(worker)
-    task_mod.update_task(bp_dir, task_id, {"status": "in_progress"})
+    task_mod.update_task(bp_dir, task_id, {
+        "status": "in_progress",
+        ACTIVE_TASK_TIME_FIELD: started_at,
+    })
     _save_layout(bp_dir, layout)
 
     if socketio:
@@ -1070,7 +1105,11 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
                 entry = _detach_process_entry(None, slot_index, task_id=task_id)
             if entry is None:
                 entry = _detach_process_entry(None, task_id=task_id)
-            task_mod.update_task(bp_dir, task_id, {"status": "assigned"})
+            _finalize_task_time(bp_dir, task_id)
+            task_mod.update_task(bp_dir, task_id, {
+                "status": "assigned",
+                ACTIVE_TASK_TIME_FIELD: "",
+            })
             if socketio:
                 task = task_mod.read_task(bp_dir, task_id)
                 _ws_emit(socketio, "task:updated", task, ws_id)
@@ -1145,6 +1184,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
         entry = _detach_process_entry(ws_id, slot_index, task_id=task_id)
         if entry is None:
             entry = _detach_process_entry(ws_id, task_id=task_id)
+        _finalize_task_time(bp_dir, task_id)
         worker["state"] = "idle"
         _clear_worker_retry_state(worker)
 
@@ -2002,12 +2042,13 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         last_live_emit_at = [0.0]
         _deferred_timer = [None]
 
-        def _emit_token_update(tokens):
-            """Emit a task:updated event with the given token count."""
+        def _emit_live_task_update(tokens):
+            """Emit a live task snapshot with updated metrics."""
             task = task_mod.read_task(bp_dir, task_id)
             if not task or task.get("status") != "in_progress":
                 return
             task["tokens"] = tokens
+            task["task_time_ms"] = _live_task_time_ms(task)
             _ws_emit(socketio, "task:updated", task, ws_id)
             last_live_tokens[0] = tokens
             last_live_emit_at[0] = time.time()
@@ -2020,7 +2061,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 return
             if last_live_tokens[0] is not None and tokens == last_live_tokens[0]:
                 return
-            _emit_token_update(tokens)
+            _emit_live_task_update(tokens)
 
         def _maybe_emit_live_usage(line):
             if not socketio:
@@ -2058,7 +2099,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
                 _deferred_timer[0].cancel()
                 _deferred_timer[0] = None
 
-            _emit_token_update(tokens)
+            _emit_live_task_update(tokens)
 
         try:
             prepared_env = adapter.prepare_env(workspace, bp_dir=bp_dir, task_id=task_id)
@@ -2385,8 +2426,10 @@ def _on_agent_success(
                     )
                     if usage_entry:
                         usage_update = build_usage_update(task, usage_entry)
-                        if usage_update:
-                            task_mod.update_task(bp_dir, task_id, usage_update)
+                    if usage_update:
+                        task_mod.update_task(bp_dir, task_id, usage_update)
+
+            _finalize_task_time(bp_dir, task_id)
 
             # Append output to task. Shell workers write structured Worker Output
             # blocks before entering this shared success path.
@@ -2673,6 +2716,7 @@ def _on_agent_error(
 
         if (not non_retryable) and retry_count < max_retries:
             # Retry with backoff
+            _finalize_task_time(bp_dir, task_id)
             retry_delay = 5 * (retry_count + 1)
             history.append({
                 "timestamp": _now_iso(),
@@ -2702,6 +2746,7 @@ def _on_agent_error(
             should_retry = True
         else:
             # Max retries exceeded — block task
+            _finalize_task_time(bp_dir, task_id)
             queue = worker.get("task_queue", [])
             if queue and queue[0] == task_id:
                 queue.pop(0)

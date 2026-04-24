@@ -20,6 +20,8 @@ def test_ticket_list_renders_search_and_filter_controls():
     assert "v-model=\"priorityFilter\"" in text
     assert "v-model=\"statusFilter\"" in text
     assert "v-model=\"typeFilter\"" in text
+    assert "All ticket time" in text
+    assert "setSort('task_time_ms')" in text
 
 
 def test_ticket_list_filters_are_applied_before_sorting():
@@ -29,6 +31,8 @@ def test_ticket_list_filters_are_applied_before_sorting():
     assert "statusFilter !== 'all'" in text
     assert "typeFilter !== 'all'" in text
     assert "return this.filteredTasks.slice().sort" in text
+    assert "totalTaskTimeMs()" in text
+    assert "displayTaskTimeMs(task)" in text
 
 
 def test_ticket_list_filter_styles_exist():
@@ -38,3 +42,5 @@ def test_ticket_list_filter_styles_exist():
     assert ".ticket-list-filter-label" in text
     assert ".ticket-list-search-input" in text
     assert ".ticket-list-filter-select" in text
+    assert ".ticket-list-summary" in text
+    assert ".ticket-list-col-task-time," in text

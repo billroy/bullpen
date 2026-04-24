@@ -1,12 +1,17 @@
 """Tests for usage accounting helpers."""
 
 from server.usage import (
+    ACTIVE_TASK_TIME_FIELD,
+    TASK_TIME_FIELD,
     build_usage_entry,
+    build_task_time_update,
     build_usage_update,
+    elapsed_task_time_ms,
     extract_codex_usage_event,
     extract_gemini_usage_event,
     extract_stream_usage_event,
     normalize_usage,
+    task_time_ms_value,
     usage_to_legacy_tokens,
 )
 
@@ -197,6 +202,24 @@ def test_build_usage_update_separates_provider_and_model_totals():
     assert update["tokens_by_provider_model"][2]["input_tokens"] == 20
     assert update["tokens_by_provider_model"][2]["output_tokens"] == 5
     assert update["tokens_by_provider_model"][2]["tokens"] == 25
+
+
+def test_build_task_time_update_accumulates_elapsed_ms_and_clears_active_marker():
+    task = {
+        TASK_TIME_FIELD: 1250,
+        ACTIVE_TASK_TIME_FIELD: "2026-04-24T12:00:00Z",
+    }
+
+    update = build_task_time_update(task, 2750, active_started_at="")
+
+    assert update[TASK_TIME_FIELD] == 4000
+    assert update[ACTIVE_TASK_TIME_FIELD] == ""
+
+
+def test_elapsed_task_time_ms_returns_non_negative_delta():
+    elapsed = elapsed_task_time_ms("2026-04-24T12:00:00Z", "2026-04-24T12:00:03Z")
+    assert elapsed == 3000
+    assert task_time_ms_value({TASK_TIME_FIELD: elapsed}) == 3000
 
 
 def test_extract_codex_item_completed_with_item_usage():

@@ -304,10 +304,12 @@ const app = createApp({
       return `${wsId || ''}:${taskId || ''}`;
     }
 
-    function _sameTaskExceptTokens(current, next) {
+    function _sameTaskExceptLiveMetrics(current, next) {
       if (!current || !next) return false;
       const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
       keys.delete('tokens');
+      keys.delete('task_time_ms');
+      keys.delete('active_task_started_at');
       for (const key of keys) {
         if (JSON.stringify(current[key]) !== JSON.stringify(next[key])) return false;
       }
@@ -551,7 +553,7 @@ const app = createApp({
       const wsId = task.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
       const current = ws.tasks.find(t => t.id === task.id);
-      if (taskDragActive && current && _sameTaskExceptTokens(current, task)) {
+      if (taskDragActive && current && _sameTaskExceptLiveMetrics(current, task)) {
         deferredTaskUpdates.set(_taskUpdateKey(wsId, task.id), task);
         return;
       }

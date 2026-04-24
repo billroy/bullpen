@@ -1,4 +1,4 @@
-"""Usage accounting helpers for ticket token metadata."""
+"""Usage and task-time accounting helpers for ticket metadata."""
 
 from datetime import datetime, timezone
 
@@ -10,6 +10,9 @@ TOKEN_FIELDS = (
     "reasoning_output_tokens",
     "total_tokens",
 )
+
+TASK_TIME_FIELD = "task_time_ms"
+ACTIVE_TASK_TIME_FIELD = "active_task_started_at"
 
 _TOKEN_ALIASES = {
     "input_tokens": ("input_tokens", "prompt_tokens"),
@@ -49,6 +52,19 @@ def _coerce_non_negative_int(value):
     if n < 0:
         return None
     return n
+
+
+def _parse_iso8601_utc(value):
+    """Parse a Bullpen UTC timestamp string."""
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def normalize_usage(raw_usage):
@@ -139,6 +155,27 @@ def usage_to_legacy_tokens(usage):
     if inp or out:
         return inp + out
     return 0
+
+
+def task_time_ms_value(task):
+    """Return persisted accumulated task time in milliseconds."""
+    if not isinstance(task, dict):
+        return 0
+    return _coerce_non_negative_int(task.get(TASK_TIME_FIELD)) or 0
+
+
+def elapsed_task_time_ms(started_at, ended_at=None):
+    """Return elapsed milliseconds between a stored start time and end time."""
+    started = _parse_iso8601_utc(started_at)
+    if started is None:
+        return 0
+    ended_dt = ended_at or datetime.now(timezone.utc)
+    if isinstance(ended_dt, str):
+        ended_dt = _parse_iso8601_utc(ended_dt)
+    if ended_dt is None:
+        return 0
+    delta_ms = int((ended_dt - started).total_seconds() * 1000)
+    return max(delta_ms, 0)
 
 
 def _bucket_provider_model(provider, model):
@@ -358,3 +395,20 @@ def build_usage_update(task, entry):
         "tokens_by_provider_model": tokens_by_provider_model,
         "tokens": prev_tokens + usage_to_legacy_tokens(entry),
     }
+
+
+_UNCHANGED = object()
+
+
+def build_task_time_update(task, elapsed_ms=0, *, active_started_at=_UNCHANGED):
+    """Create a task update payload that accumulates active work time."""
+    if not isinstance(task, dict):
+        return {}
+
+    elapsed = _coerce_non_negative_int(elapsed_ms) or 0
+    update = {
+        TASK_TIME_FIELD: task_time_ms_value(task) + elapsed,
+    }
+    if active_started_at is not _UNCHANGED:
+        update[ACTIVE_TASK_TIME_FIELD] = active_started_at or ""
+    return update

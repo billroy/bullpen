@@ -32,9 +32,12 @@ def test_task_detail_panel_has_read_only_rendering_paths():
     assert "v-else class=\"detail-title\" @click=\"startEditTitle\" title=\"Click to edit\"" in text
     assert "v-else class=\"detail-readonly-value\">{{ columnLabel(task.status) }}</span>" in text
     assert "v-if=\"!readOnly\" class=\"detail-footer\"" in text
+    assert "detail-metric-pill" in text
+    assert "formatTaskTime(displayedTaskTimeMs)" in text
 
 
 def test_ticket_detail_read_only_styles_exist():
     text = _read("static/style.css")
     assert ".detail-title-readonly {" in text
     assert ".detail-readonly-value {" in text
+    assert ".detail-metric-pill," in text

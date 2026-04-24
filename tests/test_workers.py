@@ -159,6 +159,24 @@ class ThrottledTokenStreamAdapter(MockAdapter):
         }
 
 
+class SleepyAdapter(MockAdapter):
+    def __init__(self, sleep_seconds=0.3, output="slept"):
+        super().__init__(output=output)
+        self.sleep_seconds = sleep_seconds
+
+    @property
+    def name(self):
+        return "sleepy"
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        script = (
+            "import time;"
+            f"time.sleep({self.sleep_seconds!r});"
+            f"print({self._output!r}, flush=True)"
+        )
+        return [sys.executable, "-c", script]
+
+
 class TempEnvAdapter(MockAdapter):
     @property
     def name(self):
@@ -806,6 +824,56 @@ class TestStartWorker:
         assert breakdown["output_tokens"] == 40
         assert breakdown["reasoning_output_tokens"] == 10
         assert breakdown["tokens"] == 140
+
+    def test_worker_accumulates_task_time_across_multiple_activations(self, bp_dir, worker_slot):
+        register_adapter("sleepy", SleepyAdapter(sleep_seconds=0.2, output="nap"))
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "sleepy"
+        layout["slots"][worker_slot]["model"] = "sleep-model"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Track task time")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.35)
+        first = read_task(bp_dir, task["id"])
+        first_ms = int(first.get("task_time_ms") or 0)
+        assert first_ms >= 150
+        assert not first.get("active_task_started_at")
+
+        update_task(bp_dir, task["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        layout["slots"][worker_slot]["state"] = "idle"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.35)
+        second = read_task(bp_dir, task["id"])
+        second_ms = int(second.get("task_time_ms") or 0)
+        assert second_ms >= first_ms + 150
+        assert not second.get("active_task_started_at")
+
+    def test_stop_worker_persists_elapsed_task_time_and_clears_active_marker(self, bp_dir, worker_slot):
+        register_adapter("sleepy", SleepyAdapter(sleep_seconds=5, output="long nap"))
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "sleepy"
+        layout["slots"][worker_slot]["model"] = "sleep-model"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Stop task time")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.25)
+        stop_worker(bp_dir, worker_slot)
+        assert _wait_for_worker_threads()
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "assigned"
+        assert int(updated.get("task_time_ms") or 0) >= 150
+        assert not updated.get("active_task_started_at")
 
     def test_non_retryable_capacity_error_blocks_without_retry(self, bp_dir, worker_slot):
         register_adapter("gemini", GeminiCapacityExceededAdapter(output="capacity fail"))

@@ -117,3 +117,24 @@ function renderLucideIcons(rootEl) {
 }
 
 window.getServiceSiteUrl = getServiceSiteUrl;
+window.renderLucideIcons = renderLucideIcons;
+window.getWorkerTypeIcon = getWorkerTypeIcon;
+window.workerTypeLabel = workerTypeLabel;
+window.workerColor = workerColor;
+window.isHumanWorker = isHumanWorker;
+window.getColumnIcon = getColumnIcon;
+
+function formatTaskDuration(ms) {
+  const totalMs = Number(ms);
+  if (!Number.isFinite(totalMs) || totalMs <= 0) return '0s';
+  const totalSeconds = Math.floor(totalMs / 1000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+window.formatTaskDuration = formatTaskDuration;

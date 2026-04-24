@@ -12,6 +12,8 @@ const TaskDetailPanel = {
       panelWidth: TaskDetailPanel._loadPanelWidth(),
       resizing: null,
       draggingWidth: null,
+      nowMs: Date.now(),
+      taskTimeTimer: null,
     };
   },
   computed: {
@@ -59,6 +61,12 @@ const TaskDetailPanel = {
           suffix: match[3] || '',
         };
       });
+    },
+    displayedTaskTimeMs() {
+      const base = Number(this.task?.task_time_ms) || 0;
+      const startedMs = Date.parse(this.task?.active_task_started_at || '');
+      if (!Number.isFinite(startedMs)) return base;
+      return base + Math.max(this.nowMs - startedMs, 0);
     }
   },
   watch: {
@@ -148,6 +156,7 @@ const TaskDetailPanel = {
         <div class="detail-id">
           <code>{{ task.id }}</code>
           <button class="btn btn-sm detail-copy-id" @click="copyId" title="Copy ticket ID">Copy ID</button>
+          <span class="detail-metric-pill" title="Total active worker time">{{ formatTaskTime(displayedTaskTimeMs) }}</span>
           <span v-if="task.tokens" class="token-count" title="Total tokens used by agents">{{ formatTokens(task.tokens) }}</span>
         </div>
 
@@ -182,6 +191,9 @@ const TaskDetailPanel = {
     </div>
   `,
   mounted() {
+    this.taskTimeTimer = window.setInterval(() => {
+      this.nowMs = Date.now();
+    }, 1000);
     renderLucideIcons(this.$el);
   },
   updated() {
@@ -280,6 +292,9 @@ const TaskDetailPanel = {
       if (n >= 1000) return (n / 1000).toFixed(1) + 'k tok';
       return n + ' tok';
     },
+    formatTaskTime(ms) {
+      return formatTaskDuration(ms);
+    },
     columnLabel(key) {
       const col = (this.columns || []).find(c => c.key === key);
       return col ? col.label : (key || '—');
@@ -348,6 +363,10 @@ const TaskDetailPanel = {
     },
   },
   beforeUnmount() {
+    if (this.taskTimeTimer) {
+      window.clearInterval(this.taskTimeTimer);
+      this.taskTimeTimer = null;
+    }
     this._teardownResizeListeners();
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
