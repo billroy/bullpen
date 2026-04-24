@@ -12,6 +12,7 @@ const WorkerConfigModal = {
       servicePortAutoFilled: false,
       servicePreviewSeq: 0,
       servicePreviewTimer: null,
+      workerColorInputAnchor: null,
     };
   },
   watch: {
@@ -170,6 +171,33 @@ const WorkerConfigModal = {
     },
     workerColorPickerValue() {
       return this.normalizeHexColor(this.selectedWorkerColorOverride) || this.workerColorPreviewValue;
+    },
+    workerColorInputStyle() {
+      const anchor = this.workerColorInputAnchor;
+      if (!anchor) {
+        return {
+          position: 'absolute',
+          width: '1px',
+          height: '1px',
+          padding: '0',
+          margin: '-1px',
+          border: '0',
+          clip: 'rect(0, 0, 0, 0)',
+          overflow: 'hidden',
+        };
+      }
+      return {
+        position: 'fixed',
+        top: `${anchor.top}px`,
+        left: `${anchor.left}px`,
+        width: `${anchor.width}px`,
+        height: `${anchor.height}px`,
+        padding: '0',
+        margin: '0',
+        border: '0',
+        opacity: '0',
+        pointerEvents: 'none',
+      };
     },
   },
   template: `
@@ -610,6 +638,7 @@ const WorkerConfigModal = {
               <button
                 type="button"
                 class="worker-color-override-trigger"
+                ref="workerColorTrigger"
                 @click="openWorkerColorPicker"
                 :aria-label="selectedWorkerColorOverride ? 'Choose a different card color override' : 'Choose a card color override'"
               >
@@ -621,6 +650,7 @@ const WorkerConfigModal = {
                 class="worker-color-override-input"
                 type="color"
                 :value="workerColorPickerValue"
+                :style="workerColorInputStyle"
                 @input="onWorkerColorInput"
                 tabindex="-1"
                 aria-hidden="true"
@@ -663,9 +693,24 @@ const WorkerConfigModal = {
         || (this.defaultProviderColors && this.defaultProviderColors[key])
         || '';
     },
+    updateWorkerColorInputAnchor() {
+      const trigger = this.$refs.workerColorTrigger;
+      if (!trigger || typeof trigger.getBoundingClientRect !== 'function') {
+        this.workerColorInputAnchor = null;
+        return;
+      }
+      const rect = trigger.getBoundingClientRect();
+      this.workerColorInputAnchor = {
+        top: Math.round(rect.top),
+        left: Math.round(rect.left),
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height)),
+      };
+    },
     openWorkerColorPicker() {
       const input = this.$refs.workerColorInput;
       if (!input) return;
+      this.updateWorkerColorInputAnchor();
       if (typeof input.showPicker === 'function') {
         input.showPicker();
         return;
