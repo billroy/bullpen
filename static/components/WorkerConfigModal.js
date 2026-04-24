@@ -12,7 +12,7 @@ const WorkerConfigModal = {
       servicePortAutoFilled: false,
       servicePreviewSeq: 0,
       servicePreviewTimer: null,
-      workerColorInputAnchor: null,
+      workerColorPickerInput: null,
     };
   },
   watch: {
@@ -95,6 +95,7 @@ const WorkerConfigModal = {
   },
   beforeUnmount() {
     if (this.servicePreviewTimer) clearTimeout(this.servicePreviewTimer);
+    this.teardownWorkerColorPicker();
   },
   computed: {
     isShell() {
@@ -171,33 +172,6 @@ const WorkerConfigModal = {
     },
     workerColorPickerValue() {
       return this.normalizeHexColor(this.selectedWorkerColorOverride) || this.workerColorPreviewValue;
-    },
-    workerColorInputStyle() {
-      const anchor = this.workerColorInputAnchor;
-      if (!anchor) {
-        return {
-          position: 'absolute',
-          width: '1px',
-          height: '1px',
-          padding: '0',
-          margin: '-1px',
-          border: '0',
-          clip: 'rect(0, 0, 0, 0)',
-          overflow: 'hidden',
-        };
-      }
-      return {
-        position: 'fixed',
-        top: `${anchor.top}px`,
-        left: `${anchor.left}px`,
-        width: `${anchor.width}px`,
-        height: `${anchor.height}px`,
-        padding: '0',
-        margin: '0',
-        border: '0',
-        opacity: '0',
-        pointerEvents: 'none',
-      };
     },
   },
   template: `
@@ -645,16 +619,6 @@ const WorkerConfigModal = {
                 <i data-lucide="palette" aria-hidden="true"></i>
                 <span class="worker-color-override-swatch" :style="{ background: workerColorPreviewValue }" aria-hidden="true"></span>
               </button>
-              <input
-                ref="workerColorInput"
-                class="worker-color-override-input"
-                type="color"
-                :value="workerColorPickerValue"
-                :style="workerColorInputStyle"
-                @input="onWorkerColorInput"
-                tabindex="-1"
-                aria-hidden="true"
-              >
               <button type="button" class="btn btn-sm" @click="onRestoreDefaultColor" :disabled="!selectedWorkerColorOverride">Restore Default</button>
             </div>
             <span class="form-hint">
@@ -693,29 +657,82 @@ const WorkerConfigModal = {
         || (this.defaultProviderColors && this.defaultProviderColors[key])
         || '';
     },
-    updateWorkerColorInputAnchor() {
+    getWorkerColorPickerAnchor() {
       const trigger = this.$refs.workerColorTrigger;
-      if (!trigger || typeof trigger.getBoundingClientRect !== 'function') {
-        this.workerColorInputAnchor = null;
-        return;
-      }
+      if (!trigger || typeof trigger.getBoundingClientRect !== 'function') return null;
       const rect = trigger.getBoundingClientRect();
-      this.workerColorInputAnchor = {
-        top: Math.round(rect.top),
-        left: Math.round(rect.left),
-        width: Math.max(1, Math.round(rect.width)),
-        height: Math.max(1, Math.round(rect.height)),
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const width = Math.max(24, Math.round(rect.width || 0));
+      const height = Math.max(24, Math.round(rect.height || 0));
+      const maxLeft = Math.max(0, viewportWidth - width);
+      const maxTop = Math.max(0, viewportHeight - height);
+      return {
+        top: Math.min(Math.max(0, Math.round(rect.top)), maxTop),
+        left: Math.min(Math.max(0, Math.round(rect.left)), maxLeft),
+        width,
+        height,
       };
     },
+    buildWorkerColorPickerInput(anchor) {
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = this.workerColorPickerValue;
+      input.className = 'worker-color-override-input';
+      input.tabIndex = -1;
+      input.setAttribute('aria-hidden', 'true');
+      Object.assign(input.style, {
+        position: 'fixed',
+        top: `${anchor.top}px`,
+        left: `${anchor.left}px`,
+        width: `${anchor.width}px`,
+        height: `${anchor.height}px`,
+        margin: '0',
+        padding: '0',
+        border: '0',
+        opacity: '0',
+        pointerEvents: 'none',
+        zIndex: '2147483647',
+      });
+      return input;
+    },
+    teardownWorkerColorPicker() {
+      const input = this.workerColorPickerInput;
+      if (input && input.parentNode) input.parentNode.removeChild(input);
+      this.workerColorPickerInput = null;
+    },
     openWorkerColorPicker() {
-      const input = this.$refs.workerColorInput;
-      if (!input) return;
-      this.updateWorkerColorInputAnchor();
-      if (typeof input.showPicker === 'function') {
-        input.showPicker();
-        return;
-      }
-      input.click();
+      const anchor = this.getWorkerColorPickerAnchor();
+      if (!anchor) return;
+      this.teardownWorkerColorPicker();
+      const input = this.buildWorkerColorPickerInput(anchor);
+      const cleanup = () => {
+        input.removeEventListener('change', handleChange);
+        input.removeEventListener('input', handleInput);
+        input.removeEventListener('blur', cleanup);
+        window.removeEventListener('focus', cleanup);
+        this.teardownWorkerColorPicker();
+      };
+      const handleInput = (e) => this.onWorkerColorInput(e);
+      const handleChange = (e) => {
+        this.onWorkerColorInput(e);
+        cleanup();
+      };
+      input.addEventListener('input', handleInput);
+      input.addEventListener('change', handleChange);
+      input.addEventListener('blur', cleanup);
+      window.addEventListener('focus', cleanup, { once: true });
+      document.body.appendChild(input);
+      this.workerColorPickerInput = input;
+      requestAnimationFrame(() => {
+        if (this.workerColorPickerInput !== input) return;
+        input.focus({ preventScroll: true });
+        if (typeof input.showPicker === 'function') {
+          input.showPicker();
+          return;
+        }
+        input.click();
+      });
     },
     onWorkerColorInput(e) {
       this.form.color = this.normalizeHexColor(e?.target?.value) || '';

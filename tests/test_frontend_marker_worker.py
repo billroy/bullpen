@@ -35,8 +35,6 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
     assert "v-if=\"!isMarker\" class=\"form-label\"" in modal
     assert "class=\"worker-color-override-trigger\"" in modal
     assert "ref=\"workerColorTrigger\"" in modal
-    assert "ref=\"workerColorInput\"" in modal
-    assert ":style=\"workerColorInputStyle\"" in modal
     assert "Restore Default" in modal
     assert "Use the palette button to pick any per-card override." in modal
     assert "Pick override" not in modal
@@ -54,9 +52,12 @@ def test_non_marker_worker_modal_preserves_color_override_on_save():
     assert "delete fields.color;" not in modal.split("} else if (this.isShell || this.isService) {", 1)[1].split("} else {", 1)[0]
     assert "delete fields.color;" not in modal.split("} else {", 1)[1]
     assert "onRestoreDefaultColor()" in modal
-    assert "workerColorInputAnchor: null," in modal
-    assert "workerColorInputStyle()" in modal
-    assert "updateWorkerColorInputAnchor()" in modal
+    assert "workerColorPickerInput: null," in modal
+    assert "getWorkerColorPickerAnchor()" in modal
+    assert "buildWorkerColorPickerInput(anchor)" in modal
+    assert "teardownWorkerColorPicker()" in modal
+    assert "document.body.appendChild(input);" in modal
+    assert "requestAnimationFrame(() => {" in modal
 
 
 def test_marker_worker_card_renders_note_without_output_focus_affordances():
