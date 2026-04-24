@@ -170,6 +170,15 @@ seed_dir_if_missing() {
   fi
 }
 
+sync_dir_if_exists() {
+  local source_path="$1"
+  local target_path="$2"
+  if [[ -d "$source_path" ]]; then
+    mkdir -p "$target_path"
+    cp -pR "$source_path/." "$target_path"
+  fi
+}
+
 claude_logged_in() {
   # Check for a non-empty credentials file in the persistent home on the host.
   # This avoids a docker exec and correctly reflects OAuth login state rather
@@ -301,7 +310,7 @@ add_git_env_if_set "GIT_AUTHOR_EMAIL"
 add_git_env_if_set "GIT_COMMITTER_NAME"
 add_git_env_if_set "GIT_COMMITTER_EMAIL"
 seed_file_if_missing "$HOME/.gitconfig" "$DOCKER_HOME/.gitconfig.host"
-seed_dir_if_missing "$HOME/.config/gh" "$DOCKER_HOME/.config/gh"
+sync_dir_if_exists "$HOME/.config/gh" "$DOCKER_HOME/.config/gh"
 [[ -f "$DOCKER_HOME/.gitconfig.host" ]] && DETECTED_GIT_AUTH+=("home:${DOCKER_HOME}/.gitconfig.host")
 [[ -d "$DOCKER_HOME/.config/gh" ]] && DETECTED_GIT_AUTH+=("home:${DOCKER_HOME}/.config/gh")
 if [[ -d "$HOME/.ssh" ]] && prompt_yes_no "Mount ~/.ssh read-only for git SSH remotes?" "N"; then

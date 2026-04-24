@@ -92,7 +92,8 @@ GIT_COMMITTER_NAME
 GIT_COMMITTER_EMAIL
 ```
 
-It also mounts host GitHub CLI auth and Git config when present:
+It also syncs host GitHub CLI auth into the persistent Docker home and copies
+Git config when present:
 
 ```text
 ~/.config/gh -> /home/bullpen/.config/gh
@@ -102,7 +103,9 @@ It also mounts host GitHub CLI auth and Git config when present:
 The entrypoint creates a writable `/home/bullpen/.gitconfig` that includes the
 host config, marks the mounted workspace as a safe Git directory, applies Git
 identity environment variables when provided, and runs `gh auth setup-git` when
-`GH_TOKEN` or `GITHUB_TOKEN` is available.
+`GH_TOKEN`, `GITHUB_TOKEN`, or copied GitHub CLI auth is available. This lets
+noninteractive web git operations push HTTPS remotes by using the GitHub CLI
+credential helper instead of prompting for a username/password.
 
 For SSH remotes, the deploy script can optionally mount `~/.ssh` read-only into
 `/home/bullpen/.ssh`. Prefer a dedicated deploy key or a scoped GitHub token

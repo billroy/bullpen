@@ -26,6 +26,18 @@ def test_deploy_docker_hides_unavailable_projects_in_container():
     assert '-e "BULLPEN_HIDE_UNAVAILABLE_PROJECTS=1"' in text
 
 
+def test_deploy_docker_syncs_github_cli_auth_into_persistent_home():
+    text = _read("deploy-docker.sh")
+    assert "sync_dir_if_exists()" in text
+    assert 'sync_dir_if_exists "$HOME/.config/gh" "$DOCKER_HOME/.config/gh"' in text
+
+
+def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():
+    text = _read("deploy/docker/entrypoint.sh")
+    assert '[[ -f "$HOME/.config/gh/hosts.yml" ]]' in text
+    assert "gh auth setup-git" in text
+
+
 def test_docker_compose_hides_unavailable_projects_in_container():
     text = _read("docker-compose.yml")
     assert 'BULLPEN_HIDE_UNAVAILABLE_PROJECTS: "1"' in text

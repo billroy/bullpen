@@ -29,7 +29,7 @@ elif [[ -n "${GIT_COMMITTER_EMAIL:-}" ]]; then
   git config --global user.email "$GIT_COMMITTER_EMAIL" >/dev/null 2>&1 || true
 fi
 
-if command -v gh >/dev/null 2>&1 && [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
+if command -v gh >/dev/null 2>&1 && { [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]] || [[ -f "$HOME/.config/gh/hosts.yml" ]]; }; then
   gh auth setup-git >/dev/null 2>&1 || true
 fi
 
