@@ -13,6 +13,9 @@ An AI agent team manager. Configure workers on a grid, create task tickets, assi
 ### Files
 ![Files](./screenshots/file-tab.png)
 
+### Stats
+![Stats](./screenshots/stats-tab.png)
+
 ### Commits
 ![Commits](./screenshots/commit-tab.png)
 
@@ -88,6 +91,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Profiles** -- 25 built-in worker profiles (feature-architect, code-reviewer, test-writer, unconfigured-worker, etc.) with customizable expertise prompts; create custom profiles
 - **Teams** -- save and restore grid configurations
 - **Ticket editing** -- edit ticket title, tags, and description inline; Cmd+Enter to save
+- **Stats tab** -- aggregated token usage and provider/model breakdowns in a dedicated dashboard view
 - **Token tracking** -- per-ticket token consumption tracking plus provider/model usage metadata, displayed in list view and ticket details
 - **Worker roster queue count** -- left-pane worker roster shows queued workload while workers are in `WORKING` state
 - **Ambient sounds** -- 18 synthesized ambient soundscapes (Server Room, Forest Rain, Deep Space, War Room, etc.) generated via the Web Audio API with per-workspace volume control
