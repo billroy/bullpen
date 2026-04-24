@@ -1,6 +1,11 @@
 const StatsTab = {
   props: ['tasks', 'archivedTasks', 'columns', 'layout', 'workspaceId'],
   emits: ['select-task'],
+  data() {
+    return {
+      selectedPeriodDays: 14,
+    };
+  },
   template: `
     <div class="stats-tab">
       <div class="stats-summary-grid">
@@ -71,9 +76,23 @@ const StatsTab = {
           <div class="stats-pane-header">
             <div>
               <h2>Trends</h2>
-              <p>Last 14 days</p>
+              <p>{{ trendWindowLabel }}</p>
             </div>
-            <i data-lucide="activity" aria-hidden="true"></i>
+            <div class="stats-pane-header-actions">
+              <div class="stats-period-selector" role="group" aria-label="Trend period">
+                <button
+                  v-for="option in periodOptions"
+                  :key="option.days"
+                  type="button"
+                  class="stats-period-button"
+                  :class="{ 'is-active': option.days === selectedPeriodDays }"
+                  @click="selectedPeriodDays = option.days"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+              <i data-lucide="activity" aria-hidden="true"></i>
+            </div>
           </div>
 
           <div class="stats-spark-grid">
@@ -83,6 +102,15 @@ const StatsTab = {
                 <strong>{{ formatNumber(chart.total) }}</strong>
               </div>
               <svg class="stats-sparkline" viewBox="0 0 160 44" preserveAspectRatio="none" aria-hidden="true">
+                <line
+                  v-for="tick in chart.ticks"
+                  :key="tick.key"
+                  :x1="tick.x"
+                  y1="3"
+                  :x2="tick.x"
+                  y2="39"
+                  class="stats-sparkline-tick"
+                ></line>
                 <polyline
                   v-if="chart.points"
                   :points="chart.points"
@@ -94,6 +122,16 @@ const StatsTab = {
                 ></polyline>
                 <line x1="0" y1="39" x2="160" y2="39" class="stats-sparkline-base"></line>
               </svg>
+              <div class="stats-spark-axis" aria-hidden="true">
+                <span
+                  v-for="tick in chart.ticks"
+                  :key="tick.key"
+                  class="stats-spark-axis-label"
+                  :style="{ left: tick.percent + '%' }"
+                >
+                  {{ tick.label }}
+                </span>
+              </div>
               <div class="stats-spark-caption">{{ chart.caption }}</div>
             </article>
           </div>
@@ -227,6 +265,18 @@ const StatsTab = {
     archiveHasExplicitDates() {
       return this.archiveTasks.some(task => task?.archived_at);
     },
+    periodOptions() {
+      return [
+        { days: 1, label: '1d' },
+        { days: 7, label: '7d' },
+        { days: 14, label: '14d' },
+        { days: 30, label: '30d' },
+        { days: 90, label: '90d' },
+      ];
+    },
+    trendWindowLabel() {
+      return `Last ${this.selectedPeriodDays} day${this.selectedPeriodDays === 1 ? '' : 's'}`;
+    },
     recentArchived() {
       return this.archiveTasks
         .slice()
@@ -237,7 +287,7 @@ const StatsTab = {
       const keys = [];
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      for (let i = 13; i >= 0; i--) {
+      for (let i = this.selectedPeriodDays - 1; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
         keys.push(this.dayKey(d));
@@ -256,6 +306,7 @@ const StatsTab = {
           values: archivedCounts,
           total: archivedCounts.reduce((sum, n) => sum + n, 0),
           points: this.sparkPoints(archivedCounts),
+          ticks: this.axisTicks(),
           caption: this.archiveDateLabel.toLowerCase(),
         },
         {
@@ -265,6 +316,7 @@ const StatsTab = {
           values: openCounts,
           total: openCounts.reduce((sum, n) => sum + n, 0),
           points: this.sparkPoints(openCounts),
+          ticks: this.axisTicks(),
           caption: 'created date',
         },
         {
@@ -274,6 +326,7 @@ const StatsTab = {
           values: archivedTokens,
           total: archivedTokens.reduce((sum, n) => sum + n, 0),
           points: this.sparkPoints(archivedTokens),
+          ticks: this.axisTicks(),
           caption: this.archiveDateLabel.toLowerCase(),
         },
       ];
@@ -360,12 +413,37 @@ const StatsTab = {
     sparkPoints(values) {
       if (!Array.isArray(values) || values.length === 0) return '';
       const max = Math.max(1, ...values);
-      const step = 160 / Math.max(1, values.length - 1);
+      const step = values.length === 1 ? 0 : 160 / Math.max(1, values.length - 1);
       return values.map((value, index) => {
-        const x = Math.round(index * step * 100) / 100;
+        const x = values.length === 1 ? 80 : Math.round(index * step * 100) / 100;
         const y = Math.round((38 - (value / max) * 30) * 100) / 100;
         return `${x},${y}`;
       }).join(' ');
+    },
+    axisTicks() {
+      if (!this.dayKeys.length) return [];
+      const firstIndex = 0;
+      const lastIndex = this.dayKeys.length - 1;
+      const weeklyIndexes = [];
+      for (let index = firstIndex; index <= lastIndex; index += 7) {
+        weeklyIndexes.push(index);
+      }
+      if (!weeklyIndexes.includes(lastIndex)) weeklyIndexes.push(lastIndex);
+      return weeklyIndexes.map(index => this.axisTick(this.dayKeys[index], index));
+    },
+    axisTick(dayKey, index) {
+      const maxIndex = Math.max(1, this.dayKeys.length - 1);
+      const percent = this.dayKeys.length === 1 ? 50 : (index / maxIndex) * 100;
+      return {
+        key: `${dayKey}-${index}`,
+        x: this.dayKeys.length === 1 ? 80 : Math.round((160 * index / maxIndex) * 100) / 100,
+        percent,
+        label: this.formatDayKey(dayKey),
+      };
+    },
+    formatDayKey(dayKey) {
+      if (!dayKey) return '';
+      return this.formatDate(`${dayKey}T00:00:00`);
     },
     formatNumber(value) {
       const n = Number(value) || 0;

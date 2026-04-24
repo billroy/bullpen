@@ -48,3 +48,22 @@ def test_stats_tab_renders_required_dashboard_panes():
     assert "Archived ticket tokens" in text
     assert "Recent Archive" in text
     assert "Current Load" in text
+
+
+def test_stats_tab_trends_supports_period_selector_options():
+    text = _read("static/components/StatsTab.js")
+    assert "selectedPeriodDays: 14" in text
+    assert "{ days: 1, label: '1d' }" in text
+    assert "{ days: 7, label: '7d' }" in text
+    assert "{ days: 14, label: '14d' }" in text
+    assert "{ days: 30, label: '30d' }" in text
+    assert "{ days: 90, label: '90d' }" in text
+    assert 'aria-label="Trend period"' in text
+
+
+def test_stats_tab_trends_include_date_axis_ticks():
+    text = _read("static/components/StatsTab.js")
+    assert "class=\"stats-sparkline-tick\"" in text
+    assert "class=\"stats-spark-axis\"" in text
+    assert "axisTicks()" in text
+    assert "formatDayKey(dayKey)" in text
