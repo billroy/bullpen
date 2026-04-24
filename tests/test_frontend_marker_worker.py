@@ -37,6 +37,9 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
     assert "ref=\"workerColorInput\"" in modal
     assert "Restore Default" in modal
     assert "Use the palette button to pick any per-card override." in modal
+    assert "Pick override" not in modal
+    assert "Override active" not in modal
+    assert "worker-color-override-code" not in modal
     assert "Pass tickets to" in modal
     assert "placeholder=\"square-dot\"" in modal
     assert "placeholder=\"marker or #c8b38c\"" in modal

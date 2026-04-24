@@ -190,36 +190,6 @@ const WorkerConfigModal = {
             <input class="form-input" v-model="form.name" ref="nameInput">
           </label>
 
-          <div v-if="!isMarker" class="form-label">
-            <span>Card Color</span>
-            <div class="worker-color-override-controls">
-              <button
-                type="button"
-                class="worker-color-override-trigger"
-                @click="openWorkerColorPicker"
-                :aria-label="selectedWorkerColorOverride ? 'Choose a different card color override' : 'Choose a card color override'"
-              >
-                <i data-lucide="palette" aria-hidden="true"></i>
-                <span class="worker-color-override-swatch" :style="{ background: workerColorPreviewValue }" aria-hidden="true"></span>
-                <span class="worker-color-override-label">{{ selectedWorkerColorOverride ? 'Override active' : 'Pick override' }}</span>
-              </button>
-              <input
-                ref="workerColorInput"
-                class="worker-color-override-input"
-                type="color"
-                :value="workerColorPickerValue"
-                @input="onWorkerColorInput"
-                tabindex="-1"
-                aria-hidden="true"
-              >
-              <code class="worker-color-override-code">{{ selectedWorkerColorOverride || workerColorDefaultValue }}</code>
-              <button type="button" class="btn btn-sm" @click="onRestoreDefaultColor" :disabled="!selectedWorkerColorOverride">Restore Default</button>
-            </div>
-            <span class="form-hint">
-              Default uses the workspace <code>{{ workerColorDefaultLabel }}</code> color. Use the palette button to pick any per-card override.
-            </span>
-          </div>
-
           <template v-if="isMarker">
             <label class="form-label">
               Note
@@ -632,6 +602,34 @@ const WorkerConfigModal = {
               Auto-PR
               <span class="form-hint">(open PR after commit; requires worktree + auto-commit)</span>
             </label>
+          </div>
+
+          <div v-if="!isMarker" class="form-label">
+            <span>Card Color</span>
+            <div class="worker-color-override-controls">
+              <button
+                type="button"
+                class="worker-color-override-trigger"
+                @click="openWorkerColorPicker"
+                :aria-label="selectedWorkerColorOverride ? 'Choose a different card color override' : 'Choose a card color override'"
+              >
+                <i data-lucide="palette" aria-hidden="true"></i>
+                <span class="worker-color-override-swatch" :style="{ background: workerColorPreviewValue }" aria-hidden="true"></span>
+              </button>
+              <input
+                ref="workerColorInput"
+                class="worker-color-override-input"
+                type="color"
+                :value="workerColorPickerValue"
+                @input="onWorkerColorInput"
+                tabindex="-1"
+                aria-hidden="true"
+              >
+              <button type="button" class="btn btn-sm" @click="onRestoreDefaultColor" :disabled="!selectedWorkerColorOverride">Restore Default</button>
+            </div>
+            <span class="form-hint">
+              Default uses the workspace <code>{{ workerColorDefaultLabel }}</code> color. Use the palette button to pick any per-card override.
+            </span>
           </div>
         </div>
         <div class="modal-footer">
