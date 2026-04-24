@@ -103,9 +103,10 @@ Git config when present:
 The entrypoint creates a writable `/home/bullpen/.gitconfig` that includes the
 host config, marks the mounted workspace as a safe Git directory, applies Git
 identity environment variables when provided, and runs `gh auth setup-git` when
-`GH_TOKEN`, `GITHUB_TOKEN`, or copied GitHub CLI auth is available. This lets
-noninteractive web git operations push HTTPS remotes by using the GitHub CLI
-credential helper instead of prompting for a username/password.
+`GH_TOKEN`, `GITHUB_TOKEN`, or copied GitHub CLI auth is available. It also
+installs host-scoped GitHub credential-helper entries directly in git config as
+a fallback, so HTTPS web git operations still authenticate even if `gh auth
+setup-git` does not update the config in that container instance.
 
 For SSH remotes, the deploy script can optionally mount `~/.ssh` read-only into
 `/home/bullpen/.ssh`. Prefer a dedicated deploy key or a scoped GitHub token

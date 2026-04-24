@@ -6,6 +6,89 @@ HOST="${BULLPEN_HOST:-0.0.0.0}"
 PORT="${BULLPEN_PORT:-8080}"
 APP_PORT="${APP_PORT:-3000}"
 
+configure_github_git_helper_for_host() {
+  local host="$1"
+  [[ -n "$host" ]] || return 0
+  git config --global --unset-all "credential.https://${host}.helper" >/dev/null 2>&1 || true
+  git config --global --add "credential.https://${host}.helper" "!gh auth git-credential" >/dev/null 2>&1 || true
+}
+
+collect_github_auth_hosts() {
+  local gh_hosts_file="$HOME/.config/gh/hosts.yml"
+  local hosts=""
+  local host=""
+
+  if [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
+    hosts="github.com"
+  fi
+
+  if [[ -f "$gh_hosts_file" ]]; then
+    while IFS= read -r host; do
+      [[ -n "$host" ]] || continue
+      case "
+${hosts}
+" in
+        *"
+${host}
+"*) ;;
+        *)
+          hosts="${hosts}${hosts:+
+}${host}"
+          ;;
+      esac
+    done < <(sed -n 's/^\([A-Za-z0-9._-][A-Za-z0-9._-]*\):.*/\1/p' "$gh_hosts_file")
+  fi
+
+  case "
+${hosts}
+" in
+    *"
+github.com
+"*)
+      case "
+${hosts}
+" in
+        *"
+gist.github.com
+"*) ;;
+        *)
+          hosts="${hosts}${hosts:+
+}gist.github.com"
+          ;;
+      esac
+      ;;
+  esac
+
+  if [[ -n "$hosts" ]]; then
+    printf '%s\n' "$hosts"
+  fi
+}
+
+configure_github_git_auth() {
+  local github_hosts=""
+  local host=""
+
+  command -v gh >/dev/null 2>&1 || return 0
+
+  if [[ -z "${GH_TOKEN:-${GITHUB_TOKEN:-}}" && ! -f "$HOME/.config/gh/hosts.yml" ]]; then
+    return 0
+  fi
+
+  github_hosts="$(collect_github_auth_hosts)"
+  [[ -n "$github_hosts" ]] || return 0
+
+  if ! gh auth setup-git >/dev/null 2>&1; then
+    echo "gh auth setup-git failed; installing GitHub credential helper fallback"
+  fi
+
+  while IFS= read -r host; do
+    [[ -n "$host" ]] || continue
+    configure_github_git_helper_for_host "$host"
+  done <<EOF
+$github_hosts
+EOF
+}
+
 mkdir -p "$WORKSPACE"
 
 if [[ -f "$HOME/.gitconfig.host" && ! -f "$HOME/.gitconfig" ]]; then
@@ -29,9 +112,7 @@ elif [[ -n "${GIT_COMMITTER_EMAIL:-}" ]]; then
   git config --global user.email "$GIT_COMMITTER_EMAIL" >/dev/null 2>&1 || true
 fi
 
-if command -v gh >/dev/null 2>&1 && { [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]] || [[ -f "$HOME/.config/gh/hosts.yml" ]]; }; then
-  gh auth setup-git >/dev/null 2>&1 || true
-fi
+configure_github_git_auth
 
 if [[ ! -f "$HOME/.claude.json" && -d "$HOME/.claude/backups" ]]; then
   CLAUDE_BACKUP="$(find "$HOME/.claude/backups" -maxdepth 1 -type f -name '.claude.json.backup.*' | sort -r | head -n 1 || true)"

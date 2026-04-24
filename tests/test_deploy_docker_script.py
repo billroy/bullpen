@@ -34,8 +34,9 @@ def test_deploy_docker_syncs_github_cli_auth_into_persistent_home():
 
 def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():
     text = _read("deploy/docker/entrypoint.sh")
-    assert '[[ -f "$HOME/.config/gh/hosts.yml" ]]' in text
+    assert 'local gh_hosts_file="$HOME/.config/gh/hosts.yml"' in text
     assert "gh auth setup-git" in text
+    assert 'credential.https://${host}.helper' in text
 
 
 def test_docker_compose_hides_unavailable_projects_in_container():
