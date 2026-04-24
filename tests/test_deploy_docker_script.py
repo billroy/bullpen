@@ -30,6 +30,14 @@ def test_deploy_docker_syncs_github_cli_auth_into_persistent_home():
     text = _read("deploy-docker.sh")
     assert "sync_dir_if_exists()" in text
     assert 'sync_dir_if_exists "$HOME/.config/gh" "$DOCKER_HOME/.config/gh"' in text
+    assert "ensure_github_cli_auth" in text
+    assert 'env -u GH_CONFIG_DIR -u XDG_CONFIG_HOME HOME="$DOCKER_HOME" gh "$@"' in text
+    assert "env -u GH_TOKEN -u GITHUB_TOKEN -u GH_CONFIG_DIR -u XDG_CONFIG_HOME gh" in text
+    assert "host_github_gh auth token --hostname github.com" in text
+    assert "gh auth login --hostname github.com --git-protocol https --with-token" in text
+    assert "gh auth status --hostname github.com" in text
+    assert "Copied host GitHub CLI token into Docker home" in text
+    assert "Log in to GitHub CLI now for Docker git push and auto-PR?" not in text
 
 
 def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():

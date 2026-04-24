@@ -186,6 +186,76 @@ claude_logged_in() {
   [[ -s "$DOCKER_HOME/.claude/.credentials.json" ]]
 }
 
+github_gh() {
+  env -u GH_CONFIG_DIR -u XDG_CONFIG_HOME HOME="$DOCKER_HOME" gh "$@"
+}
+
+host_github_gh() {
+  env -u GH_TOKEN -u GITHUB_TOKEN -u GH_CONFIG_DIR -u XDG_CONFIG_HOME gh "$@"
+}
+
+github_cli_logged_in() {
+  command -v gh >/dev/null 2>&1 || return 1
+  github_gh auth status --hostname github.com >/dev/null 2>&1
+}
+
+copy_host_github_cli_auth_to_docker_home() {
+  local token=""
+
+  command -v gh >/dev/null 2>&1 || return 1
+  token="$(host_github_gh auth token --hostname github.com 2>/dev/null)" || return 1
+  [[ -n "$token" ]] || return 1
+
+  mkdir -p "$DOCKER_HOME/.config/gh"
+  if ! printf '%s\n' "$token" | env -u GH_TOKEN -u GITHUB_TOKEN -u GH_CONFIG_DIR -u XDG_CONFIG_HOME HOME="$DOCKER_HOME" \
+      gh auth login --hostname github.com --git-protocol https --with-token >/dev/null 2>&1; then
+    return 1
+  fi
+  github_cli_logged_in
+}
+
+github_token_env_valid() {
+  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  [[ -n "$token" ]] || return 1
+  command -v gh >/dev/null 2>&1 || return 1
+  GH_TOKEN="$token" github_gh auth status --hostname github.com >/dev/null 2>&1
+}
+
+ensure_github_cli_auth() {
+  if [[ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]]; then
+    if github_token_env_valid; then
+      log "GitHub token environment variable is valid for Docker git operations"
+    else
+      warn "GH_TOKEN/GITHUB_TOKEN is set, but GitHub CLI could not validate it."
+      warn "Git pushes and PR creation may fail until that token is fixed."
+    fi
+    return 0
+  fi
+
+  if github_cli_logged_in; then
+    log "GitHub CLI login found in Docker home"
+    return 0
+  fi
+
+  if copy_host_github_cli_auth_to_docker_home; then
+    log "Copied host GitHub CLI token into Docker home"
+    return 0
+  fi
+
+  if [[ -s "$DOCKER_HOME/.config/gh/hosts.yml" ]]; then
+    warn "GitHub CLI auth exists in Docker home but is not valid, and the host token could not be copied automatically."
+  else
+    warn "No valid GitHub CLI auth was found in Docker home ${DOCKER_HOME}, and the host token could not be copied automatically."
+  fi
+
+  if ! command -v gh >/dev/null 2>&1; then
+    warn "Install GitHub CLI on the host or set GH_TOKEN/GITHUB_TOKEN before using Docker git push or auto-PR."
+    return 0
+  fi
+
+  warn "Docker git push and auto-PR may fail until the host GitHub CLI login is refreshed."
+}
+
 verify_admin_credentials() {
   local output=""
   local attempt
@@ -311,6 +381,7 @@ add_git_env_if_set "GIT_COMMITTER_NAME"
 add_git_env_if_set "GIT_COMMITTER_EMAIL"
 seed_file_if_missing "$HOME/.gitconfig" "$DOCKER_HOME/.gitconfig.host"
 sync_dir_if_exists "$HOME/.config/gh" "$DOCKER_HOME/.config/gh"
+ensure_github_cli_auth
 [[ -f "$DOCKER_HOME/.gitconfig.host" ]] && DETECTED_GIT_AUTH+=("home:${DOCKER_HOME}/.gitconfig.host")
 [[ -d "$DOCKER_HOME/.config/gh" ]] && DETECTED_GIT_AUTH+=("home:${DOCKER_HOME}/.config/gh")
 if [[ -d "$HOME/.ssh" ]] && prompt_yes_no "Mount ~/.ssh read-only for git SSH remotes?" "N"; then

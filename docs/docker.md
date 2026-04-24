@@ -100,6 +100,13 @@ Git config when present:
 ~/.gitconfig -> /home/bullpen/.gitconfig.host
 ```
 
+After syncing, the deploy script validates GitHub CLI auth from the persistent
+Docker home. If the copied config points at a host keychain token that is not
+portable into the container, the script asks the host `gh` CLI for the token and
+imports it into the Docker home with `gh auth login --with-token`, so HTTPS
+`git push` and auto-PR creation work inside the container without a separate
+container login.
+
 The entrypoint creates a writable `/home/bullpen/.gitconfig` that includes the
 host config, marks the mounted workspace as a safe Git directory, applies Git
 identity environment variables when provided, and runs `gh auth setup-git` when
