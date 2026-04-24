@@ -13,7 +13,7 @@ def _read(rel_path: str) -> str:
 def test_worker_config_modal_exposes_service_procfile_controls():
     text = _read("static/components/WorkerConfigModal.js")
     assert "Command Source" in text
-    assert 'option value="manual">Manual command' in text
+    assert 'option value="manual">Inline command' in text
     assert 'option value="procfile">Procfile' in text
     assert "Procfile process" in text
     assert "Resolved command preview" in text
@@ -22,6 +22,16 @@ def test_worker_config_modal_exposes_service_procfile_controls():
     assert "data.suggested_port" in text
     assert "servicePortAutoFilled" in text
     assert "activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop')" in text
+
+
+def test_service_start_action_runs_queued_orders_through_worker_start():
+    app = _read("static/app.js")
+    card = _read("static/components/WorkerCard.js")
+
+    assert "const hasQueuedOrder = worker?.type === 'service' && Array.isArray(worker.task_queue) && worker.task_queue.length > 0;" in app
+    assert "worker?.type === 'service' && !hasQueuedOrder ? 'service:start' : 'worker:start'" in app
+    assert "runMenuLabel()" in card
+    assert "this.taskQueueCount > 0 ? 'Run queued order' : 'Start'" in card
 
 
 def test_worker_card_hides_procfile_badge_and_conditionally_appends_port_to_title():

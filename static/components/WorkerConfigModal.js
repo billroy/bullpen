@@ -286,7 +286,7 @@ const WorkerConfigModal = {
               <label class="form-label">
                 Command Source
                 <select class="form-select" v-model="form.command_source">
-                  <option value="manual">Manual command</option>
+                  <option value="manual">Inline command</option>
                   <option value="procfile">Procfile</option>
                 </select>
               </label>

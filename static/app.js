@@ -937,7 +937,8 @@ const app = createApp({
     }
     function startWorkerSlot(slot) {
       const worker = _workerAt(slot);
-      socket.emit(worker?.type === 'service' ? 'service:start' : 'worker:start', _wsData({ slot }));
+      const hasQueuedOrder = worker?.type === 'service' && Array.isArray(worker.task_queue) && worker.task_queue.length > 0;
+      socket.emit(worker?.type === 'service' && !hasQueuedOrder ? 'service:start' : 'worker:start', _wsData({ slot }));
     }
     function stopWorkerSlot(slot) {
       const worker = _workerAt(slot);

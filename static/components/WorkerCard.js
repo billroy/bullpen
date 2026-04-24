@@ -62,7 +62,7 @@ const WorkerCard = {
       <Teleport to="body">
         <div v-if="showMenu" ref="menu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
           <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
-          <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ isService ? 'Start' : 'Run' }}</span></button>
+          <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
           <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
           <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
           <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
@@ -218,6 +218,10 @@ const WorkerCard = {
     canStart() {
       if (this.isService) return ['idle', 'stopped', 'crashed'].includes(this.workerState);
       return this.workerState === 'idle' && !this.isDisabledType;
+    },
+    runMenuLabel() {
+      if (!this.isService) return 'Run';
+      return this.taskQueueCount > 0 ? 'Run queued order' : 'Start';
     },
     canStop() {
       if (this.isService) return ['starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState);
