@@ -929,6 +929,40 @@ class TestStartWorker:
             if previous is not None:
                 register_adapter("codex", previous)
 
+    def test_live_token_updates_include_persisted_ticket_tokens(self, bp_dir, worker_slot):
+        previous = get_adapter("codex")
+        register_adapter("codex", LiveTokenStreamAdapter(output="live"))
+        socket = CapturingSocket()
+        try:
+            layout = _load_layout(bp_dir)
+            layout["slots"][worker_slot]["agent"] = "codex"
+            layout["slots"][worker_slot]["model"] = "gpt-5.4"
+            write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+            task = create_task(bp_dir, "Live cumulative token stream")
+            update_task(bp_dir, task["id"], {"tokens": 1000})
+            assign_task(bp_dir, worker_slot, task["id"])
+
+            start_worker(bp_dir, worker_slot, socketio=socket, ws_id="ws-live-cumulative")
+            time.sleep(0.7)
+
+            task_updates = [
+                payload for event, payload, _ in socket.events
+                if event == "task:updated" and payload.get("id") == task["id"]
+            ]
+            live_updates = [
+                update for update in task_updates
+                if update.get("status") == "in_progress"
+                and int(update.get("tokens") or 0) >= 1205
+            ]
+
+            assert live_updates
+            for update in live_updates:
+                assert int(update.get("tokens") or 0) >= 1205
+        finally:
+            if previous is not None:
+                register_adapter("codex", previous)
+
     def test_live_token_updates_do_not_double_count_active_task_time(self, bp_dir, worker_slot):
         previous = get_adapter("codex")
         register_adapter("codex", LiveTokenStreamAdapter(output="live"))

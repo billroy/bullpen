@@ -2042,7 +2042,8 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             task = task_mod.read_task(bp_dir, task_id)
             if not task or task.get("status") != "in_progress":
                 return
-            task["tokens"] = tokens
+            base_tokens = _coerce_non_negative_int(task.get("tokens")) or 0
+            task["tokens"] = base_tokens + tokens
             _ws_emit(socketio, "task:updated", task, ws_id)
             last_live_tokens[0] = tokens
             last_live_emit_at[0] = time.time()
