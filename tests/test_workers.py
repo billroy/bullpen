@@ -929,6 +929,40 @@ class TestStartWorker:
             if previous is not None:
                 register_adapter("codex", previous)
 
+    def test_live_token_updates_do_not_double_count_active_task_time(self, bp_dir, worker_slot):
+        previous = get_adapter("codex")
+        register_adapter("codex", LiveTokenStreamAdapter(output="live"))
+        socket = CapturingSocket()
+        try:
+            layout = _load_layout(bp_dir)
+            layout["slots"][worker_slot]["agent"] = "codex"
+            layout["slots"][worker_slot]["model"] = "gpt-5.4"
+            write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+            task = create_task(bp_dir, "Live time stream")
+            assign_task(bp_dir, worker_slot, task["id"])
+
+            start_worker(bp_dir, worker_slot, socketio=socket, ws_id="ws-live-time")
+            time.sleep(0.7)
+
+            task_updates = [
+                payload for event, payload, _ in socket.events
+                if event == "task:updated" and payload.get("id") == task["id"]
+            ]
+            live_updates = [
+                update for update in task_updates
+                if update.get("status") == "in_progress"
+                and int(update.get("tokens") or 0) >= 205
+            ]
+
+            assert live_updates
+            for update in live_updates:
+                assert update.get("active_task_started_at")
+                assert int(update.get("task_time_ms") or 0) == 0
+        finally:
+            if previous is not None:
+                register_adapter("codex", previous)
+
     def test_throttled_token_update_emits_via_deferred_timer(self, bp_dir, worker_slot):
         """When a token update is throttled, a deferred timer emits it later."""
         previous = get_adapter("codex")

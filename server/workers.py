@@ -25,7 +25,6 @@ from server.usage import (
     build_usage_update,
     elapsed_task_time_ms,
     extract_stream_usage_event,
-    task_time_ms_value,
     usage_to_legacy_tokens,
 )
 from server import tasks as task_mod
@@ -230,17 +229,6 @@ def _ws_emit(socketio, event, payload, ws_id=None):
     if ws_id and isinstance(payload, dict):
         payload["workspaceId"] = ws_id
     socketio.emit(event, payload, to=ws_id)
-
-
-def _live_task_time_ms(task):
-    """Return persisted plus current in-flight task time."""
-    if not isinstance(task, dict):
-        return 0
-    total = task_time_ms_value(task)
-    started_at = task.get(ACTIVE_TASK_TIME_FIELD)
-    if started_at:
-        total += elapsed_task_time_ms(started_at)
-    return total
 
 
 def _finalize_task_time(bp_dir, task_id):
@@ -2055,7 +2043,6 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             if not task or task.get("status") != "in_progress":
                 return
             task["tokens"] = tokens
-            task["task_time_ms"] = _live_task_time_ms(task)
             _ws_emit(socketio, "task:updated", task, ws_id)
             last_live_tokens[0] = tokens
             last_live_emit_at[0] = time.time()
