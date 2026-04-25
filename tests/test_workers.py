@@ -841,6 +841,8 @@ class TestStartWorker:
         first_ms = int(first.get("task_time_ms") or 0)
         assert first_ms >= 150
         assert not first.get("active_task_started_at")
+        first_layout = _load_layout(bp_dir)
+        assert "started_at" not in first_layout["slots"][worker_slot]
 
         update_task(bp_dir, task["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
         layout = _load_layout(bp_dir)
@@ -854,6 +856,8 @@ class TestStartWorker:
         second_ms = int(second.get("task_time_ms") or 0)
         assert second_ms >= first_ms + 150
         assert not second.get("active_task_started_at")
+        second_layout = _load_layout(bp_dir)
+        assert "started_at" not in second_layout["slots"][worker_slot]
 
     def test_stop_worker_persists_elapsed_task_time_and_clears_active_marker(self, bp_dir, worker_slot):
         register_adapter("sleepy", SleepyAdapter(sleep_seconds=5, output="long nap"))
@@ -874,6 +878,8 @@ class TestStartWorker:
         assert updated["status"] == "assigned"
         assert int(updated.get("task_time_ms") or 0) >= 150
         assert not updated.get("active_task_started_at")
+        layout = _load_layout(bp_dir)
+        assert "started_at" not in layout["slots"][worker_slot]
 
     def test_non_retryable_capacity_error_blocks_without_retry(self, bp_dir, worker_slot):
         register_adapter("gemini", GeminiCapacityExceededAdapter(output="capacity fail"))

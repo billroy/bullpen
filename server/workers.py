@@ -71,10 +71,20 @@ def _clear_worker_retry_state(worker):
         worker.pop(key, None)
 
 
+def _mark_worker_idle(worker):
+    """Clear runtime state for a worker that is no longer actively running."""
+    if not worker:
+        return
+    worker["state"] = "idle"
+    worker.pop("started_at", None)
+    _clear_worker_retry_state(worker)
+
+
 def _set_worker_retry_state(worker, *, retry_delay, retry_attempt, retry_max, error_msg):
     """Store live retry/backoff state on the worker layout entry."""
     retry_at = time.time() + max(0, int(retry_delay))
     worker["state"] = "retrying"
+    worker.pop("started_at", None)
     worker["retry_at"] = _iso_at_epoch(retry_at)
     worker["retry_delay_seconds"] = max(0, int(retry_delay))
     worker["retry_attempt"] = max(1, int(retry_attempt))
@@ -1060,8 +1070,7 @@ def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=
         queue = worker.get("task_queue", [])
         if task_id in queue:
             queue.remove(task_id)
-        worker["state"] = "idle"
-        _clear_worker_retry_state(worker)
+        _mark_worker_idle(worker)
         _save_layout(bp_dir, layout)
 
     task_mod.update_task(bp_dir, task_id, {
@@ -1093,8 +1102,7 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     worker = layout["slots"][slot_index]
     entry = None
     if worker:
-        worker["state"] = "idle"
-        _clear_worker_retry_state(worker)
+        _mark_worker_idle(worker)
         queue = worker.get("task_queue", [])
         if queue:
             task_id = queue[0]
@@ -1185,8 +1193,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
         if entry is None:
             entry = _detach_process_entry(ws_id, task_id=task_id)
         _finalize_task_time(bp_dir, task_id)
-        worker["state"] = "idle"
-        _clear_worker_retry_state(worker)
+        _mark_worker_idle(worker)
 
     # Remove every stale queue reference, not just the first one found.
     for slot in slots:
@@ -2485,20 +2492,17 @@ def _on_agent_success(
             if disposition.startswith("worker:"):
                 target_name = disposition[len("worker:"):].strip()
                 # Set worker idle BEFORE handoff (which saves its own layout)
-                worker["state"] = "idle"
-                _clear_worker_retry_state(worker)
+                _mark_worker_idle(worker)
                 _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id)
                 handed_off = True
             elif disposition.startswith("pass:"):
                 direction = disposition[len("pass:"):]
-                worker["state"] = "idle"
-                _clear_worker_retry_state(worker)
+                _mark_worker_idle(worker)
                 _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio, ws_id)
                 handed_off = True
             elif disposition.startswith("random:"):
                 target_name = disposition[len("random:"):].strip()
-                worker["state"] = "idle"
-                _clear_worker_retry_state(worker)
+                _mark_worker_idle(worker)
                 _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id)
                 handed_off = True
             else:
@@ -2510,8 +2514,7 @@ def _on_agent_success(
 
             if not handed_off:
                 # Set worker idle and save (handoff path already did this)
-                worker["state"] = "idle"
-                _clear_worker_retry_state(worker)
+                _mark_worker_idle(worker)
                 _save_layout(bp_dir, layout)
 
             if socketio:
@@ -2761,8 +2764,7 @@ def _on_agent_error(
                 "assigned_to": "",
             })
 
-            worker["state"] = "idle"
-            _clear_worker_retry_state(worker)
+            _mark_worker_idle(worker)
             _save_layout(bp_dir, layout)
 
             if socketio:
