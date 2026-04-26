@@ -133,6 +133,16 @@ def test_grid_headers_highlight_selected_cell_not_fixed_origin():
     assert ".worker-grid-row-header.is-origin {\n  color: var(--text-secondary);" in css
 
 
+def test_selected_grid_cells_stay_below_headers_when_scrolled_under_them():
+    css = _read("static/style.css")
+
+    assert ".worker-grid-column-headers {\n  position: absolute;" in css
+    assert ".worker-grid-row-headers {\n  position: absolute;" in css
+    assert ".worker-card.selected,\n.worker-grid-ghost-cell.selected {\n  box-shadow: 0 0 0 2px var(--accent);\n  z-index: 1;\n}" in css
+    assert ".worker-grid-column-headers {\n  position: absolute;\n  top: 0;\n  right: 0;\n  overflow: hidden;\n  background: var(--bg-secondary);\n  border-bottom: 1px solid var(--border);\n  z-index: 2;" in css
+    assert ".worker-grid-row-headers {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  overflow: hidden;\n  background: var(--bg-secondary);\n  border-right: 1px solid var(--border);\n  z-index: 2;" in css
+
+
 def test_minimap_bounds_clamp_to_a1_origin():
     tab = _read("static/components/BullpenTab.js")
     assert "const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);" in tab

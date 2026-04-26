@@ -2597,7 +2597,7 @@ body.worker-singleton-dragging * {
 .worker-card.selected,
 .worker-grid-ghost-cell.selected {
   box-shadow: 0 0 0 2px var(--accent);
-  z-index: 3;
+  z-index: 1;
 }
 
 .worker-card.selected:hover {
