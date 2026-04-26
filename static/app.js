@@ -1027,8 +1027,8 @@ const app = createApp({
         { id: 'tasks', label: ticketsLabel, icon: 'tag' },
         { id: 'workers', label: workersLabel, icon: 'bot' },
         { id: 'files', label: 'Files', icon: 'folder' },
-        { id: 'stats', label: 'Stats', icon: 'chart-no-axes-column' },
         { id: 'commits', label: 'Commits', icon: 'git-commit' },
+        { id: 'stats', label: 'Stats', icon: 'chart-no-axes-column' },
       ];
       const wsId = activeWorkspaceId.value;
       const wsChatTabs = chatTabs.filter(ct => ct.workspaceId === wsId);

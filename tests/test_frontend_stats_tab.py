@@ -16,7 +16,7 @@ def test_stats_tab_component_is_loaded_before_app():
     assert text.index('/components/StatsTab.js') < text.index('/app.js')
 
 
-def test_stats_tab_is_between_files_and_commits():
+def test_stats_tab_is_after_commits():
     text = _read("static/app.js")
     files = "{ id: 'files', label: 'Files', icon: 'folder' }"
     stats = "{ id: 'stats', label: 'Stats', icon: 'chart-no-axes-column' }"
@@ -24,7 +24,7 @@ def test_stats_tab_is_between_files_and_commits():
     assert files in text
     assert stats in text
     assert commits in text
-    assert text.index(files) < text.index(stats) < text.index(commits)
+    assert text.index(files) < text.index(commits) < text.index(stats)
 
 
 def test_stats_tab_uses_archived_ticket_cache_and_refreshes_archive_scope():
