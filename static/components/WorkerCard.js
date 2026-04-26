@@ -321,8 +321,11 @@ const WorkerCard = {
     showVerticalResizeHandle() {
       return !!(this.showsVerticalResizeControl && (this.hoveredVerticalResize || this.isVerticalResizing));
     },
+    hasExpandableCardContent() {
+      return this.isPaused || this.taskQueueCount > 0 || this.workerState !== 'idle';
+    },
     showsVerticalResizeControl() {
-      return this.isSelected && this.workerState !== 'idle';
+      return this.isSelected && this.hasExpandableCardContent;
     },
     outputRequestToken() {
       const taskId = this.worker?.task_queue?.[0] || '';
