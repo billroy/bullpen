@@ -33,6 +33,7 @@ def test_ticket_list_filters_are_applied_before_sorting():
     assert "return this.filteredTasks.slice().sort" in text
     assert "totalTaskTimeMs()" in text
     assert "displayTaskTimeMs(task)" in text
+    assert "const base = getReportedTaskTimeMs(task);" in text
 
 
 def test_ticket_list_filter_styles_exist():

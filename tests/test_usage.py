@@ -11,6 +11,7 @@ from server.usage import (
     extract_gemini_usage_event,
     extract_stream_usage_event,
     normalize_usage,
+    reported_task_time_ms_value,
     task_time_ms_value,
     usage_to_legacy_tokens,
 )
@@ -220,6 +221,37 @@ def test_elapsed_task_time_ms_returns_non_negative_delta():
     elapsed = elapsed_task_time_ms("2026-04-24T12:00:00Z", "2026-04-24T12:00:03Z")
     assert elapsed == 3000
     assert task_time_ms_value({TASK_TIME_FIELD: elapsed}) == 3000
+
+
+def test_reported_task_time_uses_persisted_value_when_present():
+    task = {
+        TASK_TIME_FIELD: 4500,
+        "usage": [
+            {"timestamp": "2026-04-24T12:00:00Z"},
+            {"timestamp": "2026-04-24T12:01:00Z"},
+        ],
+    }
+    assert reported_task_time_ms_value(task) == 4500
+
+
+def test_reported_task_time_falls_back_to_usage_timestamp_span():
+    task = {
+        "usage": [
+            {"timestamp": "2026-04-24T12:00:00Z"},
+            {"timestamp": "2026-04-24T12:00:03Z"},
+        ],
+    }
+    assert reported_task_time_ms_value(task) == 3000
+
+
+def test_reported_task_time_falls_back_to_history_timestamp_span():
+    task = {
+        "history": [
+            {"timestamp": "2026-04-24T12:00:00Z", "event": "retry"},
+            {"timestamp": "2026-04-24T12:00:02Z", "event": "retry"},
+        ],
+    }
+    assert reported_task_time_ms_value(task) == 2000
 
 
 def test_extract_codex_item_completed_with_item_usage():

@@ -164,6 +164,41 @@ def task_time_ms_value(task):
     return _coerce_non_negative_int(task.get(TASK_TIME_FIELD)) or 0
 
 
+def _timestamp_range_ms(items):
+    """Return the span in ms across timestamped dict items."""
+    if not isinstance(items, list):
+        return 0
+
+    stamps = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        parsed = _parse_iso8601_utc(item.get("timestamp"))
+        if parsed is not None:
+            stamps.append(parsed)
+
+    if len(stamps) < 2:
+        return 0
+    delta_ms = int((max(stamps) - min(stamps)).total_seconds() * 1000)
+    return max(delta_ms, 0)
+
+
+def reported_task_time_ms_value(task):
+    """Return persisted task time, or a best-effort estimate for legacy tasks."""
+    persisted = task_time_ms_value(task)
+    if persisted > 0:
+        return persisted
+    if not isinstance(task, dict):
+        return 0
+    usage_span = _timestamp_range_ms(task.get("usage"))
+    if usage_span > 0:
+        return usage_span
+    history_span = _timestamp_range_ms(task.get("history"))
+    if history_span > 0:
+        return history_span
+    return 0
+
+
 def elapsed_task_time_ms(started_at, ended_at=None):
     """Return elapsed milliseconds between a stored start time and end time."""
     started = _parse_iso8601_utc(started_at)

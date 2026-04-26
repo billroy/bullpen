@@ -63,7 +63,7 @@ const TaskDetailPanel = {
       });
     },
     displayedTaskTimeMs() {
-      const base = Number(this.task?.task_time_ms) || 0;
+      const base = getReportedTaskTimeMs(this.task);
       const startedMs = Date.parse(this.task?.active_task_started_at || '');
       if (!Number.isFinite(startedMs)) return base;
       return base + Math.max(this.nowMs - startedMs, 0);

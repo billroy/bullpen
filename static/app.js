@@ -309,6 +309,7 @@ const app = createApp({
       const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
       keys.delete('tokens');
       keys.delete('task_time_ms');
+      keys.delete('reported_task_time_ms');
       keys.delete('active_task_started_at');
       for (const key of keys) {
         if (JSON.stringify(current[key]) !== JSON.stringify(next[key])) return false;

@@ -137,4 +137,13 @@ function formatTaskDuration(ms) {
   return `${seconds}s`;
 }
 
+function getReportedTaskTimeMs(task) {
+  const reported = Number(task?.reported_task_time_ms);
+  if (Number.isFinite(reported) && reported > 0) return reported;
+  const persisted = Number(task?.task_time_ms);
+  if (Number.isFinite(persisted) && persisted > 0) return persisted;
+  return 0;
+}
+
 window.formatTaskDuration = formatTaskDuration;
+window.getReportedTaskTimeMs = getReportedTaskTimeMs;

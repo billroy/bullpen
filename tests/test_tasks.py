@@ -129,6 +129,7 @@ class TestTaskCRUD:
         assert read_back["assigned_to"] == ""
         assert "created_at" in read_back
         assert "updated_at" in read_back
+        assert read_back["reported_task_time_ms"] == 0
 
 
 class TestArchive:
@@ -178,3 +179,26 @@ class TestArchive:
         assert len(archived) == 1
         assert archived[0]["id"] == t2["id"]
         assert archived[0]["id"] != t1["id"]
+
+    def test_archived_read_and_list_include_reported_time_fallback(self, bp_dir):
+        task = create_task(bp_dir, "Archived Timing")
+        update_task(
+            bp_dir,
+            task["id"],
+            {
+                "usage": [
+                    {"timestamp": "2026-04-24T12:00:00Z", "source": "worker"},
+                    {"timestamp": "2026-04-24T12:00:05Z", "source": "worker"},
+                ]
+            },
+        )
+        archive_task(bp_dir, task["id"])
+
+        archived = list_tasks(bp_dir, archived=True)
+        assert archived[0]["reported_task_time_ms"] == 5000
+
+        archived_path = os.path.join(bp_dir, "tasks", "archive", f"{task['id']}.md")
+        assert os.path.exists(archived_path)
+        with open(archived_path, "r", encoding="utf-8") as handle:
+            content = handle.read()
+        assert "reported_task_time_ms" not in content

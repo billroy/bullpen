@@ -11,6 +11,7 @@ from server.persistence import (
     read_frontmatter,
     write_frontmatter,
 )
+from server.usage import reported_task_time_ms_value
 
 BASE62 = string.digits + string.ascii_uppercase + string.ascii_lowercase
 
@@ -71,7 +72,14 @@ def create_task(bp_dir, title, description="", task_type="task", priority="norma
     path = os.path.join(_tasks_dir(bp_dir), f"{slug}.md")
     write_frontmatter(path, meta, body, slug)
 
-    return {**meta, "id": slug, "body": body}
+    return _with_reported_task_time({**meta, "id": slug, "body": body})
+
+
+def _with_reported_task_time(task):
+    """Attach a non-persisted display/reporting task time field."""
+    enriched = dict(task or {})
+    enriched["reported_task_time_ms"] = reported_task_time_ms_value(enriched)
+    return enriched
 
 
 def read_task(bp_dir, task_id):
@@ -81,7 +89,7 @@ def read_task(bp_dir, task_id):
         return None
     ensure_within(path, _tasks_dir(bp_dir))
     meta, body, slug = read_frontmatter(path)
-    return {**meta, "id": slug or task_id, "body": body}
+    return _with_reported_task_time({**meta, "id": slug or task_id, "body": body})
 
 
 def update_task(bp_dir, task_id, fields):
@@ -102,7 +110,7 @@ def update_task(bp_dir, task_id, fields):
     meta["updated_at"] = _now_iso()
     write_frontmatter(path, meta, body, slug)
 
-    return {**meta, "id": slug or task_id, "body": body}
+    return _with_reported_task_time({**meta, "id": slug or task_id, "body": body})
 
 
 def delete_task(bp_dir, task_id):
@@ -151,7 +159,7 @@ def clear_task_output(bp_dir, task_id):
     meta["updated_at"] = _now_iso()
     write_frontmatter(path, meta, body, slug)
 
-    return {**meta, "id": slug or task_id, "body": body}
+    return _with_reported_task_time({**meta, "id": slug or task_id, "body": body})
 
 
 def _read_tasks_from_dir(path):
@@ -162,7 +170,7 @@ def _read_tasks_from_dir(path):
         if fname.endswith(".md"):
             fpath = os.path.join(path, fname)
             meta, body, slug = read_frontmatter(fpath)
-            tasks.append({**meta, "id": slug or fname[:-3], "body": body})
+            tasks.append(_with_reported_task_time({**meta, "id": slug or fname[:-3], "body": body}))
     return tasks
 
 

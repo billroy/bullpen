@@ -34,6 +34,7 @@ def test_task_detail_panel_has_read_only_rendering_paths():
     assert "v-if=\"!readOnly\" class=\"detail-footer\"" in text
     assert "detail-metric-pill" in text
     assert "formatTaskTime(displayedTaskTimeMs)" in text
+    assert "const base = getReportedTaskTimeMs(this.task);" in text
 
 
 def test_ticket_detail_read_only_styles_exist():

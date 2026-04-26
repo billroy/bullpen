@@ -372,7 +372,7 @@ const KanbanTab = {
       return String(n);
     },
     displayTaskTimeMs(task) {
-      const base = Number(task?.task_time_ms) || 0;
+      const base = getReportedTaskTimeMs(task);
       const startedMs = Date.parse(task?.active_task_started_at || '');
       if (!Number.isFinite(startedMs)) return base;
       return base + Math.max(this.nowMs - startedMs, 0);
