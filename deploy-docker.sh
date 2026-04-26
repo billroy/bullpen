@@ -305,7 +305,7 @@ if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
   warn "Running deploy-docker.sh from the Bullpen repo root."
   warn "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."
   warn "You can also create or reuse a local project directory at ${LOCAL_PROJECT_PATH_DEFAULT}."
-  if prompt_yes_no "Create or use local project directory ${LOCAL_PROJECT_PATH_DEFAULT}?" "Y"; then
+  if prompt_yes_no "Add Bullpen as a project? ${LOCAL_PROJECT_PATH_DEFAULT}?" "Y"; then
     mkdir -p "$LOCAL_PROJECT_PATH_DEFAULT"
     WORKSPACE_INPUT="$LOCAL_PROJECT_PATH_DEFAULT"
   else
