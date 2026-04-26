@@ -45,6 +45,7 @@ def test_stats_tab_renders_required_dashboard_panes():
     assert "Archived tickets" in text
     assert "Daily archived tickets" in text
     assert "Daily open tickets" in text
+    assert "Daily archived total ticket time" in text
     assert "Archived ticket tokens" in text
     assert "Recent Archive" in text
     assert "Current Load" in text
@@ -67,3 +68,12 @@ def test_stats_tab_trends_include_date_axis_ticks():
     assert "class=\"stats-spark-axis\"" in text
     assert "axisTicks()" in text
     assert "formatDayKey(dayKey)" in text
+
+
+def test_stats_tab_archived_time_trend_uses_reported_task_time_formatting():
+    text = _read("static/components/StatsTab.js")
+    assert "taskTimeValue(task)" in text
+    assert "getReportedTaskTimeMs" in text
+    assert "totalType: 'duration'" in text
+    assert "formatSparkTotal(chart)" in text
+    assert "formatTaskDuration(chart.total)" in text

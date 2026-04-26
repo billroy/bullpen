@@ -99,7 +99,7 @@ const StatsTab = {
             <article v-for="chart in sparklineCharts" :key="chart.key" class="stats-spark-card">
               <div class="stats-spark-header">
                 <span>{{ chart.label }}</span>
-                <strong>{{ formatNumber(chart.total) }}</strong>
+                <strong>{{ formatSparkTotal(chart) }}</strong>
               </div>
               <svg class="stats-sparkline" viewBox="0 0 160 44" preserveAspectRatio="none" aria-hidden="true">
                 <line
@@ -297,6 +297,7 @@ const StatsTab = {
     sparklineCharts() {
       const archivedCounts = this.seriesFor(this.archiveTasks, task => this.bestArchiveDate(task), () => 1);
       const openCounts = this.seriesFor(this.liveTasks, task => task?.created_at, () => 1);
+      const archivedTime = this.seriesFor(this.archiveTasks, task => this.bestArchiveDate(task), task => this.taskTimeValue(task));
       const archivedTokens = this.seriesFor(this.archiveTasks, task => this.bestArchiveDate(task), task => this.tokenValue(task));
       return [
         {
@@ -318,6 +319,17 @@ const StatsTab = {
           points: this.sparkPoints(openCounts),
           ticks: this.axisTicks(),
           caption: 'created date',
+        },
+        {
+          key: 'archived-time',
+          label: 'Daily archived total ticket time',
+          color: 'var(--accent)',
+          values: archivedTime,
+          total: archivedTime.reduce((sum, n) => sum + n, 0),
+          points: this.sparkPoints(archivedTime),
+          ticks: this.axisTicks(),
+          caption: this.archiveDateLabel.toLowerCase(),
+          totalType: 'duration',
         },
         {
           key: 'tokens',
@@ -359,6 +371,10 @@ const StatsTab = {
   methods: {
     tokenValue(task) {
       const value = Number(task?.tokens);
+      return Number.isFinite(value) && value > 0 ? value : 0;
+    },
+    taskTimeValue(task) {
+      const value = typeof getReportedTaskTimeMs === 'function' ? getReportedTaskTimeMs(task) : Number(task?.reported_task_time_ms || task?.task_time_ms);
       return Number.isFinite(value) && value > 0 ? value : 0;
     },
     sumTokens(tasks) {
@@ -454,6 +470,12 @@ const StatsTab = {
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
       if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
       return String(n);
+    },
+    formatSparkTotal(chart) {
+      if (chart?.totalType === 'duration') {
+        return typeof formatTaskDuration === 'function' ? formatTaskDuration(chart.total) : this.formatNumber(chart.total);
+      }
+      return this.formatNumber(chart?.total);
     },
     formatDate(value) {
       const millis = this.dateMillis(value);
