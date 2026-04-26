@@ -62,6 +62,14 @@ def test_worker_colors_menu_includes_marker():
     assert "['claude','codex','gemini','shell','service','marker']" in text
 
 
+def test_toolbar_audio_and_worker_color_menus_are_mutually_exclusive():
+    text = _read("static/components/TopToolbar.js")
+    assert "this.showEventSoundsMenu = false;" in text
+    assert "this.showProviderColorsMenu = false;" in text
+    assert "toggleProviderColorsMenu()" in text
+    assert "toggleEventSoundsMenu()" in text
+
+
 def test_worker_config_modal_receives_workspace_palette_colors():
     text = _read("static/app.js")
     assert ":provider-colors=\"currentProviderColors\"" in text

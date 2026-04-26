@@ -1,187 +1,247 @@
 # Electron Conversion Security Analysis (Bullpen)
 
-Date: 2026-04-08
+Date: 2026-04-26
 Author: Codex
 
-## 1) Current Security Posture vs Electron Shift
+## 1) Current Project Status
 
-Bullpen today is a local web app (Flask + Socket.IO + Vue) with file and process access in the Python backend. Moving to Electron changes security boundaries in important ways:
+Bullpen is still a Flask + Socket.IO + Vue web application. There is no
+Electron scaffold, `package.json`, preload script, `BrowserWindow` setup, or
+`node-pty` dependency in the repository as of this review.
 
-- Today: browser client + local server over HTTP/Socket.IO.
-- Electron: privileged desktop runtime where renderer compromise can become local code execution unless process isolation is strict.
+The current runtime shape is:
 
-Main security shift:
-- The browser-origin/network attack surface can be reduced (good), but Electron introduces a high-impact IPC/preload boundary and packaged runtime supply-chain concerns (new risks).
+- Backend: Flask + Flask-SocketIO in `threading` async mode.
+- Frontend: Vue 3 via CDN, no npm build step.
+- Transport: HTTP routes plus Socket.IO events.
+- Storage: flat files under each workspace's `.bullpen/` directory.
+- Execution: local subprocesses for Claude, Codex, Gemini, Shell workers,
+  Service workers, git automation, and GitHub CLI PR creation.
+- Multi-project support: a global project registry with workspace-scoped state,
+  rooms, and MCP runtime metadata.
+- Test surface: `pytest --collect-only -q` currently reports 814 tests.
 
-## 2) Security Implications of Electron Architecture Choices
+The README now describes Bullpen as cross-platform and documents optional auth,
+MCP integration, Shell / Script workers, Service workers, worktrees, scheduling,
+auto-commit/auto-PR, import/export, and hosted/Docker deployment paths. The
+Electron plan should therefore be treated as a future desktop packaging track,
+not as the current implementation path.
 
-### A. Keep local HTTP server + Electron shell (least refactor)
+## 2) What Changed Since The April 8 Memo
+
+Several risks called out in the earlier memo have been reduced in the web app:
+
+- Socket.IO origin handling is no longer wildcard/tunnel-suffix based by
+  default. It allows loopback, same origin, forwarded same origin, or exact
+  `BULLPEN_ALLOWED_ORIGINS` entries.
+- Non-loopback binds require authentication credentials before startup.
+- Optional username/password auth now supports multiple users, CSRF on login and
+  logout, secure cookie flags in production mode, and login throttling.
+- Static assets and API routes are gated when auth is enabled, with a small
+  public allowlist for the login page.
+- MCP tokens are workspace-scoped; MCP sockets are bound to the token's
+  workspace instead of being joined to all workspace rooms.
+- Workspace exports strip runtime-only `server_host`, `server_port`, and
+  `mcp_token`; imports rewrite live runtime metadata after replacement.
+- Raw workspace HTML is served as an attachment rather than opened as a live
+  same-origin document.
+- Zip imports now enforce file-count, total-size, expansion-ratio, traversal,
+  absolute-path, and nested-archive checks.
+- Prompt hardening exists for worker and chat prompts. Untrusted mode delimits
+  user/workspace content and disables auto-commit/auto-PR for AI workers.
+- Shell and Service workers use workspace-bounded cwd resolution, explicit env
+  construction, secret-like env stripping, and read-only serialization redaction.
+- Process tracking is workspace-scoped and subprocess tree termination is tested.
+
+These improvements make the current local web app safer, and they are useful
+building blocks for Electron. They do not remove the need for a separate
+Electron threat model because Electron would introduce a privileged desktop
+runtime and a new IPC/preload boundary.
+
+## 3) Current Security Posture vs Electron Shift
+
+Today, the browser renderer talks to a Python backend over HTTP and Socket.IO.
+The backend already has local file, process, git, and agent-execution access.
+The main risks are therefore browser-origin control, auth/session boundaries,
+workspace isolation, and subprocess policy.
+
+Electron changes the failure mode:
+
+- The network/origin exposure can shrink if the app moves away from HTTP as its
+  privileged interface.
+- Renderer compromise becomes more severe if the renderer can reach Node,
+  preload capabilities, or broad IPC channels.
+- Packaging, code signing, auto-update, and Node dependency supply chain become
+  part of the security model.
+
+Recommendation remains: do not ship an Electron renderer with direct Node,
+filesystem, process, shell, or arbitrary network privileges.
+
+## 4) Electron Architecture Options
+
+### A. Electron shell around the existing local server
+
+This is still the fastest migration.
+
 Pros:
-- Fastest migration from current code.
-- Reuses most backend logic.
+
+- Reuses nearly all current Flask, Socket.IO, Vue, and test infrastructure.
+- Preserves the no-build frontend convention.
+- Keeps MCP and current worker execution paths largely unchanged.
 
 Security impact:
-- Retains network/socket attack surface unless bound strictly to loopback and authenticated.
-- Still vulnerable to cross-origin/remote control classes of issues if not corrected.
 
-### B. Replace HTTP/Socket with Electron IPC (recommended)
+- Retains the local HTTP/Socket.IO attack surface.
+- Requires the current auth/origin/session model to stay enabled and tested.
+- Must bind only to loopback in desktop mode.
+- Must prevent arbitrary remote content from navigating into the app window.
+
+This option is acceptable for an internal developer build if it is hardened, but
+it is not the cleanest long-term desktop security boundary.
+
+### B. Electron main process + Python worker service behind IPC
+
+This remains the preferred production desktop architecture.
+
 Pros:
-- Removes exposed local web server from default runtime.
-- Tighter control over capability access via explicit IPC contracts.
+
+- Removes the local network listener from the normal desktop capability path.
+- Lets Electron main own privileged operations and expose only typed capability
+  channels to the renderer.
+- Makes it easier to reason about user intent for file, process, service, and
+  terminal-like operations.
 
 Security impact:
-- Requires hardened IPC design; bad IPC is equivalent to backend RCE.
-- Preload bridge becomes the critical trust boundary.
 
-Recommendation:
-- Use Electron main process + Python worker process behind strictly validated IPC.
-- No renderer direct filesystem/process/network privileges.
+- Requires a carefully designed IPC contract.
+- A broad or dynamic IPC bridge would be equivalent to backend remote code
+  execution.
+- The preload bridge becomes a critical security boundary and needs tests.
 
-## 3) Electron-Specific Security Controls Required
+Recommended target:
 
-### BrowserWindow / renderer hardening
-Required baseline:
+- Renderer: untrusted UI only.
+- Preload: minimal, versioned `window.bullpen.*` bridge.
+- Main process: trusted desktop orchestrator.
+- Python process: constrained worker service with the existing validation and
+  workspace model carried forward.
+
+## 5) Electron-Specific Controls Required
+
+### BrowserWindow / renderer baseline
+
 - `contextIsolation: true`
 - `sandbox: true`
 - `nodeIntegration: false`
 - `enableRemoteModule: false`
-- Strict navigation policy: block unexpected `will-navigate` and `window.open`.
-- CSP for app pages (no unsafe inline/eval).
+- Disable or tightly control `webview`.
+- Block unexpected `will-navigate`, `setWindowOpenHandler`, and external URL
+  opens.
+- Use a strict CSP for app pages; avoid `unsafe-eval` and new inline script.
+- Never load arbitrary workspace HTML into the Bullpen origin. Keep the current
+  sandbox/download behavior or isolate previews onto a separate origin/session.
 
 ### Preload bridge policy
-- Expose minimal, versioned API surface (`window.bullpen.*`).
-- Validate every argument at runtime (schema + bounds).
-- No generic “invoke arbitrary command/path” methods.
+
+- Expose a small, versioned API surface.
+- Validate every argument at runtime with the same field limits used by
+  `server/validation.py`.
+- No generic `run(command)`, `read(path)`, `write(path)`, or `invoke(channel,
+  payload)` escape hatches.
+- Treat workspace IDs, ticket IDs, paths, worker slots, coordinates, and profile
+  IDs as hostile inputs until validated.
 
 ### IPC policy
-- Per-channel schema validation.
-- Explicit allowlist channels.
-- Request/response correlation and timeout handling.
-- Privileged operations require explicit user intent and audit event.
+
+- Per-channel schemas and explicit allowlisted channels.
+- Request/response correlation with timeouts.
+- Workspace scoping on every channel.
+- Separate human-user channels from agent/MCP channels.
+- Privileged operations require clear user intent and audit events.
+- MCP clients should remain bound to exactly one workspace token.
 
 ### Packaging / update security
-- Code signing for desktop binaries.
-- If auto-update is added: signed update feed + TLS pinning strategy + rollback handling.
-- Pin JS dependencies and scan (Electron apps are supply-chain sensitive by design).
 
-## 4) Terminal Feature: Security Changes in Electron
+- Code signing and notarization where applicable.
+- Signed update feed if auto-update is added.
+- Dependency lockfiles and routine dependency scanning.
+- SBOM/release artifact provenance before broader distribution.
 
-Adding an integrated terminal materially increases risk because it is deliberate command execution UX.
+## 6) Worker, Service, And Terminal-Like Capabilities
 
-### New threat model with terminal
-- Renderer compromise can attempt to drive terminal execution.
-- Social engineering risk increases (“paste this command”).
-- Terminal output can contain escape/control sequences and deceptive links.
+The old memo treated an integrated terminal as a proposed future feature.
+Bullpen now has several terminal-adjacent capabilities even without a true
+interactive PTY:
 
-### Required controls for terminal subsystem
+- Worker Focus Mode streams agent output.
+- Live Agent Chat starts provider CLI sessions.
+- AI workers launch Claude, Codex, and Gemini subprocesses.
+- Shell workers run configured commands against tickets.
+- Service workers run long-lived workspace commands and health checks.
 
-1. Architecture
-- Terminal process creation only in main process (or dedicated privileged worker), never renderer.
-- Renderer gets a stream view + controlled input channel.
+These capabilities already represent deliberate local command execution. An
+Electron build must keep them out of the renderer.
 
-2. Process model
-- Use PTY library (e.g., `node-pty`) with explicit shell path and workspace `cwd` policy.
-- Default cwd should be active workspace, not arbitrary filesystem root.
-- Explicit environment scrub/allowlist (`PATH`, required vars only; remove sensitive inherited vars by default where feasible).
+Required controls:
 
-3. Permissions and intent
-- Add a clear session model: user starts/stops terminal explicitly.
-- No hidden background terminal commands from automation without a separate confirmation policy.
-- Distinguish user-typed commands vs app-triggered commands in audit log.
+- Process creation only in Electron main or the Python worker service.
+- Renderer receives output streams and sends narrow control intents only.
+- Preserve workspace-bounded cwd checks for Shell and Service workers.
+- Preserve env allowlisting/secret stripping and redacted read-only views.
+- Keep untrusted AI mode disabling auto-commit and auto-PR.
+- Audit file writes, subprocess starts/stops, git automation, service starts,
+  token rotations, imports, exports, and future PTY sessions.
 
-4. Renderer safety for terminal output
-- Use terminal emulator rendering that does not interpret output as HTML.
-- Disable/guard risky features:
-  - auto-open links without confirmation
-  - clipboard write escape sequences (OSC 52) unless user-approved
-  - file/URL open handlers without prompts
+If a true interactive terminal is added later:
 
-5. Command execution semantics
-- If app exposes “run command” helpers (buttons), pass argv arrays, never shell-concatenated strings.
-- If full shell access is intended, document this as a trusted local capability and gate with UX warnings.
+- Use a PTY controlled by main/Python, never renderer.
+- Require explicit user-created sessions.
+- Limit default cwd to the active workspace.
+- Render terminal output through a terminal emulator, never as HTML.
+- Guard link opening, OSC 52 clipboard writes, and file/URL handlers.
+- Make transcript persistence opt-in because scrollback can contain secrets.
 
-6. Data handling
-- Terminal scrollback may contain secrets/tokens.
-- Make transcript persistence opt-in with retention controls and redaction options.
+## 7) Prioritized Remaining Work
 
-## 5) Prioritized Issues To Resolve
+### P0 before any Electron build is shipped
 
-### P0 (must resolve before shipping Electron build)
-1. Process isolation baseline (`contextIsolation`, `sandbox`, `nodeIntegration` off).
-2. Remove or strictly lock down local HTTP/Socket exposure (prefer IPC over network).
-3. Define and enforce strict preload + IPC schemas for all privileged actions.
-4. Fix path traversal surfaces for profile/team/project path inputs in backend logic.
-5. Eliminate global broadcast data leakage model; scope events/data by active workspace and authorized view.
+1. Create an Electron threat model and architecture decision record.
+2. Choose shell-around-server vs IPC-first desktop architecture.
+3. Add hardened `BrowserWindow` and preload defaults if scaffolding begins.
+4. Define typed IPC/preload contracts before exposing privileged operations.
+5. Keep local-server desktop mode loopback-only with auth/origin protections if
+   option A is used.
+6. Add Electron-specific tests for navigation blocking, window-open blocking,
+   renderer Node isolation, and preload API validation.
 
-### P1 (resolve before enabling terminal feature by default)
-6. Implement terminal in main process only with explicit session lifecycle.
-7. Add terminal output safety controls (link handling, clipboard/escape handling, no HTML rendering).
-8. Add audit logging for privileged actions (file writes, subprocess launches, git automation, terminal sessions).
-9. Harden config/event validation to fail closed on unknown/invalid fields.
+### P1 before enabling desktop command execution broadly
 
-### P2 (resolve before broader team adoption / multi-host planning)
-10. Introduce authentication/authorization model for multi-user future.
-11. Replace flat-file coordination assumptions with datastore + stronger concurrency model.
-12. Add dependency pinning, SBOM/scanning, code-signing + secure update strategy.
-13. Add policy controls for agent/terminal command risk levels (safe/default/unsafe modes).
+7. Add audit logging for privileged operations.
+8. Review all subprocess launch paths for desktop-specific user intent checks.
+9. Keep Shell and Service worker commands behind explicit configuration and
+   workspace-bounded cwd validation.
+10. Preserve untrusted-mode restrictions for auto-commit/auto-PR and make the UI
+    clear when a worker is trusted.
+11. Add IPC fuzz tests for malformed payloads and cross-workspace requests.
 
-## 6) Development Approach (Sketch)
+### P2 before public desktop distribution
 
-### Phase 0: Security foundation and architecture decision
-- Decide IPC-first architecture.
-- Define trust boundaries document:
-  - renderer (untrusted)
-  - preload (constrained bridge)
-  - main process (trusted orchestrator)
-  - Python worker/backend (trusted but constrained)
+12. Add signing/notarization/release hardening.
+13. Add dependency lockfiles and SBOM/scanning for Electron dependencies.
+14. Define update, rollback, and incident-log policy.
+15. Document privacy behavior for diagnostics, logs, transcripts, and exports.
 
-Deliverables:
-- Threat model v1
-- IPC contract spec
-- Electron security checklist in repo
+## 8) Practical Recommendation
 
-### Phase 1: Minimal Electron shell (no terminal yet)
-- Launch existing UI in Electron with hardened BrowserWindow settings.
-- Route backend actions through typed IPC adapters.
-- Keep current features working without exposing network listener externally.
+Bullpen is not currently an Electron project. The safest near-term plan is to
+continue hardening the Flask/Socket.IO app while preparing an IPC-first Electron
+design in parallel.
 
-Security gates:
-- No `nodeIntegration` in renderer
-- No wildcard origin/network controls in production mode
-- IPC fuzz tests for invalid payloads
+If speed matters, start with a loopback-only Electron shell around the existing
+server as a prototype, but treat it as an interim desktop wrapper. For a real
+desktop release, move privileged operations behind a narrow preload + IPC
+contract and keep the Python backend as a constrained worker service.
 
-### Phase 2: Backend hardening carried into Electron
-- Apply strict validation to all mutation channels.
-- Fix path handling (`ensure_within` everywhere paths are derived from user inputs).
-- Workspace-scoped process tracking and event routing.
-- Structured error handling (no raw exception leakage to UI).
-
-Security gates:
-- High-severity findings from current review closed.
-- Regression tests for path traversal, unauthorized actions, malformed IPC.
-
-### Phase 3: Terminal feature rollout (behind feature flag)
-- Implement PTY service in main process.
-- Add explicit start/stop terminal sessions per workspace.
-- Add output/link/clipboard safeguards and optional transcript policy.
-- Add operator warnings for high-risk command execution contexts.
-
-Security gates:
-- Terminal abuse tests (escape sequences, untrusted output rendering, command spoof UX).
-- Red-team test: compromised renderer cannot execute commands outside approved IPC calls.
-
-### Phase 4: Production readiness
-- Code signing and release hardening.
-- Dependency pinning and security scanning in CI.
-- Incident logging and diagnostic policy (privacy-aware).
-- Optional secure auto-update channel.
-
-## 7) Practical Recommendation for This Project
-
-Given Bullpen’s current architecture and risk profile, the safest path is:
-- Electron for UX/container,
-- IPC-first privileged operations,
-- Python backend as a worker service with strict input contracts,
-- terminal as an explicitly trusted local capability with strong UX and IPC safeguards.
-
-This preserves development velocity while preventing the common Electron failure mode where renderer compromise becomes unrestricted host compromise.
+The project is in a better place than the original April 8 memo assumed, but
+the core Electron warning still stands: renderer compromise must not become
+unrestricted host compromise.

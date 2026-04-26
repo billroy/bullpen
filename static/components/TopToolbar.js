@@ -215,7 +215,10 @@ const TopToolbar = {
     },
     toggleEventSoundsMenu() {
       this.showEventSoundsMenu = !this.showEventSoundsMenu;
-      if (this.showEventSoundsMenu) this.showMainMenu = false;
+      if (this.showEventSoundsMenu) {
+        this.showMainMenu = false;
+        this.showProviderColorsMenu = false;
+      }
     },
     onToggleEventSoundFlag(key) {
       if (!window.EventSounds) return;
