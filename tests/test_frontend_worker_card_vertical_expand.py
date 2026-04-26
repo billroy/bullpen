@@ -26,11 +26,14 @@ def test_worker_card_accepts_selected_card_height_and_resize_props():
 
 def test_worker_card_bottom_hover_prefers_vertical_resize_outside_pass_down_zone():
     text = _read("static/components/WorkerCard.js")
+    assert "v-if=\"showsVerticalResizeControl\"" in text
+    assert "showsVerticalResizeControl()" in text
+    assert "return this.isSelected && this.workerState !== 'idle';" in text
     assert "const downHandleZone = this.canConnect('down') && Math.abs(x - (rect.width / 2)) <= 18;" in text
-    assert "if (this.isSelected && y >= rect.height - threshold && !downHandleZone) {" in text
+    assert "if (this.showsVerticalResizeControl && y >= rect.height - threshold && !downHandleZone) {" in text
     assert "this.hoveredVerticalResize = true;" in text
     assert "this.hoveredHandle = null;" in text
-    assert "class=\"card-height-resize-handle\"" in text
+    assert "if (!this.showsVerticalResizeControl || e.button !== 0) return;" in text
 
 
 def test_bullpen_tab_tracks_ephemeral_expanded_height_for_selected_card_only():

@@ -18,7 +18,7 @@ const WorkerCard = {
          @mousemove="onCardMouseMove"
          @mouseleave="onCardMouseLeave"
 >
-      <div v-if="isSelected"
+      <div v-if="showsVerticalResizeControl"
            class="card-height-resize-handle"
            :class="{ 'card-height-resize-handle-active': showVerticalResizeHandle }"
            :style="verticalResizeHandleStyle"
@@ -319,7 +319,10 @@ const WorkerCard = {
       return String(this.worker?.note || '').trim();
     },
     showVerticalResizeHandle() {
-      return !!(this.isSelected && (this.hoveredVerticalResize || this.isVerticalResizing));
+      return !!(this.showsVerticalResizeControl && (this.hoveredVerticalResize || this.isVerticalResizing));
+    },
+    showsVerticalResizeControl() {
+      return this.isSelected && this.workerState !== 'idle';
     },
     outputRequestToken() {
       const taskId = this.worker?.task_queue?.[0] || '';
@@ -426,7 +429,7 @@ const WorkerCard = {
       const y = e.clientY - rect.top;
       const threshold = 24;
       const downHandleZone = this.canConnect('down') && Math.abs(x - (rect.width / 2)) <= 18;
-      if (this.isSelected && y >= rect.height - threshold && !downHandleZone) {
+      if (this.showsVerticalResizeControl && y >= rect.height - threshold && !downHandleZone) {
         this.verticalResizeX = Math.max(21, Math.min(rect.width - 21, x));
         this.hoveredVerticalResize = true;
         this.hoveredHandle = null;
@@ -451,7 +454,7 @@ const WorkerCard = {
       this.hoveredVerticalResize = false;
     },
     onVerticalResizeHandleDown(e) {
-      if (!this.isSelected || e.button !== 0) return;
+      if (!this.showsVerticalResizeControl || e.button !== 0) return;
       e.preventDefault();
       this.$emit('vertical-resize-start', e);
     },
