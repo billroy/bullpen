@@ -479,7 +479,7 @@ def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None,
     })
     if socketio:
         _ws_emit(socketio, "task:created", task, ws_id)
-    assign_task(bp_dir, slot_index, task["id"], socketio, ws_id)
+    assign_task(bp_dir, slot_index, task["id"], socketio, ws_id, suppress_auto_start=True)
     return task
 
 
@@ -525,7 +525,15 @@ def _defer_start_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_
     thread.start()
 
 
-def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None, preserve_handoff_depth=False):
+def assign_task(
+    bp_dir,
+    slot_index,
+    task_id,
+    socketio=None,
+    ws_id=None,
+    preserve_handoff_depth=False,
+    suppress_auto_start=False,
+):
     """Add task to worker's queue, update ticket status.
 
     By default, assignment starts a fresh run chain and resets handoff depth.
@@ -556,8 +564,12 @@ def assign_task(bp_dir, slot_index, task_id, socketio=None, ws_id=None, preserve
         _ws_emit(socketio, "task:updated", task, ws_id)
         _ws_emit(socketio, "layout:updated", layout, ws_id)
 
-    # Check if worker should auto-start
+    # Check if worker should auto-start. Synthetic tasks created by an
+    # explicit start_worker call are already on the start path, so do not
+    # recursively schedule a second start for on_drop/on_queue workers.
     activation = worker.get("activation", "on_drop")
+    if suppress_auto_start:
+        return
     if activation in ("on_drop", "on_queue") and worker.get("state") == "idle":
         _defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=task_id)
     elif activation == "manual" and socketio:
@@ -633,6 +645,8 @@ def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manu
         return None
     worker = slots[slot_index]
     if not worker:
+        return None
+    if worker.get("state") == "working":
         return None
 
     queue = worker.get("task_queue", [])

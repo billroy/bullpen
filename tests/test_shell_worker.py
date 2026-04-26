@@ -41,6 +41,28 @@ def _wait_for_worker_done(bp_dir, slot=0, timeout=5.0):
     raise AssertionError("worker did not finish")
 
 
+def _wait_for_worker_state(bp_dir, state, slot=0, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][slot]
+        if worker.get("state") == state:
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"worker did not reach {state}")
+
+
+def _shell_run_history(task):
+    return [row for row in task.get("history", []) if row.get("event") == "worker_run"]
+
+
+def _shell_stdout_artifacts(bp_dir, task_id):
+    artifact_dir = os.path.join(bp_dir, "logs", "worker-runs", task_id)
+    if not os.path.isdir(artifact_dir):
+        return []
+    return sorted(name for name in os.listdir(artifact_dir) if name.endswith(".stdout.log"))
+
+
 def _set_shell_worker(bp_dir, **overrides):
     worker = {
         "type": "shell",
@@ -302,6 +324,48 @@ def test_shell_manual_empty_queue_creates_synthetic_ticket(bp_dir):
     assert "synthetic" in synthetic["tags"]
     assert synthetic["synthetic_run"] is True
     assert synthetic["status"] == "review"
+
+
+def test_shell_on_drop_empty_queue_manual_run_executes_synthetic_ticket_once(bp_dir):
+    _set_shell_worker(
+        bp_dir,
+        activation="on_drop",
+        command=_python_command('import json,sys; t=json.load(sys.stdin); print(t["title"])'),
+    )
+
+    start_worker(bp_dir, 0)
+    _wait_for_worker_done(bp_dir)
+
+    tasks = [task for task in list_tasks(bp_dir) if task["title"].startswith("[Auto]")]
+    assert len(tasks) == 1
+    synthetic = read_task(bp_dir, tasks[0]["id"])
+    history = _shell_run_history(synthetic)
+    assert len(history) == 1
+    assert len(_shell_stdout_artifacts(bp_dir, synthetic["id"])) == 1
+    assert synthetic["status"] == "review"
+
+
+def test_shell_duplicate_start_while_working_does_not_reuse_queue_head(bp_dir):
+    _set_shell_worker(
+        bp_dir,
+        command=_python_command("import json,sys,time; json.load(sys.stdin); print('once'); time.sleep(0.25)"),
+    )
+    task = create_task(bp_dir, "Run once")
+    assign_task(bp_dir, 0, task["id"])
+
+    start_worker(bp_dir, 0)
+    _wait_for_worker_state(bp_dir, "working")
+    start_worker(bp_dir, 0)
+    _wait_for_worker_done(bp_dir)
+
+    updated = read_task(bp_dir, task["id"])
+    history = _shell_run_history(updated)
+    artifacts = _shell_stdout_artifacts(bp_dir, task["id"])
+    assert len(history) == 1
+    assert len(artifacts) == 1
+    artifact = os.path.join(bp_dir, "logs", "worker-runs", task["id"], artifacts[0])
+    with open(artifact, encoding="utf-8") as handle:
+        assert handle.read().strip() == "once"
 
 
 def test_shell_feature_flag_can_disable_worker(bp_dir, monkeypatch):
