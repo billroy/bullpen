@@ -31,6 +31,10 @@ def test_worker_card_bottom_hover_prefers_vertical_resize_outside_pass_down_zone
     assert "return this.isPaused || this.taskQueueCount > 0 || this.workerState !== 'idle';" in text
     assert "showsVerticalResizeControl()" in text
     assert "return this.isSelected && this.hasExpandableCardContent;" in text
+    assert "updateCardHoverState(e)" in text
+    assert "onCardMouseMove(e)" in text
+    assert "this.updateCardHoverState(e);" in text
+    assert "onPointerMove(e)" in text
     assert "const downHandleZone = this.canConnect('down') && Math.abs(x - (rect.width / 2)) <= 18;" in text
     assert "if (this.showsVerticalResizeControl && y >= rect.height - threshold && !downHandleZone) {" in text
     assert "this.hoveredVerticalResize = true;" in text

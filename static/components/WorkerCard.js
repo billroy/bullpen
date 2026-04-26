@@ -422,7 +422,7 @@ const WorkerCard = {
         right: '\u2192',
       }[dir] || '';
     },
-    onCardMouseMove(e) {
+    updateCardHoverState(e) {
       // Reveal at most one drag handle — whichever edge the cursor is closest
       // to, within a small threshold. This keeps the card body free of drag
       // affordances so ordinary clicks (e.g. to open the focus view) are
@@ -451,6 +451,9 @@ const WorkerCard = {
         }
       }
       if (this.hoveredHandle !== nearest) this.hoveredHandle = nearest;
+    },
+    onCardMouseMove(e) {
+      this.updateCardHoverState(e);
     },
     onCardMouseLeave() {
       this.hoveredHandle = null;
@@ -486,6 +489,7 @@ const WorkerCard = {
       e.stopPropagation();
     },
     onPointerMove(e) {
+      this.updateCardHoverState(e);
       const drag = this.pointerWorkerDrag;
       if (!drag || drag.pointerId !== e.pointerId) return;
       e.preventDefault();
