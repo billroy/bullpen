@@ -108,6 +108,71 @@ def _normalize_origin(origin):
     return f"{scheme}://{netloc}"
 
 
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _slot_coord(slot, index, cols=4):
+    if isinstance(slot, dict):
+        return _safe_int(slot.get("col"), index % cols), _safe_int(slot.get("row"), index // cols)
+    return index % cols, index // cols
+
+
+def _translated_worker_slot(slot, delta_col, delta_row):
+    translated = dict(slot or {})
+    translated["col"] = _safe_int(translated.get("col"), 0) + delta_col
+    translated["row"] = _safe_int(translated.get("row"), 0) + delta_row
+    return translated
+
+
+def _merge_imported_worker_slots(existing_slots, imported_slots, *, config):
+    cols = max(_safe_int(((config or {}).get("grid") or {}).get("cols"), 4), 1)
+    kept_existing = list(existing_slots or [])
+    normalized_import = normalize_layout({"slots": imported_slots or []}, config=config).get("slots", [])
+    imported_workers = [slot for slot in normalized_import if isinstance(slot, dict)]
+    if not imported_workers:
+        return kept_existing
+
+    occupied = {
+        _slot_coord(slot, index, cols)
+        for index, slot in enumerate(kept_existing)
+        if isinstance(slot, dict)
+    }
+    imported_coords = [_slot_coord(slot, index, cols) for index, slot in enumerate(imported_workers)]
+    imported_min_col = min(col for col, _row in imported_coords)
+    imported_min_row = min(row for _col, row in imported_coords)
+
+    if occupied:
+        existing_cols = [col for col, _row in occupied]
+        existing_rows = [row for _col, row in occupied]
+        candidate_offsets = [
+            (max(existing_cols) + 1 - imported_min_col, min(existing_rows) - imported_min_row),
+            (min(existing_cols) - imported_min_col, max(existing_rows) + 1 - imported_min_row),
+        ]
+    else:
+        candidate_offsets = [(-imported_min_col, -imported_min_row)]
+
+    for delta_col, delta_row in candidate_offsets:
+        translated_coords = {
+            (col + delta_col, row + delta_row)
+            for col, row in imported_coords
+        }
+        if occupied.isdisjoint(translated_coords):
+            break
+    else:
+        delta_col = (max((col for col, _row in occupied), default=-1) + 1) - imported_min_col
+        delta_row = -imported_min_row
+
+    kept_existing.extend(
+        _translated_worker_slot(slot, delta_col, delta_row)
+        for slot in imported_workers
+    )
+    return kept_existing
+
+
 def _configured_allowed_origins():
     raw = os.environ.get("BULLPEN_ALLOWED_ORIGINS", "")
     allowed = set()
@@ -780,7 +845,9 @@ def create_app(
         init_workspace(ws.path)
         _write_runtime_config(ws, preferred_token=previous_token)
         config = read_json(os.path.join(bp_dir, "config.json"))
-        write_json(os.path.join(bp_dir, "layout.json"), normalize_layout({"slots": slots}, config=config))
+        current_layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
+        merged_slots = _merge_imported_worker_slots(current_layout.get("slots", []), slots, config=config)
+        write_json(os.path.join(bp_dir, "layout.json"), normalize_layout({"slots": merged_slots}, config=config))
 
         source_profiles_dir = os.path.join(source_bp_dir, "profiles")
         if os.path.isdir(source_profiles_dir):

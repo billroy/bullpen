@@ -245,13 +245,27 @@ def test_export_single_worker_rejects_unknown_slot(tmp_workspace):
     assert resp.get_json()["error"] == "Unknown worker slot"
 
 
-def test_import_workers_replaces_layout_from_zip(tmp_workspace):
+def test_import_workers_merges_layout_from_zip_without_overwriting_existing_workers(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = app.test_client()
     original_token = read_json(os.path.join(bp_dir, "config.json"))["mcp_token"]
 
-    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {
+                    "name": "Existing Worker",
+                    "profile": "existing-profile",
+                    "state": "idle",
+                    "task_queue": [],
+                    "col": 0,
+                    "row": 0,
+                }
+            ]
+        },
+    )
     archive = _zip_bytes(
         {
             ".bullpen/layout.json": json.dumps(
@@ -262,6 +276,8 @@ def test_import_workers_replaces_layout_from_zip(tmp_workspace):
                             "profile": "imported-profile",
                             "state": "idle",
                             "task_queue": [],
+                            "col": 0,
+                            "row": 0,
                         }
                     ]
                 }
@@ -281,11 +297,78 @@ def test_import_workers_replaces_layout_from_zip(tmp_workspace):
     layout = read_json(os.path.join(bp_dir, "layout.json"))
     profile = read_json(os.path.join(bp_dir, "profiles", "imported-profile.json"))
     config = read_json(os.path.join(bp_dir, "config.json"))
-    assert layout["slots"][0]["name"] == "Imported Worker"
+    workers = [slot for slot in layout["slots"] if isinstance(slot, dict)]
+    assert len(workers) == 2
+    existing = next(slot for slot in workers if slot["name"] == "Existing Worker")
+    imported = next(slot for slot in workers if slot["name"] == "Imported Worker")
+    assert (existing["col"], existing["row"]) == (0, 0)
+    assert (imported["col"], imported["row"]) == (1, 0)
     assert profile["id"] == "imported-profile"
     assert config["server_host"] == app.config["host"]
     assert config["server_port"] == app.config["port"]
     assert config["mcp_token"] == original_token
+
+
+def test_import_workers_keeps_pass_connected_group_adjacent_after_translation(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {
+                    "name": "Existing Worker",
+                    "profile": "existing-profile",
+                    "state": "idle",
+                    "task_queue": [],
+                    "col": 3,
+                    "row": 2,
+                }
+            ]
+        },
+    )
+    archive = _zip_bytes(
+        {
+            ".bullpen/layout.json": json.dumps(
+                {
+                    "slots": [
+                        {
+                            "name": "Pass Left",
+                            "profile": "imported-profile",
+                            "state": "idle",
+                            "task_queue": [],
+                            "disposition": "pass:right",
+                            "col": 0,
+                            "row": 0,
+                        },
+                        {
+                            "name": "Pass Right",
+                            "profile": "imported-profile",
+                            "state": "idle",
+                            "task_queue": [],
+                            "disposition": "pass:left",
+                            "col": 1,
+                            "row": 0,
+                        },
+                    ]
+                }
+            )
+        }
+    )
+
+    resp = client.post(
+        "/api/import/workers",
+        data={"file": (archive, "workers.zip")},
+        content_type="multipart/form-data",
+    )
+
+    assert resp.status_code == 200
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    workers = {slot["name"]: slot for slot in layout["slots"] if isinstance(slot, dict)}
+    assert (workers["Pass Left"]["col"], workers["Pass Left"]["row"]) == (4, 2)
+    assert (workers["Pass Right"]["col"], workers["Pass Right"]["row"]) == (5, 2)
 
 
 def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):
