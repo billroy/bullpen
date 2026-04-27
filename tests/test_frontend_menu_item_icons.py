@@ -21,6 +21,7 @@ def test_worker_card_menu_commands_render_icons_before_labels():
     assert "class=\"worker-menu-item\" @click=\"menuUnpause\"><i class=\"menu-item-icon\" data-lucide=\"play\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"><i class=\"menu-item-icon\" data-lucide=\"copy\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuCopyWorker\"><i class=\"menu-item-icon\" data-lucide=\"clipboard\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuExportWorker\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuCopyTo\"><i class=\"menu-item-icon\" data-lucide=\"copy\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuMoveTo\"><i class=\"menu-item-icon\" data-lucide=\"arrow-right\"" in text
     assert "class=\"worker-menu-item worker-menu-danger\" @click=\"menuDelete\"><i class=\"menu-item-icon\" data-lucide=\"trash-2\"" in text

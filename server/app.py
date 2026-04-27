@@ -624,15 +624,27 @@ def create_app(
         # Do not expose host filesystem paths in export manifests.
         return {"id": ws.id, "name": ws.name}
 
-    def _export_workers_zip_bytes(ws):
-        mem = BytesIO()
-        created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    def _worker_export_name(value, fallback="worker"):
+        text = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "")).strip(" .-_")
+        return text[:80] or fallback
+
+    def _normalized_worker_slots(ws):
         layout_path = os.path.join(ws.bp_dir, "layout.json")
         layout = read_json(layout_path) if os.path.exists(layout_path) else {"slots": []}
         config = read_json(os.path.join(ws.bp_dir, "config.json"))
         layout = normalize_layout(layout, config=config)
         slots = layout.get("slots", []) if isinstance(layout, dict) else []
-        workers_layout = {"slots": slots if isinstance(slots, list) else []}
+        return slots if isinstance(slots, list) else []
+
+    def _export_workers_zip_bytes(ws, selected_slots=None, selected_slot=None):
+        mem = BytesIO()
+        created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        slots = _normalized_worker_slots(ws)
+        if selected_slots is None:
+            export_slots = slots
+        else:
+            export_slots = selected_slots
+        workers_layout = {"slots": export_slots if isinstance(export_slots, list) else []}
 
         with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(".bullpen/layout.json", json.dumps(workers_layout, indent=2))
@@ -652,6 +664,11 @@ def create_app(
                 "workspace": _workspace_export_meta(ws),
                 "profiles": sorted(profile_ids),
             }
+            if selected_slot is not None:
+                manifest["selection"] = {
+                    "slot": int(selected_slot),
+                    "count": len(workers_layout["slots"]),
+                }
             zf.writestr("bullpen-workers-export.json", json.dumps(manifest, indent=2))
         mem.seek(0)
         return mem
@@ -817,6 +834,29 @@ def create_app(
         export_name = f"bullpen-workers-{ws.name}-{ws.id[:8]}.zip"
         return send_file(
             _export_workers_zip_bytes(ws),
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=export_name,
+        )
+
+    @app.route("/api/export/worker")
+    @auth.require_auth
+    def export_worker():
+        ws_id = request.args.get("workspaceId", startup_id)
+        ws = manager.get(ws_id)
+        if ws is None:
+            return jsonify({"error": "Unknown workspace"}), 404
+        try:
+            slot = int(request.args.get("slot"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "slot is required"}), 400
+        slots = _normalized_worker_slots(ws)
+        if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
+            return jsonify({"error": "Unknown worker slot"}), 404
+        worker = slots[slot]
+        export_name = f"bullpen-worker-{_worker_export_name(worker.get('name'), f'slot-{slot + 1}')}-{ws.id[:8]}.zip"
+        return send_file(
+            _export_workers_zip_bytes(ws, [worker], selected_slot=slot),
             mimetype="application/zip",
             as_attachment=True,
             download_name=export_name,

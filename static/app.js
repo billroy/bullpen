@@ -1139,6 +1139,17 @@ const app = createApp({
       }
     }
 
+    async function exportWorker(slot) {
+      if (!activeWorkspaceId.value || !Number.isInteger(slot)) return;
+      try {
+        const url = `/api/export/worker?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}&slot=${encodeURIComponent(slot)}`;
+        await _downloadZip(url, 'bullpen-worker.zip');
+        addToast('Worker export ready');
+      } catch (e) {
+        addToast('Worker export failed: ' + e.message, 'error');
+      }
+    }
+
     async function exportAll() {
       try {
         await _downloadZip('/api/export/all', 'bullpen-all.zip');
@@ -1440,7 +1451,7 @@ const app = createApp({
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
-      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
+      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportWorker, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
       bullpenTabRef,
     };
   },

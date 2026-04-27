@@ -185,6 +185,66 @@ def test_export_workers_returns_workers_payload(tmp_workspace):
     assert "path" not in manifest["workspace"]
 
 
+def test_export_single_worker_returns_selected_worker_payload(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {
+                    "name": "Builder",
+                    "profile": "custom-worker",
+                    "state": "idle",
+                    "task_queue": [],
+                },
+                {
+                    "name": "Reviewer",
+                    "profile": "review-worker",
+                    "state": "idle",
+                    "task_queue": [],
+                },
+            ]
+        },
+    )
+    write_json(
+        os.path.join(bp_dir, "profiles", "custom-worker.json"),
+        {"id": "custom-worker", "name": "Custom Worker"},
+    )
+    write_json(
+        os.path.join(bp_dir, "profiles", "review-worker.json"),
+        {"id": "review-worker", "name": "Review Worker"},
+    )
+
+    resp = client.get("/api/export/worker?slot=1")
+    assert resp.status_code == 200
+    assert "bullpen-worker-Reviewer-" in resp.headers.get("Content-Disposition", "")
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        names = set(zf.namelist())
+        exported_layout = json.loads(zf.read(".bullpen/layout.json"))
+        manifest = json.loads(zf.read("bullpen-workers-export.json"))
+    assert len(exported_layout["slots"]) == 1
+    assert exported_layout["slots"][0]["name"] == "Reviewer"
+    assert exported_layout["slots"][0]["profile"] == "review-worker"
+    assert exported_layout["slots"][0]["state"] == "idle"
+    assert exported_layout["slots"][0]["task_queue"] == []
+    assert ".bullpen/profiles/review-worker.json" in names
+    assert ".bullpen/profiles/custom-worker.json" not in names
+    assert manifest["selection"] == {"slot": 1, "count": 1}
+
+
+def test_export_single_worker_rejects_unknown_slot(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    resp = client.get("/api/export/worker?slot=99")
+    assert resp.status_code == 404
+    assert resp.get_json()["error"] == "Unknown worker slot"
+
+
 def test_import_workers_replaces_layout_from_zip(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)

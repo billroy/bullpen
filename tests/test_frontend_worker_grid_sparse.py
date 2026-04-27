@@ -99,6 +99,9 @@ def test_worker_card_has_header_status_and_copy_worker_menu():
     assert "Copy Worker" in text
     assert "menuCopyWorker()" in text
     assert "$emit('copy-worker', this.slotIndex)" in text
+    assert "Export Worker" in text
+    assert "menuExportWorker()" in text
+    assert "$root.exportWorker(this.slotIndex)" in text
     assert "effectiveLayoutMode()" in text
     assert "v-if=\"effectiveLayoutMode !== 'small'\"" in text
 
