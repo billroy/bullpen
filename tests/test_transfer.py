@@ -105,7 +105,7 @@ class TestTransferMoveBasic:
 
         # Source slot cleared
         src_layout = read_json(os.path.join(bp_a, "layout.json"))
-        assert src_layout["slots"][0] is None
+        assert len(src_layout["slots"]) == 0 or src_layout["slots"][0] is None
 
         # Destination has clone
         bp_b = manager.get_bp_dir(id_b)
@@ -159,8 +159,8 @@ class TestTransferSameWorkspace:
             transfer_worker(manager, id_a, 0, id_a, None, "copy")
 
 
-class TestTransferDestFull:
-    def test_dest_full(self, two_workspaces):
+class TestTransferSafeLandingZone:
+    def test_copy_appends_safe_slot_when_configured_grid_is_full(self, two_workspaces):
         manager, id_a, id_b = two_workspaces
         bp_a = manager.get_bp_dir(id_a)
         bp_b = manager.get_bp_dir(id_b)
@@ -173,10 +173,59 @@ class TestTransferDestFull:
         cols = config_b.get("grid", {}).get("cols", 6)
         total = rows * cols
         for i in range(total):
-            _set_worker(bp_b, i, _make_worker(f"Worker{i}"))
+            _set_worker(bp_b, i, _make_worker(
+                f"Worker{i}", row=i // cols, col=i % cols))
 
-        with pytest.raises(TransferError, match="destination grid is full"):
-            transfer_worker(manager, id_a, 0, id_b, None, "copy")
+        result = transfer_worker(manager, id_a, 0, id_b, None, "copy")
+
+        assert result["dest_slot"] == total
+        dst_layout = read_json(os.path.join(bp_b, "layout.json"))
+        clone = dst_layout["slots"][result["dest_slot"]]
+        assert clone["name"] == "Alpha"
+        assert clone["row"] == 0
+        assert clone["col"] == cols
+
+    def test_move_appends_safe_slot_when_configured_grid_is_full(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+        bp_b = manager.get_bp_dir(id_b)
+
+        _set_worker(bp_a, 0, _make_worker("Alpha"))
+
+        config_b = read_json(os.path.join(bp_b, "config.json"))
+        rows = config_b.get("grid", {}).get("rows", 4)
+        cols = config_b.get("grid", {}).get("cols", 6)
+        total = rows * cols
+        for i in range(total):
+            _set_worker(bp_b, i, _make_worker(
+                f"Worker{i}", row=i // cols, col=i % cols))
+
+        result = transfer_worker(manager, id_a, 0, id_b, None, "move")
+
+        assert result["dest_slot"] == total
+        src_layout = read_json(os.path.join(bp_a, "layout.json"))
+        assert len(src_layout["slots"]) == 0 or src_layout["slots"][0] is None
+        dst_layout = read_json(os.path.join(bp_b, "layout.json"))
+        clone = dst_layout["slots"][result["dest_slot"]]
+        assert clone["name"] == "Alpha"
+        assert clone["row"] == 0
+        assert clone["col"] == cols
+
+    def test_copy_uses_unoccupied_visual_coordinate_when_slot_index_coord_collides(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+        bp_b = manager.get_bp_dir(id_b)
+
+        _set_worker(bp_a, 0, _make_worker("Alpha", row=5, col=5))
+        _set_worker(bp_b, 0, _make_worker("Existing", row=5, col=5))
+
+        result = transfer_worker(manager, id_a, 0, id_b, None, "copy")
+
+        assert result["dest_slot"] == 1
+        dst_layout = read_json(os.path.join(bp_b, "layout.json"))
+        clone = dst_layout["slots"][result["dest_slot"]]
+        assert clone["row"] == 5
+        assert clone["col"] == 6
 
 
 class TestTransferDestSlotOccupied:

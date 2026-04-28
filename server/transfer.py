@@ -13,6 +13,7 @@ _AI_TRANSFER_FIELDS = {
     "auto_commit", "auto_pr", "trigger_time", "trigger_interval_minutes",
     "trigger_every_day", "color", "avatar",
 }
+_MAX_TRANSFER_SLOT = 200
 
 
 class TransferError(Exception):
@@ -21,6 +22,50 @@ class TransferError(Exception):
     def __init__(self, message, status=400):
         super().__init__(message)
         self.status = status
+
+
+def _safe_cols(config):
+    grid = config.get("grid", {}) if isinstance(config, dict) else {}
+    try:
+        cols = int(grid.get("cols", 4))
+    except (TypeError, ValueError):
+        cols = 4
+    return cols if cols > 0 else 4
+
+
+def _slot_coord(worker, index, cols):
+    if isinstance(worker, dict) and "col" in worker and "row" in worker:
+        try:
+            return int(worker.get("col", 0)), int(worker.get("row", 0))
+        except (TypeError, ValueError):
+            pass
+    return index % cols, index // cols
+
+
+def _coord_occupied(slots, coord, cols):
+    for i, worker in enumerate(slots):
+        if not worker:
+            continue
+        col, row = _slot_coord(worker, i, cols)
+        if col == coord["col"] and row == coord["row"]:
+            return True
+    return False
+
+
+def _nearest_empty_coord(slots, start_col, start_row, cols):
+    col = int(start_col)
+    row = int(start_row)
+    while _coord_occupied(slots, {"col": col, "row": row}, cols):
+        col += 1
+    return {"col": col, "row": row}
+
+
+def _first_empty_slot(slots):
+    for i, worker in enumerate(slots):
+        if worker is None:
+            return i
+    slots.append(None)
+    return len(slots) - 1
 
 
 def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id,
@@ -76,31 +121,26 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
             config=dst_config,
         )
         dst_slots = dst_layout.get("slots", [])
-        dst_rows = dst_config.get("grid", {}).get("rows", 4)
-        dst_cols = dst_config.get("grid", {}).get("cols", 6)
-        dst_total = dst_rows * dst_cols
-
-        # Extend destination slots array if needed
-        while len(dst_slots) < dst_total:
-            dst_slots.append(None)
+        src_cols = _safe_cols(src_config)
+        dst_cols = _safe_cols(dst_config)
         dst_layout["slots"] = dst_slots
 
         # Resolve destination slot
         if dest_slot is not None:
-            if dest_slot < 0 or dest_slot >= dst_total:
+            if dest_slot < 0 or dest_slot >= _MAX_TRANSFER_SLOT:
                 raise TransferError("destination slot is out of range", 400)
+            while len(dst_slots) <= dest_slot:
+                dst_slots.append(None)
             if dst_slots[dest_slot] is not None:
                 raise TransferError("destination slot is occupied", 409)
             target_slot = dest_slot
+            target_coord = {"col": dest_slot % dst_cols, "row": dest_slot // dst_cols}
+            if _coord_occupied(dst_slots, target_coord, dst_cols):
+                raise TransferError("destination coordinate is occupied", 409)
         else:
-            # Auto-assign first empty slot
-            target_slot = None
-            for i in range(dst_total):
-                if dst_slots[i] is None:
-                    target_slot = i
-                    break
-            if target_slot is None:
-                raise TransferError("destination grid is full", 409)
+            target_slot = _first_empty_slot(dst_slots)
+            source_col, source_row = _slot_coord(source_worker, source_slot, src_cols)
+            target_coord = _nearest_empty_coord(dst_slots, source_col, source_row, dst_cols)
 
         # Generate unique name in destination
         existing_names = {s.get("name") for s in dst_slots if s and s.get("name")}
@@ -120,8 +160,8 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
         else:
             clone_source = source_worker
         clone = copy_worker_slot(clone_source, reset_runtime=True)
-        clone["row"] = target_slot // dst_cols
-        clone["col"] = target_slot % dst_cols
+        clone["row"] = target_coord["row"]
+        clone["col"] = target_coord["col"]
         clone["name"] = candidate
 
         # --- Warnings for workspace-local references ---
