@@ -40,22 +40,33 @@ const BullpenTab = {
       cardVerticalResize: null,
       expandedWorkerCardSlot: null,
       expandedWorkerCardDelta: 0,
-      debugCardInset: 0,
+      debugCardInsetX: 0,
+      debugCardInsetY: 0,
       resizeTooltip: null,
     };
   },
   template: `
     <div class="bullpen-grid-container">
       <Teleport to="#worker-tab-toolbar-slot">
-        <label class="worker-grid-debug-inset" title="Temporary debug control for worker-card inset">
-          <span>Inset</span>
+        <label class="worker-grid-debug-inset" title="Temporary debug control for horizontal worker-card inset">
+          <span>Inset X</span>
           <input type="range"
                  min="0"
-                 max="100"
+                 max="15"
                  step="1"
-                 v-model.number="debugCardInset"
-                 aria-label="Debug worker card inset" />
-          <span class="worker-grid-debug-inset-value">{{ workerCardInset }}px</span>
+                 v-model.number="debugCardInsetX"
+                 aria-label="Debug worker card horizontal inset" />
+          <span class="worker-grid-debug-inset-value">{{ workerCardInsetX }}px</span>
+        </label>
+        <label class="worker-grid-debug-inset" title="Temporary debug control for vertical worker-card inset">
+          <span>Inset Y</span>
+          <input type="range"
+                 min="0"
+                 max="15"
+                 step="1"
+                 v-model.number="debugCardInsetY"
+                 aria-label="Debug worker card vertical inset" />
+          <span class="worker-grid-debug-inset-value">{{ workerCardInsetY }}px</span>
         </label>
         <button class="btn btn-sm" @click="jumpHome">Home</button>
         <button class="btn btn-sm" @click="fitOccupied">Fit</button>
@@ -417,9 +428,13 @@ const BullpenTab = {
       }
       return 140;
     },
-    workerCardInset() {
-      const raw = Number(this.debugCardInset);
-      return Number.isFinite(raw) ? Math.max(0, Math.min(100, Math.round(raw))) : 0;
+    workerCardInsetX() {
+      const raw = Number(this.debugCardInsetX);
+      return Number.isFinite(raw) ? Math.max(0, Math.min(15, Math.round(raw))) : 0;
+    },
+    workerCardInsetY() {
+      const raw = Number(this.debugCardInsetY);
+      return Number.isFinite(raw) ? Math.max(0, Math.min(15, Math.round(raw))) : 0;
     },
     cardSize() {
       return { width: this.columnWidth, height: this.rowHeight };
@@ -732,14 +747,14 @@ const BullpenTab = {
     },
     insetBoxStyle(x, y, width, height) {
       const minWidth = 64;
-      const minHeight = 32;
-      const maxInset = Math.max(0, Math.min((width - minWidth) / 2, (height - minHeight) / 2));
-      const inset = Math.min(this.workerCardInset, maxInset);
+      const minHeight = 24;
+      const insetX = Math.min(this.workerCardInsetX, Math.max(0, (width - minWidth) / 2));
+      const insetY = Math.min(this.workerCardInsetY, Math.max(0, (height - minHeight) / 2));
       return {
-        left: (x + inset) + 'px',
-        top: (y + inset) + 'px',
-        width: Math.max(minWidth, width - inset * 2) + 'px',
-        height: Math.max(minHeight, height - inset * 2) + 'px',
+        left: (x + insetX) + 'px',
+        top: (y + insetY) + 'px',
+        width: Math.max(minWidth, width - insetX * 2) + 'px',
+        height: Math.max(minHeight, height - insetY * 2) + 'px',
       };
     },
     cardStyle(item) {

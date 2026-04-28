@@ -2221,7 +2221,7 @@ body {
 }
 
 .worker-grid-debug-inset input[type="range"] {
-  width: 96px;
+  width: 72px;
   accent-color: var(--accent);
 }
 
