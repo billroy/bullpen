@@ -201,6 +201,14 @@ def _normalize_service_port(value):
         return value
 
 
+def _trim_trailing_empty_slots(slots):
+    """Drop trailing empty entries while preserving intentional interior holes."""
+    trimmed = list(slots)
+    while trimmed and trimmed[-1] is None:
+        trimmed.pop()
+    return trimmed
+
+
 def normalize_worker_slot(raw, *, index, config):
     """Return a canonical worker slot, preserving unknown fields."""
     if raw is None:
@@ -306,10 +314,11 @@ def normalize_layout(layout, *, config):
     raw_slots = normalized.get("slots", [])
     if not isinstance(raw_slots, list):
         raw_slots = []
-    normalized["slots"] = [
+    normalized_slots = [
         normalize_worker_slot(slot, index=i, config=config)
         for i, slot in enumerate(raw_slots)
     ]
+    normalized["slots"] = _trim_trailing_empty_slots(normalized_slots)
     return normalized
 
 

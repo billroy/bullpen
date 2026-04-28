@@ -562,7 +562,7 @@ class TestWorkerEvents:
 
         c.emit("worker:remove", {"slot": 0})
         layout = get_event(c, "layout:updated")
-        assert layout["slots"][0] is None
+        assert layout["slots"] == []
 
     def test_move_worker(self, client):
         c, _ = client

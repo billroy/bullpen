@@ -88,6 +88,36 @@ def test_unknown_worker_type_preserves_unknown_fields_through_configure_and_copy
     assert clone["paused"] is False
 
 
+def test_normalize_layout_preserves_interior_holes_but_trims_trailing_empty_slots(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+
+    layout = normalize_layout({
+        "slots": [
+            {
+                "type": "marker",
+                "row": 0,
+                "col": 0,
+                "name": "Anchor",
+            },
+            None,
+            {
+                "type": "marker",
+                "row": 3,
+                "col": 1,
+                "name": "Tail",
+            },
+            None,
+            None,
+        ]
+    }, config=config)
+
+    assert len(layout["slots"]) == 3
+    assert layout["slots"][0]["name"] == "Anchor"
+    assert layout["slots"][1] is None
+    assert layout["slots"][2]["name"] == "Tail"
+
+
 def test_shell_slot_round_trips_through_team_save_load(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     shell = {
