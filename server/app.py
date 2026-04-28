@@ -74,6 +74,16 @@ _NESTED_ARCHIVE_SUFFIXES = (
 _LOGIN_THROTTLE_WINDOW_SECONDS = 5 * 60
 _LOGIN_THROTTLE_MAX_FAILURES = 5
 _LOGIN_THROTTLE_BLOCK_SECONDS = 60
+_TEXTUAL_APPLICATION_MIME_PREFIXES = (
+    "application/json",
+    "application/ld+json",
+    "application/xml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/ecmascript",
+    "application/x-sh",
+    "application/x-shellscript",
+)
 
 
 def _origin_host(origin):
@@ -106,6 +116,17 @@ def _normalize_origin(origin):
     if not scheme or not netloc:
         return ""
     return f"{scheme}://{netloc}"
+
+
+def _is_textual_mime(mime):
+    if not mime:
+        return True
+    if mime.startswith("text/"):
+        return True
+    return any(
+        mime == prefix or mime.startswith(prefix + ";")
+        for prefix in _TEXTUAL_APPLICATION_MIME_PREFIXES
+    )
 
 
 def _safe_int(value, default=0):
@@ -589,7 +610,7 @@ def create_app(
                 send_kwargs["download_name"] = os.path.basename(full_path)
             return send_file(full_path, **send_kwargs)
 
-        if mime and (mime.startswith("image/") or not mime.startswith("text/")):
+        if mime and (mime.startswith("image/") or not _is_textual_mime(mime)):
             return send_file(full_path, mimetype=mime)
 
         try:
