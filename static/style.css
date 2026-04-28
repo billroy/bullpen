@@ -2241,8 +2241,7 @@ body {
   top: 0;
   left: 0;
   background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  box-shadow: 1px 0 0 var(--border), 0 1px 0 var(--border);
   z-index: 3;
 }
 
@@ -2252,7 +2251,7 @@ body {
   right: 0;
   overflow: hidden;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 var(--border);
   z-index: 2;
   user-select: none;
 }
@@ -2267,7 +2266,7 @@ body {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
-  border-right: 1px solid var(--border);
+  box-shadow: 1px 0 0 var(--border);
   box-sizing: border-box;
 }
 
@@ -2332,7 +2331,7 @@ body {
   bottom: 0;
   overflow: hidden;
   background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
+  box-shadow: 1px 0 0 var(--border);
   z-index: 2;
   user-select: none;
 }
@@ -2347,7 +2346,7 @@ body {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 0 var(--border);
   box-sizing: border-box;
 }
 

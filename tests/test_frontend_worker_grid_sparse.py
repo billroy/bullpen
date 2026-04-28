@@ -142,8 +142,18 @@ def test_selected_grid_cells_stay_below_headers_when_scrolled_under_them():
     assert ".worker-grid-column-headers {\n  position: absolute;" in css
     assert ".worker-grid-row-headers {\n  position: absolute;" in css
     assert ".worker-card.selected,\n.worker-grid-ghost-cell.selected {\n  box-shadow: 0 0 0 2px var(--accent);\n  z-index: 1;\n}" in css
-    assert ".worker-grid-column-headers {\n  position: absolute;\n  top: 0;\n  right: 0;\n  overflow: hidden;\n  background: var(--bg-secondary);\n  border-bottom: 1px solid var(--border);\n  z-index: 2;" in css
-    assert ".worker-grid-row-headers {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  overflow: hidden;\n  background: var(--bg-secondary);\n  border-right: 1px solid var(--border);\n  z-index: 2;" in css
+    assert ".worker-grid-column-headers {\n  position: absolute;\n  top: 0;\n  right: 0;\n  overflow: hidden;\n  background: var(--bg-secondary);\n  box-shadow: 0 1px 0 var(--border);\n  z-index: 2;" in css
+    assert ".worker-grid-row-headers {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  overflow: hidden;\n  background: var(--bg-secondary);\n  box-shadow: 1px 0 0 var(--border);\n  z-index: 2;" in css
+
+
+def test_worker_grid_header_separators_paint_on_cell_edges():
+    css = _read("static/style.css")
+
+    assert ".worker-grid-corner {\n  position: absolute;\n  top: 0;\n  left: 0;\n  background: var(--bg-secondary);\n  box-shadow: 1px 0 0 var(--border), 0 1px 0 var(--border);" in css
+    assert ".worker-grid-column-header {\n  position: absolute;" in css
+    assert "  color: var(--text-secondary);\n  box-shadow: 1px 0 0 var(--border);\n  box-sizing: border-box;" in css
+    assert ".worker-grid-row-header {\n  position: absolute;" in css
+    assert "  color: var(--text-secondary);\n  box-shadow: 0 1px 0 var(--border);\n  box-sizing: border-box;" in css
 
 
 def test_minimap_bounds_clamp_to_a1_origin():
