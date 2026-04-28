@@ -156,29 +156,20 @@ def test_worker_grid_header_separators_paint_on_cell_edges():
     assert "  color: var(--text-secondary);\n  box-shadow: 0 1px 0 var(--border);\n  box-sizing: border-box;" in css
 
 
-def test_worker_grid_debug_card_inset_slider_exists():
+def test_worker_grid_cards_have_fixed_one_pixel_inset():
     tab = _read("static/components/BullpenTab.js")
     css = _read("static/style.css")
 
-    assert "debugCardInsetX: 0" in tab
-    assert "debugCardInsetY: 0" in tab
-    assert "class=\"worker-grid-debug-inset\"" in tab
-    assert "max=\"15\"" in tab
-    assert "v-model.number=\"debugCardInsetX\"" in tab
-    assert "v-model.number=\"debugCardInsetY\"" in tab
-    assert "Debug worker card horizontal inset" in tab
-    assert "Debug worker card vertical inset" in tab
-    assert "workerCardInsetX()" in tab
-    assert "workerCardInsetY()" in tab
+    assert "debugCardInset" not in tab
+    assert "worker-grid-debug-inset" not in tab
     assert "insetBoxStyle(x, y, width, height)" in tab
     assert "const minWidth = 64;" in tab
     assert "const minHeight = 24;" in tab
-    assert "const insetX = Math.min(this.workerCardInsetX, Math.max(0, (width - minWidth) / 2));" in tab
-    assert "const insetY = Math.min(this.workerCardInsetY, Math.max(0, (height - minHeight) / 2));" in tab
+    assert "const insetX = Math.min(1, Math.max(0, (width - minWidth) / 2));" in tab
+    assert "const insetY = Math.min(1, Math.max(0, (height - minHeight) / 2));" in tab
     assert "style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight)" in tab
     assert "...this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex))" in tab
-    assert ".worker-grid-debug-inset {" in css
-    assert ".worker-grid-debug-inset input[type=\"range\"] {" in css
+    assert "worker-grid-debug-inset" not in css
     assert ".worker-card.worker-card--small {\n  background: transparent !important;\n  border-color: transparent;\n}" in css
 
 

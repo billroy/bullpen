@@ -2210,27 +2210,6 @@ body {
   display: contents;
 }
 
-.worker-grid-debug-inset {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  color: var(--text-secondary);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.worker-grid-debug-inset input[type="range"] {
-  width: 72px;
-  accent-color: var(--accent);
-}
-
-.worker-grid-debug-inset-value {
-  min-width: 34px;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
 .worker-grid-viewport {
   position: relative;
   flex: 1;

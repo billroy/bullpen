@@ -40,34 +40,12 @@ const BullpenTab = {
       cardVerticalResize: null,
       expandedWorkerCardSlot: null,
       expandedWorkerCardDelta: 0,
-      debugCardInsetX: 0,
-      debugCardInsetY: 0,
       resizeTooltip: null,
     };
   },
   template: `
     <div class="bullpen-grid-container">
       <Teleport to="#worker-tab-toolbar-slot">
-        <label class="worker-grid-debug-inset" title="Temporary debug control for horizontal worker-card inset">
-          <span>Inset X</span>
-          <input type="range"
-                 min="0"
-                 max="15"
-                 step="1"
-                 v-model.number="debugCardInsetX"
-                 aria-label="Debug worker card horizontal inset" />
-          <span class="worker-grid-debug-inset-value">{{ workerCardInsetX }}px</span>
-        </label>
-        <label class="worker-grid-debug-inset" title="Temporary debug control for vertical worker-card inset">
-          <span>Inset Y</span>
-          <input type="range"
-                 min="0"
-                 max="15"
-                 step="1"
-                 v-model.number="debugCardInsetY"
-                 aria-label="Debug worker card vertical inset" />
-          <span class="worker-grid-debug-inset-value">{{ workerCardInsetY }}px</span>
-        </label>
         <button class="btn btn-sm" @click="jumpHome">Home</button>
         <button class="btn btn-sm" @click="fitOccupied">Fit</button>
       </Teleport>
@@ -428,14 +406,6 @@ const BullpenTab = {
       }
       return 140;
     },
-    workerCardInsetX() {
-      const raw = Number(this.debugCardInsetX);
-      return Number.isFinite(raw) ? Math.max(0, Math.min(15, Math.round(raw))) : 0;
-    },
-    workerCardInsetY() {
-      const raw = Number(this.debugCardInsetY);
-      return Number.isFinite(raw) ? Math.max(0, Math.min(15, Math.round(raw))) : 0;
-    },
     cardSize() {
       return { width: this.columnWidth, height: this.rowHeight };
     },
@@ -748,8 +718,8 @@ const BullpenTab = {
     insetBoxStyle(x, y, width, height) {
       const minWidth = 64;
       const minHeight = 24;
-      const insetX = Math.min(this.workerCardInsetX, Math.max(0, (width - minWidth) / 2));
-      const insetY = Math.min(this.workerCardInsetY, Math.max(0, (height - minHeight) / 2));
+      const insetX = Math.min(1, Math.max(0, (width - minWidth) / 2));
+      const insetY = Math.min(1, Math.max(0, (height - minHeight) / 2));
       return {
         left: (x + insetX) + 'px',
         top: (y + insetY) + 'px',
