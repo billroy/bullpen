@@ -110,15 +110,18 @@ def test_run_mcp_cli_resolves_workspace_and_calls_mcp_main(tmp_path, monkeypatch
     assert called["args"] == (str(bp_dir), "127.0.0.1", 5055)
 
 
-def test_run_mcp_token_cli_rotates_workspace_token(tmp_path, capsys):
+def test_run_mcp_token_cli_rotates_workspace_token(tmp_path, capsys, monkeypatch):
     workspace = tmp_path / "project"
     bp_dir = workspace / ".bullpen"
     bp_dir.mkdir(parents=True)
     config_path = bp_dir / "config.json"
     config_path.write_text(
-        '{"server_host":"127.0.0.1","server_port":5055,"mcp_token":"token-old"}\n',
+        '{"server_host":"127.0.0.1","server_port":5055}\n',
         encoding="utf-8",
     )
+    monkeypatch.setenv("HOME", str(tmp_path))
+    from server import mcp_auth
+    mcp_auth.ensure_workspace_runtime_config(str(bp_dir), host="127.0.0.1", port=5055, preferred_token="token-old")
 
     args = bullpen.parse_args(["mcp-token", "--workspace", str(workspace), "rotate"])
     rc = bullpen.run_mcp_token_cli(args)
@@ -130,7 +133,8 @@ def test_run_mcp_token_cli_rotates_workspace_token(tmp_path, capsys):
     updated = json.loads(config_path.read_text(encoding="utf-8"))
     assert updated["server_host"] == "127.0.0.1"
     assert updated["server_port"] == 5055
-    assert updated["mcp_token"] != "token-old"
+    assert "mcp_token" not in updated
+    assert mcp_auth.read_workspace_mcp_token(str(bp_dir)) != "token-old"
 
 
 def test_set_password_cli_add_and_delete_users(tmp_path, monkeypatch):

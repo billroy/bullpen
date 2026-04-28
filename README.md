@@ -407,7 +407,7 @@ Bullpen ships an MCP (Model Context Protocol) stdio server that lets supported a
 
 Claude and Codex adapters spawn `server/mcp_tools.py` as a child process and communicate via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.
 
-When auth is enabled, the MCP server authenticates using a shared token that Bullpen writes to each workspace's `.bullpen/config.json` on startup — no manual configuration needed.
+When auth is enabled, the MCP server authenticates using a shared token that Bullpen writes to `~/.bullpen/secrets.json` on startup, keyed per project, while keeping runtime host/port metadata in each workspace's `.bullpen/config.json`.
 
 ### Caveats
 

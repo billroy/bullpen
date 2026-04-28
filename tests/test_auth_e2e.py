@@ -263,9 +263,7 @@ class TestSocketIoAuthEnabled:
         sio_client.disconnect()
 
     def test_socketio_connect_mcp_token_accepted_without_session(self, auth_app):
-        config_path = os.path.join(auth_app.config["bp_dir"], "config.json")
-        with open(config_path, "r", encoding="utf-8") as f:
-            token = json.load(f)["mcp_token"]
+        token = mcp_auth.read_workspace_mcp_token(auth_app.config["bp_dir"])
 
         client = socketio.test_client(auth_app, auth={"mcp_token": token})
         assert client.is_connected() is True
@@ -274,9 +272,7 @@ class TestSocketIoAuthEnabled:
         client.disconnect()
 
     def test_socketio_rotated_mcp_token_invalidates_old_connects(self, auth_app):
-        config_path = os.path.join(auth_app.config["bp_dir"], "config.json")
-        with open(config_path, "r", encoding="utf-8") as f:
-            old_token = json.load(f)["mcp_token"]
+        old_token = mcp_auth.read_workspace_mcp_token(auth_app.config["bp_dir"])
 
         new_token = mcp_auth.rotate_workspace_mcp_token(
             auth_app.config["bp_dir"],

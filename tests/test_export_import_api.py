@@ -40,7 +40,8 @@ def test_export_workspace_returns_zip_with_bullpen_dir(tmp_workspace):
     live_config = read_json(os.path.join(bp_dir, "config.json"))
     assert "server_host" in live_config
     assert "server_port" in live_config
-    assert "mcp_token" in live_config
+    assert "mcp_token" not in live_config
+    assert mcp_auth.read_workspace_mcp_token(bp_dir)
     assert "server_host" not in exported_config
     assert "server_port" not in exported_config
     assert "mcp_token" not in exported_config
@@ -52,7 +53,7 @@ def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     client = app.test_client()
 
     original = read_json(os.path.join(bp_dir, "config.json"))
-    original_token = original["mcp_token"]
+    original_token = mcp_auth.read_workspace_mcp_token(bp_dir)
     assert original["name"] == "Bullpen"
 
     payload = {
@@ -70,7 +71,8 @@ def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     assert config["name"] == "Imported Workspace"
     assert config["server_host"] == app.config["host"]
     assert config["server_port"] == app.config["port"]
-    assert config["mcp_token"] == original_token
+    assert "mcp_token" not in config
+    assert mcp_auth.read_workspace_mcp_token(bp_dir) == original_token
 
 
 def test_export_all_and_import_all_round_trip(tmp_workspace):
@@ -93,7 +95,6 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
             "grid": {"rows": 4, "cols": 6},
             "server_host": app.config["host"],
             "server_port": app.config["port"],
-            "mcp_token": read_json(os.path.join(bp1, "config.json"))["mcp_token"],
         },
     )
     write_json(
@@ -104,11 +105,10 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
             "grid": {"rows": 4, "cols": 6},
             "server_host": app.config["host"],
             "server_port": app.config["port"],
-            "mcp_token": read_json(os.path.join(bp2, "config.json"))["mcp_token"],
         },
     )
-    token_one = read_json(os.path.join(bp1, "config.json"))["mcp_token"]
-    token_two = read_json(os.path.join(bp2, "config.json"))["mcp_token"]
+    token_one = mcp_auth.read_workspace_mcp_token(bp1)
+    token_two = mcp_auth.read_workspace_mcp_token(bp2)
 
     client = app.test_client()
     export_resp = client.get("/api/export/all")
@@ -145,8 +145,9 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     for config in (config_one, config_two):
         assert config["server_host"] == app.config["host"]
         assert config["server_port"] == app.config["port"]
-    assert config_one["mcp_token"] == token_one
-    assert config_two["mcp_token"] == token_two
+        assert "mcp_token" not in config
+    assert mcp_auth.read_workspace_mcp_token(bp1) == token_one
+    assert mcp_auth.read_workspace_mcp_token(bp2) == token_two
 
 
 def test_export_workers_returns_workers_payload(tmp_workspace):
@@ -249,7 +250,7 @@ def test_import_workers_merges_layout_from_zip_without_overwriting_existing_work
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = app.test_client()
-    original_token = read_json(os.path.join(bp_dir, "config.json"))["mcp_token"]
+    original_token = mcp_auth.read_workspace_mcp_token(bp_dir)
 
     write_json(
         os.path.join(bp_dir, "layout.json"),
@@ -306,7 +307,8 @@ def test_import_workers_merges_layout_from_zip_without_overwriting_existing_work
     assert profile["id"] == "imported-profile"
     assert config["server_host"] == app.config["host"]
     assert config["server_port"] == app.config["port"]
-    assert config["mcp_token"] == original_token
+    assert "mcp_token" not in config
+    assert mcp_auth.read_workspace_mcp_token(bp_dir) == original_token
 
 
 def test_import_workers_keeps_pass_connected_group_adjacent_after_translation(tmp_workspace):

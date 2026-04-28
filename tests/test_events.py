@@ -10,6 +10,7 @@ import pytest
 
 from server.agents import register_adapter
 from server.agents.base import AgentAdapter
+from server import mcp_auth
 from server.app import create_app, socketio
 from server.persistence import read_json, write_json
 from server import service_worker as service_worker_mod
@@ -1209,7 +1210,7 @@ class TestProjectEvents:
         startup_config_path = os.path.join(app.config["bp_dir"], "config.json")
         with open(startup_config_path, "r", encoding="utf-8") as f:
             startup_config = json.load(f)
-        startup_token = startup_config["mcp_token"]
+        startup_token = mcp_auth.read_workspace_mcp_token(app.config["bp_dir"])
         with tempfile.TemporaryDirectory(prefix="bullpen_new_project_parent_") as parent:
             path = os.path.join(parent, "new-mcp-project")
             c.emit("project:new", {"path": path})
@@ -1223,8 +1224,9 @@ class TestProjectEvents:
 
             assert config["server_host"] == app.config["host"]
             assert config["server_port"] == app.config["port"]
-            assert config["mcp_token"]
-            assert config["mcp_token"] != startup_token
+            assert "mcp_token" not in config
+            assert mcp_auth.read_workspace_mcp_token(os.path.join(path, ".bullpen"))
+            assert mcp_auth.read_workspace_mcp_token(os.path.join(path, ".bullpen")) != startup_token
 
     def test_mcp_client_is_scoped_to_its_workspace(self, client):
         c, app = client
@@ -1238,8 +1240,7 @@ class TestProjectEvents:
             other_ws_id = next(p["id"] for p in listed if p["name"] == "mcp-scoped-project")
 
             config_path = os.path.join(path, ".bullpen", "config.json")
-            with open(config_path, "r", encoding="utf-8") as f:
-                token = json.load(f)["mcp_token"]
+            token = mcp_auth.read_workspace_mcp_token(os.path.join(path, ".bullpen"))
 
             mcp_client = socketio.test_client(app, auth={"mcp_token": token})
             try:

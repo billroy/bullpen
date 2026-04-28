@@ -27,6 +27,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+from server import mcp_auth
 from server import tasks as task_store
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
@@ -284,14 +285,8 @@ class BullpenClient:
             self._resolve_any_error(message)
 
     def _read_mcp_token(self) -> str | None:
-        """Read the per-run MCP token from .bullpen/config.json."""
-        try:
-            config_path = os.path.join(self.bp_dir, "config.json")
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            return config.get("mcp_token")
-        except Exception:
-            return None
+        """Read the workspace MCP token from the shared secrets store."""
+        return mcp_auth.read_workspace_mcp_token(self.bp_dir)
 
     def _candidate_urls(self) -> list[str]:
         hosts = [self.host]
@@ -349,12 +344,12 @@ class BullpenClient:
         return False
 
     def _connection_failure_message(self, op: str) -> str:
-        config_path = os.path.join(self.bp_dir, "config.json")
+        secrets_path = mcp_auth.shared_secrets_path()
         token_hint = ""
         if not self._read_mcp_token():
             token_hint = (
-                f" No mcp_token was found in {config_path}; start or restart Bullpen "
-                "for this project so it can write current MCP runtime config."
+                f" No mcp_token was found in {secrets_path}; start or restart Bullpen "
+                "for this project so it can write current MCP runtime config and shared secrets."
             )
         detail = f" Last error: {self.last_connect_error}." if self.last_connect_error else ""
         return (

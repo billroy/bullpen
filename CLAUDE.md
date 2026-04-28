@@ -44,8 +44,8 @@ When auth is enabled, the Bullpen server rejects unauthenticated Socket.IO
 connections.  The MCP stdio server has no browser session, so it authenticates
 via a shared token:
 
-1. `create_app()` generates a random `mcp_token` and writes it to each
-   workspace's `.bullpen/config.json`.
+1. `create_app()` generates a random `mcp_token` and writes it to
+   `~/.bullpen/secrets.json`, keyed by project path.
 2. `BullpenClient._connect_best_effort()` reads that token and passes it as
    `auth={"mcp_token": ...}` during the Socket.IO handshake.
 3. `on_connect(auth_data)` in `app.py` accepts connections that carry the

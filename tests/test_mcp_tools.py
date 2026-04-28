@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 
+from server import mcp_auth
 from server import mcp_tools
 from server.init import init_workspace
 from server.tasks import create_task
@@ -309,12 +310,7 @@ def test_bullpen_client_create_ticket_times_out_when_ack_missing(monkeypatch):
 
 def test_bullpen_client_disables_reconnect_and_prefers_websocket(monkeypatch, tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
-    config_path = bp_dir + "/config.json"
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
-    config["mcp_token"] = "token-1"
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f)
+    mcp_auth.ensure_workspace_runtime_config(bp_dir, preferred_token="token-1")
 
     created_clients = []
 
@@ -391,12 +387,7 @@ def test_bullpen_client_selects_workspace_matching_bp_dir(monkeypatch, tmp_works
 
 def test_bullpen_client_trusts_server_workspace_id_for_token_auth(monkeypatch, tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
-    config_path = bp_dir + "/config.json"
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
-    config["mcp_token"] = "token-1"
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f)
+    mcp_auth.ensure_workspace_runtime_config(bp_dir, preferred_token="token-1")
 
     monkeypatch.setattr(
         mcp_tools.socketio,

@@ -11,13 +11,14 @@ from server.agents.base import AgentAdapter
 
 @pytest.fixture(autouse=True)
 def _isolate_global_registry(tmp_path, monkeypatch):
-    """Prevent tests from polluting ~/.bullpen/projects.json.
+    """Prevent tests from polluting ~/.bullpen state.
 
     Patches the module-level defaults so any WorkspaceManager created
     during a test uses a throwaway directory instead of the real one.
     """
     import server.workspace_manager as wm
     test_global = str(tmp_path / "bullpen_global")
+    monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(wm, "GLOBAL_DIR", test_global)
     monkeypatch.setattr(wm, "REGISTRY_PATH", os.path.join(test_global, "projects.json"))
 
