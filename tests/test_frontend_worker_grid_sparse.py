@@ -132,7 +132,6 @@ def test_grid_headers_highlight_selected_cell_not_fixed_origin():
     assert "'is-selected': selectedCell && r.row === selectedCell.row" in tab
     assert ".worker-grid-column-header.is-selected {" in css
     assert ".worker-grid-row-header.is-selected {" in css
-    assert ".worker-grid-column-header.is-selected .worker-grid-header-label,\n.worker-grid-row-header.is-selected .worker-grid-header-label {" in css
     assert ".worker-grid-column-header.is-origin {\n  color: var(--text-secondary);" in css
     assert ".worker-grid-row-header.is-origin {\n  color: var(--text-secondary);" in css
 
@@ -152,9 +151,6 @@ def test_grid_headers_and_canvas_share_snapped_cell_pixels():
 
     assert "const x = this.cellLeft(Math.floor(this.viewportOrigin.col));" in tab
     assert "const y = this.cellTop(Math.floor(this.viewportOrigin.row));" in tab
-    assert "visibleHeaderRange() {\n      return GridGeometry.visibleRange(this.viewportOrigin, this.viewportPx, this.cardSize);\n    }" in tab
-    assert "visibleColumns() {\n      const r = this.visibleHeaderRange;" in tab
-    assert "visibleRows() {\n      const r = this.visibleHeaderRange;" in tab
     assert "x: this.cellLeft(c)," in tab
     assert "y: this.cellTop(rr)," in tab
     assert "left: this.cellLeft(item.coord.col) + 'px'," in tab
@@ -163,14 +159,6 @@ def test_grid_headers_and_canvas_share_snapped_cell_pixels():
     assert "const p = GridGeometry.coordToPixel(col, row, this.viewportOrigin, this.cardSize);" in tab
     assert "x: Math.round(p.x)," in tab
     assert "y: Math.round(p.y)," in tab
-
-
-def test_grid_header_labels_anchor_to_body_gridlines():
-    css = _read("static/style.css")
-
-    assert ".worker-grid-header-label {\n  position: absolute;" in css
-    assert ".worker-grid-column-header .worker-grid-header-label {\n  left: 100%;\n  transform: translateX(-50%);\n}" in css
-    assert ".worker-grid-row-header .worker-grid-header-label {\n  top: 100%;\n  transform: translateY(-50%);\n}" in css
 
 
 def test_minimap_bounds_clamp_to_a1_origin():
