@@ -26,8 +26,6 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
     assert "@click=\"addMarkerWorker()\"" in tab
     assert "type: 'marker'," in tab
     assert "note: ''" in tab
-    assert "icon: 'square-dot'" in tab
-    assert "color: 'marker'" in tab
     assert "Eval</span>" not in tab
 
     assert "isMarker()" in modal
@@ -41,16 +39,18 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
     assert "Override active" not in modal
     assert "worker-color-override-code" not in modal
     assert "Pass tickets to" in modal
-    assert "placeholder=\"square-dot\"" in modal
-    assert "placeholder=\"marker or #c8b38c\"" in modal
+    assert "v-model=\"form.icon\"" not in modal
+    assert "placeholder=\"marker or #c8b38c\"" not in modal
 
 
 def test_non_marker_worker_modal_preserves_color_override_on_save():
     modal = _read("static/components/WorkerConfigModal.js")
 
     assert "fields.color = String(fields.color || '').trim();" in modal
-    assert "delete fields.color;" not in modal.split("} else if (this.isShell || this.isService) {", 1)[1].split("} else {", 1)[0]
-    assert "delete fields.color;" not in modal.split("} else {", 1)[1]
+    non_marker = modal.split("} else if (this.isShell || this.isService) {", 1)[1]
+    shell_service_branch, ai_branch = non_marker.split("// Drop non-AI fields from AI payloads.", 1)
+    assert "delete fields.color;" not in shell_service_branch
+    assert "delete fields.color;" not in ai_branch
     assert "onRestoreDefaultColor()" in modal
     assert "workerColorPickerInput: null," in modal
     assert "getWorkerColorPickerAnchor()" in modal

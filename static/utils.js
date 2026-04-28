@@ -85,7 +85,6 @@ function isUnknownWorkerType(worker) {
 }
 
 function getWorkerTypeIcon(worker) {
-  if (worker?.icon) return worker.icon;
   if (isHumanWorker(worker)) return 'user';
   if (isShellWorker(worker)) return 'terminal';
   if (isServiceWorker(worker)) return 'server-cog';

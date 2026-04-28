@@ -52,7 +52,6 @@ const WorkerConfigModal = {
             trigger_interval_minutes: w.trigger_interval_minutes || 60,
             trigger_every_day: w.trigger_every_day || false,
             paused: w.paused || false,
-            icon: w.icon || '',
             color: w.color || '',
             // Shell-specific fields
             command: w.command || '',
@@ -198,18 +197,6 @@ const WorkerConfigModal = {
               <textarea class="form-textarea" v-model="form.note" rows="3" maxlength="500"
                         placeholder="Optional label note or routing hint"></textarea>
             </label>
-            <div class="form-row">
-              <label class="form-label">
-                Icon
-                <input class="form-input" v-model="form.icon" placeholder="square-dot">
-                <span class="form-hint">Lucide icon name.</span>
-              </label>
-              <label class="form-label">
-                Color
-                <input class="form-input" v-model="form.color" placeholder="marker or #c8b38c">
-                <span class="form-hint">Named worker color key or hex color.</span>
-              </label>
-            </div>
           </template>
 
           <!-- AI-only: expertise prompt, agent, model -->
@@ -858,13 +845,11 @@ const WorkerConfigModal = {
         delete fields.stop_timeout_seconds;
         delete fields.log_max_bytes;
         fields.note = String(fields.note || '');
-        fields.icon = String(fields.icon || '').trim();
-        fields.color = String(fields.color || '').trim();
+        delete fields.color;
       } else if (this.isShell || this.isService) {
         // Drop AI-only fields from the payload so server-side normalization
         // never writes them onto a non-AI slot.
         delete fields.note;
-        delete fields.icon;
         delete fields.agent;
         delete fields.model;
         delete fields.expertise_prompt;
@@ -897,7 +882,6 @@ const WorkerConfigModal = {
       } else {
         // Drop non-AI fields from AI payloads.
         delete fields.note;
-        delete fields.icon;
         delete fields.command;
         delete fields.cwd;
         delete fields.timeout_seconds;

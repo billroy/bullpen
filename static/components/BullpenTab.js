@@ -1317,8 +1317,6 @@ const BullpenTab = {
           note: '',
           activation: 'on_drop',
           disposition: 'review',
-          icon: 'square-dot',
-          color: 'marker',
         },
       });
     },
@@ -1334,7 +1332,7 @@ const BullpenTab = {
         'pre_start', 'ticket_action', 'startup_grace_seconds', 'startup_timeout_seconds',
         'health_type', 'health_url', 'health_command', 'health_interval_seconds',
         'health_timeout_seconds', 'health_failure_threshold', 'on_crash',
-        'stop_timeout_seconds', 'log_max_bytes', 'icon', 'color', 'avatar'];
+        'stop_timeout_seconds', 'log_max_bytes', 'color', 'avatar'];
       const copy = {};
       for (const key of fields) {
         if (worker[key] !== undefined) copy[key] = JSON.parse(JSON.stringify(worker[key]));

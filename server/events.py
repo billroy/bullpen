@@ -53,7 +53,7 @@ _AI_COPY_FIELDS = {
     "disposition", "watch_column", "expertise_prompt", "trust_mode", "max_retries",
     "use_worktree", "auto_commit", "auto_pr", "trigger_time",
     "trigger_interval_minutes", "trigger_every_day", "last_trigger_time",
-    "paused", "task_queue", "state", "icon", "color", "avatar",
+    "paused", "task_queue", "state", "color", "avatar",
 }
 
 
@@ -643,8 +643,8 @@ def register_events(socketio, app):
                 "paused": False,
                 "task_queue": [],
                 "state": "idle",
-                "icon": str(fields.get("icon", "square-dot") or "square-dot"),
-                "color": str(fields.get("color", "marker") or "marker"),
+                "icon": "square-dot",
+                "color": "marker",
             }
 
         # Ensure slots list is large enough

@@ -11,7 +11,7 @@ _AI_TRANSFER_FIELDS = {
     "type", "profile", "name", "agent", "model", "activation", "disposition",
     "watch_column", "expertise_prompt", "trust_mode", "max_retries", "use_worktree",
     "auto_commit", "auto_pr", "trigger_time", "trigger_interval_minutes",
-    "trigger_every_day", "icon", "color", "avatar",
+    "trigger_every_day", "color", "avatar",
 }
 
 
