@@ -137,6 +137,7 @@ const BullpenTab = {
             @open-focus="$emit('open-focus', $event)"
             @transfer="$emit('transfer-worker', $event)"
             @copy-worker="copyWorker"
+            @delete-worker="deleteWorkerFromMenu"
             @vertical-resize-start="onCardVerticalResizeStart(item, $event)"
             @menu-opened="selectWorker(item, { preserveMultiple: true })"
             @menu-closed="focusViewport"
@@ -1649,6 +1650,18 @@ const BullpenTab = {
       this.liveMessage = workers.length > 1
         ? `Copied worker group (${workers.length}) from ${source.worker.name}`
         : `Copied worker ${source.worker.name}`;
+    },
+    deleteWorkerFromMenu(slot) {
+      const source = Number(slot);
+      if (!Number.isInteger(source) || !this.workerItemBySlot[source]) return;
+      const slots = this.selectedWorkerSlots.includes(source) && this.selectedWorkerSlots.length > 1
+        ? this.expandSelectionSlots(this.selectedWorkerSlots)
+        : [source];
+      if (slots.length > 1 && typeof this.$root.removeWorkers === 'function') {
+        this.$root.removeWorkers(slots);
+      } else {
+        this.$root.removeWorker(source);
+      }
     },
     clipboardTargetsForCoord(coord) {
       if (!this.clipboardWorker || !Array.isArray(this.clipboardWorker.workers)) return [];

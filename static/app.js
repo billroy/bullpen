@@ -879,15 +879,45 @@ const app = createApp({
     function addWorker({ slot, coord, profile, type, fields }) {
       socket.emit('worker:add', _wsData({ slot, coord, profile, type, fields }));
     }
+    function workerDeleteMessage(workers) {
+      if (!workers.length) return '';
+      if (workers.length === 1) {
+        const { slot, worker } = workers[0];
+        const name = worker?.name || `Slot ${slot + 1}`;
+        const queued = Number(worker?.task_queue?.length || 0);
+        return queued > 0
+          ? `Delete worker "${name}"?\n\nThis worker has ${queued} queued task(s).`
+          : `Delete worker "${name}"?`;
+      }
+      const queued = workers.reduce((total, { worker }) => total + Number(worker?.task_queue?.length || 0), 0);
+      return queued > 0
+        ? `Delete ${workers.length} workers?\n\nThese workers have ${queued} queued task(s).`
+        : `Delete ${workers.length} workers?`;
+    }
     function removeWorker(slot) {
       const worker = state.layout?.slots?.[slot];
-      const name = worker?.name || `Slot ${slot + 1}`;
-      const queued = Number(worker?.task_queue?.length || 0);
-      const confirmMessage = queued > 0
-        ? `Delete worker "${name}"?\n\nThis worker has ${queued} queued task(s).`
-        : `Delete worker "${name}"?`;
+      const confirmMessage = workerDeleteMessage([{ slot, worker }]);
       if (!confirm(confirmMessage)) return;
       socket.emit('worker:remove', _wsData({ slot }));
+    }
+    function removeWorkers(slots) {
+      const seen = new Set();
+      const workers = [];
+      for (const rawSlot of slots || []) {
+        const slot = Number(rawSlot);
+        if (!Number.isInteger(slot) || seen.has(slot)) continue;
+        seen.add(slot);
+        const worker = state.layout?.slots?.[slot];
+        if (worker) workers.push({ slot, worker });
+      }
+      if (workers.length <= 1) {
+        if (workers.length === 1) removeWorker(workers[0].slot);
+        return;
+      }
+      if (!confirm(workerDeleteMessage(workers))) return;
+      for (const { slot } of workers) {
+        socket.emit('worker:remove', _wsData({ slot }));
+      }
     }
     function moveWorker(from, to) {
       const payload = { from };
@@ -1443,7 +1473,7 @@ const app = createApp({
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
-      moveTask, selectTask, addWorker, removeWorker, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
+      moveTask, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, restartServiceSlot, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, multipleWorkspaces,

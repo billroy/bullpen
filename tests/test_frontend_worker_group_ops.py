@@ -101,6 +101,7 @@ def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
 def test_worker_card_disables_unsafe_menu_items_during_multiple_selection():
     text = _read("static/components/WorkerCard.js")
     assert "'multipleSelectionActive'" in text
+    assert "'delete-worker'" in text
     assert ":disabled=\"multipleSelectionActive\" @click=\"menuEdit\"" in text
     assert ":disabled=\"multipleSelectionActive\" @click=\"menuRun\"" in text
     assert ":disabled=\"multipleSelectionActive\" @click=\"menuWatch\"" in text
@@ -109,7 +110,19 @@ def test_worker_card_disables_unsafe_menu_items_during_multiple_selection():
     assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuCopyWorker\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuExportWorker\"" in text
+    assert "class=\"worker-menu-item worker-menu-danger\" @click=\"menuDelete\"" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuDelete\"" not in text
     assert "if (this.multipleSelectionActive) return;" in text
+    assert "this.$emit('delete-worker', this.slotIndex);" in text
+
+
+def test_bullpen_tab_deletes_selected_worker_group_from_menu():
+    text = _read("static/components/BullpenTab.js")
+    assert "@delete-worker=\"deleteWorkerFromMenu\"" in text
+    assert "deleteWorkerFromMenu(slot)" in text
+    assert "this.selectedWorkerSlots.includes(source) && this.selectedWorkerSlots.length > 1" in text
+    assert "this.$root.removeWorkers(slots)" in text
+    assert "this.$root.removeWorker(source)" in text
 
 
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():
