@@ -444,8 +444,8 @@ const BullpenTab = {
       );
     },
     canvasStyle() {
-      const x = -((this.viewportOrigin.col % 1) * this.columnWidth);
-      const y = -((this.viewportOrigin.row % 1) * this.rowHeight);
+      const x = this.cellLeft(Math.floor(this.viewportOrigin.col));
+      const y = this.cellTop(Math.floor(this.viewportOrigin.row));
       return {
         '--worker-col-width': this.columnWidth + 'px',
         '--worker-row-height': this.rowHeight + 'px',
@@ -479,7 +479,7 @@ const BullpenTab = {
         out.push({
           col: c,
           label: this.colLabel(c),
-          x: (c - this.viewportOrigin.col) * this.columnWidth,
+          x: this.cellLeft(c),
         });
       }
       return out;
@@ -491,7 +491,7 @@ const BullpenTab = {
         out.push({
           row: rr,
           label: this.rowLabel(rr),
-          y: (rr - this.viewportOrigin.row) * this.rowHeight,
+          y: this.cellTop(rr),
         });
       }
       return out;
@@ -505,10 +505,9 @@ const BullpenTab = {
     },
     ghostStyle() {
       if (!this.ghostCell) return {};
-      const p = GridGeometry.coordToPixel(this.ghostCell.col, this.ghostCell.row, this.viewportOrigin, this.cardSize);
       return {
-        left: p.x + 'px',
-        top: p.y + 'px',
+        left: this.cellLeft(this.ghostCell.col) + 'px',
+        top: this.cellTop(this.ghostCell.row) + 'px',
         width: this.columnWidth + 'px',
         height: this.rowHeight + 'px',
       };
@@ -521,13 +520,12 @@ const BullpenTab = {
       for (const c of coords) {
         if (!c) continue;
         if (c.col < r.colStart || c.col > r.colEnd || c.row < r.rowStart || c.row > r.rowEnd) continue;
-        const p = GridGeometry.coordToPixel(c.col, c.row, this.viewportOrigin, this.cardSize);
         out.push({
           col: c.col,
           row: c.row,
           style: {
-            left: p.x + 'px',
-            top: p.y + 'px',
+            left: this.cellLeft(c.col) + 'px',
+            top: this.cellTop(c.row) + 'px',
             width: this.columnWidth + 'px',
             height: this.rowHeight + 'px',
           },
@@ -540,10 +538,9 @@ const BullpenTab = {
         return { position: 'fixed', top: this.emptyMenuPos.y + 'px', left: this.emptyMenuPos.x + 'px' };
       }
       if (!this.ghostCell) return {};
-      const p = GridGeometry.coordToPixel(this.ghostCell.col, this.ghostCell.row, this.viewportOrigin, this.cardSize);
       const rect = this.$refs.viewport?.getBoundingClientRect();
-      const x = (rect?.left || 0) + this.headerWidth + p.x + this.columnWidth / 2;
-      const y = (rect?.top || 0) + this.headerHeight + p.y + this.rowHeight / 2;
+      const x = (rect?.left || 0) + this.headerWidth + this.cellLeft(this.ghostCell.col) + this.columnWidth / 2;
+      const y = (rect?.top || 0) + this.headerHeight + this.cellTop(this.ghostCell.row) + this.rowHeight / 2;
       return { position: 'fixed', top: y + 'px', left: x + 'px' };
     },
     sortedProfiles() {
@@ -689,6 +686,19 @@ const BullpenTab = {
       const limit = GridGeometry.DEFAULT_COORD_LIMIT;
       return coord && coord.col >= 0 && coord.col <= limit && coord.row >= 0 && coord.row <= limit;
     },
+    cellPixel(col, row) {
+      const p = GridGeometry.coordToPixel(col, row, this.viewportOrigin, this.cardSize);
+      return {
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+      };
+    },
+    cellLeft(col) {
+      return this.cellPixel(col, 0).x;
+    },
+    cellTop(row) {
+      return this.cellPixel(0, row).y;
+    },
     clampedOrigin(origin) {
       return GridGeometry.clampOriginToBounds(origin, this.viewportPx, this.cardSize);
     },
@@ -726,12 +736,11 @@ const BullpenTab = {
       return this.rowHeight + this.cardExpansionDeltaForSlot(slotIndex);
     },
     cardStyle(item) {
-      const p = GridGeometry.coordToPixel(item.coord.col, item.coord.row, this.viewportOrigin, this.cardSize);
       const expanded = this.cardExpansionDeltaForSlot(item.slotIndex);
       return {
         position: 'absolute',
-        left: p.x + 'px',
-        top: p.y + 'px',
+        left: this.cellLeft(item.coord.col) + 'px',
+        top: this.cellTop(item.coord.row) + 'px',
         width: this.columnWidth + 'px',
         height: this.cardHeightForSlot(item.slotIndex) + 'px',
         zIndex: expanded > 0 ? 6 : null,

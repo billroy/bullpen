@@ -146,6 +146,21 @@ def test_selected_grid_cells_stay_below_headers_when_scrolled_under_them():
     assert ".worker-grid-row-headers {\n  position: absolute;\n  left: 0;\n  bottom: 0;\n  overflow: hidden;\n  background: var(--bg-secondary);\n  border-right: 1px solid var(--border);\n  z-index: 2;" in css
 
 
+def test_grid_headers_and_canvas_share_snapped_cell_pixels():
+    tab = _read("static/components/BullpenTab.js")
+
+    assert "const x = this.cellLeft(Math.floor(this.viewportOrigin.col));" in tab
+    assert "const y = this.cellTop(Math.floor(this.viewportOrigin.row));" in tab
+    assert "x: this.cellLeft(c)," in tab
+    assert "y: this.cellTop(rr)," in tab
+    assert "left: this.cellLeft(item.coord.col) + 'px'," in tab
+    assert "top: this.cellTop(item.coord.row) + 'px'," in tab
+    assert "cellPixel(col, row) {" in tab
+    assert "const p = GridGeometry.coordToPixel(col, row, this.viewportOrigin, this.cardSize);" in tab
+    assert "x: Math.round(p.x)," in tab
+    assert "y: Math.round(p.y)," in tab
+
+
 def test_minimap_bounds_clamp_to_a1_origin():
     tab = _read("static/components/BullpenTab.js")
     assert "const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);" in tab
