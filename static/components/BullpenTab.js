@@ -731,13 +731,15 @@ const BullpenTab = {
       return this.rowHeight + this.cardExpansionDeltaForSlot(slotIndex);
     },
     insetBoxStyle(x, y, width, height) {
-      const maxInset = Math.max(0, (Math.min(width, height) - 1) / 2);
+      const minWidth = 64;
+      const minHeight = 32;
+      const maxInset = Math.max(0, Math.min((width - minWidth) / 2, (height - minHeight) / 2));
       const inset = Math.min(this.workerCardInset, maxInset);
       return {
         left: (x + inset) + 'px',
         top: (y + inset) + 'px',
-        width: Math.max(1, width - inset * 2) + 'px',
-        height: Math.max(1, height - inset * 2) + 'px',
+        width: Math.max(minWidth, width - inset * 2) + 'px',
+        height: Math.max(minHeight, height - inset * 2) + 'px',
       };
     },
     cardStyle(item) {

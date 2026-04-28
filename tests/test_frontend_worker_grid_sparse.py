@@ -166,10 +166,14 @@ def test_worker_grid_debug_card_inset_slider_exists():
     assert "v-model.number=\"debugCardInset\"" in tab
     assert "workerCardInset()" in tab
     assert "insetBoxStyle(x, y, width, height)" in tab
+    assert "const minWidth = 64;" in tab
+    assert "const minHeight = 32;" in tab
+    assert "const maxInset = Math.max(0, Math.min((width - minWidth) / 2, (height - minHeight) / 2));" in tab
     assert "style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight)" in tab
     assert "...this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex))" in tab
     assert ".worker-grid-debug-inset {" in css
     assert ".worker-grid-debug-inset input[type=\"range\"] {" in css
+    assert ".worker-card.worker-card--small {\n  background: transparent !important;\n  border-color: transparent;\n}" in css
 
 
 def test_minimap_bounds_clamp_to_a1_origin():

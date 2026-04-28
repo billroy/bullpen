@@ -2643,6 +2643,11 @@ body.worker-singleton-dragging * {
   z-index: 5;
 }
 
+.worker-card.worker-card--small {
+  background: transparent !important;
+  border-color: transparent;
+}
+
 .worker-card--small .worker-card-header {
   flex: 1;
   padding: 4px 10px;
