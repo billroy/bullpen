@@ -21,12 +21,27 @@ def test_app_exposes_group_worker_socket_events():
 def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
     text = _read("static/components/BullpenTab.js")
     assert "workerGroupSlots(startSlot)" in text
+    assert "selectedWorkerSlots: []" in text
+    assert "expandSelectionSlots(slots)" in text
     assert "passTargetsForSlot(slotIndex)" in text
     assert "buildGroupMovePlan(sourceSlot, destinationCoord," in text
     assert "canDropWorkerAtSlot(sourceSlot, targetSlot, e)" in text
     assert "moveWorkerGroupToCoord(sourceSlot, coord)" in text
     assert "this.$root.moveWorkerGroup(plan.moves)" in text
     assert "Copied worker group (" in text
+
+
+def test_bullpen_tab_supports_range_multiple_selection():
+    text = _read("static/components/BullpenTab.js")
+    assert "selectionAnchor: null" in text
+    assert "isMultipleSelectionActive()" in text
+    assert "slotsInRange(a, b)" in text
+    assert "updateRangeSelection(anchor, active)" in text
+    assert "if (e.shiftKey) {" in text
+    assert "this.updateRangeSelection(anchor, next);" in text
+    assert "selectionMoved: false" in text
+    assert "this.dragStart.selectionMoved = true;" in text
+    assert ":multiple-selection-active=\"isMultipleSelectionActive\"" in text
 
 
 def test_bullpen_tab_group_detection_includes_inbound_pass_links():
@@ -41,6 +56,8 @@ def test_bullpen_tab_pastes_group_workers_with_relative_offsets():
     assert "clipboardTargetsForCoord(coord)" in text
     assert "this.$root.pasteWorkerGroup(targets)" in text
     assert "Cannot paste worker group here" in text
+    assert "if (!this.clipboardWorker || !coord || !this.isWritableCoord(coord)) return false;" in text
+    assert "if (this.itemAtCoord(target.coord)) return false;" in text
 
 
 def test_bullpen_tab_worker_clipboard_preserves_shell_fields():
@@ -79,6 +96,20 @@ def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
     assert "this.canDropWorkerAtSlot(source, this.slotIndex, e)" in text
     assert "const handled = this.dropWorkerOnSlot(dragSource, this.slotIndex, e)" in text
     assert "if (handled) {" in text
+
+
+def test_worker_card_disables_unsafe_menu_items_during_multiple_selection():
+    text = _read("static/components/WorkerCard.js")
+    assert "'multipleSelectionActive'" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuEdit\"" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuRun\"" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuWatch\"" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuStop\"" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuPause\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuCopyWorker\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuExportWorker\"" in text
+    assert "if (this.multipleSelectionActive) return;" in text
 
 
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():

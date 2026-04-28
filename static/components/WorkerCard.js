@@ -1,5 +1,5 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
+  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
@@ -61,20 +61,20 @@ const WorkerCard = {
       </div>
       <Teleport to="body">
         <div v-if="showMenu" ref="menu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
-          <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
-          <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
-          <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
-          <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
-          <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
-          <button v-if="canStop" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
-          <button v-if="isScheduled && !isPaused" class="worker-menu-item" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
-          <button v-if="isScheduled && isPaused" class="worker-menu-item" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
+          <button v-if="canConfigure" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
+          <button v-if="canStart && !isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
+          <button v-if="canRestart" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
+          <button v-if="canWatch" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
+          <button v-if="isService" class="worker-menu-item" :disabled="multipleSelectionActive || !serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
+          <button v-if="canStop" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
+          <button v-if="isScheduled && !isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
+          <button v-if="isScheduled && isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
           <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
           <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
           <button class="worker-menu-item" @click="menuExportWorker"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Worker</span></button>
           <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
           <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
-          <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete</span></button>
+          <button class="worker-menu-item worker-menu-danger" :disabled="multipleSelectionActive" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete</span></button>
         </div>
       </Teleport>
       <div v-if="effectiveLayoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
@@ -735,26 +735,32 @@ const WorkerCard = {
       }
     },
     menuEdit() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$emit('configure', this.slotIndex);
     },
     menuRun() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.startWorkerSlot(this.slotIndex);
     },
     menuStop() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.stopWorkerSlot(this.slotIndex);
     },
     menuRestart() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.restartServiceSlot(this.slotIndex);
     },
     menuPause() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: true } });
     },
     menuUnpause() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: false } });
     },
@@ -771,10 +777,12 @@ const WorkerCard = {
       this.$root.exportWorker(this.slotIndex);
     },
     menuWatch() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$emit('open-focus', this.slotIndex);
     },
     menuOpenSite() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.openServiceSite(this.slotIndex);
     },
@@ -787,6 +795,7 @@ const WorkerCard = {
       this.$emit('transfer', { slot: this.slotIndex, mode: 'move' });
     },
     menuDelete() {
+      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.removeWorker(this.slotIndex);
     },
