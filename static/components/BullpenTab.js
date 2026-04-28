@@ -436,6 +436,9 @@ const BullpenTab = {
       const range = GridGeometry.visibleRange(this.viewportOrigin, this.viewportPx, this.cardSize);
       return GridGeometry.overscanRange(range, 2);
     },
+    visibleHeaderRange() {
+      return GridGeometry.visibleRange(this.viewportOrigin, this.viewportPx, this.cardSize);
+    },
     visibleWorkers() {
       const r = this.visibleRange;
       return this.workerItems.filter(item =>
@@ -473,7 +476,7 @@ const BullpenTab = {
       };
     },
     visibleColumns() {
-      const r = this.visibleRange;
+      const r = this.visibleHeaderRange;
       const out = [];
       for (let c = Math.max(0, r.colStart); c <= r.colEnd; c++) {
         out.push({
@@ -485,7 +488,7 @@ const BullpenTab = {
       return out;
     },
     visibleRows() {
-      const r = this.visibleRange;
+      const r = this.visibleHeaderRange;
       const out = [];
       for (let rr = Math.max(0, r.rowStart); rr <= r.rowEnd; rr++) {
         out.push({

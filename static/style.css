@@ -2276,9 +2276,7 @@ body {
 }
 
 .worker-grid-column-header.is-selected {
-  background: var(--accent);
   color: var(--bg-primary);
-  border-radius: 3px;
 }
 
 .worker-grid-column-resize {
@@ -2356,13 +2354,31 @@ body {
 }
 
 .worker-grid-row-header.is-selected {
-  background: var(--accent);
   color: var(--bg-primary);
-  border-radius: 3px;
 }
 
 .worker-grid-header-label {
+  position: absolute;
   pointer-events: none;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  padding: 1px 5px;
+  z-index: 1;
+}
+
+.worker-grid-column-header .worker-grid-header-label {
+  left: 100%;
+  transform: translateX(-50%);
+}
+
+.worker-grid-row-header .worker-grid-header-label {
+  top: 100%;
+  transform: translateY(-50%);
+}
+
+.worker-grid-column-header.is-selected .worker-grid-header-label,
+.worker-grid-row-header.is-selected .worker-grid-header-label {
+  background: var(--accent);
 }
 
 .grid-slot {
