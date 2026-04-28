@@ -40,12 +40,23 @@ const BullpenTab = {
       cardVerticalResize: null,
       expandedWorkerCardSlot: null,
       expandedWorkerCardDelta: 0,
+      debugCardInset: 0,
       resizeTooltip: null,
     };
   },
   template: `
     <div class="bullpen-grid-container">
       <Teleport to="#worker-tab-toolbar-slot">
+        <label class="worker-grid-debug-inset" title="Temporary debug control for worker-card inset">
+          <span>Inset</span>
+          <input type="range"
+                 min="0"
+                 max="100"
+                 step="1"
+                 v-model.number="debugCardInset"
+                 aria-label="Debug worker card inset" />
+          <span class="worker-grid-debug-inset-value">{{ workerCardInset }}px</span>
+        </label>
         <button class="btn btn-sm" @click="jumpHome">Home</button>
         <button class="btn btn-sm" @click="fitOccupied">Fit</button>
       </Teleport>
@@ -406,6 +417,10 @@ const BullpenTab = {
       }
       return 140;
     },
+    workerCardInset() {
+      const raw = Number(this.debugCardInset);
+      return Number.isFinite(raw) ? Math.max(0, Math.min(100, Math.round(raw))) : 0;
+    },
     cardSize() {
       return { width: this.columnWidth, height: this.rowHeight };
     },
@@ -506,12 +521,7 @@ const BullpenTab = {
     ghostStyle() {
       if (!this.ghostCell) return {};
       const p = GridGeometry.coordToPixel(this.ghostCell.col, this.ghostCell.row, this.viewportOrigin, this.cardSize);
-      return {
-        left: p.x + 'px',
-        top: p.y + 'px',
-        width: this.columnWidth + 'px',
-        height: this.rowHeight + 'px',
-      };
+      return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight);
     },
     visibleDropTargetOverlays() {
       const coords = this.dropTargetCoords;
@@ -525,12 +535,7 @@ const BullpenTab = {
         out.push({
           col: c.col,
           row: c.row,
-          style: {
-            left: p.x + 'px',
-            top: p.y + 'px',
-            width: this.columnWidth + 'px',
-            height: this.rowHeight + 'px',
-          },
+          style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight),
         });
       }
       return out;
@@ -725,15 +730,22 @@ const BullpenTab = {
     cardHeightForSlot(slotIndex) {
       return this.rowHeight + this.cardExpansionDeltaForSlot(slotIndex);
     },
+    insetBoxStyle(x, y, width, height) {
+      const maxInset = Math.max(0, (Math.min(width, height) - 1) / 2);
+      const inset = Math.min(this.workerCardInset, maxInset);
+      return {
+        left: (x + inset) + 'px',
+        top: (y + inset) + 'px',
+        width: Math.max(1, width - inset * 2) + 'px',
+        height: Math.max(1, height - inset * 2) + 'px',
+      };
+    },
     cardStyle(item) {
       const p = GridGeometry.coordToPixel(item.coord.col, item.coord.row, this.viewportOrigin, this.cardSize);
       const expanded = this.cardExpansionDeltaForSlot(item.slotIndex);
       return {
         position: 'absolute',
-        left: p.x + 'px',
-        top: p.y + 'px',
-        width: this.columnWidth + 'px',
-        height: this.cardHeightForSlot(item.slotIndex) + 'px',
+        ...this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex)),
         zIndex: expanded > 0 ? 6 : null,
       };
     },

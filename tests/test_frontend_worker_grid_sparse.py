@@ -156,6 +156,22 @@ def test_worker_grid_header_separators_paint_on_cell_edges():
     assert "  color: var(--text-secondary);\n  box-shadow: 0 1px 0 var(--border);\n  box-sizing: border-box;" in css
 
 
+def test_worker_grid_debug_card_inset_slider_exists():
+    tab = _read("static/components/BullpenTab.js")
+    css = _read("static/style.css")
+
+    assert "debugCardInset: 0" in tab
+    assert "class=\"worker-grid-debug-inset\"" in tab
+    assert "max=\"100\"" in tab
+    assert "v-model.number=\"debugCardInset\"" in tab
+    assert "workerCardInset()" in tab
+    assert "insetBoxStyle(x, y, width, height)" in tab
+    assert "style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight)" in tab
+    assert "...this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex))" in tab
+    assert ".worker-grid-debug-inset {" in css
+    assert ".worker-grid-debug-inset input[type=\"range\"] {" in css
+
+
 def test_minimap_bounds_clamp_to_a1_origin():
     tab = _read("static/components/BullpenTab.js")
     assert "const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);" in tab
