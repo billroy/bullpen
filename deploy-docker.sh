@@ -58,7 +58,7 @@ prompt_default() {
   local prompt="$1"
   local default="$2"
   local value
-  read -rp "$prompt [$default]: " value
+  read_prompt "$prompt [$default]: " value || die "Unable to read input."
   printf '%s' "${value:-$default}"
 }
 
@@ -67,10 +67,10 @@ prompt_yes_no() {
   local default="${2:-N}"
   local reply
   if [[ "$default" == "Y" ]]; then
-    read -rp "$prompt [Y/n]: " reply
+    read_prompt "$prompt [Y/n]: " reply || die "Unable to read input."
     [[ -z "$reply" || "$reply" =~ ^[Yy]$ ]]
   else
-    read -rp "$prompt [y/N]: " reply
+    read_prompt "$prompt [y/N]: " reply || die "Unable to read input."
     [[ "$reply" =~ ^[Yy]$ ]]
   fi
 }
@@ -78,9 +78,36 @@ prompt_yes_no() {
 prompt_secret() {
   local prompt="$1"
   local value
-  IFS= read -rsp "$prompt: " value
-  printf '\n' >&2
+  read_prompt "$prompt: " value 1 || die "Unable to read input."
   printf '%s' "$value"
+}
+
+read_prompt() {
+  local prompt="$1"
+  local var_name="$2"
+  local silent="${3:-0}"
+  local status
+
+  if [[ -r /dev/tty && -w /dev/tty ]]; then
+    printf '%s' "$prompt" > /dev/tty
+    if [[ "$silent" -eq 1 ]]; then
+      IFS= read -rs "$var_name" < /dev/tty
+      status=$?
+      printf '\n' > /dev/tty
+      return "$status"
+    fi
+    IFS= read -r "$var_name" < /dev/tty
+    return $?
+  fi
+
+  printf '%s' "$prompt" >&2
+  if [[ "$silent" -eq 1 ]]; then
+    IFS= read -rs "$var_name"
+    status=$?
+    printf '\n' >&2
+    return "$status"
+  fi
+  IFS= read -r "$var_name"
 }
 
 require_port() {
@@ -100,6 +127,13 @@ abs_path() {
     realpath "$p"
   else
     (cd "$p" && pwd)
+  fi
+}
+
+resolve_script_dir() {
+  local source_path="${BASH_SOURCE[0]:-}"
+  if [[ -n "$source_path" && -f "$source_path" ]]; then
+    cd "$(dirname "$source_path")" && pwd
   fi
 }
 
@@ -381,25 +415,27 @@ parse_args "$@"
 require_command docker
 
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or not reachable."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCAL_PROJECT_PATH_DEFAULT="$(dirname "$SCRIPT_DIR")/$(basename "$SCRIPT_DIR")-project"
+SCRIPT_DIR="$(resolve_script_dir)"
+if [[ -n "$SCRIPT_DIR" ]]; then
+  LOCAL_PROJECT_PATH_DEFAULT="$(dirname "$SCRIPT_DIR")/$(basename "$SCRIPT_DIR")-project"
+else
+  LOCAL_PROJECT_PATH_DEFAULT="$PWD/bullpen-project"
+fi
 
 printf '\n\033[1mBullpen Docker Deployer\033[0m\n\n'
 
 CONTAINER_NAME="$(prompt_default "Container name" "$CONTAINER_NAME_DEFAULT")"
-if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
-  if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then
-    install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"
-    WORKSPACE_INPUT="$LOCAL_PROJECT_PATH_DEFAULT"
-  else
-    while true; do
-      read -rp "Project path to mount into /workspace (required): " WORKSPACE_INPUT
-      if [[ -n "$WORKSPACE_INPUT" ]]; then
-        break
-      fi
-      warn "Project path is required. Type . if you intentionally want to mount the Bullpen repo itself."
-    done
-  fi
+if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then
+  install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"
+  WORKSPACE_INPUT="$LOCAL_PROJECT_PATH_DEFAULT"
+elif [[ -n "$SCRIPT_DIR" && "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
+  while true; do
+    read_prompt "Project path to mount into /workspace (required): " WORKSPACE_INPUT || die "Unable to read input."
+    if [[ -n "$WORKSPACE_INPUT" ]]; then
+      break
+    fi
+    warn "Project path is required. Type . if you intentionally want to mount the Bullpen repo itself."
+  done
 else
   WORKSPACE_INPUT="$(prompt_default "Project path to mount into /workspace" "$PWD")"
 fi
