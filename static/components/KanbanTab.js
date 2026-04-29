@@ -170,15 +170,15 @@ const KanbanTab = {
       this.taskTimeTimer = null;
     }
   },
-  updated() {
-    renderLucideIcons(this.$el);
-  },
   watch: {
     filteredTasks: {
       immediate: true,
       handler(tasks) {
         this.$emit('update-shown-count', Array.isArray(tasks) ? tasks.length : 0);
       },
+    },
+    iconRenderToken() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
     },
   },
   computed: {
@@ -288,6 +288,15 @@ const KanbanTab = {
         if (cmp === 0) cmp = (a.created_at || '').localeCompare(b.created_at || '');
         return cmp * dir;
       });
+    },
+    iconRenderToken() {
+      const columnIcons = (this.columns || [])
+        .map(col => `${col.key}:${this.columnIcon(col)}`)
+        .join('|');
+      const taskIds = this.viewMode === 'list'
+        ? this.sortedTasks.map(task => task.id).join('|')
+        : (this.tasks || []).map(task => `${task.id}:${task.status || ''}`).join('|');
+      return `${this.viewMode}|${columnIcons}|${taskIds}`;
     }
   },
   methods: {

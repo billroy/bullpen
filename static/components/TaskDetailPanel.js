@@ -74,12 +74,14 @@ const TaskDetailPanel = {
       this.editing = false;
       this.editingTitle = false;
       this.editingTags = false;
+      this.$nextTick(() => renderLucideIcons(this.$el));
     },
     readOnly(nextValue) {
       if (!nextValue) return;
       this.editing = false;
       this.editingTitle = false;
       this.editingTags = false;
+      this.$nextTick(() => renderLucideIcons(this.$el));
     }
   },
   template: `
@@ -194,9 +196,6 @@ const TaskDetailPanel = {
     this.taskTimeTimer = window.setInterval(() => {
       this.nowMs = Date.now();
     }, 1000);
-    renderLucideIcons(this.$el);
-  },
-  updated() {
     renderLucideIcons(this.$el);
   },
   methods: {

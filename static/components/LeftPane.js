@@ -121,6 +121,19 @@ const LeftPane = {
           taskQueueLength: Array.isArray(s.task_queue) ? s.task_queue.length : 0,
         } : null)
         .filter(Boolean);
+    },
+    projectIconToken() {
+      return (this.projects || [])
+        .map(p => `${p.id}:${p.available === false ? 'folder-x' : 'folder'}:${p.id === this.activeWorkspaceId ? 'active' : ''}`)
+        .join('|');
+    },
+    inboxIconToken() {
+      return this.filteredTasks.map(task => task.id).join('|');
+    },
+    workerIconToken() {
+      return this.workerList
+        .map(worker => `${worker.slot}:${this.workerTypeIcon(worker)}`)
+        .join('|');
     }
   },
   watch: {
@@ -139,7 +152,19 @@ const LeftPane = {
         this.emptyProjectHintInitialized = true;
         this.showEmptyProjectHint = Array.isArray(this.projects) && this.projects.length === 0;
       }
-    }
+    },
+    showProjectMenu(next) {
+      if (next) this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    projectIconToken() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    inboxIconToken() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    workerIconToken() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
+    },
   },
   data() {
     return {
@@ -158,9 +183,6 @@ const LeftPane = {
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
     window.removeEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);
-  },
-  updated() {
-    renderLucideIcons(this.$el);
   },
   methods: {
     toggleProjectMenu() {

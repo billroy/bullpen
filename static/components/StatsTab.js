@@ -196,9 +196,6 @@ const StatsTab = {
   mounted() {
     renderLucideIcons(this.$el);
   },
-  updated() {
-    renderLucideIcons(this.$el);
-  },
   computed: {
     liveTasks() {
       return Array.isArray(this.tasks) ? this.tasks : [];

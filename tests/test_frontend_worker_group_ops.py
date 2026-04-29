@@ -66,6 +66,49 @@ def test_worker_grid_avoids_broad_icon_rerenders_on_layout_updates():
     assert "updated() {\n    renderLucideIcons(this.$el);" not in tab
 
 
+def test_worker_grid_caches_dragover_drop_target_and_viewport_rect():
+    text = _read("static/components/BullpenTab.js")
+    assert "dragViewportRect: null" in text
+    assert "lastDropTargetKey: ''" in text
+    assert "const rect = this.dragViewportRect || this.$refs.viewport.getBoundingClientRect();" in text
+    assert "if (coord && this.lastDropTargetKey === key) return true;" in text
+    assert "this.lastDropTargetKey = key;" in text
+    assert "this.dragViewportRect = null;" in text
+
+
+def test_worker_cards_use_parent_task_lookup_map():
+    app = _read("static/app.js")
+    tab = _read("static/components/BullpenTab.js")
+    card = _read("static/components/WorkerCard.js")
+    assert "const taskById = computed(() => {" in app
+    assert ":task-by-id=\"taskById\"" in app
+    assert ":task-by-id=\"taskById\"" in tab
+    assert "'taskById'" in card
+    assert "lookupTask(id)" in card
+    assert "this.taskById && this.taskById[id]" in card
+    assert "const t = this.lookupTask(id);" in card
+    assert "const task = this.lookupTask(this.worker.task_queue[0]);" in card
+
+
+def test_worker_card_avoids_menu_icon_render_on_every_update():
+    text = _read("static/components/WorkerCard.js")
+    assert "updated() {\n    if (this.$refs.menu) renderLucideIcons(this.$refs.menu);" not in text
+    assert "menuIconToken()" in text
+    assert "if (this.showMenu) this.$nextTick(() => renderLucideIcons(this.$refs.menu));" in text
+
+
+def test_mounted_surfaces_avoid_generic_updated_icon_rerenders():
+    for rel_path in [
+        "static/components/TopToolbar.js",
+        "static/components/LeftPane.js",
+        "static/components/KanbanTab.js",
+        "static/components/TaskDetailPanel.js",
+        "static/components/StatsTab.js",
+    ]:
+      text = _read(rel_path)
+      assert "updated() {\n    renderLucideIcons(this.$el);" not in text
+
+
 def test_worker_card_only_runs_elapsed_timer_when_status_needs_it():
     text = _read("static/components/WorkerCard.js")
     assert "needsElapsedTimer()" in text

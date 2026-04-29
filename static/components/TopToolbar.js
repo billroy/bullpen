@@ -127,14 +127,20 @@ const TopToolbar = {
     selectedPaletteIndex() {
       this.$nextTick(() => this.scrollSelectedPaletteResultIntoView());
     },
+    showMainMenu(next) {
+      if (next) this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    showEventSoundsMenu(next) {
+      if (next) this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    showProviderColorsMenu(next) {
+      if (next) this.$nextTick(() => renderLucideIcons(this.$el));
+    },
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
     window.addEventListener('keydown', this.onGlobalKeydown);
     window.addEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
-    renderLucideIcons(this.$el);
-  },
-  updated() {
     renderLucideIcons(this.$el);
   },
   beforeUnmount() {
