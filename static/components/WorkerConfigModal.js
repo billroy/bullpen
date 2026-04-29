@@ -593,7 +593,7 @@ const WorkerConfigModal = {
             </label>
           </div>
 
-          <div v-if="!isMarker" class="form-label">
+          <div class="form-label">
             <span>Card Color</span>
             <div class="worker-color-override-controls">
               <button
@@ -845,7 +845,7 @@ const WorkerConfigModal = {
         delete fields.stop_timeout_seconds;
         delete fields.log_max_bytes;
         fields.note = String(fields.note || '');
-        delete fields.color;
+        fields.color = String(fields.color || '').trim();
       } else if (this.isShell || this.isService) {
         // Drop AI-only fields from the payload so server-side normalization
         // never writes them onto a non-AI slot.

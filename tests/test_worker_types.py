@@ -225,6 +225,24 @@ def test_marker_slot_normalizes_defaults_and_resets_runtime_on_copy(tmp_workspac
     assert clone["paused"] is False
 
 
+def test_marker_slot_preserves_color_override(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = normalize_worker_slot(
+        {
+            "type": "marker",
+            "row": 0,
+            "col": 0,
+            "name": "Colored Marker",
+            "color": "#3a7bd5",
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["color"] == "#3a7bd5"
+
+
 def test_unknown_worker_type_transfer_preserves_fields(tmp_path):
     ws_a = str(tmp_path / "a")
     ws_b = str(tmp_path / "b")

@@ -545,6 +545,31 @@ class TestWorkerEvents:
         assert worker["state"] == "idle"
         assert worker["task_queue"] == []
 
+    def test_configure_marker_worker_preserves_color_override(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "marker",
+            "fields": {"name": "Deploy Marker"},
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("worker:configure", {
+            "slot": 0,
+            "fields": {
+                "name": "Deploy Marker",
+                "note": "staging + release path",
+                "color": "#3a7bd5",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+
+        assert layout is not None
+        worker = layout["slots"][0]
+        assert worker["type"] == "marker"
+        assert worker["note"] == "staging + release path"
+        assert worker["color"] == "#3a7bd5"
+
     def test_add_worker_persists(self, client):
         c, app = client
         c.emit("worker:add", {"slot": 2, "profile": "code-reviewer"})

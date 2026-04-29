@@ -300,7 +300,7 @@ def normalize_worker_slot(raw, *, index, config):
     elif type_id == "marker":
         slot["note"] = str(slot.get("note") or "")
         slot["icon"] = "square-dot"
-        slot["color"] = "marker"
+        slot["color"] = str(slot.get("color") or "marker")
         slot["max_retries"] = 0
 
     return slot

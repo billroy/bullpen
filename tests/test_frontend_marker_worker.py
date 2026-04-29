@@ -30,7 +30,7 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
 
     assert "isMarker()" in modal
     assert "<span v-if=\"isMarker\" class=\"worker-type-badge\">Marker</span>" in modal
-    assert "v-if=\"!isMarker\" class=\"form-label\"" in modal
+    assert "<div class=\"form-label\">\n            <span>Card Color</span>" in modal
     assert "class=\"worker-color-override-trigger\"" in modal
     assert "ref=\"workerColorTrigger\"" in modal
     assert "Restore Default" in modal
@@ -43,10 +43,13 @@ def test_marker_worker_create_flow_and_modal_fields_exist():
     assert "placeholder=\"marker or #c8b38c\"" not in modal
 
 
-def test_non_marker_worker_modal_preserves_color_override_on_save():
+def test_worker_modal_preserves_color_override_on_save():
     modal = _read("static/components/WorkerConfigModal.js")
 
     assert "fields.color = String(fields.color || '').trim();" in modal
+    marker_branch = modal.split("if (this.isMarker) {", 1)[1].split("} else if (this.isShell || this.isService) {", 1)[0]
+    assert "fields.color = String(fields.color || '').trim();" in marker_branch
+    assert "delete fields.color;" not in marker_branch
     non_marker = modal.split("} else if (this.isShell || this.isService) {", 1)[1]
     shell_service_branch, ai_branch = non_marker.split("// Drop non-AI fields from AI payloads.", 1)
     assert "delete fields.color;" not in shell_service_branch
