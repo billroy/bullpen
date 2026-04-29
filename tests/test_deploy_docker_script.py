@@ -23,6 +23,9 @@ def test_deploy_docker_installs_bullpen_project_from_github_with_flag():
     assert 'if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then' in text
     assert 'install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"' in text
     assert "Use --install-bullpen-project to clone Bullpen from GitHub" in text
+    assert 'warn "Running deploy-docker.sh from the Bullpen repo root."' not in text
+    assert 'warn "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."' not in text
+    assert 'warn "Use --install-bullpen-project to clone Bullpen from GitHub' not in text
     assert 'Project path to mount into /workspace (required): ' in text
     assert "Type . if you intentionally want to mount the Bullpen repo itself." in text
     assert "Add Bullpen as a project?" not in text
@@ -51,6 +54,13 @@ def test_deploy_docker_syncs_github_cli_auth_into_persistent_home():
     assert "gh auth status --hostname github.com" in text
     assert "Copied host GitHub CLI token into Docker home" in text
     assert "Log in to GitHub CLI now for Docker git push and auto-PR?" not in text
+
+
+def test_deploy_docker_does_not_launch_claude_browser_login():
+    text = _read("deploy-docker.sh")
+    assert "claude auth login" not in text
+    assert "Log in to Claude Code now using the host browser?" not in text
+    assert "Complete Claude Code login outside this deploy" in text
 
 
 def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():

@@ -369,13 +369,13 @@ printf '\n\033[1mBullpen Docker Deployer\033[0m\n\n'
 
 CONTAINER_NAME="$(prompt_default "Container name" "$CONTAINER_NAME_DEFAULT")"
 if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
-  warn "Running deploy-docker.sh from the Bullpen repo root."
-  warn "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."
+  echo "Running deploy-docker.sh from the Bullpen repo root."
+  echo "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."
   if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then
     install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"
     WORKSPACE_INPUT="$LOCAL_PROJECT_PATH_DEFAULT"
   else
-    warn "Use --install-bullpen-project to clone Bullpen from GitHub into ${LOCAL_PROJECT_PATH_DEFAULT} and mount that checkout."
+    echo "Use --install-bullpen-project to clone Bullpen from GitHub into ${LOCAL_PROJECT_PATH_DEFAULT} and mount that checkout."
     while true; do
       read -rp "Project path to mount into /workspace (required): " WORKSPACE_INPUT
       if [[ -n "$WORKSPACE_INPUT" ]]; then
@@ -536,16 +536,7 @@ fi
 
 if ! claude_logged_in; then
   warn "Claude CLI is not logged in for Docker home ${DOCKER_HOME}."
-  if command -v claude >/dev/null 2>&1 && prompt_yes_no "Log in to Claude Code now using the host browser?" "Y"; then
-    HOME="$DOCKER_HOME" claude auth login || true
-    if claude_logged_in; then
-      log "Claude CLI login saved in Docker home"
-    else
-      warn "Claude still does not report a valid login. Live Agent Claude workers may fail until login is completed."
-    fi
-  else
-    warn "Install Claude Code on the host or complete login before using Claude Live Agent workers."
-  fi
+  warn "Complete Claude Code login outside this deploy before using Claude Live Agent workers."
 else
   log "Claude CLI login found in Docker home"
 fi
