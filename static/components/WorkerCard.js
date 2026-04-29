@@ -123,8 +123,8 @@ const WorkerCard = {
   },
   mounted() {
     renderLucideIcons(this.$el);
-    this._timer = setInterval(() => this.updateElapsed(), 1000);
     this.updateElapsed();
+    this.syncElapsedTimer();
     this.recalculateTitlePortVisibility();
     this.ensureOutputCatchup();
     if (typeof ResizeObserver !== 'undefined') {
@@ -142,7 +142,6 @@ const WorkerCard = {
     document.addEventListener('click', this._closeMenu);
   },
   updated() {
-    renderLucideIcons(this.$el);
     if (this.$refs.menu) renderLucideIcons(this.$refs.menu);
   },
   beforeUnmount() {
@@ -167,6 +166,11 @@ const WorkerCard = {
     },
     workerState() { return this.worker.service_state?.state || this.worker.state || 'idle'; },
     isWorking() { return ['working', 'retrying', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState); },
+    needsElapsedTimer() {
+      return this.workerState === 'working' ||
+        this.workerState === 'retrying' ||
+        (this.isService && ['starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState));
+    },
     showOutputPane() {
       return this.effectiveLayoutMode !== 'small';
     },
@@ -357,6 +361,18 @@ const WorkerCard = {
     showOutputPane() {
       this.$nextTick(() => this.ensureOutputCatchup());
     },
+    workerIcon() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    taskQueueCount() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    showMenu(next) {
+      if (next) this.$nextTick(() => renderLucideIcons(this.$refs.menu));
+    },
+    needsElapsedTimer() {
+      this.syncElapsedTimer();
+    },
     workerState() {
       this.$nextTick(() => this.ensureOutputCatchup(true));
     },
@@ -379,6 +395,18 @@ const WorkerCard = {
         workerType: this.worker?.type,
         force,
       });
+    },
+    syncElapsedTimer() {
+      if (!this.needsElapsedTimer) {
+        if (this._timer) {
+          clearInterval(this._timer);
+          this._timer = null;
+        }
+        return;
+      }
+      if (!this._timer) {
+        this._timer = setInterval(() => this.updateElapsed(), 1000);
+      }
     },
     recalculateTitlePortVisibility() {
       const suffix = this.titlePortCandidate;

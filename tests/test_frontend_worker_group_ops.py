@@ -59,6 +59,21 @@ def test_bullpen_tab_worker_drop_reuses_expanded_move_plan():
     assert "this.selectedWorkerSlots = this.expandSelectionSlots(plan.slots);" not in text
 
 
+def test_worker_grid_avoids_broad_icon_rerenders_on_layout_updates():
+    app = _read("static/app.js")
+    tab = _read("static/components/BullpenTab.js")
+    assert "updated() {\n    renderLucideIcons(this.$el);" not in app
+    assert "updated() {\n    renderLucideIcons(this.$el);" not in tab
+
+
+def test_worker_card_only_runs_elapsed_timer_when_status_needs_it():
+    text = _read("static/components/WorkerCard.js")
+    assert "needsElapsedTimer()" in text
+    assert "this.syncElapsedTimer();" in text
+    assert "setInterval(() => this.updateElapsed(), 1000)" in text
+    assert "this._timer = setInterval(() => this.updateElapsed(), 1000);\n    this.updateElapsed();" not in text
+
+
 def test_server_worker_group_move_uses_coordinate_occupancy_map():
     text = _read("server/events.py")
     assert "def _coord_occupancy_map(layout, cols=4):" in text

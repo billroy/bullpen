@@ -1498,9 +1498,6 @@ const app = createApp({
 
     renderLucideIcons(this.$el);
   },
-  updated() {
-    renderLucideIcons(this.$el);
-  },
   template: `
     <div class="app-container">
       <TopToolbar
