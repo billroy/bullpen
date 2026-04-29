@@ -7,10 +7,52 @@ BULLPEN_PORT_DEFAULT="8080"
 APP_PORT_DEFAULT="3000"
 ADMIN_USER_DEFAULT="admin"
 DOCKER_HOME_DEFAULT="$HOME/.bullpen/docker-home"
+BULLPEN_GITHUB_REPO_URL="${BULLPEN_GITHUB_REPO_URL:-https://github.com/billroy/bullpen.git}"
+BULLPEN_DOCKER_BUILD_CONTEXT="${BULLPEN_DOCKER_BUILD_CONTEXT:-$BULLPEN_GITHUB_REPO_URL}"
+INSTALL_BULLPEN_PROJECT=0
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33mwarn:\033[0m %s\n' "$1" >&2; }
 die() { printf '\033[31merror:\033[0m %s\n' "$1" >&2; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Usage: ./deploy-docker.sh [options]
+
+Options:
+  --install-bullpen-project
+      Clone Bullpen from GitHub into the local project directory and mount it
+      as /workspace. This replaces the old interactive Bullpen-project prompt.
+  -h, --help
+      Show this help.
+
+Environment:
+  BULLPEN_GITHUB_REPO_URL
+      GitHub repository URL used for project installation.
+      Default: https://github.com/billroy/bullpen.git
+  BULLPEN_DOCKER_BUILD_CONTEXT
+      Docker build context used for the Bullpen image.
+      Default: same as BULLPEN_GITHUB_REPO_URL
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --install-bullpen-project)
+        INSTALL_BULLPEN_PROJECT=1
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Unknown option: $1"
+        ;;
+    esac
+    shift
+  done
+}
 
 prompt_default() {
   local prompt="$1"
@@ -140,7 +182,30 @@ build_image() {
   docker build \
     --build-arg "BULLPEN_UID=$(id -u)" \
     --build-arg "BULLPEN_GID=$(id -g)" \
-    -t "$IMAGE_NAME" .
+    -t "$IMAGE_NAME" \
+    "$BULLPEN_DOCKER_BUILD_CONTEXT"
+}
+
+install_bullpen_project_from_github() {
+  local target_path="$1"
+
+  require_command git
+
+  if [[ -d "$target_path/.git" ]]; then
+    log "Using existing Bullpen project checkout at ${target_path}"
+    return 0
+  fi
+
+  if [[ -e "$target_path" ]]; then
+    if [[ -d "$target_path" && -z "$(find "$target_path" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+      rmdir "$target_path"
+    else
+      die "Bullpen project path already exists and is not a git checkout: $target_path"
+    fi
+  fi
+
+  log "Cloning Bullpen from ${BULLPEN_GITHUB_REPO_URL} into ${target_path}"
+  git clone --depth 1 "$BULLPEN_GITHUB_REPO_URL" "$target_path"
 }
 
 seed_file_if_missing() {
@@ -292,6 +357,8 @@ PY'
   return 1
 }
 
+parse_args "$@"
+
 require_command docker
 
 docker info >/dev/null 2>&1 || die "Docker daemon is not running or not reachable."
@@ -304,11 +371,11 @@ CONTAINER_NAME="$(prompt_default "Container name" "$CONTAINER_NAME_DEFAULT")"
 if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
   warn "Running deploy-docker.sh from the Bullpen repo root."
   warn "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."
-  warn "You can also create or reuse a local project directory at ${LOCAL_PROJECT_PATH_DEFAULT}."
-  if prompt_yes_no "Add Bullpen as a project? ${LOCAL_PROJECT_PATH_DEFAULT}?" "Y"; then
-    mkdir -p "$LOCAL_PROJECT_PATH_DEFAULT"
+  if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then
+    install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"
     WORKSPACE_INPUT="$LOCAL_PROJECT_PATH_DEFAULT"
   else
+    warn "Use --install-bullpen-project to clone Bullpen from GitHub into ${LOCAL_PROJECT_PATH_DEFAULT} and mount that checkout."
     while true; do
       read -rp "Project path to mount into /workspace (required): " WORKSPACE_INPUT
       if [[ -n "$WORKSPACE_INPUT" ]]; then

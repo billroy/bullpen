@@ -9,20 +9,33 @@ Use the interactive deploy script from the repo root:
 The script handles deployment end-to-end:
 - prompts for container name, project path or local project directory, ports,
   and Bullpen admin credentials
-- builds the Docker image when needed
+- builds the Docker image from the Bullpen GitHub repository when needed
 - starts/replaces the container with the correct runtime settings
 - updates Bullpen login credentials to match the admin username/password entered for this deploy
 - verifies inside the container that the entered admin password matches the stored Bullpen credentials
 - auto-loads provider credentials by mounting local auth directories and forwarding detected API/token environment variables
 - falls back to secure credential prompts only when no credentials are detected
 
-When you run `./deploy-docker.sh` from the Bullpen repo root, it now requires
-an explicit choice instead of defaulting to the Bullpen source tree. You can
-either enter an existing project path or let the script create/reuse a local
-directory next to the Bullpen checkout, such as `../bullpen-project`. That
-directory is mounted at `/workspace`, auto-registered as a Bullpen project, and
-becomes the current project on startup. Type `.` only if you intentionally want
-the container to mount Bullpen itself.
+When you run `./deploy-docker.sh` from the Bullpen repo root, it requires an
+explicit project path instead of defaulting to the Bullpen source tree. Type `.`
+only if you intentionally want the container to mount your local Bullpen
+checkout.
+
+To install Bullpen itself as the mounted project, pass
+`--install-bullpen-project` when invoking the script:
+
+```bash
+./deploy-docker.sh --install-bullpen-project
+```
+
+That clones Bullpen from GitHub into a local directory next to the current
+checkout, such as `../bullpen-project`, mounts that checkout at `/workspace`,
+auto-registers it as a Bullpen project, and makes it the current project on
+startup. Set `BULLPEN_GITHUB_REPO_URL` to use a fork or alternate remote.
+
+By default, the deploy script also builds the Docker image from the same GitHub
+repository URL instead of using the local checkout as the Docker build context.
+Set `BULLPEN_DOCKER_BUILD_CONTEXT` to override the Docker build source.
 
 After deployment, the script prints URLs and operational commands (`docker logs`, `docker exec`, remove/redeploy).
 

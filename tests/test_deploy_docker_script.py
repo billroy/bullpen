@@ -10,15 +10,28 @@ def _read(rel_path: str) -> str:
     return (ROOT / rel_path).read_text(encoding="utf-8")
 
 
-def test_deploy_docker_offers_local_project_option_from_repo_root():
+def test_deploy_docker_installs_bullpen_project_from_github_with_flag():
     text = _read("deploy-docker.sh")
+    assert 'BULLPEN_GITHUB_REPO_URL="${BULLPEN_GITHUB_REPO_URL:-https://github.com/billroy/bullpen.git}"' in text
+    assert 'BULLPEN_DOCKER_BUILD_CONTEXT="${BULLPEN_DOCKER_BUILD_CONTEXT:-$BULLPEN_GITHUB_REPO_URL}"' in text
+    assert "--install-bullpen-project" in text
+    assert "INSTALL_BULLPEN_PROJECT=1" in text
+    assert 'git clone --depth 1 "$BULLPEN_GITHUB_REPO_URL" "$target_path"' in text
     assert 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' in text
     assert 'LOCAL_PROJECT_PATH_DEFAULT="$(dirname "$SCRIPT_DIR")/$(basename "$SCRIPT_DIR")-project"' in text
     assert 'if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then' in text
-    assert 'Add Bullpen as a project? ${LOCAL_PROJECT_PATH_DEFAULT}?' in text
-    assert 'mkdir -p "$LOCAL_PROJECT_PATH_DEFAULT"' in text
+    assert 'if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then' in text
+    assert 'install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"' in text
+    assert "Use --install-bullpen-project to clone Bullpen from GitHub" in text
     assert 'Project path to mount into /workspace (required): ' in text
     assert "Type . if you intentionally want to mount the Bullpen repo itself." in text
+    assert "Add Bullpen as a project?" not in text
+
+
+def test_deploy_docker_builds_image_from_github_by_default():
+    text = _read("deploy-docker.sh")
+    assert '-t "$IMAGE_NAME" \\\n    "$BULLPEN_DOCKER_BUILD_CONTEXT"' in text
+    assert '-t "$IMAGE_NAME" .' not in text
 
 
 def test_deploy_docker_hides_unavailable_projects_in_container():
