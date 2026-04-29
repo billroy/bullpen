@@ -22,10 +22,9 @@ def test_deploy_docker_installs_bullpen_project_from_github_with_flag():
     assert 'if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then' in text
     assert 'if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then' in text
     assert 'install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"' in text
-    assert "Use --install-bullpen-project to clone Bullpen from GitHub" in text
-    assert 'warn "Running deploy-docker.sh from the Bullpen repo root."' not in text
-    assert 'warn "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."' not in text
-    assert 'warn "Use --install-bullpen-project to clone Bullpen from GitHub' not in text
+    assert "Running deploy-docker.sh from the Bullpen repo root." not in text
+    assert "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default." not in text
+    assert "Use --install-bullpen-project to clone Bullpen from GitHub into" not in text
     assert 'Project path to mount into /workspace (required): ' in text
     assert "Type . if you intentionally want to mount the Bullpen repo itself." in text
     assert "Add Bullpen as a project?" not in text
@@ -49,8 +48,12 @@ def test_deploy_docker_syncs_github_cli_auth_into_persistent_home():
     assert "ensure_github_cli_auth" in text
     assert 'env -u GH_CONFIG_DIR -u XDG_CONFIG_HOME HOME="$DOCKER_HOME" gh "$@"' in text
     assert "env -u GH_TOKEN -u GITHUB_TOKEN -u GH_CONFIG_DIR -u XDG_CONFIG_HOME gh" in text
+    assert "github_hosts_has_oauth_token() " in text
+    assert "if github_hosts_has_oauth_token && github_cli_logged_in; then" in text
     assert "host_github_gh auth token --hostname github.com" in text
-    assert "gh auth login --hostname github.com --git-protocol https --with-token" in text
+    assert "gh auth login --hostname github.com --git-protocol https --with-token" not in text
+    assert 'printf \'github.com:\\n\'' in text
+    assert 'printf \'    oauth_token: %s\\n\' "$(yaml_single_quote "$token")"' in text
     assert "gh auth status --hostname github.com" in text
     assert "Copied host GitHub CLI token into Docker home" in text
     assert "Log in to GitHub CLI now for Docker git push and auto-PR?" not in text

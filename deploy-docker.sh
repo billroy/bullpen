@@ -259,23 +259,42 @@ host_github_gh() {
   env -u GH_TOKEN -u GITHUB_TOKEN -u GH_CONFIG_DIR -u XDG_CONFIG_HOME gh "$@"
 }
 
+yaml_single_quote() {
+  local value="$1"
+  value="${value//\'/\'\'}"
+  printf "'%s'" "$value"
+}
+
 github_cli_logged_in() {
   command -v gh >/dev/null 2>&1 || return 1
   github_gh auth status --hostname github.com >/dev/null 2>&1
 }
 
+github_hosts_has_oauth_token() {
+  [[ -s "$DOCKER_HOME/.config/gh/hosts.yml" ]] || return 1
+  grep -Eq '^[[:space:]]*oauth_token:' "$DOCKER_HOME/.config/gh/hosts.yml"
+}
+
 copy_host_github_cli_auth_to_docker_home() {
   local token=""
+  local user=""
 
   command -v gh >/dev/null 2>&1 || return 1
   token="$(host_github_gh auth token --hostname github.com 2>/dev/null)" || return 1
   [[ -n "$token" ]] || return 1
+  user="$(GH_TOKEN="$token" env -u GITHUB_TOKEN -u GH_CONFIG_DIR -u XDG_CONFIG_HOME gh api --hostname github.com user --jq .login 2>/dev/null || true)"
 
   mkdir -p "$DOCKER_HOME/.config/gh"
-  if ! printf '%s\n' "$token" | env -u GH_TOKEN -u GITHUB_TOKEN -u GH_CONFIG_DIR -u XDG_CONFIG_HOME HOME="$DOCKER_HOME" \
-      gh auth login --hostname github.com --git-protocol https --with-token >/dev/null 2>&1; then
-    return 1
-  fi
+  {
+    printf 'github.com:\n'
+    printf '    git_protocol: https\n'
+    printf '    oauth_token: %s\n' "$(yaml_single_quote "$token")"
+    if [[ -n "$user" ]]; then
+      printf '    user: %s\n' "$(yaml_single_quote "$user")"
+    fi
+  } > "$DOCKER_HOME/.config/gh/hosts.yml"
+  chmod 600 "$DOCKER_HOME/.config/gh/hosts.yml" 2>/dev/null || true
+
   github_cli_logged_in
 }
 
@@ -297,7 +316,7 @@ ensure_github_cli_auth() {
     return 0
   fi
 
-  if github_cli_logged_in; then
+  if github_hosts_has_oauth_token && github_cli_logged_in; then
     log "GitHub CLI login found in Docker home"
     return 0
   fi
@@ -369,13 +388,10 @@ printf '\n\033[1mBullpen Docker Deployer\033[0m\n\n'
 
 CONTAINER_NAME="$(prompt_default "Container name" "$CONTAINER_NAME_DEFAULT")"
 if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then
-  echo "Running deploy-docker.sh from the Bullpen repo root."
-  echo "Enter the project Bullpen should work on so Docker does not mount Bullpen itself by default."
   if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then
     install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"
     WORKSPACE_INPUT="$LOCAL_PROJECT_PATH_DEFAULT"
   else
-    echo "Use --install-bullpen-project to clone Bullpen from GitHub into ${LOCAL_PROJECT_PATH_DEFAULT} and mount that checkout."
     while true; do
       read -rp "Project path to mount into /workspace (required): " WORKSPACE_INPUT
       if [[ -n "$WORKSPACE_INPUT" ]]; then
