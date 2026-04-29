@@ -63,6 +63,7 @@ def test_draggable_ticket_styles_disable_text_selection():
     assert ".task-card[draggable=\"true\"]" in css
     assert ".inbox-item[draggable=\"true\"]" in css
     assert "-webkit-touch-callout: none;" in css
+    assert "touch-action: pan-y;" in css
 
 
 def test_task_card_dnd_not_disabled_for_touch_devices():

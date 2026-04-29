@@ -816,18 +816,20 @@ const BullpenTab = {
     },
     onViewportPointerDown(e) {
       if (e.button !== 0 && e.button !== 1) return;
-      if (e.target.closest('.worker-card, .worker-menu, button, input')) return;
+      if (e.target.closest('.worker-menu, button, input, select, textarea')) return;
+      if (e.target.closest('.worker-card') && e.pointerType !== 'touch') return;
       const coord = this.coordFromEvent(e);
+      const isTouch = e.pointerType === 'touch';
       this.dragStart = {
         x: e.clientX,
         y: e.clientY,
         button: e.button,
-        selection: e.button === 0,
+        selection: e.button === 0 && !isTouch,
         selectionMoved: false,
         origin: { ...this.viewportOrigin },
         coord,
       };
-      if (e.button === 0) {
+      if (this.dragStart.selection) {
         this.selectionAnchor = e.shiftKey && this.selectionAnchor ? { ...this.selectionAnchor } : { ...coord };
         this.updateRangeSelection(this.selectionAnchor, coord);
       }
@@ -859,6 +861,9 @@ const BullpenTab = {
       this.dragStart = null;
       this.isPanning = false;
       this.$refs.viewport.releasePointerCapture?.(e.pointerId);
+      if (wasPanning) {
+        window._bullpenSuppressWorkerClickUntil = Date.now() + 250;
+      }
       if (selectionMoved) {
         this.focusViewport();
         return;

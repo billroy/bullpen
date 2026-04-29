@@ -124,6 +124,14 @@ def test_worker_grid_styles_define_viewport_minimap_and_fixed_card_overflow():
     assert "contain: paint" not in text
 
 
+def test_worker_grid_touch_pointer_pans_from_cards_instead_of_selecting():
+    text = _read("static/components/BullpenTab.js")
+    assert "if (e.target.closest('.worker-card') && e.pointerType !== 'touch') return;" in text
+    assert "const isTouch = e.pointerType === 'touch';" in text
+    assert "selection: e.button === 0 && !isTouch" in text
+    assert "window._bullpenSuppressWorkerClickUntil = Date.now() + 250;" in text
+
+
 def test_grid_headers_highlight_selected_cell_not_fixed_origin():
     tab = _read("static/components/BullpenTab.js")
     css = _read("static/style.css")
