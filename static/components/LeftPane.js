@@ -2,7 +2,14 @@ const LeftPane = {
   props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'activeWorkspaceId', 'workspaces'],
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project'],
   template: `
-    <div class="left-pane" :class="{ collapsed: !visible }">
+    <div class="left-pane" :class="{ collapsed: !visible, resizing: !!resizing }" :style="leftPaneStyle">
+      <div
+        v-if="visible"
+        class="left-pane-resize"
+        @pointerdown="onResizeDown"
+        @dblclick="resetWidth"
+        title="Drag to resize"
+      ></div>
       <div v-if="projects" class="left-pane-section" :class="{ 'project-add-only': projects.length === 0 }">
         <div class="section-header">
           <h3>Projects</h3>
@@ -134,6 +141,10 @@ const LeftPane = {
       return this.workerList
         .map(worker => `${worker.slot}:${this.workerTypeIcon(worker)}`)
         .join('|');
+    },
+    leftPaneStyle() {
+      if (!this.visible) return null;
+      return { width: `${this.draggingWidth || this.paneWidth}px` };
     }
   },
   watch: {
@@ -173,6 +184,9 @@ const LeftPane = {
       showProjectMenu: false,
       showEmptyProjectHint: false,
       emptyProjectHintInitialized: false,
+      paneWidth: LeftPane._loadPaneWidth(),
+      resizing: null,
+      draggingWidth: null,
     };
   },
   mounted() {
@@ -183,6 +197,9 @@ const LeftPane = {
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
     window.removeEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);
+    this._teardownResizeListeners();
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
   },
   methods: {
     toggleProjectMenu() {
@@ -286,6 +303,76 @@ const LeftPane = {
       if (taskId) {
         this.$root.assignTask(taskId, slot);
       }
+    },
+    onResizeDown(e) {
+      if (e.button !== 0) return;
+      if (this.resizing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.resizing = {
+        startX: e.clientX,
+        startWidth: this.paneWidth,
+        pointerId: e.pointerId,
+      };
+      this.draggingWidth = this.paneWidth;
+      this._resizeMoveHandler = (ev) => this.onResizeMove(ev);
+      this._resizeUpHandler = (ev) => this.onResizeUp(ev);
+      window.addEventListener('pointermove', this._resizeMoveHandler);
+      window.addEventListener('pointerup', this._resizeUpHandler);
+      window.addEventListener('pointercancel', this._resizeUpHandler);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    onResizeMove(e) {
+      if (!this.resizing) return;
+      if (e.pointerId !== this.resizing.pointerId) return;
+      const dx = e.clientX - this.resizing.startX;
+      const next = this.resizing.startWidth + dx;
+      this.draggingWidth = LeftPane._clampWidth(Math.round(next));
+    },
+    onResizeUp(e) {
+      if (!this.resizing) return;
+      if (e && e.pointerId !== this.resizing.pointerId) return;
+      this._teardownResizeListeners();
+      const dragged = this.draggingWidth;
+      this.resizing = null;
+      this.draggingWidth = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      if (dragged != null) {
+        this.paneWidth = LeftPane._clampWidth(dragged);
+        try {
+          localStorage.setItem('bullpen.leftPaneWidth', String(this.paneWidth));
+        } catch (e) { /* ignore */ }
+      }
+    },
+    resetWidth() {
+      this.paneWidth = 280;
+      try {
+        localStorage.setItem('bullpen.leftPaneWidth', '280');
+      } catch (e) { /* ignore */ }
+    },
+    _teardownResizeListeners() {
+      if (this._resizeMoveHandler) {
+        window.removeEventListener('pointermove', this._resizeMoveHandler);
+        window.removeEventListener('pointerup', this._resizeUpHandler);
+        window.removeEventListener('pointercancel', this._resizeUpHandler);
+        this._resizeMoveHandler = null;
+        this._resizeUpHandler = null;
+      }
     }
+  },
+  _clampWidth(w) {
+    return Math.max(200, Math.min(520, w));
+  },
+  _loadPaneWidth() {
+    try {
+      const raw = localStorage.getItem('bullpen.leftPaneWidth');
+      if (raw) {
+        const n = parseInt(raw, 10);
+        if (Number.isFinite(n)) return LeftPane._clampWidth(n);
+      }
+    } catch (e) { /* ignore */ }
+    return 280;
   }
 };

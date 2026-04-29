@@ -880,6 +880,7 @@ body {
   border-right: 1px solid var(--border);
   overflow-y: auto;
   flex-shrink: 0;
+  position: relative;
   transition: width 0.2s, opacity 0.2s;
 }
 
@@ -887,6 +888,26 @@ body {
   width: 0;
   opacity: 0;
   overflow: hidden;
+}
+
+.left-pane.resizing {
+  transition: opacity 0.2s;
+}
+
+.left-pane-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+
+.left-pane-resize:hover,
+.left-pane-resize:active {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .left-pane-section {
