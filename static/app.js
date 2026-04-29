@@ -1465,6 +1465,13 @@ const app = createApp({
     }
 
     const multipleWorkspaces = computed(() => projects.length >= 2);
+    const taskById = computed(() => {
+      const map = {};
+      for (const task of state.tasks || []) {
+        if (task?.id) map[task.id] = task;
+      }
+      return map;
+    });
 
     return {
       state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded,
@@ -1476,7 +1483,7 @@ const app = createApp({
       moveTask, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, restartServiceSlot, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
-      duplicateWorker, multipleWorkspaces,
+      duplicateWorker, multipleWorkspaces, taskById,
       transferSlot, transferMode, openTransfer, transferWorker,
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
@@ -1601,6 +1608,7 @@ const app = createApp({
               :config="state.config"
               :profiles="state.profiles"
               :tasks="state.tasks"
+              :task-by-id="taskById"
               :workspace="state.workspace"
               :workspace-id="activeWorkspaceId"
               :multiple-workspaces="multipleWorkspaces"

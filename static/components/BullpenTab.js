@@ -3,7 +3,7 @@ const BullpenTab = {
   HEADER_WIDTH: 40,
   HEADER_HEIGHT: 24,
   MINIMAP_HEADER_PX: 30,
-  props: ['layout', 'config', 'profiles', 'tasks', 'workspace', 'workspaceId', 'multipleWorkspaces'],
+  props: ['layout', 'config', 'profiles', 'tasks', 'taskById', 'workspace', 'workspaceId', 'multipleWorkspaces'],
   emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker'],
   components: { WorkerCard },
   data() {
@@ -41,6 +41,8 @@ const BullpenTab = {
       expandedWorkerCardSlot: null,
       expandedWorkerCardDelta: 0,
       resizeTooltip: null,
+      dragViewportRect: null,
+      lastDropTargetKey: '',
     };
   },
   template: `
@@ -111,6 +113,7 @@ const BullpenTab = {
             :worker="item.worker"
             :slot-index="item.slotIndex"
             :tasks="tasks"
+            :task-by-id="taskById"
             :output-lines="$root.outputLinesForSlot(item.slotIndex, workspaceId)"
             :multiple-workspaces="multipleWorkspaces"
             :neighbor-slots="neighborSlotsMap[item.slotIndex]"
@@ -801,7 +804,7 @@ const BullpenTab = {
       });
     },
     coordFromEvent(e) {
-      const rect = this.$refs.viewport.getBoundingClientRect();
+      const rect = this.dragViewportRect || this.$refs.viewport.getBoundingClientRect();
       const x = e.clientX - rect.left - this.headerWidth;
       const y = e.clientY - rect.top - this.headerHeight;
       return GridGeometry.pixelToCoord(x, y, this.viewportOrigin, this.cardSize);
@@ -1509,7 +1512,7 @@ const BullpenTab = {
       const offsetX = Number(offset?.x);
       const offsetY = Number(offset?.y);
       if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY)) return this.coordFromEvent(e);
-      const rect = this.$refs.viewport.getBoundingClientRect();
+      const rect = this.dragViewportRect || this.$refs.viewport.getBoundingClientRect();
       const x = e.clientX - rect.left - this.headerWidth - offsetX;
       const y = e.clientY - rect.top - this.headerHeight - offsetY;
       return GridGeometry.pixelToCoord(x, y, this.viewportOrigin, this.cardSize);
@@ -1541,11 +1544,12 @@ const BullpenTab = {
       return { source, slots, moves };
     },
     canDropWorkerAtSlot(sourceSlot, targetSlot, e) {
+      if (e && !this.dragViewportRect) this.dragViewportRect = this.$refs.viewport.getBoundingClientRect();
       const coord = e ? this._workerDragCoordFromEvent(e) : null;
-      if (coord) return this.canDropWorkerAtCoord(sourceSlot, coord);
+      if (coord) return this._setDropTarget(sourceSlot, coord);
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return false;
-      return this.canDropWorkerAtCoord(sourceSlot, target.coord);
+      return this._setDropTarget(sourceSlot, target.coord);
     },
     canDropWorkerAtCoord(sourceSlot, coord) {
       if (this._isSingletonWorkerDrag()) {
@@ -1555,14 +1559,16 @@ const BullpenTab = {
       return !!this.buildGroupMovePlan(sourceSlot, coord, this._dragGroupSlots());
     },
     dropWorkerOnSlot(sourceSlot, targetSlot, e) {
-      this._clearDropTarget();
       const coord = e ? this._workerDragCoordFromEvent(e) : null;
+      this._clearDropTarget();
+      this.dragViewportRect = null;
       if (coord) return this.moveWorkerDragToCoord(sourceSlot, coord);
       const target = this.workerItemBySlot[targetSlot];
       if (!target) return false;
       return this.moveWorkerDragToCoord(sourceSlot, target.coord);
     },
     updateSingletonWorkerDrag(sourceSlot, e) {
+      if (e && !this.dragViewportRect) this.dragViewportRect = this.$refs.viewport.getBoundingClientRect();
       const source = Number(sourceSlot);
       const coord = this._workerDragCoordFromEvent(e);
       if (Number.isInteger(source) && coord && this._setDropTarget(source, coord)) {
@@ -1578,12 +1584,14 @@ const BullpenTab = {
       const coord = this._workerDragCoordFromEvent(e);
       this.hoveredCoord = null;
       this._clearDropTarget();
+      this.dragViewportRect = null;
       if (!Number.isInteger(source) || !coord) return false;
       return this.moveSingleWorkerToCoord(source, coord);
     },
     cancelSingletonWorkerDrag() {
       this.hoveredCoord = null;
       this._clearDropTarget();
+      this.dragViewportRect = null;
     },
     moveWorkerDragToCoord(sourceSlot, coord) {
       if (this._isSingletonWorkerDrag()) {
@@ -1735,12 +1743,17 @@ const BullpenTab = {
       this.emptyMenuCoord = null;
     },
     _setDropTarget(source, coord) {
+      const singleton = this._isSingletonWorkerDrag();
+      const key = `${singleton ? 'single' : 'group'}:${source}:${coord?.col},${coord?.row}`;
+      if (coord && this.lastDropTargetKey === key) return true;
       if (this._isSingletonWorkerDrag()) {
         if (!this.canDropWorkerAtCoord(source, coord)) {
           this.dragOverCoord = null;
           this.dropTargetCoords = [];
+          this.lastDropTargetKey = '';
           return false;
         }
+        this.lastDropTargetKey = key;
         this.dragOverCoord = { ...coord };
         this.dropTargetCoords = [{ col: coord.col, row: coord.row }];
         return true;
@@ -1749,8 +1762,10 @@ const BullpenTab = {
       if (!plan) {
         this.dragOverCoord = null;
         this.dropTargetCoords = [];
+        this.lastDropTargetKey = '';
         return false;
       }
+      this.lastDropTargetKey = key;
       this.dragOverCoord = { ...coord };
       this.dropTargetCoords = plan.moves.map(m => ({ col: m.to_coord.col, row: m.to_coord.row }));
       return true;
@@ -1758,6 +1773,7 @@ const BullpenTab = {
     _clearDropTarget() {
       this.dragOverCoord = null;
       this.dropTargetCoords = [];
+      this.lastDropTargetKey = '';
     },
     onEmptyDragOver(e, coord) {
       if (!this._isWorkerDrag(e)) return;
@@ -1775,11 +1791,13 @@ const BullpenTab = {
       const source = this._workerDragSource(e);
       const dropCoord = this._workerDragCoordFromEvent(e) || coord;
       this._clearDropTarget();
+      this.dragViewportRect = null;
       if (!Number.isInteger(source)) return false;
       return this.moveWorkerDragToCoord(source, dropCoord);
     },
     onCanvasDragOver(e) {
       if (!this._isWorkerDrag(e)) return;
+      if (!this.dragViewportRect) this.dragViewportRect = this.$refs.viewport.getBoundingClientRect();
       const source = this._workerDragSource(e);
       const coord = this._workerDragCoordFromEvent(e);
       if (Number.isInteger(source) && coord && this._setDropTarget(source, coord)) {
@@ -1798,6 +1816,7 @@ const BullpenTab = {
       const coord = this._workerDragCoordFromEvent(e);
       this.hoveredCoord = null;
       this._clearDropTarget();
+      this.dragViewportRect = null;
       if (!Number.isInteger(src) || !coord) return;
       this.moveWorkerDragToCoord(src, coord);
     },
@@ -1806,6 +1825,7 @@ const BullpenTab = {
       const canvas = e && e.currentTarget;
       if (related && canvas && typeof canvas.contains === 'function' && canvas.contains(related)) return;
       this._clearDropTarget();
+      this.dragViewportRect = null;
     },
     colLabel(col) {
       if (!Number.isFinite(col)) return '';

@@ -1,5 +1,5 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
+  props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
@@ -141,9 +141,6 @@ const WorkerCard = {
     };
     document.addEventListener('click', this._closeMenu);
   },
-  updated() {
-    if (this.$refs.menu) renderLucideIcons(this.$refs.menu);
-  },
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
     if (this._titleResizeObserver) this._titleResizeObserver.disconnect();
@@ -283,11 +280,22 @@ const WorkerCard = {
       return '';
     },
     queuedTasks() {
-      if (!this.worker.task_queue || !this.tasks) return [];
+      if (!this.worker.task_queue) return [];
       return this.worker.task_queue.map(id => {
-        const t = this.tasks.find(task => task.id === id);
+        const t = this.lookupTask(id);
         return t || { id, title: id };
       });
+    },
+    menuIconToken() {
+      return [
+        this.showMenu ? 'open' : 'closed',
+        this.workerState,
+        this.taskQueueCount,
+        this.isPaused ? 'paused' : 'active',
+        this.multipleSelectionActive ? 'multi' : 'single',
+        this.multipleWorkspaces ? 'workspaces' : 'one-workspace',
+        this.serviceSiteUrl ? 'site' : 'no-site',
+      ].join('|');
     },
     menuStyle() {
       return { top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
@@ -300,8 +308,8 @@ const WorkerCard = {
       if ((this.isWorking || this.isService) && this.outputLines?.length) {
         return this.outputLines.slice(-5).join('\n');
       }
-      if (!this.worker.task_queue?.length || !this.tasks) return '';
-      const task = this.tasks.find(t => t.id === this.worker.task_queue[0]);
+      if (!this.worker.task_queue?.length) return '';
+      const task = this.lookupTask(this.worker.task_queue[0]);
       if (!task?.body) return '';
       let idx = -1;
       let markerLen = 0;
@@ -370,6 +378,9 @@ const WorkerCard = {
     showMenu(next) {
       if (next) this.$nextTick(() => renderLucideIcons(this.$refs.menu));
     },
+    menuIconToken() {
+      if (this.showMenu) this.$nextTick(() => renderLucideIcons(this.$refs.menu));
+    },
     needsElapsedTimer() {
       this.syncElapsedTimer();
     },
@@ -395,6 +406,10 @@ const WorkerCard = {
         workerType: this.worker?.type,
         force,
       });
+    },
+    lookupTask(id) {
+      return (this.taskById && this.taskById[id])
+        || (this.tasks || []).find(task => task.id === id);
     },
     syncElapsedTimer() {
       if (!this.needsElapsedTimer) {
