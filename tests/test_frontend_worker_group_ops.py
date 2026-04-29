@@ -46,9 +46,25 @@ def test_bullpen_tab_supports_range_multiple_selection():
 
 def test_bullpen_tab_group_detection_includes_inbound_pass_links():
     text = _read("static/components/BullpenTab.js")
+    assert "passTargetsBySlot()" in text
+    assert "passSourcesBySlot()" in text
     assert "passSourcesForSlot(slotIndex)" in text
-    assert "this.passTargetsForSlot(item.slotIndex).includes(target)" in text
+    assert "return this.passSourcesBySlot[target] || [];" in text
     assert "new Set([...this.passTargetsForSlot(slot), ...this.passSourcesForSlot(slot)])" in text
+
+
+def test_bullpen_tab_worker_drop_reuses_expanded_move_plan():
+    text = _read("static/components/BullpenTab.js")
+    assert "this.selectedWorkerSlots = plan.slots.slice();" in text
+    assert "this.selectedWorkerSlots = this.expandSelectionSlots(plan.slots);" not in text
+
+
+def test_server_worker_group_move_uses_coordinate_occupancy_map():
+    text = _read("server/events.py")
+    assert "def _coord_occupancy_map(layout, cols=4):" in text
+    assert "occupied_by_coord = _coord_occupancy_map(layout, cols=cols)" in text
+    assert "occupied_slot = occupied_by_coord.get((coord[\"col\"], coord[\"row\"]))" in text
+    assert "occupied_slot = _coord_occupied(layout, move[\"to_coord\"], cols=cols)" not in text
 
 
 def test_bullpen_tab_pastes_group_workers_with_relative_offsets():

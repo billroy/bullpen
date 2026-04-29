@@ -212,6 +212,15 @@ def _coord_occupied(layout, coord, ignore_slot=None, cols=4):
     return None
 
 
+def _coord_occupancy_map(layout, cols=4):
+    occupied = {}
+    for i, worker in enumerate(layout.get("slots", [])):
+        if not worker:
+            continue
+        occupied[_slot_coord(worker, i, cols)] = i
+    return occupied
+
+
 def _first_empty_slot(layout):
     slots = layout.setdefault("slots", [])
     for i, worker in enumerate(slots):
@@ -738,8 +747,10 @@ def register_events(socketio, app):
                 emit("error", {"message": "worker:move_group requires occupied source slots"})
                 return
 
+        occupied_by_coord = _coord_occupancy_map(layout, cols=cols)
         for move in moves:
-            occupied_slot = _coord_occupied(layout, move["to_coord"], cols=cols)
+            coord = move["to_coord"]
+            occupied_slot = occupied_by_coord.get((coord["col"], coord["row"]))
             if occupied_slot is not None and occupied_slot not in moving_slots:
                 emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
                 return

@@ -562,6 +562,45 @@ const BullpenTab = {
       }
       return map;
     },
+    passTargetsBySlot() {
+      const map = {};
+      for (const item of this.workerItems) {
+        const disposition = String(item.worker?.disposition || '');
+        if (!disposition.startsWith('pass:')) {
+          map[item.slotIndex] = [];
+          continue;
+        }
+        const passDir = disposition.slice(5);
+        const neighbors = this.neighborSlotsMap[item.slotIndex] || {};
+        if (['up', 'down', 'left', 'right'].includes(passDir)) {
+          const target = neighbors[passDir];
+          map[item.slotIndex] = Number.isInteger(target) ? [target] : [];
+          continue;
+        }
+        if (passDir === 'random') {
+          const out = [];
+          for (const dir of ['up', 'down', 'left', 'right']) {
+            const target = neighbors[dir];
+            if (Number.isInteger(target) && !out.includes(target)) out.push(target);
+          }
+          map[item.slotIndex] = out;
+          continue;
+        }
+        map[item.slotIndex] = [];
+      }
+      return map;
+    },
+    passSourcesBySlot() {
+      const map = {};
+      for (const item of this.workerItems) map[item.slotIndex] = [];
+      for (const item of this.workerItems) {
+        for (const target of this.passTargetsBySlot[item.slotIndex] || []) {
+          if (!map[target]) map[target] = [];
+          if (!map[target].includes(item.slotIndex)) map[target].push(item.slotIndex);
+        }
+      }
+      return map;
+    },
     selectedWorkerSlot() {
       const coord = this.selectedCell;
       return coord ? this.itemAtCoord(coord)?.slotIndex ?? null : null;
@@ -1342,34 +1381,12 @@ const BullpenTab = {
     passTargetsForSlot(slotIndex) {
       const item = this.workerItemBySlot[slotIndex];
       if (!item) return [];
-      const disposition = String(item.worker?.disposition || '');
-      if (!disposition.startsWith('pass:')) return [];
-      const passDir = disposition.slice(5);
-      const neighbors = this.neighborSlotsMap[slotIndex] || {};
-      if (['up', 'down', 'left', 'right'].includes(passDir)) {
-        const target = neighbors[passDir];
-        return Number.isInteger(target) ? [target] : [];
-      }
-      if (passDir === 'random') {
-        const out = [];
-        for (const dir of ['up', 'down', 'left', 'right']) {
-          const target = neighbors[dir];
-          if (Number.isInteger(target) && !out.includes(target)) out.push(target);
-        }
-        return out;
-      }
-      return [];
+      return this.passTargetsBySlot[slotIndex] || [];
     },
     passSourcesForSlot(slotIndex) {
       const target = Number(slotIndex);
       if (!Number.isInteger(target) || !this.workerItemBySlot[target]) return [];
-      const sources = [];
-      for (const item of this.workerItems) {
-        if (this.passTargetsForSlot(item.slotIndex).includes(target)) {
-          sources.push(item.slotIndex);
-        }
-      }
-      return sources;
+      return this.passSourcesBySlot[target] || [];
     },
     workerGroupSlots(startSlot) {
       const root = Number(startSlot);
@@ -1619,7 +1636,7 @@ const BullpenTab = {
         this.selectedCell = { ...coord };
       }
       this.selectionAnchor = { ...this.selectedCell };
-      this.selectedWorkerSlots = this.expandSelectionSlots(plan.slots);
+      this.selectedWorkerSlots = plan.slots.slice();
       return true;
     },
     copyWorker(slot) {
