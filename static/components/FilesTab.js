@@ -87,8 +87,14 @@ const FilesTab = {
         </div>
         <div class="files-viewer-body" v-if="activeFile">
           <!-- Editor toolbar -->
-          <div v-if="canEdit" class="file-editor-toolbar">
-            <button v-if="!editing" class="btn btn-sm" @click="startEditing">Edit</button>
+          <div class="file-editor-toolbar">
+            <template v-if="!editing">
+              <button v-if="canEdit" class="btn btn-sm" @click="startEditing">Edit</button>
+              <a class="btn btn-sm file-download-button" :href="downloadUrl" :download="activeFile.name" title="Download">
+                <i data-lucide="download" aria-hidden="true"></i>
+                <span>Download</span>
+              </a>
+            </template>
             <template v-if="editing">
               <button class="btn btn-sm btn-primary" @click="saveEdit">Save</button>
               <button class="btn btn-sm" @click="cancelEdit">Cancel</button>
@@ -114,11 +120,11 @@ const FilesTab = {
           </div>
           <!-- Image -->
           <div v-else-if="isImage" class="file-view-image">
-            <img :src="'/api/files/' + activeFile.path" :alt="activeFile.name" />
+            <img :src="_filesUrl(activeFile.path)" :alt="activeFile.name" />
           </div>
           <!-- PDF -->
           <div v-else-if="isPdf" class="file-view-pdf">
-            <embed :src="'/api/files/' + activeFile.path + '?raw=1'" type="application/pdf" width="100%" height="100%" />
+            <embed :src="_filesUrl(activeFile.path, { raw: '1' })" type="application/pdf" width="100%" height="100%" />
           </div>
           <!-- HTML preview -->
           <div v-else-if="isHtml" class="file-view-html">
@@ -194,6 +200,10 @@ const FilesTab = {
       if (this.activeFile.content && this.activeFile.content.length > 1_000_000) return false;
       return true;
     },
+    downloadUrl() {
+      if (!this.activeFile) return '#';
+      return this._filesUrl(this.activeFile.path, { raw: '1' });
+    },
     renderedMarkdown() {
       if (!this.activeFile?.content) return '';
       const md = window.markdownit({ html: false, linkify: true, typographer: true });
@@ -242,11 +252,18 @@ const FilesTab = {
   },
   mounted() {
     this.loadTree();
+    this.$nextTick(() => renderLucideIcons(this.$el));
+  },
+  updated() {
+    renderLucideIcons(this.$el);
   },
   methods: {
-    _filesUrl(path) {
+    _filesUrl(path, params = {}) {
       const base = path ? '/api/files/' + encodeURI(path) : '/api/files';
-      return this.workspaceId ? base + '?workspaceId=' + encodeURIComponent(this.workspaceId) : base;
+      const query = new URLSearchParams(params);
+      if (this.workspaceId) query.set('workspaceId', this.workspaceId);
+      const suffix = query.toString();
+      return suffix ? base + '?' + suffix : base;
     },
     async loadTree() {
       try {

@@ -3564,11 +3564,25 @@ body.worker-singleton-dragging * {
 
 .file-editor-toolbar {
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 4px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
   flex-shrink: 0;
+}
+
+.file-download-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+
+.file-download-button [data-lucide],
+.file-download-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .file-edit-container {
