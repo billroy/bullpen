@@ -174,15 +174,44 @@ def _read_tasks_from_dir(path):
     return tasks
 
 
+PRIORITY_WEIGHT = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+
+
+def task_sort_key(task):
+    """Priority-first task ordering: highest priority, then eldest, then id."""
+    task = task or {}
+    return (
+        PRIORITY_WEIGHT.get(task.get("priority", "normal"), PRIORITY_WEIGHT["normal"]),
+        task.get("created_at", ""),
+        task.get("id", ""),
+    )
+
+
 def _sort_tasks(tasks):
     tasks = list(tasks or [])
-    priority_weight = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
-    tasks.sort(key=lambda t: (
-        priority_weight.get(t.get("priority", "normal"), 2),
-        t.get("created_at", ""),
-        t.get("id", ""),
-    ))
+    tasks.sort(key=task_sort_key)
     return tasks
+
+
+def sort_task_ids(bp_dir, task_ids):
+    """Sort task ids by their current ticket priority ordering.
+
+    Missing tickets are left at the end in their existing relative order so
+    callers that repair stale queues can still encounter and remove them.
+    """
+    indexed = list(enumerate(task_ids or []))
+    task_cache = {}
+
+    def _id_key(item):
+        idx, task_id = item
+        if task_id not in task_cache:
+            task_cache[task_id] = read_task(bp_dir, task_id)
+        task = task_cache[task_id]
+        if not task:
+            return (1, idx)
+        return (0, *task_sort_key(task))
+
+    return [task_id for _idx, task_id in sorted(indexed, key=_id_key)]
 
 
 def list_tasks(bp_dir, archived=False):

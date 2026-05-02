@@ -1247,7 +1247,7 @@ def reconcile(bp_dir):
         if slot.get("state") == "working":
             slot["state"] = "idle"
 
-    from server.tasks import update_task
+    from server.tasks import task_sort_key, update_task
 
     def valid_assigned_slot(value):
         if value in (None, ""):
@@ -1321,12 +1321,12 @@ def reconcile(bp_dir):
 
             queued.append((
                 assigned_slot,
-                str(meta.get("created_at", "")),
+                *task_sort_key({**meta, "id": task_id}),
                 task_id,
             ))
 
-    queued.sort(key=lambda item: (item[0], item[1], item[2]))
-    for slot_index, _created_at, task_id in queued:
+    queued.sort(key=lambda item: item[:-1])
+    for slot_index, *_sort_fields, task_id in queued:
         slots[slot_index].setdefault("task_queue", []).append(task_id)
 
     write_json(layout_path, normalize_layout(layout, config=config))

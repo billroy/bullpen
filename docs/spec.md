@@ -382,13 +382,13 @@ In all cases the **worker** returns to IDLE after the outcome is applied, then e
 
 | Activation Mode | Auto-advance to next queued task? | Notes |
 |-----------------|-----------------------------------|-------|
-| `on_drop` | **Yes.** Immediately picks up next task if queue is non-empty. | Tasks are processed in queue order as fast as they arrive. |
+| `on_drop` | **Yes.** Immediately picks up next task if queue is non-empty. | Priority is authoritative; workers run the eldest ticket at the highest available priority. |
 | `on_queue` | **Yes.** If queue is empty, also claims from the watch column (see below). | Continuous processing mode. |
 | `manual` | **No.** Worker goes to QUEUED (if tasks remain) or IDLE (if empty). Operator must click "Start" to process the next task. | Operator retains explicit control over each invocation. |
 
 ### Watch Column Claim Mechanism (`on_queue`)
 
-Workers with `activation: on_queue` do not poll. The server maintains a registry of watch-column bindings. Whenever a task enters a watched column — via creation, manual drag, or another worker's disposition — the server evaluates all idle `on_queue` workers watching that column and assigns the oldest unclaimed task (by `order`, then `created_at`, then slug) to the first idle watcher. If multiple idle workers watch the same column, assignment round-robins by least-recently-active.
+Workers with `activation: on_queue` do not poll. The server maintains a registry of watch-column bindings. Whenever a task enters a watched column — via creation, manual drag, or another worker's disposition — the server evaluates all idle `on_queue` workers watching that column and assigns the eldest highest-priority unclaimed task (priority, then `created_at`, then slug) to the first idle watcher. If multiple idle workers watch the same column, assignment round-robins by least-recently-active.
 
 This is event-driven: the check triggers on any `task:updated` event where the new status matches a watched column.
 
@@ -735,7 +735,7 @@ This replaces the previous "last-write-wins" strategy. For single-user MVP the p
 On server startup, the system rebuilds derived state from canonical sources:
 
 1. Scan all ticket files in `.bullpen/tasks/` — these are the source of truth for task state.
-2. Rebuild worker `task_queue` arrays in `layout.json` by matching `assigned_to` fields. **Queue order is determined by:** ticket `order` field (lexicographic), then `created_at` ascending, then slug alphabetically. This matches the Task Ordering algorithm and produces a deterministic rebuild even if the prior `task_queue` array order is lost.
+2. Rebuild worker `task_queue` arrays in `layout.json` by matching `assigned_to` fields. **Queue order is determined by:** priority (`urgent`, `high`, `normal`, `low`), then `created_at` ascending, then slug alphabetically. This produces a deterministic rebuild even if the prior `task_queue` array order is lost.
 3. Any worker that was in WORKING state at shutdown is reset to IDLE (the agent process is gone). Its active task is moved to **Blocked** with a "server restart — agent interrupted" notice.
 4. Validate all JSON files (`config.json`, `layout.json`, profiles). Log warnings for parse errors and fall back to defaults.
 
@@ -768,9 +768,7 @@ Task ordering within kanban columns and worker queues uses **fractional indexing
 
 ### Worker Queue Ordering
 
-Tasks in a worker's queue are processed in the order they appear in the `task_queue` array. New tasks assigned via drag-drop are appended to the end. The Operator can reorder by dragging within the worker's task list on the card.
-
-**Reorder durability:** When the server processes a `worker:reorder` event, it updates the `task_queue` array in `layout.json` *and* rewrites the `order` field in each affected ticket file to reflect the new sequence. This ensures startup reconciliation (which rebuilds queues from ticket `order` fields) preserves the Operator's explicit ordering. Order keys are regenerated using fractional indexing between the queue's positional neighbors.
+Priority is authoritative for worker queues. Before a worker selects its next ticket, the server orders queued tickets by priority (`urgent`, `high`, `normal`, `low`), then `created_at`, then slug. If a worker is already running, the active head ticket is preserved and only pending tickets behind it are reordered.
 
 ---
 

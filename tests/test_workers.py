@@ -333,6 +333,45 @@ class TestAssignTask:
         worker = layout["slots"][worker_slot]
         assert worker["task_queue"].count(task["id"]) == 1
 
+    def test_assign_orders_queue_by_priority(self, bp_dir, worker_slot):
+        normal = create_task(bp_dir, "Normal task", priority="normal")
+        urgent = create_task(bp_dir, "Urgent task", priority="urgent")
+
+        assign_task(bp_dir, worker_slot, normal["id"])
+        assign_task(bp_dir, worker_slot, urgent["id"])
+
+        layout = _load_layout(bp_dir)
+        assert layout["slots"][worker_slot]["task_queue"] == [urgent["id"], normal["id"]]
+
+    def test_start_worker_selects_highest_priority_from_existing_queue(self, bp_dir, worker_slot):
+        class SlowAdapter(MockAdapter):
+            @property
+            def name(self):
+                return "slow-priority"
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                return [sys.executable, "-c", "import time; time.sleep(2)"]
+
+        register_adapter("slow-priority", SlowAdapter(output="slow"))
+        normal = create_task(bp_dir, "Queued normal", priority="normal")
+        urgent = create_task(bp_dir, "Queued urgent", priority="urgent")
+        update_task(bp_dir, normal["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+        update_task(bp_dir, urgent["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "slow-priority"
+        layout["slots"][worker_slot]["task_queue"] = [normal["id"], urgent["id"]]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.2)
+
+        layout = _load_layout(bp_dir)
+        assert layout["slots"][worker_slot]["task_queue"][0] == urgent["id"]
+        assert read_task(bp_dir, urgent["id"])["status"] == "in_progress"
+        assert read_task(bp_dir, normal["id"])["status"] == "assigned"
+        stop_worker(bp_dir, worker_slot)
+
 
 class TestWorkerReconcile:
     def test_reconcile_removes_stale_idle_queue_entries(self, bp_dir, worker_slot):
@@ -363,6 +402,21 @@ class TestWorkerReconcile:
 
         updated_layout = _load_layout(bp_dir)
         assert updated_layout["slots"][worker_slot]["task_queue"] == [task["id"]]
+
+    def test_reconcile_rebuilds_queue_by_priority(self, bp_dir, worker_slot):
+        normal = create_task(bp_dir, "Assigned normal", priority="normal")
+        urgent = create_task(bp_dir, "Assigned urgent", priority="urgent")
+        update_task(bp_dir, normal["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+        update_task(bp_dir, urgent["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["task_queue"] = []
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        reconcile(bp_dir)
+
+        updated_layout = _load_layout(bp_dir)
+        assert updated_layout["slots"][worker_slot]["task_queue"] == [urgent["id"], normal["id"]]
 
     def test_reconcile_blocks_interrupted_in_progress_ticket(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Interrupted task")
@@ -2050,6 +2104,36 @@ class TestWatchColumn:
         # Worker claims oldest first; after processing it may refill with second
         updated_t1 = read_task(bp_dir, t1["id"])
         assert updated_t1["status"] in ("assigned", "review")  # Was claimed first
+
+    def test_check_watch_columns_claims_highest_priority_first(self, bp_dir, watcher_slot, monkeypatch):
+        """Watched-column dispatch prefers highest priority, then age."""
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *_args, **_kwargs: None)
+        from server.tasks import update_task
+        low = create_task(bp_dir, "Older low", priority="low")
+        update_task(bp_dir, low["id"], {"status": "assigned"})
+        urgent = create_task(bp_dir, "Newer urgent", priority="urgent")
+        update_task(bp_dir, urgent["id"], {"status": "assigned"})
+
+        check_watch_columns(bp_dir, "assigned")
+
+        layout = _load_layout(bp_dir)
+        assert layout["slots"][0]["task_queue"] == [urgent["id"]]
+        assert read_task(bp_dir, low["id"])["assigned_to"] == ""
+
+    def test_refill_from_watch_column_claims_highest_priority_first(self, bp_dir, watcher_slot, monkeypatch):
+        """Idle refill uses the same priority ordering as initial dispatch."""
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *_args, **_kwargs: None)
+        from server.tasks import update_task
+        normal = create_task(bp_dir, "Older normal", priority="normal")
+        update_task(bp_dir, normal["id"], {"status": "assigned"})
+        high = create_task(bp_dir, "Newer high", priority="high")
+        update_task(bp_dir, high["id"], {"status": "assigned"})
+
+        _refill_from_watch_column(bp_dir, watcher_slot)
+
+        layout = _load_layout(bp_dir)
+        assert layout["slots"][0]["task_queue"] == [high["id"]]
+        assert read_task(bp_dir, normal["id"])["assigned_to"] == ""
 
     def test_multi_watcher_round_robin(self, bp_dir):
         """Two watchers on same column each claim one task."""

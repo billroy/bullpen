@@ -346,12 +346,25 @@ def _save_layout(bp_dir, layout):
     write_json(os.path.join(bp_dir, "layout.json"), layout)
 
 
+def _sort_worker_queue_for_priority(bp_dir, worker, *, preserve_head=False):
+    """Keep worker queues ordered by priority while preserving active work."""
+    if not worker:
+        return
+    queue = worker.get("task_queue")
+    if not isinstance(queue, list) or len(queue) < 2:
+        return
+    if preserve_head:
+        worker["task_queue"] = queue[:1] + task_mod.sort_task_ids(bp_dir, queue[1:])
+    else:
+        worker["task_queue"] = task_mod.sort_task_ids(bp_dir, queue)
+
+
 def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_task_id=None):
     """Check if any on_queue workers are watching the given column and claim tasks.
 
     Called after any task status change. Scans for idle on_queue workers whose
-    watch_column matches task_status, then assigns the oldest unclaimed task
-    in that column to the least-recently-active matching worker.
+    watch_column matches task_status, then assigns the highest-priority eldest
+    unclaimed task in that column to the least-recently-active matching worker.
 
     Args:
         bp_dir: Path to .bullpen directory.
@@ -402,9 +415,6 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
     if not unclaimed:
         return
 
-    # Sort by creation time (oldest first) for FIFO
-    unclaimed.sort(key=lambda t: t.get("created_at", ""))
-
     # Assign one task per idle watcher, round-robin
     for (slot_idx, _watcher), task in zip(watchers, unclaimed):
         assign_task(bp_dir, slot_idx, task["id"], socketio, ws_id)
@@ -412,7 +422,7 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
 
 def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
     """When an on_queue worker returns to idle with an empty queue, check its
-    watch_column for unclaimed tasks and claim the oldest one."""
+    watch_column for unclaimed tasks and claim the highest-priority eldest one."""
     try:
         layout = _load_layout(bp_dir)
     except FileNotFoundError:
@@ -436,7 +446,6 @@ def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
     if not unclaimed:
         return
 
-    unclaimed.sort(key=lambda t: t.get("created_at", ""))
     assign_task(bp_dir, slot_index, unclaimed[0]["id"], socketio, ws_id)
 
 
@@ -556,6 +565,11 @@ def assign_task(
     # Add to queue
     if task_id not in worker.get("task_queue", []):
         worker.setdefault("task_queue", []).append(task_id)
+    _sort_worker_queue_for_priority(
+        bp_dir,
+        worker,
+        preserve_head=worker.get("state") in ("working", "retrying"),
+    )
 
     _save_layout(bp_dir, layout)
 
@@ -649,7 +663,11 @@ def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manu
     if worker.get("state") == "working":
         return None
 
+    original_queue = list(worker.get("task_queue", []))
+    _sort_worker_queue_for_priority(bp_dir, worker)
     queue = worker.get("task_queue", [])
+    if queue != original_queue:
+        _save_layout(bp_dir, layout)
     if not queue:
         create_auto_task(
             bp_dir, slot_index, worker, socketio, ws_id,
