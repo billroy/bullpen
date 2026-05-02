@@ -30,6 +30,9 @@ def test_leftpane_resize_handle_styles_exist():
     text = _read("static/style.css")
 
     assert ".left-pane-resize" in text
+    assert ".left-pane-scroll" in text
+    assert "overflow: visible;" in text
+    assert "overflow-y: auto;" in text
     assert "right: -3px;" in text
     assert "cursor: col-resize;" in text
     assert "touch-action: none;" in text

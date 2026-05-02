@@ -10,6 +10,7 @@ const LeftPane = {
         @dblclick="resetWidth"
         title="Drag to resize"
       ></div>
+      <div class="left-pane-scroll">
       <div v-if="projects" class="left-pane-section" :class="{ 'project-add-only': projects.length === 0 }">
         <div class="section-header">
           <h3>Projects</h3>
@@ -91,6 +92,7 @@ const LeftPane = {
             <span class="status-pill" :class="'status-' + (w.state || 'idle')">{{ workerStatusLabel(w) }}</span>
           </div>
         </div>
+      </div>
       </div>
     </div>
   `,

@@ -878,7 +878,7 @@ body {
   width: var(--left-pane-width);
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  overflow: visible;
   flex-shrink: 0;
   position: relative;
   transition: width 0.2s, opacity 0.2s;
@@ -892,6 +892,11 @@ body {
 
 .left-pane.resizing {
   transition: opacity 0.2s;
+}
+
+.left-pane-scroll {
+  height: 100%;
+  overflow-y: auto;
 }
 
 .left-pane-resize {
