@@ -20,6 +20,7 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "class=\"project-menu-item\" @click=\"triggerImportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportAll\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
     assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"git-branch\"" in text
+    assert "class=\"project-menu-item\" @click=\"onLogout\"><i class=\"menu-item-icon\" data-lucide=\"log-out\"" in text
     assert "<span class=\"menu-item-label\">Toggle Left Pane</span></button>" in text
     assert "<span class=\"menu-item-label\">Export Project</span></button>" in text
     assert "<span class=\"menu-item-label\">Export Workers</span></button>" in text
@@ -28,7 +29,11 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "<span class=\"menu-item-label\">Import Workers</span></button>" in text
     assert "<span class=\"menu-item-label\">Import All</span></button>" in text
     assert "<span class=\"menu-item-label\">Bullpen on GitHub</span></button>" in text
+    assert "<span class=\"menu-item-label\">Logout</span></button>" in text
     assert "window.open('https://github.com/billroy/bullpen', '_blank', 'noopener,noreferrer');" in text
+    assert "fetch('/login/csrf', { credentials: 'same-origin' });" in text
+    assert "form.action = '/logout';" in text
+    assert text.index("@click=\"onOpenGitHub\"") < text.index("@click=\"onLogout\"")
 
 
 def test_toolbar_menu_renders_lucide_icons_after_updates():

@@ -143,6 +143,9 @@ const TopToolbar = {
     window.addEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
     renderLucideIcons(this.$el);
   },
+  updated() {
+    renderLucideIcons(this.$el);
+  },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
     window.removeEventListener('keydown', this.onGlobalKeydown);
@@ -279,6 +282,32 @@ const TopToolbar = {
       window.open('https://github.com/billroy/bullpen', '_blank', 'noopener,noreferrer');
       this.showMainMenu = false;
     },
+    async onLogout() {
+      this.showMainMenu = false;
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/logout';
+      form.style.display = 'none';
+
+      try {
+        const resp = await fetch('/login/csrf', { credentials: 'same-origin' });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.csrf_token) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'csrf_token';
+            input.value = data.csrf_token;
+            form.appendChild(input);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to prepare logout request', err);
+      }
+
+      document.body.appendChild(form);
+      form.submit();
+    },
     onImportWorkspaceSelected(event) {
       const file = event?.target?.files?.[0];
       if (!file) return;
@@ -407,6 +436,7 @@ const TopToolbar = {
               <button class="project-menu-item" @click="triggerImportWorkers"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Workers</span></button>
               <button class="project-menu-item" @click="triggerImportAll"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import All</span></button>
               <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="git-branch" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
+              <button class="project-menu-item" @click="onLogout"><i class="menu-item-icon" data-lucide="log-out" aria-hidden="true"></i><span class="menu-item-label">Logout</span></button>
             </div>
             <input
               ref="workersImportInput"
