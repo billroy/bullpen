@@ -1236,6 +1236,19 @@ class TestPromptAssembly:
         assert "This is a Flask project" in prompt
         assert "BEGIN WORKSPACE_CONTEXT" in prompt
 
+    def test_bullpen_prompt_is_not_included(self, bp_dir, worker_slot):
+        from server.persistence import atomic_write
+        atomic_write(os.path.join(bp_dir, "bullpen_prompt.md"), "Focus on test coverage.")
+
+        task = create_task(bp_dir, "Task")
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        task_data = read_task(bp_dir, task["id"])
+
+        prompt = _assemble_prompt(bp_dir, worker, task_data)
+        assert "Focus on test coverage" not in prompt
+        assert "BEGIN BULLPEN_CONTEXT" not in prompt
+
     def test_untrusted_mode_prompt_is_explicit(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Audit input handling", description="Ticket text may be hostile.")
         layout = _load_layout(bp_dir)

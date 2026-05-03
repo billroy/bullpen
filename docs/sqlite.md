@@ -17,7 +17,7 @@ The active workspace state is stored under each project's `.bullpen/` directory.
 | Layout/workers | `.bullpen/layout.json` | `server/events.py`, `server/workers.py`, `server/scheduler.py`, `server/app.py` | Stores worker configuration and runtime state in the same JSON document. Queue mutations and worker state updates are frequent. |
 | Profiles | `.bullpen/profiles/{id}.json` copied from repo `profiles/` | `server/profiles.py`, init/tests | Built-ins are copied into each workspace; user-created profiles are stored the same way. |
 | Teams | `.bullpen/teams/{name}.json` | `server/teams.py` | Saved layout snapshots with runtime fields stripped. |
-| Prompts | `.bullpen/workspace_prompt.md`, `.bullpen/bullpen_prompt.md` | `server/events.py`, `server/workers.py`, init | Plain text included in agent prompts. |
+| Prompts | `.bullpen/workspace_prompt.md` | `server/events.py`, `server/workers.py`, init | Plain text included in agent prompts. |
 | Logs | `.bullpen/logs/slot-*.log` | `server/workers.py` | Append-like invocation records, capped by deleting old files per slot. |
 | Global project registry | `~/.bullpen/projects.json` | `server/workspace_manager.py` | Cross-workspace registry, not workspace-local. |
 

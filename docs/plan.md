@@ -159,7 +159,7 @@ bullpen/
 - **Test:** `pytest` passes
 
 ### Step 3.3 — Bullpen grid UI + worker cards
-- `static/components/BullpenTab.js`: header (grid size dropdown, worker library dropdown + "+" button, bullpen prompt button, clear all button). CSS grid of WorkerCard components and empty "+" slots.
+- `static/components/BullpenTab.js`: header (grid size dropdown, worker library dropdown + "+" button, clear all button). CSS grid of WorkerCard components and empty "+" slots.
 - `static/components/WorkerCard.js`: Monopoly-deed style — colored header band (by agent), worker name (truncated), status pill (IDLE), pencil icon. Card body: empty state placeholder text. Drag-reorderable within grid (swap on drop).
 - `static/style.css`: card styling (rounded corners, header band colors, status pill, grid layout).
 - **Test:** Add workers from library, see cards on grid, drag to rearrange.

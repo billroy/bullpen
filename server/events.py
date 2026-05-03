@@ -928,14 +928,14 @@ def register_events(socketio, app):
     @with_lock
     def on_prompt_update(data):
         ws_id, bp_dir = _resolve(data)
-        prompt_type = data.get("type")  # "workspace" or "bullpen"
+        prompt_type = data.get("type")
         content = data.get("content", "")
 
-        if prompt_type not in ("workspace", "bullpen"):
-            emit("error", {"message": "prompt:update requires type 'workspace' or 'bullpen'"})
+        if prompt_type != "workspace":
+            emit("error", {"message": "prompt:update requires type 'workspace'"})
             return
 
-        path = os.path.join(bp_dir, f"{prompt_type}_prompt.md")
+        path = os.path.join(bp_dir, "workspace_prompt.md")
         atomic_write(path, content)
         _emit("prompt:updated", {"type": prompt_type, "content": content}, ws_id)
 

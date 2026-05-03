@@ -158,7 +158,7 @@ Affected code:
 
 What happens:
 
-- Worker prompts are assembled by concatenating `workspace_prompt.md`, `bullpen_prompt.md`, worker `expertise_prompt`, ticket title, tags, and raw ticket body directly into one model prompt.
+- Worker prompts are assembled by concatenating `workspace_prompt.md`, worker `expertise_prompt`, ticket title, tags, and raw ticket body directly into one model prompt.
 - Live chat builds prompts by concatenating prior conversation turns and the latest raw user message directly into the assistant prompt.
 - Validation limits size, but it does not meaningfully distinguish trusted instructions from untrusted content.
 - The downstream agent CLIs are then launched in highly permissive modes:

@@ -166,7 +166,6 @@ Do not expose all Ollama options in the first UI. Store advanced options as loos
 Current `_assemble_prompt()` produces one large prompt:
 
 - Workspace prompt.
-- Bullpen prompt.
 - Expertise prompt.
 - Task title/type/priority/tags/body.
 

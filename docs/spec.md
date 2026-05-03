@@ -234,7 +234,6 @@ Controls above the worker card grid:
 - **Rows x Columns dropdown**: Default 4x6, options from 2x2 up to 7x10. Changes grid layout immediately.
 - **Worker Library selector**: Dropdown listing all available worker profiles (the built-in defaults plus any user-created). Click the **"+"** button next to it to add the selected profile to the next empty slot. If the grid is full, the add is rejected with a toast notification.
 - **Team Library selector**: Dropdown listing saved team configurations. Selecting one replaces the current bullpen layout with the saved team. **"Save Team"** button saves the current layout as a named team.
-- **Bullpen prompt button**: Opens a modal editor for the bullpen-level prompt. This text is included in every agent invocation from this bullpen, between the workspace prompt and the worker's expertise prompt. Stored in `.bullpen/bullpen_prompt.md`. Use case: "Focus on test coverage" or "Use TypeScript strict mode."
 - **"Clear All" button**: Removes all workers from the grid. See Lifecycle Edge Cases for task handling and confirmation.
 
 ### Worker Card Grid
@@ -429,10 +428,9 @@ When a worker processes a task, it constructs a prompt and invokes a CLI agent.
 The prompt sent to the agent is assembled from these parts, in order:
 
 1. **Workspace prompt** (`.bullpen/workspace_prompt.md`) — project-level context
-2. **Bullpen prompt** (`.bullpen/bullpen_prompt.md`) — session/focus-level context
-3. **Worker expertise prompt** — the worker's system prompt defining its role
-4. **Task content** — the full markdown body of the task ticket (below the frontmatter)
-5. **Previous agent output** (if any, from prior attempts or earlier workers in a chain)
+2. **Worker expertise prompt** — the worker's system prompt defining its role
+3. **Task content** — the full markdown body of the task ticket (below the frontmatter)
+4. **Previous agent output** (if any, from prior attempts or earlier workers in a chain)
 
 These are concatenated with clear section delimiters.
 
@@ -518,7 +516,6 @@ All state lives in the `.bullpen/` directory at the workspace root. No database.
   .gitignore               # Ignores logs/ by default
   config.json              # Bullpen configuration (grid size, column definitions, name)
   workspace_prompt.md      # Workspace-level context prompt
-  bullpen_prompt.md        # Bullpen-level context prompt
   tasks/                   # Task ticket markdown files (beans-compatible)
     bullpen-add-auth-middleware-8k2f.md
     bullpen-fix-login-bug-3np1.md
@@ -658,7 +655,7 @@ All client-server communication uses socket.io. No REST endpoints for core funct
 | `layout:update` | `{rows, cols}` | Change grid dimensions |
 | `config:update` | `{fields...}` | Update bullpen configuration |
 | `profile:create` | `{name, agent, model, expertise_prompt}` | Save current worker config as a reusable profile |
-| `prompt:update` | `{type, content}` | Update workspace or bullpen prompt (`type`: `workspace` or `bullpen`) |
+| `prompt:update` | `{type, content}` | Update workspace prompt (`type`: `workspace`) |
 
 ---
 
@@ -700,7 +697,7 @@ All client-server communication uses socket.io. No REST endpoints for core funct
 - Copy 24 default worker profiles into `.bullpen/profiles/`.
 - Create `config.json` with defaults.
 - Create empty `layout.json` (no workers placed yet).
-- Create empty `workspace_prompt.md` and `bullpen_prompt.md`.
+- Create empty `workspace_prompt.md`.
 - Create `tasks/`, `teams/`, `logs/` directories.
 - Create `.bullpen/.gitignore` containing `logs/` to prevent accidental commit of agent logs.
 
@@ -903,7 +900,7 @@ Every client->server socket event is validated on the server before processing:
 
 *Previously resolved: CLI stability (Agent Adapter Layer), ticket size growth (50KB cap), git integration (Operator workflow), concurrent workers (no artificial limit), Codex stdin (adapter capability probing).*
 
-1. **Prompt file format**: Workspace and bullpen prompts are plain markdown. Should they support template variables (e.g., `{{project_name}}`, `{{file_list}}`)? **Decision:** Plain text for MVP. Template expansion is a natural v2 feature.
+1. **Prompt file format**: Workspace prompts are plain markdown. Should they support template variables (e.g., `{{project_name}}`, `{{file_list}}`)? **Decision:** Plain text for MVP. Template expansion is a natural v2 feature.
 
 2. **Git integration**: Leave committing `.bullpen/` state to the Operator's normal git workflow. `.bullpen/logs/` is gitignored by default (via `.bullpen/.gitignore`). Other `.bullpen/` contents (tasks, config, layout) are committable.
 

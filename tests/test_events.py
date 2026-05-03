@@ -1213,6 +1213,17 @@ class TestConfigEvents:
         path = os.path.join(app.config["bp_dir"], "workspace_prompt.md")
         assert open(path).read() == "This is a Flask project."
 
+    def test_prompt_update_rejects_bullpen_type(self, client):
+        c, app = client
+        c.emit("prompt:update", {"type": "bullpen", "content": "Focus on tests."})
+        events = c.get_received()
+        result = next((evt["args"][0] for evt in events if evt["name"] == "prompt:updated"), None)
+        error = next((evt["args"][0] for evt in events if evt["name"] == "error"), None)
+        assert result is None
+        assert error is not None
+        assert error["message"] == "prompt:update requires type 'workspace'"
+        assert not os.path.exists(os.path.join(app.config["bp_dir"], "bullpen_prompt.md"))
+
     def test_profile_create(self, client):
         c, _ = client
         c.emit("profile:create", {

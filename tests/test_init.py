@@ -34,7 +34,7 @@ class TestInitWorkspace:
     def test_creates_prompt_files(self, tmp_workspace):
         bp = init_workspace(tmp_workspace)
         assert os.path.isfile(os.path.join(bp, "workspace_prompt.md"))
-        assert os.path.isfile(os.path.join(bp, "bullpen_prompt.md"))
+        assert not os.path.exists(os.path.join(bp, "bullpen_prompt.md"))
 
     def test_creates_gitignore(self, tmp_workspace):
         bp = init_workspace(tmp_workspace)

@@ -74,11 +74,10 @@ def init_workspace(workspace):
     if not os.path.exists(layout_path):
         write_json(layout_path, DEFAULT_LAYOUT)
 
-    # Prompt files — only create if missing
-    for name in ["workspace_prompt.md", "bullpen_prompt.md"]:
-        path = os.path.join(bp, name)
-        if not os.path.exists(path):
-            atomic_write(path, "")
+    # Workspace prompt — only create if missing
+    prompt_path = os.path.join(bp, "workspace_prompt.md")
+    if not os.path.exists(prompt_path):
+        atomic_write(prompt_path, "")
 
     # Copy default profiles if profiles dir is empty.
     # If this is an older workspace with custom/partial profiles, backfill

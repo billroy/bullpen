@@ -1248,13 +1248,6 @@ def _assemble_prompt(bp_dir, worker, task):
         if wp:
             parts.append(render_untrusted_text_block("Workspace Context", wp, "WORKSPACE_CONTEXT"))
 
-    # Bullpen prompt
-    bp_path = os.path.join(bp_dir, "bullpen_prompt.md")
-    if os.path.exists(bp_path):
-        bp = open(bp_path).read().strip()
-        if bp:
-            parts.append(render_untrusted_text_block("Bullpen Context", bp, "BULLPEN_CONTEXT"))
-
     # Expertise prompt
     expertise = worker.get("expertise_prompt", "")
     if expertise:

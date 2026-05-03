@@ -63,7 +63,7 @@ Controls for worker card header:
 - Worker type selector
 
 The body of the  card has a list of the tasks assigned to this worker.  This list is a drop target for tasks from the kanban pane.
-When a worker has a task, it assembles its worker prompt with the content of the task ticket, the content of the bullpen prompt, and the content of the workspace prompt and issues it as a command to the selected AI agent
+When a worker has a task, it assembles its worker prompt with the content of the task ticket and the content of the workspace prompt and issues it as a command to the selected AI agent
 Agents are called by running local CLI programs which are presumed to be on the local machine.
 For starters, the agents are: Claude and Codex
 
