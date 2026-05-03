@@ -503,6 +503,9 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    import pyfiglet
+
+    print(pyfiglet.figlet_format("bullpen"), end="")
     print(f"Bullpen starting — workspace: {workspace}, host: {args.host}, port: {args.port}")
 
     from server.app import create_app, socketio
