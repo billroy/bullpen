@@ -1691,6 +1691,22 @@ class TestHandoff:
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "review"
 
+    def test_unknown_bare_disposition_moves_to_visible_fallback(self, bp_dir, worker_slot):
+        """A worker imported with a missing output column must not hide tickets."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][worker_slot]["disposition"] = "qa_ready"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Missing output column task")
+        assign_task(bp_dir, worker_slot, task["id"])
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+        assert updated["assigned_to"] == ""
+        assert "Invalid worker disposition 'qa_ready'" in updated["body"]
+
     def test_pass_right_to_adjacent_worker(self, bp_dir):
         """pass:right hands off to the worker in the next column."""
         layout = read_json(os.path.join(bp_dir, "layout.json"))

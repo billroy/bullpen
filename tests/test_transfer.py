@@ -369,6 +369,28 @@ class TestTransferWatchColumnWarning:
         assert not any("watch_column" in w for w in result["warnings"])
 
 
+class TestTransferDispositionColumnWarning:
+    def test_disposition_column_mismatch(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+
+        _set_worker(bp_a, 0, _make_worker("Alpha", disposition="custom_done"))
+
+        result = transfer_worker(manager, id_a, 0, id_b, None, "copy")
+
+        assert any("disposition 'custom_done'" in w for w in result["warnings"])
+
+    def test_disposition_column_present_no_warning(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+
+        _set_worker(bp_a, 0, _make_worker("Alpha", disposition="review"))
+
+        result = transfer_worker(manager, id_a, 0, id_b, None, "copy")
+
+        assert not any("does not exist in destination workspace" in w for w in result["warnings"])
+
+
 class TestTransferAtomicity:
     def test_failed_dest_write_preserves_source(self, two_workspaces):
         manager, id_a, id_b = two_workspaces

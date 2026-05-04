@@ -1777,6 +1777,48 @@ def _valid_disposition(bp_dir, disposition):
     return False
 
 
+def _configured_column_keys(bp_dir):
+    """Return configured task status column keys for the workspace."""
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    return [
+        str(col.get("key"))
+        for col in config.get("columns", [])
+        if isinstance(col, dict) and col.get("key")
+    ]
+
+
+def _fallback_disposition_column(column_keys):
+    """Pick a visible column for invalid worker dispositions."""
+    keys = list(column_keys or [])
+    for candidate in ("blocked", "review", "inbox"):
+        if candidate in keys:
+            return candidate
+    return keys[0] if keys else "blocked"
+
+
+def _resolve_column_disposition(bp_dir, disposition):
+    """Validate a bare disposition column and return (status, warning)."""
+    value = str(disposition or "").strip()
+    column_keys = _configured_column_keys(bp_dir)
+    if value and value in set(column_keys):
+        return value, None
+    fallback = _fallback_disposition_column(column_keys)
+    if value:
+        warning = (
+            f"Invalid worker disposition '{value}': no matching column exists "
+            f"in this workspace. Task moved to '{fallback}' instead."
+        )
+    else:
+        warning = (
+            "Invalid worker disposition: no output column configured. "
+            f"Task moved to '{fallback}' instead."
+        )
+    return fallback, warning
+
+
 def _validate_shell_ticket_updates(updates):
     if updates is None:
         return None
@@ -2519,6 +2561,18 @@ def _on_agent_success(
                 _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id)
                 handed_off = True
             else:
+                disposition, invalid_disposition_warning = _resolve_column_disposition(bp_dir, disposition)
+                if invalid_disposition_warning:
+                    _append_output(bp_dir, task_id, worker, f"[CONFIG] {invalid_disposition_warning}")
+                    if socketio:
+                        task = task_mod.read_task(bp_dir, task_id)
+                        _ws_emit(socketio, "toast", {
+                            "message": (
+                                f"Task \"{task.get('title', task_id) if task else task_id}\" "
+                                f"moved to {disposition}: invalid worker output column"
+                            ),
+                            "level": "warning",
+                        }, ws_id)
                 task_mod.update_task(bp_dir, task_id, {
                     "status": disposition,
                     "assigned_to": "",

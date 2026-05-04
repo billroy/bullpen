@@ -175,6 +175,12 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
                 f"disposition '{disposition}' references a workspace-local "
                 f"target and may not resolve in the destination"
             )
+        elif disposition:
+            dst_col_keys = {c["key"] for c in dst_config.get("columns", [])}
+            if disposition not in dst_col_keys:
+                warnings.append(
+                    f"disposition '{disposition}' does not exist in destination workspace"
+                )
 
         # watch_column: check if destination has the column
         watch_col = clone.get("watch_column")

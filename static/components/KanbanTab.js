@@ -4,7 +4,7 @@ const KanbanTab = {
   components: { TaskCard },
   template: `
     <div v-if="viewMode !== 'list'" class="kanban-board">
-      <div v-for="(col, colIdx) in columns" :key="col.key" class="kanban-column"
+      <div v-for="(col, colIdx) in boardColumns" :key="col.key" class="kanban-column"
            @dragover.prevent="onDragOver($event, col.key)"
            @dragleave="onDragLeave($event)"
            @drop.prevent="onDrop($event, col.key)">
@@ -193,7 +193,7 @@ const KanbanTab = {
     },
     statusOptions() {
       const options = [{ value: 'all', label: 'All statuses' }];
-      (this.columns || []).forEach(col => {
+      this.boardColumns.forEach(col => {
         options.push({ value: col.key, label: col.label || col.key });
       });
       return options;
@@ -241,7 +241,7 @@ const KanbanTab = {
     sortedTasks() {
       const weight = { urgent: 0, high: 1, normal: 2, low: 3 };
       const colOrder = {};
-      (this.columns || []).forEach((c, i) => { colOrder[c.key] = i; });
+      this.boardColumns.forEach((c, i) => { colOrder[c.key] = i; });
       const dir = this.sortDir === 'asc' ? 1 : -1;
       return this.filteredTasks.slice().sort((a, b) => {
         let cmp = 0;
@@ -290,13 +290,29 @@ const KanbanTab = {
       });
     },
     iconRenderToken() {
-      const columnIcons = (this.columns || [])
+      const columnIcons = this.boardColumns
         .map(col => `${col.key}:${this.columnIcon(col)}`)
         .join('|');
       const taskIds = this.viewMode === 'list'
         ? this.sortedTasks.map(task => task.id).join('|')
         : (this.tasks || []).map(task => `${task.id}:${task.status || ''}`).join('|');
       return `${this.viewMode}|${columnIcons}|${taskIds}`;
+    },
+    boardColumns() {
+      const cols = (this.columns || []).map(col => ({ ...col }));
+      const known = new Set(cols.map(col => col.key));
+      (this.tasks || []).forEach(task => {
+        const status = task?.status;
+        if (!status || known.has(status)) return;
+        known.add(status);
+        cols.push({
+          key: status,
+          label: this.missingColumnLabel(status),
+          color: '#64748B',
+          missing: true,
+        });
+      });
+      return cols;
     }
   },
   methods: {
@@ -323,7 +339,7 @@ const KanbanTab = {
     },
     statusPillStyle(key) {
       if (this.isBuiltInStatus(key)) return null;
-      const col = (this.columns || []).find(c => c.key === key);
+      const col = this.boardColumns.find(c => c.key === key);
       const color = col?.color;
       if (!color) return null;
       const rgb = this.parseHexColor(color);
@@ -372,8 +388,11 @@ const KanbanTab = {
       });
     },
     columnLabel(key) {
-      const col = (this.columns || []).find(c => c.key === key);
-      return col ? col.label : key;
+      const col = this.boardColumns.find(c => c.key === key);
+      return col ? col.label : this.missingColumnLabel(key);
+    },
+    missingColumnLabel(key) {
+      return key ? `${key} (missing)` : 'Missing status';
     },
     formatTokens(n) {
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
