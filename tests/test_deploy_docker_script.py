@@ -17,9 +17,10 @@ def test_deploy_docker_installs_bullpen_project_from_github_with_flag():
     assert "--install-bullpen-project" in text
     assert "INSTALL_BULLPEN_PROJECT=1" in text
     assert 'git clone --depth 1 "$BULLPEN_GITHUB_REPO_URL" "$target_path"' in text
-    assert 'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' in text
+    assert "resolve_script_dir() {" in text
+    assert 'SCRIPT_DIR="$(resolve_script_dir)"' in text
     assert 'LOCAL_PROJECT_PATH_DEFAULT="$(dirname "$SCRIPT_DIR")/$(basename "$SCRIPT_DIR")-project"' in text
-    assert 'if [[ "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then' in text
+    assert 'elif [[ -n "$SCRIPT_DIR" && "$(abs_path "$PWD")" == "$SCRIPT_DIR" ]]; then' in text
     assert 'if [[ "$INSTALL_BULLPEN_PROJECT" -eq 1 ]]; then' in text
     assert 'install_bullpen_project_from_github "$LOCAL_PROJECT_PATH_DEFAULT"' in text
     assert "Running deploy-docker.sh from the Bullpen repo root." not in text
