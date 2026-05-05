@@ -202,7 +202,7 @@ Seed or sync these provider credentials into the persistent sandbox home when pr
 
 Seed host `~/.codex` into `/home/bullpen/.codex` if missing and sync host `~/.codex/auth.json` into `/home/bullpen/.codex/auth.json` on every deploy. This mirrors `deploy-docker.sh`: after deploy starts, Codex inside Microsandbox owns the runtime-home token store and can persist refresh-token rotation there.
 
-Because Microsandbox bind-mount semantics may not match Docker for Codex's refresh-token write pattern, install a small `/home/bullpen/bin/codex` wrapper and set `BULLPEN_CODEX_PATH` to it. The wrapper serializes Codex invocations, copies `/home/bullpen/.codex` to a guest-local `/tmp/bullpen-codex-home`, runs the real Codex CLI with `CODEX_HOME=/tmp/bullpen-codex-home`, then copies the resulting Codex home back to `/home/bullpen/.codex` before exiting. This makes token refresh happen on the guest-local filesystem while still persisting the rotated auth state to the mounted home.
+Because Microsandbox bind-mount semantics may not match Docker for Codex's refresh-token write pattern, install a small `/home/bullpen/bin/codex` wrapper and set `BULLPEN_CODEX_PATH` to it. The wrapper serializes Codex invocations, copies `/home/bullpen/.codex` to guest-local `/var/lib/bullpen/codex-home`, runs the real Codex CLI with `CODEX_HOME=/var/lib/bullpen/codex-home`, then copies the resulting Codex home back to `/home/bullpen/.codex` before exiting. This makes token refresh happen on the guest-local filesystem while still persisting the rotated auth state to the mounted home.
 
 When `~/.codex/auth.json` was synced, deploy must verify the sandbox can use it before declaring success:
 

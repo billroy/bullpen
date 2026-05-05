@@ -369,8 +369,8 @@ def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
     command = commands[0][1][1]
     assert "cat > /home/bullpen/bin/codex" in command
     assert r'PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"' in command
-    assert r'RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/tmp/bullpen-codex-home}"' in command
-    assert r'LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/tmp/bullpen-codex.lock}"' in command
+    assert r'RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/var/lib/bullpen/codex-home}"' in command
+    assert r'LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/var/lib/bullpen/codex.lock}"' in command
     assert r'export CODEX_HOME="\$RUNTIME_CODEX_HOME"' in command
     assert r'cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/' in command
 

@@ -663,8 +663,8 @@ set -u
 
 REAL_CODEX="$real_codex"
 PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"
-RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/tmp/bullpen-codex-home}"
-LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/tmp/bullpen-codex.lock}"
+RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/var/lib/bullpen/codex-home}"
+LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/var/lib/bullpen/codex.lock}"
 
 while ! mkdir "\$LOCK_DIR" 2>/dev/null; do
   if [ -f "\$LOCK_DIR/pid" ]; then
