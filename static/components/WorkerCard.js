@@ -375,6 +375,9 @@ const WorkerCard = {
     taskQueueCount() {
       this.$nextTick(() => renderLucideIcons(this.$el));
     },
+    effectiveLayoutMode() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
+    },
     showMenu(next) {
       if (next) this.$nextTick(() => renderLucideIcons(this.$refs.menu));
     },
