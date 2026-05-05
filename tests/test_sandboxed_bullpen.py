@@ -409,6 +409,7 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
     assert "test -f /home/bullpen/.codex/auth.json" in command
     assert "test -w /home/bullpen/.codex/auth.json" in command
     assert "for _attempt in 1 2" in command
+    assert "timeout 45s bash -lc" in command
     assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command
     assert '"$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -' in command
 

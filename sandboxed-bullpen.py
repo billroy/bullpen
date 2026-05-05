@@ -643,6 +643,10 @@ async def run_configured_sandbox_shell(
         raise DeployError(message) from exc
 
 
+def log_step(message: str) -> None:
+    print(f"==> {message}", flush=True)
+
+
 async def prepare_runtime_dirs(sandbox: Any) -> None:
     await run_sandbox_shell(sandbox, "mkdir -p /home/bullpen/logs")
     await run_sandbox_shell(sandbox, ": > /home/bullpen/logs/bullpen.log")
@@ -651,7 +655,8 @@ async def prepare_runtime_dirs(sandbox: Any) -> None:
 
 async def install_codex_wrapper(sandbox: Any, config: DeployConfig) -> None:
     command = r'''set -e
-mkdir -p /home/bullpen/bin /home/bullpen/.codex
+mkdir -p /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
+chmod 700 /var/lib/bullpen 2>/dev/null || true
 real_codex="$(command -v codex)"
 if [ -z "$real_codex" ] || [ "$real_codex" = "/home/bullpen/bin/codex" ]; then
   echo "Unable to locate real Codex CLI" >&2
@@ -774,9 +779,10 @@ async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
         "test -f /home/bullpen/.codex/auth.json; "
         "test -w /home/bullpen/.codex/auth.json; "
         "for _attempt in 1 2; do "
-        "printf 'Reply OK only.' | "
+        "echo \"Codex auth preflight attempt ${_attempt}/2\" >&2; "
+        "timeout 45s bash -lc 'printf \"Reply OK only.\" | "
         "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "
-        "\"$BULLPEN_CODEX_PATH\" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -; "
+        "\"$BULLPEN_CODEX_PATH\" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'; "
         "done"
     )
     await run_configured_sandbox_shell(sandbox, config, command, label="verify Codex auth")
@@ -829,14 +835,23 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
     summary = seed_credentials(config)
     config.replace = True
 
+    log_step("Creating Microsandbox")
     sandbox = await runtime.create(config)
     try:
+        log_step("Preparing Microsandbox runtime")
         await prepare_runtime_dirs(sandbox)
+        log_step("Installing Codex wrapper")
         await install_codex_wrapper(sandbox, config)
+        log_step("Bootstrapping Bullpen credentials")
         await bootstrap_bullpen_credentials(sandbox, config)
+        log_step("Starting Bullpen")
         await start_bullpen(sandbox, config)
+        log_step("Waiting for Bullpen health")
         wait_for_health(config.bullpen_port)
+        if config.codex_auth_synced:
+            log_step("Verifying Codex auth")
         await verify_codex_auth(sandbox, config)
+        log_step("Verifying Bullpen credentials")
         await verify_admin_credentials(sandbox, config)
     except Exception:
         await print_bullpen_log(sandbox)
