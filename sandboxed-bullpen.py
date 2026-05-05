@@ -574,6 +574,7 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_PRODUCTION": os.environ.get("BULLPEN_PRODUCTION", "0"),
             "BULLPEN_VENV": "/opt/bullpen-venv",
             "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),
+            "BULLPEN_CODEX_PATH": "/home/bullpen/bin/codex",
         }
     )
 
@@ -648,6 +649,61 @@ async def prepare_runtime_dirs(sandbox: Any) -> None:
     await run_sandbox_shell(sandbox, "test -x /opt/bullpen-venv/bin/python")
 
 
+async def install_codex_wrapper(sandbox: Any, config: DeployConfig) -> None:
+    command = r'''set -e
+mkdir -p /home/bullpen/bin /home/bullpen/.codex
+real_codex="$(command -v codex)"
+if [ -z "$real_codex" ] || [ "$real_codex" = "/home/bullpen/bin/codex" ]; then
+  echo "Unable to locate real Codex CLI" >&2
+  exit 1
+fi
+cat > /home/bullpen/bin/codex <<EOF
+#!/usr/bin/env bash
+set -u
+
+REAL_CODEX="$real_codex"
+PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"
+RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/tmp/bullpen-codex-home}"
+LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/tmp/bullpen-codex.lock}"
+
+while ! mkdir "\$LOCK_DIR" 2>/dev/null; do
+  if [ -f "\$LOCK_DIR/pid" ]; then
+    old_pid="\$(cat "\$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [ -n "\$old_pid" ] && ! kill -0 "\$old_pid" 2>/dev/null; then
+      rm -rf "\$LOCK_DIR"
+      continue
+    fi
+  fi
+  sleep 0.2
+done
+echo "\$\$" > "\$LOCK_DIR/pid"
+cleanup() {
+  rm -rf "\$LOCK_DIR"
+}
+trap cleanup EXIT INT TERM
+
+mkdir -p "\$PERSISTENT_CODEX_HOME"
+rm -rf "\$RUNTIME_CODEX_HOME"
+mkdir -p "\$RUNTIME_CODEX_HOME"
+if [ -d "\$PERSISTENT_CODEX_HOME" ]; then
+  cp -a "\$PERSISTENT_CODEX_HOME"/. "\$RUNTIME_CODEX_HOME"/ 2>/dev/null || true
+fi
+
+export CODEX_HOME="\$RUNTIME_CODEX_HOME"
+"\$REAL_CODEX" "\$@"
+status="\$?"
+
+mkdir -p "\$PERSISTENT_CODEX_HOME"
+cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/ 2>/dev/null || true
+
+exit "\$status"
+EOF
+chmod 755 /home/bullpen/bin/codex
+test -x /home/bullpen/bin/codex
+'''
+    await run_configured_sandbox_shell(sandbox, config, command, label="install Codex wrapper")
+
+
 async def bootstrap_bullpen_credentials(sandbox: Any, config: DeployConfig) -> None:
     command = (
         "set -e; "
@@ -717,9 +773,11 @@ async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
         "set -e; "
         "test -f /home/bullpen/.codex/auth.json; "
         "test -w /home/bullpen/.codex/auth.json; "
+        "for _attempt in 1 2; do "
         "printf 'Reply OK only.' | "
         "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "
-        "codex exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -"
+        "\"$BULLPEN_CODEX_PATH\" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -; "
+        "done"
     )
     await run_configured_sandbox_shell(sandbox, config, command, label="verify Codex auth")
 
@@ -774,6 +832,7 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
     sandbox = await runtime.create(config)
     try:
         await prepare_runtime_dirs(sandbox)
+        await install_codex_wrapper(sandbox, config)
         await bootstrap_bullpen_credentials(sandbox, config)
         await start_bullpen(sandbox, config)
         wait_for_health(config.bullpen_port)

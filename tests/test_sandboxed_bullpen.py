@@ -203,6 +203,7 @@ def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, mon
     sb.build_runtime_env(config)
 
     assert config.runtime_env["BULLPEN_CODEX_SANDBOX"] == "none"
+    assert config.runtime_env["BULLPEN_CODEX_PATH"] == "/home/bullpen/bin/codex"
 
 
 def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypatch):
@@ -336,6 +337,44 @@ def test_run_sandbox_shell_raises_on_execoutput_exit_code(sb):
         asyncio.run(sb.run_sandbox_shell(FakeSandbox(), "missing-command"))
 
 
+def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
+    commands = []
+
+    class FakeSandbox:
+        def exec(self, cmd, args):
+            commands.append((cmd, args))
+            return types.SimpleNamespace(returncode=0)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+
+    asyncio.run(sb.install_codex_wrapper(FakeSandbox(), config))
+
+    command = commands[0][1][1]
+    assert "cat > /home/bullpen/bin/codex" in command
+    assert r'PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"' in command
+    assert r'RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/tmp/bullpen-codex-home}"' in command
+    assert r'LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/tmp/bullpen-codex.lock}"' in command
+    assert r'export CODEX_HOME="\$RUNTIME_CODEX_HOME"' in command
+    assert r'cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/' in command
+
+
 def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
     commands = []
 
@@ -369,8 +408,9 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
     command = commands[0][1][1]
     assert "test -f /home/bullpen/.codex/auth.json" in command
     assert "test -w /home/bullpen/.codex/auth.json" in command
+    assert "for _attempt in 1 2" in command
     assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command
-    assert "codex exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -" in command
+    assert '"$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -' in command
 
 
 def test_configured_sandbox_shell_redacts_secret_values(sb):
