@@ -52,14 +52,13 @@ class DeployConfig:
     sandbox_home: Path
     replace: bool | None
     open_browser: bool
-    mount_codex_auth: bool
     install_bullpen_project: bool
     root: Path
     bullpen_source: Path
-    host_codex_dir: Path
     github_repo_url: str
     local_project_path_default: Path
     runtime_env: dict[str, str] = field(default_factory=dict)
+    codex_auth_synced: bool = False
 
 
 @dataclass
@@ -142,8 +141,6 @@ class MicrosandboxRuntime:
             "/workspace": self.Volume.bind(str(config.workspace)),
             "/home/bullpen": self.Volume.bind(str(config.sandbox_home)),
         }
-        if config.mount_codex_auth and config.host_codex_dir.is_dir():
-            volumes["/home/bullpen/.codex"] = self.Volume.bind(str(config.host_codex_dir))
         network = self.Network.allow_all()
         result = self.Sandbox.create(
             config.sandbox_name,
@@ -210,13 +207,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-replace", action="store_true", default=False)
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
     parser.add_argument("--no-open", dest="open_browser", action="store_false")
-    parser.add_argument(
-        "--no-codex-auth-mount",
-        dest="mount_codex_auth",
-        action="store_false",
-        default=True,
-        help="Do not mount host ~/.codex into the sandbox.",
-    )
     parser.add_argument("--install-bullpen-project", action="store_true", default=False)
     return parser
 
@@ -333,11 +323,9 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         sandbox_home=abs_path(args.sandbox_home),
         replace=replace,
         open_browser=args.open_browser,
-        mount_codex_auth=args.mount_codex_auth,
         install_bullpen_project=args.install_bullpen_project,
         root=root,
         bullpen_source=root,
-        host_codex_dir=Path.home() / ".codex",
         github_repo_url=github_repo_url,
         local_project_path_default=local_project_path_default,
     )
@@ -480,8 +468,8 @@ def seed_credentials(config: DeployConfig) -> CredentialSummary:
     copy_dir_if_exists(home / ".claude", sandbox_home / ".claude")
     copy_file_if_exists(home / ".claude" / ".credentials.json", sandbox_home / ".claude" / ".credentials.json", sync=True)
     copy_dir_if_exists(home / ".config" / "codex", sandbox_home / ".config" / "codex")
-    if config.mount_codex_auth and config.host_codex_dir.is_dir():
-        summary.provider_sources.append(f"mount:{config.host_codex_dir} -> /home/bullpen/.codex")
+    copy_dir_if_exists(home / ".codex", sandbox_home / ".codex")
+    config.codex_auth_synced = copy_file_if_exists(home / ".codex" / "auth.json", sandbox_home / ".codex" / "auth.json", sync=True)
     copy_dir_if_exists(home / ".config" / "gemini", sandbox_home / ".config" / "gemini")
     copy_dir_if_exists(home / ".config" / "google-gemini", sandbox_home / ".config" / "google-gemini")
 
@@ -489,17 +477,12 @@ def seed_credentials(config: DeployConfig) -> CredentialSummary:
         sandbox_home / ".claude",
         sandbox_home / ".claude.json",
         sandbox_home / ".claude" / ".credentials.json",
+        sandbox_home / ".codex",
+        sandbox_home / ".codex" / "auth.json",
         sandbox_home / ".config" / "codex",
         sandbox_home / ".config" / "gemini",
         sandbox_home / ".config" / "google-gemini",
     ]
-    if not (config.mount_codex_auth and config.host_codex_dir.is_dir()):
-        provider_home_paths.extend(
-            [
-                sandbox_home / ".codex",
-                sandbox_home / ".codex" / "auth.json",
-            ]
-        )
     for path in provider_home_paths:
         if path.exists():
             summary.provider_sources.append(f"home:{path}")
@@ -726,6 +709,18 @@ PY'''
     await run_configured_sandbox_shell(sandbox, config, command, label="verify Bullpen credentials")
 
 
+async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
+    if not config.codex_auth_synced:
+        return
+    command = (
+        "set -e; "
+        "test -f /home/bullpen/.codex/auth.json; "
+        "test -w /home/bullpen/.codex/auth.json; "
+        "HOME=/home/bullpen codex login status"
+    )
+    await run_configured_sandbox_shell(sandbox, config, command, label="verify Codex auth")
+
+
 async def print_bullpen_log(sandbox: Any) -> None:
     try:
         result = await run_sandbox_shell(sandbox, "cat /home/bullpen/logs/bullpen.log", check=False)
@@ -779,6 +774,7 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
         await bootstrap_bullpen_credentials(sandbox, config)
         await start_bullpen(sandbox, config)
         wait_for_health(config.bullpen_port)
+        await verify_codex_auth(sandbox, config)
         await verify_admin_credentials(sandbox, config)
     except Exception:
         await print_bullpen_log(sandbox)
