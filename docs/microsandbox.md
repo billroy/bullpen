@@ -90,8 +90,7 @@ Options:
 --admin-password PASSWORD    Bullpen admin password. If omitted, prompt securely.
 --base NAME                  Prepared Microsandbox base. Default: bullpen-microsandbox-local
 --sandbox-home PATH          Persistent sandbox home. Default: ~/.bullpen/microsandbox-home
---copy-codex-auth            Copy host ~/.codex/auth.json into the sandbox. Default.
---no-copy-codex-auth         Do not copy host ~/.codex/auth.json.
+--no-codex-auth-mount        Do not mount host ~/.codex into the sandbox.
 --replace                    Replace an existing sandbox without prompting.
 --no-replace                 Abort if the sandbox already exists.
 --open                       Open the Bullpen UI in a host browser after startup. Default.
@@ -177,6 +176,7 @@ Run phase mounts:
 ```text
 <host project path>              -> /workspace      writable
 ~/.bullpen/microsandbox-home     -> /home/bullpen   writable
+~/.codex                        -> /home/bullpen/.codex writable, when present and not disabled
 <Bullpen source checkout>        -> /app            read-only, only if not baked into base
 ```
 
@@ -185,6 +185,8 @@ Run phase mounts:
 `/home/bullpen` persists across sandbox replacement. Create it if needed and restrict it to the current user. Store CLI auth state, Bullpen global config, and logs there.
 
 Do not install toolchains into `/home/bullpen`. Tooling belongs in the prepared base. Auth/config belongs in `/home/bullpen`.
+
+Codex OAuth auth is the exception to the normal copy/seed pattern: `~/.codex` is mounted, not copied, so the host and sandbox share one rotating refresh-token store. Do not copy `~/.codex/auth.json` into the sandbox home. Duplicate copies can resurrect spent refresh tokens and produce `Your access token could not be refreshed because your refresh token was already used`.
 
 ## Credentials
 
@@ -195,12 +197,10 @@ Seed or sync these provider credentials into the persistent sandbox home when pr
 - `~/.claude`
 - `~/.claude.json`
 - `~/.config/codex`
-- `~/.codex`
-- `~/.codex/auth.json`
 - `~/.config/gemini`
 - `~/.config/google-gemini`
 
-Copy `~/.codex/auth.json` by default, matching `deploy-docker.sh`, so Codex Live Agent chat works out of the box when the host Codex CLI is logged in. Sync the auth file on every deploy. `--no-copy-codex-auth` exists for users who prefer `OPENAI_API_KEY` or a sandbox-local Codex login.
+Mount host `~/.codex` read-write at `/home/bullpen/.codex` by default when it exists. This makes Codex Live Agent chat use the same OAuth token store as the host Codex CLI. If `~/.codex` is missing, leave `/home/bullpen/.codex` alone so users can use `OPENAI_API_KEY` or log in inside the sandbox. `--no-codex-auth-mount` disables the host mount for users who want sandbox-local Codex auth state.
 
 Forward these environment variables when present:
 

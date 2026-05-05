@@ -52,10 +52,11 @@ class DeployConfig:
     sandbox_home: Path
     replace: bool | None
     open_browser: bool
-    copy_codex_auth: bool
+    mount_codex_auth: bool
     install_bullpen_project: bool
     root: Path
     bullpen_source: Path
+    host_codex_dir: Path
     github_repo_url: str
     local_project_path_default: Path
     runtime_env: dict[str, str] = field(default_factory=dict)
@@ -141,6 +142,8 @@ class MicrosandboxRuntime:
             "/workspace": self.Volume.bind(str(config.workspace)),
             "/home/bullpen": self.Volume.bind(str(config.sandbox_home)),
         }
+        if config.mount_codex_auth and config.host_codex_dir.is_dir():
+            volumes["/home/bullpen/.codex"] = self.Volume.bind(str(config.host_codex_dir))
         network = self.Network.allow_all()
         result = self.Sandbox.create(
             config.sandbox_name,
@@ -207,19 +210,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-replace", action="store_true", default=False)
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
     parser.add_argument("--no-open", dest="open_browser", action="store_false")
-    codex_auth_group = parser.add_mutually_exclusive_group()
-    codex_auth_group.add_argument(
-        "--copy-codex-auth",
-        dest="copy_codex_auth",
-        action="store_true",
-        default=True,
-        help="Copy host ~/.codex/auth.json into the sandbox. This is the default and matches deploy-docker.sh.",
-    )
-    codex_auth_group.add_argument(
-        "--no-copy-codex-auth",
-        dest="copy_codex_auth",
+    parser.add_argument(
+        "--no-codex-auth-mount",
+        dest="mount_codex_auth",
         action="store_false",
-        help="Do not copy host ~/.codex/auth.json into the sandbox.",
+        default=True,
+        help="Do not mount host ~/.codex into the sandbox.",
     )
     parser.add_argument("--install-bullpen-project", action="store_true", default=False)
     return parser
@@ -337,10 +333,11 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         sandbox_home=abs_path(args.sandbox_home),
         replace=replace,
         open_browser=args.open_browser,
-        copy_codex_auth=args.copy_codex_auth,
+        mount_codex_auth=args.mount_codex_auth,
         install_bullpen_project=args.install_bullpen_project,
         root=root,
         bullpen_source=root,
+        host_codex_dir=Path.home() / ".codex",
         github_repo_url=github_repo_url,
         local_project_path_default=local_project_path_default,
     )
@@ -483,24 +480,26 @@ def seed_credentials(config: DeployConfig) -> CredentialSummary:
     copy_dir_if_exists(home / ".claude", sandbox_home / ".claude")
     copy_file_if_exists(home / ".claude" / ".credentials.json", sandbox_home / ".claude" / ".credentials.json", sync=True)
     copy_dir_if_exists(home / ".config" / "codex", sandbox_home / ".config" / "codex")
-    if config.copy_codex_auth:
-        copy_dir_if_exists(home / ".codex", sandbox_home / ".codex")
-        copy_file_if_exists(home / ".codex" / "auth.json", sandbox_home / ".codex" / "auth.json", sync=True)
-    else:
-        (sandbox_home / ".codex").mkdir(parents=True, exist_ok=True)
+    if config.mount_codex_auth and config.host_codex_dir.is_dir():
+        summary.provider_sources.append(f"mount:{config.host_codex_dir} -> /home/bullpen/.codex")
     copy_dir_if_exists(home / ".config" / "gemini", sandbox_home / ".config" / "gemini")
     copy_dir_if_exists(home / ".config" / "google-gemini", sandbox_home / ".config" / "google-gemini")
 
-    provider_home_paths = (
+    provider_home_paths = [
         sandbox_home / ".claude",
         sandbox_home / ".claude.json",
         sandbox_home / ".claude" / ".credentials.json",
-        sandbox_home / ".codex",
-        sandbox_home / ".codex" / "auth.json",
         sandbox_home / ".config" / "codex",
         sandbox_home / ".config" / "gemini",
         sandbox_home / ".config" / "google-gemini",
-    )
+    ]
+    if not (config.mount_codex_auth and config.host_codex_dir.is_dir()):
+        provider_home_paths.extend(
+            [
+                sandbox_home / ".codex",
+                sandbox_home / ".codex" / "auth.json",
+            ]
+        )
     for path in provider_home_paths:
         if path.exists():
             summary.provider_sources.append(f"home:{path}")

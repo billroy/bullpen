@@ -73,7 +73,7 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
     assert config.sandbox_home == home.resolve()
     assert config.replace is True
     assert config.open_browser is False
-    assert config.copy_codex_auth is True
+    assert config.mount_codex_auth is True
 
 
 def test_cli_rejects_duplicate_ports(sb, tmp_path, monkeypatch):
@@ -129,7 +129,7 @@ def test_seed_credentials_skips_anthropic_key_when_claude_oauth_exists(sb, tmp_p
     assert summary.provider_sources
 
 
-def test_seed_credentials_uses_existing_persistent_home_credentials(sb, tmp_path, monkeypatch):
+def test_seed_credentials_uses_existing_sandbox_codex_auth_when_host_mount_missing(sb, tmp_path, monkeypatch):
     host_home = tmp_path / "host"
     sandbox_home = tmp_path / "sandbox-home"
     workspace = tmp_path / "project"
@@ -156,7 +156,7 @@ def test_seed_credentials_uses_existing_persistent_home_credentials(sb, tmp_path
     assert f"home:{sandbox_home}/.codex/auth.json" in summary.provider_sources
 
 
-def test_seed_credentials_copies_host_codex_auth_by_default(sb, tmp_path, monkeypatch):
+def test_seed_credentials_does_not_copy_host_codex_auth(sb, tmp_path, monkeypatch):
     host_home = tmp_path / "host"
     sandbox_home = tmp_path / "sandbox-home"
     workspace = tmp_path / "project"
@@ -180,12 +180,12 @@ def test_seed_credentials_copies_host_codex_auth_by_default(sb, tmp_path, monkey
     )
     summary = sb.seed_credentials(config)
 
-    assert (sandbox_home / ".codex" / "auth.json").read_text(encoding="utf-8") == '{"refresh_token":"host-token"}'
-    assert f"home:{sandbox_home}/.codex/auth.json" in summary.provider_sources
+    assert not (sandbox_home / ".codex" / "auth.json").exists()
+    assert f"mount:{host_home}/.codex -> /home/bullpen/.codex" in summary.provider_sources
     assert "env:OPENAI_API_KEY" in summary.provider_sources
 
 
-def test_seed_credentials_can_opt_out_of_copying_host_codex_auth(sb, tmp_path, monkeypatch):
+def test_seed_credentials_can_opt_out_of_mounting_host_codex_auth(sb, tmp_path, monkeypatch):
     host_home = tmp_path / "host"
     sandbox_home = tmp_path / "sandbox-home"
     workspace = tmp_path / "project"
@@ -193,6 +193,7 @@ def test_seed_credentials_can_opt_out_of_copying_host_codex_auth(sb, tmp_path, m
     workspace.mkdir()
     (host_home / ".codex" / "auth.json").write_text('{"refresh_token":"host-token"}', encoding="utf-8")
     monkeypatch.setenv("HOME", str(host_home))
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
     monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
 
     config = sb.config_from_args(
@@ -203,14 +204,16 @@ def test_seed_credentials_can_opt_out_of_copying_host_codex_auth(sb, tmp_path, m
             "pw",
             "--sandbox-home",
             str(sandbox_home),
-            "--no-copy-codex-auth",
+            "--no-codex-auth-mount",
             "--no-open",
         ]
     )
     summary = sb.seed_credentials(config)
 
     assert not (sandbox_home / ".codex" / "auth.json").exists()
+    assert f"mount:{host_home}/.codex -> /home/bullpen/.codex" not in summary.provider_sources
     assert f"home:{sandbox_home}/.codex/auth.json" not in summary.provider_sources
+    assert "env:OPENAI_API_KEY" in summary.provider_sources
 
 
 def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypatch):
@@ -249,7 +252,9 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
 
     workspace = tmp_path / "project"
     sandbox_home = tmp_path / "home"
+    host_codex_dir = tmp_path / "host-codex"
     workspace.mkdir()
+    host_codex_dir.mkdir()
     config = sb.DeployConfig(
         sandbox_name="testbox",
         workspace=workspace,
@@ -261,10 +266,11 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
         sandbox_home=sandbox_home,
         replace=True,
         open_browser=False,
-        copy_codex_auth=False,
+        mount_codex_auth=True,
         install_bullpen_project=False,
         root=ROOT,
         bullpen_source=ROOT,
+        host_codex_dir=host_codex_dir,
         github_repo_url="https://example.test/repo.git",
         local_project_path_default=tmp_path / "project-default",
         runtime_env={"BULLPEN_PORT": "8081"},
@@ -284,6 +290,7 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}
     assert calls["kwargs"]["volumes"]["/workspace"] == {"path": str(workspace), "readonly": False}
     assert calls["kwargs"]["volumes"]["/home/bullpen"] == {"path": str(sandbox_home), "readonly": False}
+    assert calls["kwargs"]["volumes"]["/home/bullpen/.codex"] == {"path": str(host_codex_dir), "readonly": False}
     assert calls["kwargs"]["env"]["BULLPEN_VENV"] == "/opt/bullpen-venv"
 
 
@@ -306,10 +313,11 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
         sandbox_home=ROOT,
         replace=True,
         open_browser=False,
-        copy_codex_auth=False,
+        mount_codex_auth=False,
         install_bullpen_project=False,
         root=ROOT,
         bullpen_source=ROOT,
+        host_codex_dir=ROOT / ".codex",
         github_repo_url="https://example.test/repo.git",
         local_project_path_default=ROOT / "project",
     )
@@ -361,10 +369,11 @@ def test_configured_sandbox_shell_redacts_secret_values(sb):
         sandbox_home=ROOT,
         replace=True,
         open_browser=False,
-        copy_codex_auth=False,
+        mount_codex_auth=False,
         install_bullpen_project=False,
         root=ROOT,
         bullpen_source=ROOT,
+        host_codex_dir=ROOT / ".codex",
         github_repo_url="https://example.test/repo.git",
         local_project_path_default=ROOT / "project",
         runtime_env={"BULLPEN_BOOTSTRAP_PASSWORD": "secret-value"},
@@ -418,10 +427,11 @@ def test_choose_replace_no_replace_errors_when_existing(sb, monkeypatch):
         sandbox_home=ROOT,
         replace=False,
         open_browser=False,
-        copy_codex_auth=False,
+        mount_codex_auth=False,
         install_bullpen_project=False,
         root=ROOT,
         bullpen_source=ROOT,
+        host_codex_dir=ROOT / ".codex",
         github_repo_url="https://example.test/repo.git",
         local_project_path_default=ROOT / "project",
     )
