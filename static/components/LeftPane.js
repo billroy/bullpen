@@ -117,9 +117,93 @@ const LeftPane = {
     },
     workerList() {
       if (!this.layout?.slots) return [];
-      return this.layout.slots
-        .map((s, i) => s ? {
-          slot: i,
+      const slots = this.layout.slots;
+      const cols = Number(this.config?.grid?.cols) || 4;
+
+      const entries = [];
+      slots.forEach((s, i) => {
+        if (!s) return;
+        const row = Number.isFinite(Number(s.row)) ? Number(s.row) : Math.floor(i / cols);
+        const col = Number.isFinite(Number(s.col)) ? Number(s.col) : (i % cols);
+        entries.push({ slot: i, slotData: s, row, col });
+      });
+
+      const normName = (n) => String(n || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const byCoord = new Map();
+      const byNormalizedName = new Map();
+      entries.forEach(e => {
+        byCoord.set(`${e.row},${e.col}`, e);
+        const n = normName(e.slotData.name);
+        if (n && !byNormalizedName.has(n)) byNormalizedName.set(n, e);
+      });
+
+      const gridOrder = entries.slice().sort((a, b) => a.row - b.row || a.col - b.col);
+
+      const passTarget = (e) => {
+        const disp = String(e.slotData.disposition || '').trim();
+        if (!disp) return null;
+        if (disp.startsWith('worker:')) {
+          return byNormalizedName.get(normName(disp.slice(7))) || null;
+        }
+        if (disp.startsWith('pass:')) {
+          const dir = disp.slice(5).trim().toLowerCase();
+          const delta = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] }[dir];
+          if (!delta) return null;
+          return byCoord.get(`${e.row + delta[0]},${e.col + delta[1]}`) || null;
+        }
+        return null;
+      };
+
+      const visited = new Set();
+      const ordered = [];
+
+      for (const m of gridOrder) {
+        if (m.slotData.type !== 'marker') continue;
+        if (visited.has(m.slot)) continue;
+
+        const groupSet = new Set([m.slot]);
+        const queue = [m];
+
+        const enqueue = (e) => {
+          if (!e || groupSet.has(e.slot) || visited.has(e.slot)) return;
+          if (e.slotData.type === 'marker') return;
+          groupSet.add(e.slot);
+          queue.push(e);
+        };
+
+        const sameColBelow = entries
+          .filter(e => e.col === m.col && e.row > m.row)
+          .sort((a, b) => a.row - b.row);
+        for (const e of sameColBelow) {
+          if (e.slotData.type === 'marker') break;
+          enqueue(e);
+        }
+
+        const members = [];
+        while (queue.length) {
+          const cur = queue.shift();
+          members.push(cur);
+          enqueue(passTarget(cur));
+        }
+
+        members.sort((a, b) => a.row - b.row || a.col - b.col);
+        for (const g of members) {
+          if (visited.has(g.slot)) continue;
+          visited.add(g.slot);
+          ordered.push(g);
+        }
+      }
+
+      for (const e of gridOrder) {
+        if (visited.has(e.slot)) continue;
+        visited.add(e.slot);
+        ordered.push(e);
+      }
+
+      return ordered.map(e => {
+        const s = e.slotData;
+        return {
+          slot: e.slot,
           name: s.name,
           state: s.state || 'idle',
           retry_at: s.retry_at,
@@ -128,8 +212,8 @@ const LeftPane = {
           agent: s.agent,
           type: s.type,
           taskQueueLength: Array.isArray(s.task_queue) ? s.task_queue.length : 0,
-        } : null)
-        .filter(Boolean);
+        };
+      });
     },
     projectIconToken() {
       return (this.projects || [])
