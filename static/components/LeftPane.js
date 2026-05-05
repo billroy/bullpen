@@ -174,9 +174,12 @@ const LeftPane = {
         const sameColBelow = entries
           .filter(e => e.col === m.col && e.row > m.row)
           .sort((a, b) => a.row - b.row);
+        let prevColRow = null;
         for (const e of sameColBelow) {
+          if (prevColRow !== null && e.row !== prevColRow + 1) break;
           if (e.slotData.type === 'marker') break;
           enqueue(e);
+          prevColRow = e.row;
         }
 
         const members = [];
