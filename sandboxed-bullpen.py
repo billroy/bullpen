@@ -573,6 +573,7 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_WORKSPACE_NAME": config.workspace.name,
             "BULLPEN_PRODUCTION": os.environ.get("BULLPEN_PRODUCTION", "0"),
             "BULLPEN_VENV": "/opt/bullpen-venv",
+            "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),
         }
     )
 
@@ -716,7 +717,9 @@ async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
         "set -e; "
         "test -f /home/bullpen/.codex/auth.json; "
         "test -w /home/bullpen/.codex/auth.json; "
-        "HOME=/home/bullpen codex login status"
+        "printf 'Reply OK only.' | "
+        "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "
+        "codex exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -"
     )
     await run_configured_sandbox_shell(sandbox, config, command, label="verify Codex auth")
 

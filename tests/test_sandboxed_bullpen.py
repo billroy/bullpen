@@ -185,6 +185,26 @@ def test_seed_credentials_syncs_host_codex_auth_by_default(sb, tmp_path, monkeyp
     assert "env:OPENAI_API_KEY" in summary.provider_sources
 
 
+def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("BULLPEN_CODEX_SANDBOX", raising=False)
+
+    config = sb.config_from_args(
+        [
+            "--workspace",
+            str(workspace),
+            "--admin-password",
+            "pw",
+            "--no-open",
+        ]
+    )
+    sb.build_runtime_env(config)
+
+    assert config.runtime_env["BULLPEN_CODEX_SANDBOX"] == "none"
+
+
 def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypatch):
     calls = {}
 
@@ -316,7 +336,7 @@ def test_run_sandbox_shell_raises_on_execoutput_exit_code(sb):
         asyncio.run(sb.run_sandbox_shell(FakeSandbox(), "missing-command"))
 
 
-def test_verify_codex_auth_checks_synced_auth_file_and_login_status(sb):
+def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
     commands = []
 
     class FakeSandbox:
@@ -349,7 +369,8 @@ def test_verify_codex_auth_checks_synced_auth_file_and_login_status(sb):
     command = commands[0][1][1]
     assert "test -f /home/bullpen/.codex/auth.json" in command
     assert "test -w /home/bullpen/.codex/auth.json" in command
-    assert "HOME=/home/bullpen codex login status" in command
+    assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command
+    assert "codex exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -" in command
 
 
 def test_configured_sandbox_shell_redacts_secret_values(sb):

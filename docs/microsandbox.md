@@ -206,7 +206,7 @@ When `~/.codex/auth.json` was synced, deploy must verify the sandbox can use it 
 
 ```bash
 test -w /home/bullpen/.codex/auth.json
-HOME=/home/bullpen codex login status
+printf 'Reply OK only.' | HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none codex exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -
 ```
 
 Forward these environment variables when present:
@@ -265,6 +265,7 @@ Set these environment variables inside the sandbox:
 - `BULLPEN_WORKSPACE=/workspace`
 - `BULLPEN_WORKSPACE_NAME=<basename of workspace path>`
 - `BULLPEN_PRODUCTION=0`, unless the host environment overrides it
+- `BULLPEN_CODEX_SANDBOX=none`, unless the host environment overrides it
 
 The run phase bootstraps Bullpen login credentials, starts Bullpen, checks `/health`, verifies credentials, prints success output, and exits.
 
