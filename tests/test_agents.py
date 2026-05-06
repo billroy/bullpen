@@ -167,6 +167,68 @@ class TestClaudeAdapter:
         line = json.dumps({"type": "result", "result": "done"})
         assert adapter.format_stream_line(line) is None
 
+    def test_format_stream_line_surfaces_api_retry(self):
+        adapter = ClaudeAdapter()
+        line = json.dumps({
+            "type": "system",
+            "subtype": "api_retry",
+            "attempt": 3,
+            "max_retries": 10,
+            "error_status": 429,
+            "error": "rate_limit_error",
+        })
+        out = adapter.format_stream_line(line)
+        assert out is not None
+        assert "api_retry" in out
+        assert "3/10" in out
+        assert "429" in out
+        assert "rate_limit_error" in out
+
+    def test_finalize_env_syncs_refreshed_credentials_back(self, tmp_path, monkeypatch):
+        from server.agents import claude_adapter as ca
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_creds = source_dir / ".credentials.json"
+        source_creds.write_text('{"claudeAiOauth":{"accessToken":"old","refreshToken":"r"}}', encoding="utf-8")
+
+        run_tmp = tmp_path / "run"
+        run_tmp.mkdir()
+        config_dir = run_tmp / "claude-config"
+        config_dir.mkdir()
+        # Simulate claude having refreshed the token mid-run.
+        (config_dir / ".credentials.json").write_text(
+            '{"claudeAiOauth":{"accessToken":"NEW","refreshToken":"r"}}', encoding="utf-8"
+        )
+
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(source_dir))
+        adapter = ClaudeAdapter()
+        adapter.finalize_env({"CLAUDE_CONFIG_DIR": str(config_dir)}, str(run_tmp))
+
+        assert '"NEW"' in source_creds.read_text(encoding="utf-8")
+
+    def test_finalize_env_no_op_when_credentials_unchanged(self, tmp_path, monkeypatch):
+        from server.agents import claude_adapter as ca
+
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_creds = source_dir / ".credentials.json"
+        payload = '{"claudeAiOauth":{"accessToken":"same","refreshToken":"r"}}'
+        source_creds.write_text(payload, encoding="utf-8")
+        original_mtime = source_creds.stat().st_mtime
+
+        run_tmp = tmp_path / "run"
+        run_tmp.mkdir()
+        config_dir = run_tmp / "claude-config"
+        config_dir.mkdir()
+        (config_dir / ".credentials.json").write_text(payload, encoding="utf-8")
+
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(source_dir))
+        adapter = ClaudeAdapter()
+        adapter.finalize_env({"CLAUDE_CONFIG_DIR": str(config_dir)}, str(run_tmp))
+
+        assert source_creds.stat().st_mtime == original_mtime
+
 
 class TestCodexAdapter:
     def test_name(self):

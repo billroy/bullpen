@@ -1627,6 +1627,10 @@ def register_events(socketio, app):
                     return
                 finally:
                     if env_cleanup_path:
+                        try:
+                            adapter.finalize_env(popen_kwargs.get("env"), env_cleanup_path)
+                        except Exception:
+                            logging.exception("adapter.finalize_env failed for %s", adapter.name)
                         shutil.rmtree(env_cleanup_path, ignore_errors=True)
 
         except Exception as e:

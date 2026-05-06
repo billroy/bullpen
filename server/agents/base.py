@@ -61,6 +61,14 @@ class AgentAdapter(ABC):
         """
         return None
 
+    def finalize_env(self, env, run_tmp):
+        """Hook called after the subprocess exits, before run_tmp is removed.
+
+        Override to mirror state (refreshed credentials, etc.) out of the
+        isolated dir back to a stable location. Default is a no-op.
+        """
+        return None
+
     def unavailable_message(self):
         """Return a user-facing setup message when this adapter is unavailable."""
         return f"{self.name} agent executable was not found. Install it or add it to PATH."

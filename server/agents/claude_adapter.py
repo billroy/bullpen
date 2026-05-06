@@ -63,13 +63,16 @@ def _make_isolated_tmpdir(prefix):
     return tempfile.mkdtemp(prefix=prefix)
 
 
-def _copy_claude_credentials(target_config_dir):
-    """Copy Claude OAuth credentials without carrying hooks/plugins/session state."""
+def _claude_source_credentials_path():
     source_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
     if source_config_dir:
-        source_credentials = Path(source_config_dir).expanduser() / ".credentials.json"
-    else:
-        source_credentials = Path.home() / ".claude" / ".credentials.json"
+        return Path(source_config_dir).expanduser() / ".credentials.json"
+    return Path.home() / ".claude" / ".credentials.json"
+
+
+def _copy_claude_credentials(target_config_dir):
+    """Copy Claude OAuth credentials without carrying hooks/plugins/session state."""
+    source_credentials = _claude_source_credentials_path()
     if not source_credentials.is_file():
         return False
 
@@ -80,6 +83,35 @@ def _copy_claude_credentials(target_config_dir):
     except OSError:
         pass
     return True
+
+
+def _sync_claude_credentials_back(target_config_dir):
+    """Mirror a refreshed access token from the run dir back to source.
+
+    Without this, every Live Agent send copies the same expired-access
+    token into a fresh isolated dir; claude refreshes against
+    console.anthropic.com on every send, and gets rate-limited (429)
+    after enough back-to-back sends — which surfaces as a silent hang.
+    """
+    source = _claude_source_credentials_path()
+    target = Path(target_config_dir) / ".credentials.json"
+    if not target.is_file():
+        return False
+    try:
+        if source.is_file() and target.read_bytes() == source.read_bytes():
+            return False
+    except OSError:
+        pass
+    try:
+        source.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, source)
+        try:
+            os.chmod(source, 0o600)
+        except OSError:
+            pass
+        return True
+    except OSError:
+        return False
 
 
 def _claude_credentials_usable(credentials_path):
@@ -165,6 +197,20 @@ class ClaudeAdapter(AgentAdapter):
         env["CLAUDE_CONFIG_DIR"] = claude_config_dir
         return env, run_tmp
 
+    def finalize_env(self, env, run_tmp):
+        """Mirror any refreshed credentials back to the source path.
+
+        Called after the claude subprocess exits and before run_tmp is
+        unlinked. Without this, claude rewrites the access token inside
+        the isolated config dir on each refresh, and the next invocation
+        re-copies the expired source — leading to repeated OAuth refresh
+        traffic and eventual 429 rate-limiting.
+        """
+        config_dir = (env or {}).get("CLAUDE_CONFIG_DIR")
+        if not config_dir:
+            return
+        _sync_claude_credentials_back(config_dir)
+
     def _mcp_config(self, bp_dir):
         """Generate a temporary MCP config file pointing to bullpen tools."""
         server_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "mcp_tools.py")
@@ -244,7 +290,19 @@ class ClaudeAdapter(AgentAdapter):
         if msg_type == "result":
             return None  # Final result is handled by parse_output
 
-        # Skip system, rate_limit_event, user echo, etc.
+        if msg_type == "system" and obj.get("subtype") == "api_retry":
+            # Surface retry storms so a stuck refresh / rate limit does not
+            # look like a silent hang. Each api_retry doubles backoff and
+            # there can be up to ~10 attempts before claude gives up.
+            attempt = obj.get("attempt")
+            max_retries = obj.get("max_retries")
+            error = obj.get("error") or "unknown"
+            status = obj.get("error_status")
+            status_part = f" status={status}" if status else ""
+            attempt_part = f"{attempt}/{max_retries}" if attempt and max_retries else "?"
+            return f"[claude api_retry attempt={attempt_part} error={error}{status_part}]"
+
+        # Skip system/init, rate_limit_event, user echo, etc.
         return None
 
     def parse_output(self, stdout, stderr, exit_code):
