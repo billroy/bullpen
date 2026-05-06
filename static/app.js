@@ -798,12 +798,12 @@ const app = createApp({
       const title = typeof payload === 'string' ? payload.trim() : (payload?.title || '').trim();
       const description = typeof payload === 'string' ? '' : (payload?.description || '').trim();
       if (!title) return;
-      const created = emitSocketAction('task:create', {
-        title, type: 'task', priority: 'normal', tags: [], description,
-      }, {
-        offlineMessage: 'Disconnected from Bullpen server. Ticket was not created.',
-      });
-      if (created) pendingQuickCreates.push({ title, description });
+      if (!socket?.connected) {
+        addToast('Disconnected from Bullpen server. Ticket was not created.', 'error');
+        return;
+      }
+      pendingQuickCreates.push({ title, description });
+      socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));
     }
     function updateTask(data) {
       return emitSocketAction('task:update', data, {
@@ -1504,6 +1504,9 @@ const app = createApp({
     window.addEventListener('touchstart', unlockAudio, { once: true });
 
     renderLucideIcons(this.$el);
+  },
+  updated() {
+    this.$nextTick(() => renderLucideIcons(this.$el));
   },
   template: `
     <div class="app-container">

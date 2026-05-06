@@ -332,7 +332,11 @@ def _load_layout(bp_dir):
         config = read_json(os.path.join(bp_dir, "config.json"))
     except Exception:
         config = {}
-    return normalize_layout(layout, config=config)
+    normalized = normalize_layout(layout, config=config)
+    raw_slots = layout.get("slots", []) if isinstance(layout, dict) else []
+    if raw_slots and all(slot is None for slot in raw_slots):
+        normalized["slots"] = [None for _ in raw_slots]
+    return normalized
 
 
 def _save_layout(bp_dir, layout):
@@ -773,14 +777,14 @@ def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
             )
             return
 
-    argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
-    argv = harden_agent_argv(agent_name, argv, trust_mode=_worker_trust_mode(worker))
-
     try:
         config = read_json(os.path.join(bp_dir, "config.json"))
     except FileNotFoundError:
         return
     timeout = config.get("agent_timeout_seconds", 600)
+
+    argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
+    argv = harden_agent_argv(agent_name, argv, trust_mode=_worker_trust_mode(worker))
 
     thread = threading.Thread(
         target=_run_agent,
@@ -1081,7 +1085,10 @@ def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=
     and unknown adapters are setup problems, so retrying just burns time and
     leaves users with a cryptic failure.
     """
-    layout = _load_layout(bp_dir)
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
     worker = None
     if slot_index < len(layout.get("slots", [])):
         worker = layout["slots"][slot_index]

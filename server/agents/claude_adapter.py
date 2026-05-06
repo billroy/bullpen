@@ -5,6 +5,8 @@ import os
 import shutil
 import sys
 import tempfile
+import time
+from pathlib import Path
 
 from server.agents.base import AgentAdapter
 
@@ -62,6 +64,53 @@ def _make_isolated_tmpdir(prefix):
     return tempfile.mkdtemp(prefix=prefix)
 
 
+def _copy_claude_credentials(target_config_dir):
+    """Copy Claude OAuth credentials without carrying hooks/plugins/session state."""
+    source_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if source_config_dir:
+        source_credentials = Path(source_config_dir).expanduser() / ".credentials.json"
+    else:
+        source_credentials = Path.home() / ".claude" / ".credentials.json"
+    if not source_credentials.is_file():
+        return False
+
+    target = Path(target_config_dir) / ".credentials.json"
+    shutil.copy2(source_credentials, target)
+    try:
+        os.chmod(target, 0o600)
+    except OSError:
+        pass
+    return True
+
+
+def _claude_credentials_current(credentials_path):
+    try:
+        data = json.loads(Path(credentials_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    oauth = data.get("claudeAiOauth")
+    if not isinstance(oauth, dict) or not oauth.get("accessToken"):
+        return False
+    expires_at = oauth.get("expiresAt")
+    if expires_at is None:
+        return True
+    if not isinstance(expires_at, (int, float)):
+        return False
+    expires_at_seconds = expires_at / 1000 if expires_at > 10_000_000_000 else expires_at
+    return expires_at_seconds > time.time() + 300
+
+
+def _has_claude_auth():
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"):
+        return True
+    source_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if source_config_dir:
+        credentials = Path(source_config_dir).expanduser() / ".credentials.json"
+    else:
+        credentials = Path.home() / ".claude" / ".credentials.json"
+    return _claude_credentials_current(credentials)
+
+
 class ClaudeAdapter(AgentAdapter):
 
     @property
@@ -69,7 +118,7 @@ class ClaudeAdapter(AgentAdapter):
         return "claude"
 
     def available(self):
-        return _find_claude() is not None
+        return _find_claude() is not None and _has_claude_auth()
 
     def unavailable_message(self):
         configured = os.environ.get("BULLPEN_CLAUDE_PATH")
@@ -79,8 +128,8 @@ class ClaudeAdapter(AgentAdapter):
                 f"{configured!r}, but that file was not found or is not executable."
             )
         return (
-            "Claude CLI is not available. Install Claude Code CLI and authenticate, "
-            "or set BULLPEN_CLAUDE_PATH to the claude executable."
+            "Claude CLI is not available or not authenticated. Install Claude Code CLI "
+            "and authenticate, or set BULLPEN_CLAUDE_PATH to the claude executable."
         )
 
     def build_argv(self, prompt, model, workspace, bp_dir=None):
@@ -91,6 +140,8 @@ class ClaudeAdapter(AgentAdapter):
             "--output-format", "stream-json",
             "--verbose",
             "--dangerously-skip-permissions",
+            "--no-session-persistence",
+            "--setting-sources", "user",
             "--model", model,
         ]
         if bp_dir:
@@ -100,12 +151,17 @@ class ClaudeAdapter(AgentAdapter):
         return argv
 
     def prepare_env(self, workspace, bp_dir=None, task_id=None):
-        """Run Claude with a private temp root to avoid launcher collisions."""
+        """Run Claude with private temp/config roots for headless launches."""
         run_tmp = _make_isolated_tmpdir("bullpen-claude-")
+        claude_config_dir = os.path.join(run_tmp, "claude-config")
+        os.makedirs(claude_config_dir, mode=0o700, exist_ok=True)
+        _copy_claude_credentials(claude_config_dir)
         env = os.environ.copy()
         env["TMPDIR"] = run_tmp
         env["TMP"] = run_tmp
         env["TEMP"] = run_tmp
+        env["CLAUDE_CODE_TMPDIR"] = run_tmp
+        env["CLAUDE_CONFIG_DIR"] = claude_config_dir
         return env, run_tmp
 
     def _mcp_config(self, bp_dir):

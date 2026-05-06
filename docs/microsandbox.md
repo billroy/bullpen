@@ -202,6 +202,10 @@ Seed or sync these provider credentials into the persistent sandbox home when pr
 - `~/.config/gemini`
 - `~/.config/google-gemini`
 
+Claude OAuth seeding uses the Docker runtime home as the preferred source only when `~/.bullpen/docker-home/.claude/.credentials.json` contains a current, non-expired Claude OAuth access token. If Docker-home credentials are missing or expired, fall back to current host `~/.claude/.credentials.json`. If neither source is current, remove stale Claude auth files from the Microsandbox home instead of copying or counting them. `claude auth status` can report account metadata from stale files, so deploy must not treat that command as proof that headless model calls can authenticate.
+
+Bullpen Claude subprocesses run with a per-run `CLAUDE_CONFIG_DIR` under the private temp directory. Copy only `.credentials.json` into that directory; do not copy user hooks, plugins, project settings, or session history. Launch Claude with `--no-session-persistence` and `--setting-sources user`, and keep Live Agent `--strict-mcp-config` hardening for Bullpen's MCP server. This matches Claude Code's documented settings model: settings are hierarchical, `~/.claude.json` stores OAuth/session/project state, hooks can run from settings, and `--no-session-persistence` disables transcript writes for non-interactive runs.
+
 Seed host `~/.codex` into `/home/bullpen/.codex` if missing and sync host `~/.codex/auth.json` into `/home/bullpen/.codex/auth.json` on every deploy. This mirrors `deploy-docker.sh`: after deploy starts, Codex inside Microsandbox owns the runtime-home token store and can persist refresh-token rotation there.
 
 Because Microsandbox bind-mount semantics may not match Docker for Codex's refresh-token write pattern, install a small `/home/bullpen/bin/codex` wrapper and set `BULLPEN_CODEX_PATH` to it. The wrapper serializes Codex invocations, copies `/home/bullpen/.codex` to guest-local `/var/lib/bullpen/codex-home`, runs the real Codex CLI with `CODEX_HOME=/var/lib/bullpen/codex-home`, then copies the resulting Codex home back to `/home/bullpen/.codex` before exiting. This makes token refresh happen on the guest-local filesystem while still persisting the rotated auth state to the mounted home.
@@ -221,7 +225,7 @@ Forward these environment variables when present:
 - `GOOGLE_API_KEY`
 - `CLAUDE_CODE_OAUTH_TOKEN`
 
-Handle `ANTHROPIC_API_KEY` like `deploy-docker.sh`: if Claude OAuth credentials exist in the persistent home, do not forward `ANTHROPIC_API_KEY`, because it can silently switch Claude Code from subscription OAuth auth to API-key billing.
+Handle `ANTHROPIC_API_KEY` like `deploy-docker.sh`: if current Claude OAuth credentials exist in the persistent home, do not forward `ANTHROPIC_API_KEY`, because it can silently switch Claude Code from subscription OAuth auth to API-key billing.
 
 For GitHub and git operations, support:
 
@@ -370,7 +374,7 @@ BULLPEN_GITHUB_REPO_URL=https://github.com/billroy/bullpen.git
 - Creating or editing files through Bullpen changes the host project directory
 - Bullpen and client app ports are both exposed on host localhost
 - Bullpen starts with authentication enabled using the requested admin credentials
-- Claude, Codex, Gemini, and GitHub credentials are available inside the sandbox when present on the host
+- Claude, Codex, Gemini, and GitHub credentials are available inside the sandbox when current credentials are present on the host
 - The script refuses invalid ports and refuses to use the same port for Bullpen and the app
 - `--no-replace` exits nonzero without modifying an existing sandbox
 - Answering no to the replacement prompt exits successfully without modifying an existing sandbox

@@ -144,7 +144,7 @@ const TopToolbar = {
     renderLucideIcons(this.$el);
   },
   updated() {
-    renderLucideIcons(this.$el);
+    this.$nextTick(() => renderLucideIcons(this.$el));
   },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);

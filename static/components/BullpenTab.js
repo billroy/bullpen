@@ -697,6 +697,9 @@ const BullpenTab = {
     this.selectA1();
     renderLucideIcons(this.$el);
   },
+  updated() {
+    this.$nextTick(() => renderLucideIcons(this.$el));
+  },
   beforeUnmount() {
     this._resizeObserver?.disconnect();
     if (this._persistTimer) clearTimeout(this._persistTimer);

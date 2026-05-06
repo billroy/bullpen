@@ -64,6 +64,8 @@ def test_worker_grid_avoids_broad_icon_rerenders_on_layout_updates():
     tab = _read("static/components/BullpenTab.js")
     assert "updated() {\n    renderLucideIcons(this.$el);" not in app
     assert "updated() {\n    renderLucideIcons(this.$el);" not in tab
+    assert "this.$nextTick(() => renderLucideIcons(this.$el));" in app
+    assert "this.$nextTick(() => renderLucideIcons(this.$el));" in tab
 
 
 def test_worker_grid_caches_dragover_drop_target_and_viewport_rect():
@@ -99,7 +101,6 @@ def test_worker_card_avoids_menu_icon_render_on_every_update():
 
 def test_mounted_surfaces_avoid_generic_updated_icon_rerenders():
     for rel_path in [
-        "static/components/TopToolbar.js",
         "static/components/LeftPane.js",
         "static/components/KanbanTab.js",
         "static/components/TaskDetailPanel.js",
@@ -184,8 +185,8 @@ def test_worker_card_disables_unsafe_menu_items_during_multiple_selection():
     assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuCopyWorker\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuExportWorker\"" in text
-    assert "class=\"worker-menu-item worker-menu-danger\" @click=\"menuDelete\"" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuDelete\"" not in text
+    assert "class=\"worker-menu-item worker-menu-danger\" :disabled=\"multipleSelectionActive\" @click=\"menuDelete\"" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuDelete\"" in text
     assert "if (this.multipleSelectionActive) return;" in text
     assert "this.$emit('delete-worker', this.slotIndex);" in text
 

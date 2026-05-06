@@ -102,7 +102,7 @@ def test_seed_credentials_skips_anthropic_key_when_claude_oauth_exists(sb, tmp_p
     claude_dir = host_home / ".claude"
     claude_dir.mkdir(parents=True)
     workspace.mkdir()
-    (claude_dir / ".credentials.json").write_text("{}", encoding="utf-8")
+    (claude_dir / ".credentials.json").write_text('{"claudeAiOauth":{"accessToken":"token"}}', encoding="utf-8")
     monkeypatch.setenv("HOME", str(host_home))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "api-key")
     monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
@@ -190,8 +190,13 @@ def test_seed_credentials_syncs_host_claude_json_by_default(sb, tmp_path, monkey
     sandbox_home = tmp_path / "sandbox-home"
     workspace = tmp_path / "project"
     host_home.mkdir()
+    (host_home / ".claude").mkdir()
     workspace.mkdir()
     (host_home / ".claude.json").write_text('{"oauthAccount":"fresh"}', encoding="utf-8")
+    (host_home / ".claude" / ".credentials.json").write_text(
+        '{"claudeAiOauth":{"accessToken":"token"}}',
+        encoding="utf-8",
+    )
     (sandbox_home).mkdir(parents=True)
     (sandbox_home / ".claude.json").write_text('{"oauthAccount":"stale"}', encoding="utf-8")
     monkeypatch.setenv("HOME", str(host_home))
@@ -283,6 +288,49 @@ def test_seed_credentials_prefers_docker_claude_home_when_oauth_exists(sb, tmp_p
 
     assert (sandbox_home / ".claude" / ".credentials.json").read_text(encoding="utf-8") == '{"claudeAiOauth":{"accessToken":"docker"}}'
     assert (sandbox_home / ".claude.json").read_text(encoding="utf-8") == '{"oauthAccount":"docker"}'
+
+
+def test_seed_credentials_ignores_expired_docker_claude_oauth(sb, tmp_path, monkeypatch):
+    host_home = tmp_path / "host"
+    docker_home = tmp_path / "docker-home"
+    sandbox_home = tmp_path / "sandbox-home"
+    workspace = tmp_path / "project"
+    (docker_home / ".claude").mkdir(parents=True)
+    (sandbox_home / ".claude").mkdir(parents=True)
+    workspace.mkdir()
+    (docker_home / ".claude.json").write_text('{"oauthAccount":"docker"}', encoding="utf-8")
+    (docker_home / ".claude" / ".credentials.json").write_text(
+        '{"claudeAiOauth":{"accessToken":"expired","expiresAt":1}}',
+        encoding="utf-8",
+    )
+    (sandbox_home / ".claude" / ".credentials.json").write_text(
+        '{"claudeAiOauth":{"accessToken":"stale","expiresAt":1}}',
+        encoding="utf-8",
+    )
+    (sandbox_home / ".claude.json").write_text('{"oauthAccount":"stale"}', encoding="utf-8")
+    monkeypatch.setenv("HOME", str(host_home))
+    monkeypatch.setenv("BULLPEN_DOCKER_HOME", str(docker_home))
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
+
+    config = sb.config_from_args(
+        [
+            "--workspace",
+            str(workspace),
+            "--admin-password",
+            "pw",
+            "--sandbox-home",
+            str(sandbox_home),
+            "--no-open",
+        ]
+    )
+    summary = sb.seed_credentials(config)
+
+    assert (sandbox_home / ".claude").is_dir()
+    assert not (sandbox_home / ".claude" / ".credentials.json").exists()
+    assert not (sandbox_home / ".claude.json").exists()
+    assert "env:OPENAI_API_KEY" in summary.provider_sources
+    assert not any(".claude" in source for source in summary.provider_sources)
 
 
 def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, monkeypatch):
@@ -659,7 +707,9 @@ def test_verify_mount_access_runs_as_bullpen_and_checks_workspace_config(sb):
     assert 'chown -R "$uid:$gid" /workspace/.bullpen' in repair_command
     assert "su -s /bin/bash bullpen -c" in probe_command
     assert "test -r /workspace/.bullpen/config.json" in probe_command
-    assert "ls -ln /workspace/.bullpen/config.json" in probe_command
+    assert "test -w /workspace/.bullpen" in probe_command
+    assert "effective user" not in probe_command
+    assert "workspace metadata" not in probe_command
 
 
 def test_run_sandbox_shell_raises_on_execoutput_exit_code(sb):

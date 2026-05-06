@@ -103,6 +103,34 @@ class ChatFailingAdapter(AgentAdapter):
         return None
 
 
+class ChatEnvAdapter(AgentAdapter):
+    def __init__(self):
+        self.cleanup_path = None
+
+    @property
+    def name(self):
+        return "chat-env-mock"
+
+    def available(self):
+        return True
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        script = (
+            "import os; "
+            "print(os.environ.get('BULLPEN_CHAT_ENV_TEST', 'missing'))"
+        )
+        return [sys.executable, "-c", script]
+
+    def prepare_env(self, workspace, bp_dir=None, task_id=None):
+        env = os.environ.copy()
+        env["BULLPEN_CHAT_ENV_TEST"] = "prepared"
+        self.cleanup_path = tempfile.mkdtemp(prefix="bullpen-chat-env-test-")
+        return env, self.cleanup_path
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {"success": exit_code == 0, "output": stdout.strip(), "error": stderr.strip(), "usage": {}}
+
+
 class TestTaskEvents:
     def test_create_task(self, client):
         c, app = client
@@ -992,6 +1020,35 @@ class TestWorkerEvents:
 
 
 class TestChatEvents:
+    def test_chat_uses_adapter_prepared_env_and_cleans_it_up(self, client):
+        c, _app = client
+        adapter = ChatEnvAdapter()
+        register_adapter("chat-env-mock", adapter)
+
+        c.emit("chat:send", {
+            "sessionId": "session-env-1",
+            "provider": "chat-env-mock",
+            "model": "mock-model",
+            "message": "hello",
+        })
+
+        output = []
+        deadline = time.time() + 3.0
+        done = False
+        while time.time() < deadline and not done:
+            for evt in c.get_received():
+                if evt["name"] == "chat:output":
+                    output.append(evt["args"][0])
+                if evt["name"] == "chat:done":
+                    done = True
+            if not done:
+                time.sleep(0.05)
+
+        assert done
+        assert any("prepared" in line for evt in output for line in evt.get("lines", []))
+        assert adapter.cleanup_path
+        assert not os.path.exists(adapter.cleanup_path)
+
     def test_chat_logs_structured_usage_and_tokens(self, client):
         c, app = client
         register_adapter("chat-usage-mock", ChatUsageAdapter())

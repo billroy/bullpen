@@ -12,6 +12,7 @@ import asyncio
 import getpass
 import importlib
 import inspect
+import json
 import os
 import platform
 import shlex
@@ -35,6 +36,7 @@ ADMIN_USER_DEFAULT = "admin"
 SANDBOX_NAME_DEFAULT = "bullpen"
 BASE_DEFAULT = "bullpen-microsandbox-local"
 HEALTH_TIMEOUT_SECONDS = 20
+CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS = 300
 
 
 class DeployError(RuntimeError):
@@ -460,6 +462,14 @@ def copy_file_if_exists(source: Path, target: Path, *, sync: bool = False) -> bo
     return True
 
 
+def remove_file_if_exists(path: Path) -> bool:
+    try:
+        path.unlink()
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def copy_dir_if_exists(source: Path, target: Path, *, sync: bool = False) -> bool:
     if not source.is_dir():
         return False
@@ -478,6 +488,53 @@ def replace_dir_if_exists(source: Path, target: Path) -> bool:
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, target)
     return True
+
+
+def claude_oauth_credentials_current(credentials_path: Path, *, now: float | None = None) -> bool:
+    if not credentials_path.is_file():
+        return False
+    try:
+        data = json.loads(credentials_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    oauth = data.get("claudeAiOauth")
+    if not isinstance(oauth, dict) or not oauth.get("accessToken"):
+        return False
+    expires_at = oauth.get("expiresAt")
+    if expires_at is None:
+        return True
+    if not isinstance(expires_at, (int, float)):
+        return False
+    if now is None:
+        now = time.time()
+    expires_at_seconds = expires_at / 1000 if expires_at > 10_000_000_000 else expires_at
+    return expires_at_seconds > now + CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS
+
+
+def select_claude_source_home(home: Path, docker_home: Path) -> Path | None:
+    for candidate in (docker_home, home):
+        if claude_oauth_credentials_current(candidate / ".claude" / ".credentials.json"):
+            return candidate
+    return None
+
+
+def copy_claude_credentials(source_home: Path, sandbox_home: Path, *, replace_home_dir: bool) -> None:
+    copy_file_if_exists(source_home / ".claude.json", sandbox_home / ".claude.json", sync=True)
+    if replace_home_dir:
+        replace_dir_if_exists(source_home / ".claude", sandbox_home / ".claude")
+    else:
+        copy_dir_if_exists(source_home / ".claude", sandbox_home / ".claude")
+    credentials = sandbox_home / ".claude" / ".credentials.json"
+    copy_file_if_exists(source_home / ".claude" / ".credentials.json", credentials, sync=True)
+    try:
+        credentials.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+
+
+def remove_stale_claude_auth(sandbox_home: Path) -> None:
+    remove_file_if_exists(sandbox_home / ".claude" / ".credentials.json")
+    remove_file_if_exists(sandbox_home / ".claude.json")
 
 
 def yaml_single_quote(value: str) -> str:
@@ -571,17 +628,11 @@ def seed_credentials(config: DeployConfig) -> CredentialSummary:
     (sandbox_home / "logs").mkdir(parents=True, exist_ok=True)
 
     summary = CredentialSummary()
-    claude_source_home = docker_home if (docker_home / ".claude" / ".credentials.json").is_file() else home
-    copy_file_if_exists(claude_source_home / ".claude.json", sandbox_home / ".claude.json", sync=True)
-    if claude_source_home == docker_home:
-        replace_dir_if_exists(claude_source_home / ".claude", sandbox_home / ".claude")
+    claude_source_home = select_claude_source_home(home, docker_home)
+    if claude_source_home is not None:
+        copy_claude_credentials(claude_source_home, sandbox_home, replace_home_dir=claude_source_home == docker_home)
     else:
-        copy_dir_if_exists(claude_source_home / ".claude", sandbox_home / ".claude")
-    copy_file_if_exists(
-        claude_source_home / ".claude" / ".credentials.json",
-        sandbox_home / ".claude" / ".credentials.json",
-        sync=True,
-    )
+        remove_stale_claude_auth(sandbox_home)
     copy_dir_if_exists(home / ".config" / "codex", sandbox_home / ".config" / "codex")
     copy_dir_if_exists(home / ".codex", sandbox_home / ".codex")
     config.codex_auth_synced = copy_file_if_exists(home / ".codex" / "auth.json", sandbox_home / ".codex" / "auth.json", sync=True)
@@ -589,8 +640,6 @@ def seed_credentials(config: DeployConfig) -> CredentialSummary:
     copy_dir_if_exists(home / ".config" / "google-gemini", sandbox_home / ".config" / "google-gemini")
 
     provider_home_paths = [
-        sandbox_home / ".claude",
-        sandbox_home / ".claude.json",
         sandbox_home / ".claude" / ".credentials.json",
         sandbox_home / ".codex",
         sandbox_home / ".codex" / "auth.json",
@@ -822,10 +871,6 @@ fi
 '''
     await run_configured_sandbox_shell(sandbox, config, repair_command, label="repair Bullpen workspace state ownership")
     command = r'''set -e
-echo "effective user: $(id)"
-echo "workspace metadata:"
-ls -ldn /workspace /workspace/.bullpen 2>&1 || true
-ls -ln /workspace/.bullpen/config.json 2>&1 || true
 test -r /workspace/.bullpen/config.json
 test -w /workspace/.bullpen
 test -w /home/bullpen

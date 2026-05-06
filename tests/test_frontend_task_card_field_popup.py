@@ -40,7 +40,7 @@ def test_app_guards_task_creates_and_disconnects_show_toasts():
     text = _read("static/app.js")
     assert "Disconnected from Bullpen server. Changes are paused until connection is restored." in text
     assert "Reconnected to Bullpen server" in text
-    assert "emitSocketAction('task:create', {" in text
+    assert "socket.emit('task:create', _wsData({" in text
     assert "Ticket was not created." in text
     assert "return id;" in text
 

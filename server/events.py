@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -1415,6 +1416,7 @@ def register_events(socketio, app):
                 startup_error = None
                 saw_ready = adapter.name != "claude"
                 chat_usage = {}  # normalized token usage across stream events
+                env_cleanup_path = None
 
                 popen_kwargs = dict(
                     stdin=subprocess.PIPE,
@@ -1425,195 +1427,205 @@ def register_events(socketio, app):
                 )
                 if workspace:
                     popen_kwargs["cwd"] = workspace
-                proc = subprocess.Popen(argv, **popen_kwargs)
-                with _chat_proc_lock:
-                    _chat_processes[_chat_key(ws_id, session_id)] = proc
-                prompt = response_collector["prompt"]
+                prepared_env = adapter.prepare_env(workspace, bp_dir=bp_dir)
+                if isinstance(prepared_env, tuple):
+                    popen_kwargs["env"], env_cleanup_path = prepared_env
+                else:
+                    popen_kwargs["env"] = prepared_env
+                proc = None
                 try:
-                    if adapter.prompt_via_stdin():
-                        proc.stdin.write(prompt)
-                    proc.stdin.close()
-                except (BrokenPipeError, OSError):
-                    pass
-
-                batch = []
-                batch_lock = threading.Lock()
-                last_emit = [time.time()]
-                force_fail_message = [None]
-                raw_stdout = []
-                raw_stderr = []
-
-                def _drain_stdout():
-                    nonlocal pending_startup, startup_error, saw_ready, chat_usage
-                    for line in proc.stdout:
-                        raw_stdout.append(line)
-                        if adapter.name == "claude":
-                            startup = _claude_mcp_startup_state(line)
-                            if startup:
-                                state, msg = startup
-                                if state == "ready":
-                                    saw_ready = True
-                                elif state == "pending":
-                                    pending_startup = True
-                                    # Pending can be transient while Claude finishes MCP setup.
-                                    continue
-                                else:
-                                    startup_error = msg or "Bullpen MCP unavailable at startup."
-                                    try:
-                                        _terminate_proc(proc)
-                                    except OSError:
-                                        pass
-                                    return
-                        # Capture token usage from known provider stream events.
-                        try:
-                            obj = json.loads(line.strip())
-                            chat_usage = merge_usage_dicts(
-                                chat_usage, extract_stream_usage_event(adapter.name, obj)
-                            )
-                        except (json.JSONDecodeError, AttributeError):
-                            pass
-                        display = adapter.format_stream_line(line)
-                        if display is None:
-                            continue
-                        for dl in display.split("\n"):
-                            collected.append(dl)
-                            to_emit = None
-                            with batch_lock:
-                                batch.append(dl)
-                                now = time.time()
-                                if now - last_emit[0] >= 0.2:
-                                    to_emit = list(batch)
-                                    batch.clear()
-                                    last_emit[0] = now
-                            if to_emit:
-                                _emit_chat("chat:output", {"sessionId": session_id, "lines": to_emit}, ws_id)
-
-                def _drain_stderr():
+                    proc = subprocess.Popen(argv, **popen_kwargs)
+                    with _chat_proc_lock:
+                        _chat_processes[_chat_key(ws_id, session_id)] = proc
+                    prompt = response_collector["prompt"]
                     try:
-                        for line in proc.stderr:
-                            raw_stderr.append(line)
-                            line = line.rstrip()
-                            if line:
-                                logging.warning("chat agent stderr [%s]: %s", session_id, line)
-                                if force_fail_message[0] is None:
-                                    force_fail_message[0] = _classify_chat_provider_error(
-                                        adapter.name, line, model=model,
-                                    )
-                                if force_fail_message[0] and not collected:
-                                    try:
-                                        _terminate_proc(proc)
-                                    except OSError:
-                                        pass
-                    except Exception:
+                        if adapter.prompt_via_stdin():
+                            proc.stdin.write(prompt)
+                        proc.stdin.close()
+                    except (BrokenPipeError, OSError):
                         pass
 
-                t_err = threading.Thread(target=_drain_stderr, daemon=True)
-                t_err.start()
-                _drain_stdout()
-                proc.wait()
-                t_err.join(timeout=2)
+                    batch = []
+                    batch_lock = threading.Lock()
+                    last_emit = [time.time()]
+                    force_fail_message = [None]
+                    raw_stdout = []
+                    raw_stderr = []
 
-                if startup_error:
-                    _emit_chat("chat:error", {"sessionId": session_id, "message": startup_error}, ws_id)
-                    return
+                    def _drain_stdout():
+                        nonlocal pending_startup, startup_error, saw_ready, chat_usage
+                        for line in proc.stdout:
+                            raw_stdout.append(line)
+                            if adapter.name == "claude":
+                                startup = _claude_mcp_startup_state(line)
+                                if startup:
+                                    state, msg = startup
+                                    if state == "ready":
+                                        saw_ready = True
+                                    elif state == "pending":
+                                        pending_startup = True
+                                        # Pending can be transient while Claude finishes MCP setup.
+                                        continue
+                                    else:
+                                        startup_error = msg or "Bullpen MCP unavailable at startup."
+                                        try:
+                                            _terminate_proc(proc)
+                                        except OSError:
+                                            pass
+                                        return
+                            # Capture token usage from known provider stream events.
+                            try:
+                                obj = json.loads(line.strip())
+                                chat_usage = merge_usage_dicts(
+                                    chat_usage, extract_stream_usage_event(adapter.name, obj)
+                                )
+                            except (json.JSONDecodeError, AttributeError):
+                                pass
+                            display = adapter.format_stream_line(line)
+                            if display is None:
+                                continue
+                            for dl in display.split("\n"):
+                                collected.append(dl)
+                                to_emit = None
+                                with batch_lock:
+                                    batch.append(dl)
+                                    now = time.time()
+                                    if now - last_emit[0] >= 0.2:
+                                        to_emit = list(batch)
+                                        batch.clear()
+                                        last_emit[0] = now
+                                if to_emit:
+                                    _emit_chat("chat:output", {"sessionId": session_id, "lines": to_emit}, ws_id)
 
-                if pending_startup and not saw_ready:
-                    # Claude can remain "pending" for MCP in init while still producing
-                    # useful output. Do not convert that transient state into a hard error.
-                    logging.info(
-                        "chat agent [%s] mcp still pending at init; not forcing chat:error",
-                        session_id,
-                    )
+                    def _drain_stderr():
+                        try:
+                            for line in proc.stderr:
+                                raw_stderr.append(line)
+                                line = line.rstrip()
+                                if line:
+                                    logging.warning("chat agent stderr [%s]: %s", session_id, line)
+                                    if force_fail_message[0] is None:
+                                        force_fail_message[0] = _classify_chat_provider_error(
+                                            adapter.name, line, model=model,
+                                        )
+                                    if force_fail_message[0] and not collected:
+                                        try:
+                                            _terminate_proc(proc)
+                                        except OSError:
+                                            pass
+                        except Exception:
+                            pass
 
-                # Flush remaining batch
-                with batch_lock:
-                    if batch:
-                        _emit_chat("chat:output", {"sessionId": session_id, "lines": list(batch)}, ws_id)
-                        batch.clear()
+                    t_err = threading.Thread(target=_drain_stderr, daemon=True)
+                    t_err.start()
+                    _drain_stdout()
+                    proc.wait()
+                    t_err.join(timeout=2)
 
-                stdout = "".join(raw_stdout)
-                stderr = "".join(raw_stderr)
-                parsed = adapter.parse_output(stdout, stderr, proc.returncode)
-                parsed_output = (parsed.get("output") or "").strip()
-                if force_fail_message[0] and not collected and not parsed_output:
-                    _emit_chat("chat:error", {"sessionId": session_id, "message": force_fail_message[0]}, ws_id)
-                    return
-                if not parsed.get("success", False):
-                    classified_error = _classify_chat_provider_error(
-                        adapter.name,
-                        parsed.get("error", ""),
-                        parsed.get("output", ""),
-                        stderr,
-                        model=model,
-                    )
-                    error_message = classified_error or parsed.get("error") or "Agent run failed."
-                    _emit_chat("chat:error", {"sessionId": session_id, "message": error_message}, ws_id)
-                    return
+                    if startup_error:
+                        _emit_chat("chat:error", {"sessionId": session_id, "message": startup_error}, ws_id)
+                        return
 
-                full_response = "\n".join(collected).strip()
-                if not full_response:
-                    if parsed_output:
-                        parsed_lines = parsed_output.splitlines() or [parsed_output]
-                        _emit_chat("chat:output", {"sessionId": session_id, "lines": parsed_lines}, ws_id)
-                        full_response = parsed_output
-
-                # Update session history
-                with _chat_lock:
-                    chat_key = _chat_key(ws_id, session_id)
-                    if chat_key in _chat_sessions:
-                        _chat_sessions[chat_key].append({"role": "user", "content": message})
-                        _chat_sessions[chat_key].append({"role": "assistant", "content": full_response})
-
-                # Log chat exchange to a ticket
-                if ws_id and bp_dir:
-                    try:
-                        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                        agent_label = f"{adapter.name}/{model}" if model else adapter.name
-                        turn_text = (
-                            f"\n**[{now}] User:** {message}\n\n"
-                            f"**[{now}] Agent ({agent_label}):**\n\n{full_response}\n"
+                    if pending_startup and not saw_ready:
+                        # Claude can remain "pending" for MCP in init while still producing
+                        # useful output. Do not convert that transient state into a hard error.
+                        logging.info(
+                            "chat agent [%s] mcp still pending at init; not forcing chat:error",
+                            session_id,
                         )
-                        usage_entry = build_usage_entry(
-                            source="chat",
-                            provider=adapter.name,
+
+                    # Flush remaining batch
+                    with batch_lock:
+                        if batch:
+                            _emit_chat("chat:output", {"sessionId": session_id, "lines": list(batch)}, ws_id)
+                            batch.clear()
+
+                    stdout = "".join(raw_stdout)
+                    stderr = "".join(raw_stderr)
+                    parsed = adapter.parse_output(stdout, stderr, proc.returncode)
+                    parsed_output = (parsed.get("output") or "").strip()
+                    if force_fail_message[0] and not collected and not parsed_output:
+                        _emit_chat("chat:error", {"sessionId": session_id, "message": force_fail_message[0]}, ws_id)
+                        return
+                    if not parsed.get("success", False):
+                        classified_error = _classify_chat_provider_error(
+                            adapter.name,
+                            parsed.get("error", ""),
+                            parsed.get("output", ""),
+                            stderr,
                             model=model,
-                            usage=merge_usage_dicts(chat_usage, parsed.get("usage", {})),
-                            occurred_at=now,
                         )
+                        error_message = classified_error or parsed.get("error") or "Agent run failed."
+                        _emit_chat("chat:error", {"sessionId": session_id, "message": error_message}, ws_id)
+                        return
 
-                        with _chat_lock:
-                            chat_key = _chat_key(ws_id, session_id)
-                            ticket_id = _chat_ticket_ids.get(chat_key)
-                        if not ticket_id:
-                            short_title = message[:57] + "..." if len(message) > 57 else message
-                            task = task_mod.create_task(
-                                bp_dir,
-                                f"Chat: {short_title}",
-                                task_type="task",
-                                priority="normal",
-                                tags=["chat"],
-                                status="review",
+                    full_response = "\n".join(collected).strip()
+                    if not full_response:
+                        if parsed_output:
+                            parsed_lines = parsed_output.splitlines() or [parsed_output]
+                            _emit_chat("chat:output", {"sessionId": session_id, "lines": parsed_lines}, ws_id)
+                            full_response = parsed_output
+
+                    # Update session history
+                    with _chat_lock:
+                        chat_key = _chat_key(ws_id, session_id)
+                        if chat_key in _chat_sessions:
+                            _chat_sessions[chat_key].append({"role": "user", "content": message})
+                            _chat_sessions[chat_key].append({"role": "assistant", "content": full_response})
+
+                    # Log chat exchange to a ticket
+                    if ws_id and bp_dir:
+                        try:
+                            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                            agent_label = f"{adapter.name}/{model}" if model else adapter.name
+                            turn_text = (
+                                f"\n**[{now}] User:** {message}\n\n"
+                                f"**[{now}] Agent ({agent_label}):**\n\n{full_response}\n"
                             )
-                            updates = {"body": f"\n## Chat Transcript\n{turn_text}"}
-                            if usage_entry:
-                                updates.update(build_usage_update(task, usage_entry))
-                            task = task_mod.update_task(bp_dir, task["id"], updates)
+                            usage_entry = build_usage_entry(
+                                source="chat",
+                                provider=adapter.name,
+                                model=model,
+                                usage=merge_usage_dicts(chat_usage, parsed.get("usage", {})),
+                                occurred_at=now,
+                            )
+
                             with _chat_lock:
-                                _chat_ticket_ids[chat_key] = task["id"]
-                            _emit("task:created", task, ws_id)
-                        else:
-                            task = task_mod.read_task(bp_dir, ticket_id)
-                            if task:
-                                updates = {"body": (task.get("body") or "").rstrip() + "\n" + turn_text}
+                                chat_key = _chat_key(ws_id, session_id)
+                                ticket_id = _chat_ticket_ids.get(chat_key)
+                            if not ticket_id:
+                                short_title = message[:57] + "..." if len(message) > 57 else message
+                                task = task_mod.create_task(
+                                    bp_dir,
+                                    f"Chat: {short_title}",
+                                    task_type="task",
+                                    priority="normal",
+                                    tags=["chat"],
+                                    status="review",
+                                )
+                                updates = {"body": f"\n## Chat Transcript\n{turn_text}"}
                                 if usage_entry:
                                     updates.update(build_usage_update(task, usage_entry))
-                                task = task_mod.update_task(bp_dir, ticket_id, updates)
-                                _emit("task:updated", task, ws_id)
-                    except Exception:
-                        logging.exception("Failed to log chat to ticket for session %s", session_id)
+                                task = task_mod.update_task(bp_dir, task["id"], updates)
+                                with _chat_lock:
+                                    _chat_ticket_ids[chat_key] = task["id"]
+                                _emit("task:created", task, ws_id)
+                            else:
+                                task = task_mod.read_task(bp_dir, ticket_id)
+                                if task:
+                                    updates = {"body": (task.get("body") or "").rstrip() + "\n" + turn_text}
+                                    if usage_entry:
+                                        updates.update(build_usage_update(task, usage_entry))
+                                    task = task_mod.update_task(bp_dir, ticket_id, updates)
+                                    _emit("task:updated", task, ws_id)
+                        except Exception:
+                            logging.exception("Failed to log chat to ticket for session %s", session_id)
 
-                _emit_chat("chat:done", {"sessionId": session_id}, ws_id)
-                return
+                    _emit_chat("chat:done", {"sessionId": session_id}, ws_id)
+                    return
+                finally:
+                    if env_cleanup_path:
+                        shutil.rmtree(env_cleanup_path, ignore_errors=True)
 
         except Exception as e:
             logging.exception("Chat agent error for session %s", session_id)

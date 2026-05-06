@@ -29,6 +29,10 @@ class TestClaudeAdapter:
         assert "sonnet" in argv
         assert "--output-format" in argv
         assert "stream-json" in argv
+        assert "--no-session-persistence" in argv
+        assert "--setting-sources" in argv
+        idx = argv.index("--setting-sources")
+        assert argv[idx + 1] == "user"
 
     def test_find_claude_honors_configured_path(self, monkeypatch):
         configured = "/opt/bullpen/bin/claude"
@@ -36,6 +40,26 @@ class TestClaudeAdapter:
         monkeypatch.setattr(claude_mod, "_is_executable", lambda path: path == configured)
 
         assert claude_mod._find_claude() == configured
+
+    def test_available_requires_claude_auth(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(claude_mod, "_find_claude", lambda: "/usr/local/bin/claude")
+
+        assert ClaudeAdapter().available() is False
+
+    def test_available_accepts_current_claude_oauth(self, monkeypatch, tmp_path):
+        home = tmp_path / "home"
+        credentials = home / ".claude" / ".credentials.json"
+        credentials.parent.mkdir(parents=True)
+        credentials.write_text('{"claudeAiOauth":{"accessToken":"token"}}', encoding="utf-8")
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setattr(claude_mod, "_find_claude", lambda: "/usr/local/bin/claude")
+
+        assert ClaudeAdapter().available() is True
 
     def test_unavailable_message_mentions_configured_bad_path(self, monkeypatch):
         monkeypatch.setenv("BULLPEN_CLAUDE_PATH", "/missing/claude")
@@ -61,8 +85,15 @@ class TestClaudeAdapter:
             if os.path.exists(cfg_path):
                 os.unlink(cfg_path)
 
-    def test_prepare_env_isolates_tmpdir(self, monkeypatch, tmp_path):
+    def test_prepare_env_isolates_tmpdir_and_claude_config(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TMPDIR", str(tmp_path))
+        home = tmp_path / "home"
+        claude_dir = home / ".claude"
+        claude_dir.mkdir(parents=True)
+        credentials = claude_dir / ".credentials.json"
+        credentials.write_text('{"claudeAiOauth":{"accessToken":"token"}}', encoding="utf-8")
+        (claude_dir / "settings.json").write_text('{"hooks":{"Stop":[]}}', encoding="utf-8")
+        monkeypatch.setenv("HOME", str(home))
 
         env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
         try:
@@ -71,6 +102,13 @@ class TestClaudeAdapter:
             assert env["TMPDIR"] == cleanup_path
             assert env["TMP"] == cleanup_path
             assert env["TEMP"] == cleanup_path
+            assert env["CLAUDE_CODE_TMPDIR"] == cleanup_path
+            assert env["CLAUDE_CONFIG_DIR"].startswith(cleanup_path)
+            copied_credentials = os.path.join(env["CLAUDE_CONFIG_DIR"], ".credentials.json")
+            assert os.path.isfile(copied_credentials)
+            with open(copied_credentials, encoding="utf-8") as f:
+                assert f.read() == '{"claudeAiOauth":{"accessToken":"token"}}'
+            assert not os.path.exists(os.path.join(env["CLAUDE_CONFIG_DIR"], "settings.json"))
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
