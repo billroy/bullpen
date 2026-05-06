@@ -107,6 +107,10 @@ class TestClaudeAdapter:
             assert env["CLAUDE_CONFIG_DIR"].startswith(cleanup_path)
             copied_credentials = os.path.join(env["CLAUDE_CONFIG_DIR"], ".credentials.json")
             assert os.path.isfile(copied_credentials)
+            if os.path.isfile("/etc/ssl/certs/ca-certificates.crt"):
+                assert env["SSL_CERT_FILE"] == "/etc/ssl/certs/ca-certificates.crt"
+            if os.path.isdir("/etc/ssl/certs"):
+                assert env["SSL_CERT_DIR"] == "/etc/ssl/certs"
             with open(copied_credentials, encoding="utf-8") as f:
                 assert f.read() == '{"claudeAiOauth":{"accessToken":"token"}}'
             assert not os.path.exists(os.path.join(env["CLAUDE_CONFIG_DIR"], "settings.json"))

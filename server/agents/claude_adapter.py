@@ -28,6 +28,8 @@ else:
 CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS = 300
 _CLAUDE_OAUTH_REFRESH_LOCK = threading.Lock()
 _CLAUDE_REFRESH_LOCK_HELD_ENV = "BULLPEN_CLAUDE_REFRESH_LOCK_HELD"
+_SYSTEM_CA_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
+_SYSTEM_CA_CERT_DIR = "/etc/ssl/certs"
 
 
 def _is_executable(path):
@@ -241,6 +243,10 @@ class ClaudeAdapter(AgentAdapter):
             env["TEMP"] = run_tmp
             env["CLAUDE_CODE_TMPDIR"] = run_tmp
             env["CLAUDE_CONFIG_DIR"] = claude_config_dir
+            if os.path.isfile(_SYSTEM_CA_CERT_FILE):
+                env.setdefault("SSL_CERT_FILE", _SYSTEM_CA_CERT_FILE)
+            if os.path.isdir(_SYSTEM_CA_CERT_DIR):
+                env.setdefault("SSL_CERT_DIR", _SYSTEM_CA_CERT_DIR)
             if refresh_lock_held:
                 env[_CLAUDE_REFRESH_LOCK_HELD_ENV] = "1"
             return env, run_tmp
