@@ -68,6 +68,35 @@ def test_ticket_cli_create_uses_socket_client(tmp_workspace, monkeypatch, capsys
     assert out["status"] == "review"
 
 
+def test_ticket_cli_create_reads_description_file(tmp_workspace, tmp_path, monkeypatch, capsys):
+    init_workspace(tmp_workspace)
+    description_path = tmp_path / "description.md"
+    description_path.write_text("## Notes\n\nCreated from a file.\n", encoding="utf-8")
+    client = RecordingTicketClient()
+    monkeypatch.setattr(bullpen, "_ticket_client", lambda *_args: client)
+
+    args = bullpen.parse_args([
+        "ticket", "--workspace", tmp_workspace,
+        "create",
+        "--title", "CLI create from file",
+        "--description-file", str(description_path),
+        "--status", "review",
+    ])
+
+    assert bullpen.run_ticket_cli(args) == 0
+
+    assert client.created == {
+        "title": "CLI create from file",
+        "description": "## Notes\n\nCreated from a file.\n",
+        "type": "task",
+        "priority": "normal",
+        "tags": [],
+        "status": "review",
+    }
+    out = json.loads(capsys.readouterr().out)
+    assert out["id"] == "created-123"
+
+
 def test_ticket_cli_update_reads_body_file(tmp_workspace, tmp_path, monkeypatch, capsys):
     init_workspace(tmp_workspace)
     body_path = tmp_path / "body.md"

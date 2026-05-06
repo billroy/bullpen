@@ -103,7 +103,7 @@ def parse_args(argv=None):
 
     ticket_create = ticket_subparsers.add_parser("create", help="Create a ticket")
     ticket_create.add_argument("--title", required=True, help="Ticket title")
-    ticket_create.add_argument("--description", default="", help="Markdown description")
+    ticket_create.add_argument("--description", help="Markdown description")
     ticket_create.add_argument("--description-file", help="Read markdown description from file")
     ticket_create.add_argument("--type", default="task", choices=["task", "bug", "feature", "chore"])
     ticket_create.add_argument("--priority", default="normal", choices=["low", "normal", "high", "urgent"])
