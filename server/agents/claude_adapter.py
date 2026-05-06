@@ -5,7 +5,6 @@ import os
 import shutil
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 from server.agents.base import AgentAdapter
@@ -83,21 +82,23 @@ def _copy_claude_credentials(target_config_dir):
     return True
 
 
-def _claude_credentials_current(credentials_path):
+def _claude_credentials_usable(credentials_path):
+    """A credentials file is usable if claude itself can act on it.
+
+    A live accessToken is sufficient; a refreshToken alone is also sufficient
+    because claude will mint a new access token on demand. Pre-flighting
+    expiresAt strictly here is wrong — it rejects credentials that claude
+    would happily refresh, and surfaces a misleading "not authenticated"
+    error inside long-lived sandboxes.
+    """
     try:
         data = json.loads(Path(credentials_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
     oauth = data.get("claudeAiOauth")
-    if not isinstance(oauth, dict) or not oauth.get("accessToken"):
+    if not isinstance(oauth, dict):
         return False
-    expires_at = oauth.get("expiresAt")
-    if expires_at is None:
-        return True
-    if not isinstance(expires_at, (int, float)):
-        return False
-    expires_at_seconds = expires_at / 1000 if expires_at > 10_000_000_000 else expires_at
-    return expires_at_seconds > time.time() + 300
+    return bool(oauth.get("accessToken") or oauth.get("refreshToken"))
 
 
 def _has_claude_auth():
@@ -108,7 +109,7 @@ def _has_claude_auth():
         credentials = Path(source_config_dir).expanduser() / ".credentials.json"
     else:
         credentials = Path.home() / ".claude" / ".credentials.json"
-    return _claude_credentials_current(credentials)
+    return _claude_credentials_usable(credentials)
 
 
 class ClaudeAdapter(AgentAdapter):
