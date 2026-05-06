@@ -868,7 +868,21 @@ mkdir -p /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bull
 chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex
 chown -R bullpen:"$group_name" /var/lib/bullpen
 chmod 700 /var/lib/bullpen 2>/dev/null || true
+# Lift FD ceiling for bullpen via pam_limits. Default soft 1024 / hard 4096
+# is too tight when many claude/codex/gemini subprocesses each churn FDs
+# through TLS handshakes, MCP wires, and per-run tmp dirs; pressure surfaces
+# as misclassified TLS or DNS errors that look like API retry storms.
+mkdir -p /etc/security/limits.d
+cat > /etc/security/limits.d/bullpen-fd.conf <<'LIMITS_EOF'
+bullpen soft nofile 65536
+bullpen hard nofile 65536
+LIMITS_EOF
+chmod 644 /etc/security/limits.d/bullpen-fd.conf
 su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex'
+hard_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Hn')"
+if [ "$hard_nofile" -lt 65536 ]; then
+  echo "warn: bullpen RLIMIT_NOFILE hard limit is $hard_nofile, expected 65536; pam_limits may not be enforcing limits.d" >&2
+fi
 '''
     await run_configured_sandbox_shell(sandbox, config, command, label="prepare Microsandbox runtime user")
     await run_sandbox_shell(sandbox, "test -x /opt/bullpen-venv/bin/python")
