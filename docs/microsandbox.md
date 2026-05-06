@@ -142,6 +142,7 @@ The sandbox create call should have this shape:
 sandbox = await Sandbox.create(
     sandbox_name,
     snapshot=prepared_base_snapshot_path,
+    detached=True,
     replace=replace,
     ports={
         bullpen_port: bullpen_port,
@@ -163,10 +164,11 @@ If Bullpen source is not baked into the prepared base, also mount the local Bull
 ```
 
 Use `ports={host_port: guest_port}`. Host exposure is localhost-only. Do not publish Bullpen to all host interfaces.
+Before creating the sandbox, fail fast if either requested host port is already listening. The script must not treat an existing Docker container, stale Bullpen process, or stale Microsandbox port-forward as a successful health check.
 
 Use `Network.allow_all()` for the first implementation because the sandbox must call AI APIs, GitHub, and package managers during the prepare phase. The microVM is the security boundary.
 
-The script starts Bullpen as a detached process inside the sandbox and then exits after successful health and credential checks. The sandbox must continue running after `sandboxed-bullpen.py` terminates.
+The script starts Bullpen as a detached process inside the sandbox, verifies health and credentials, then calls `sandbox.detach()` before returning success. This is required because a normal attached Microsandbox can stop when the Python SDK process exits; `nohup` only keeps the Bullpen process alive inside a guest that is still running. After `sandbox.detach()`, verify that the sandbox status is still running and that `/health` still answers on the host port.
 
 ## Filesystem layout
 

@@ -16,6 +16,7 @@ import os
 import platform
 import shlex
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -126,6 +127,29 @@ class MicrosandboxRuntime:
         except Exception:
             return False
 
+    async def get(self, name: str) -> Any | None:
+        get = getattr(self.Sandbox, "get", None)
+        if not callable(get):
+            return None
+        try:
+            result = get(name)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        except Exception:
+            return None
+
+    async def stop(self, name: str) -> None:
+        sandbox = await self.get(name)
+        if sandbox is None:
+            return
+        stop = getattr(sandbox, "stop", None)
+        if not callable(stop):
+            return
+        result = stop()
+        if inspect.isawaitable(result):
+            await result
+
     async def remove(self, name: str) -> None:
         remove = getattr(self.Sandbox, "remove", None)
         if not callable(remove):
@@ -145,6 +169,7 @@ class MicrosandboxRuntime:
         result = self.Sandbox.create(
             config.sandbox_name,
             snapshot=prepared_base,
+            detached=True,
             replace=bool(config.replace),
             ports={
                 config.bullpen_port: config.bullpen_port,
@@ -157,6 +182,22 @@ class MicrosandboxRuntime:
         if inspect.isawaitable(result):
             return await result
         return result
+
+    async def status(self, name: str) -> str | None:
+        get = getattr(self.Sandbox, "get", None)
+        if not callable(get):
+            return None
+        result = get(name)
+        if inspect.isawaitable(result):
+            result = await result
+        status = getattr(result, "status", None)
+        if callable(status):
+            status = status()
+            if inspect.isawaitable(status):
+                status = await status
+        if status is None:
+            return None
+        return str(status)
 
     async def get_prepared_base(self, base: str) -> Any | None:
         get = getattr(self.Snapshot, "get", None)
@@ -257,6 +298,61 @@ def detect_supported_host() -> bool:
 def require_command(command: str) -> None:
     if shutil.which(command) is None:
         raise DeployError(f"missing required command: {command}")
+
+
+def host_port_in_use(port: int) -> bool:
+    for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.2)
+                if sock.connect_ex((host, port)) == 0:
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def host_port_owner(port: int) -> str:
+    if shutil.which("lsof") is None:
+        return ""
+    result = subprocess.run(
+        ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) <= 1:
+        return ""
+    return "\n".join(lines[:6])
+
+
+def ensure_host_ports_available(config: DeployConfig) -> None:
+    occupied = [port for port in (config.bullpen_port, config.app_port) if host_port_in_use(port)]
+    if not occupied:
+        return
+    details = []
+    for port in occupied:
+        owner = host_port_owner(port)
+        if owner:
+            details.append(f"Port {port} is already listening:\n{owner}")
+        else:
+            details.append(f"Port {port} is already listening.")
+    raise DeployError(
+        "Cannot start Microsandbox because required host port(s) are occupied.\n"
+        + "\n\n".join(details)
+    )
+
+
+def wait_for_host_ports_available(config: DeployConfig, timeout_seconds: int = 10) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if not any(host_port_in_use(port) for port in (config.bullpen_port, config.app_port)):
+            return
+        time.sleep(0.5)
+    ensure_host_ports_available(config)
 
 
 def install_bullpen_project_from_github(target_path: Path, repo_url: str) -> None:
@@ -374,6 +470,16 @@ def copy_dir_if_exists(source: Path, target: Path, *, sync: bool = False) -> boo
     return True
 
 
+def replace_dir_if_exists(source: Path, target: Path) -> bool:
+    if not source.is_dir():
+        return False
+    if target.exists():
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, target)
+    return True
+
+
 def yaml_single_quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
@@ -459,14 +565,23 @@ def copy_host_github_cli_auth_to_sandbox_home(sandbox_home: Path) -> bool:
 
 def seed_credentials(config: DeployConfig) -> CredentialSummary:
     home = Path.home()
+    docker_home = Path(os.environ.get("BULLPEN_DOCKER_HOME", home / ".bullpen" / "docker-home"))
     sandbox_home = config.sandbox_home
     chmod_private_dir(sandbox_home)
     (sandbox_home / "logs").mkdir(parents=True, exist_ok=True)
 
     summary = CredentialSummary()
-    copy_file_if_exists(home / ".claude.json", sandbox_home / ".claude.json")
-    copy_dir_if_exists(home / ".claude", sandbox_home / ".claude")
-    copy_file_if_exists(home / ".claude" / ".credentials.json", sandbox_home / ".claude" / ".credentials.json", sync=True)
+    claude_source_home = docker_home if (docker_home / ".claude" / ".credentials.json").is_file() else home
+    copy_file_if_exists(claude_source_home / ".claude.json", sandbox_home / ".claude.json", sync=True)
+    if claude_source_home == docker_home:
+        replace_dir_if_exists(claude_source_home / ".claude", sandbox_home / ".claude")
+    else:
+        copy_dir_if_exists(claude_source_home / ".claude", sandbox_home / ".claude")
+    copy_file_if_exists(
+        claude_source_home / ".claude" / ".credentials.json",
+        sandbox_home / ".claude" / ".credentials.json",
+        sync=True,
+    )
     copy_dir_if_exists(home / ".config" / "codex", sandbox_home / ".config" / "codex")
     copy_dir_if_exists(home / ".codex", sandbox_home / ".codex")
     config.codex_auth_synced = copy_file_if_exists(home / ".codex" / "auth.json", sandbox_home / ".codex" / "auth.json", sync=True)
@@ -563,6 +678,10 @@ def build_runtime_env(config: DeployConfig) -> None:
     config.runtime_env.update(
         {
             "HOME": "/home/bullpen",
+            "USER": "bullpen",
+            "LOGNAME": "bullpen",
+            "BULLPEN_UID": str(os.getuid()),
+            "BULLPEN_GID": str(os.getgid()),
             "BULLPEN_BOOTSTRAP_USER": config.admin_user,
             "BULLPEN_BOOTSTRAP_PASSWORD": config.admin_password,
             "BULLPEN_BOOTSTRAP_FORCE": "1",
@@ -643,14 +762,75 @@ async def run_configured_sandbox_shell(
         raise DeployError(message) from exc
 
 
+async def run_as_bullpen(sandbox: Any, config: DeployConfig, command: str, *, check: bool = True, label: str | None = None) -> Any:
+    configured = f"{sandbox_env_prefix(config)}; {command}"
+    wrapped = f"su -s /bin/bash bullpen -c {shlex.quote(configured)}"
+    try:
+        return await run_sandbox_shell(sandbox, wrapped, check=check)
+    except DeployError as exc:
+        message = redact_text(str(exc), config)
+        if label and message.startswith("Sandbox command failed: "):
+            _first, _sep, details = message.partition("\n")
+            message = f"Sandbox command failed: {label}"
+            if details:
+                message = f"{message}\n{details}"
+        raise DeployError(message) from exc
+
+
 def log_step(message: str) -> None:
     print(f"==> {message}", flush=True)
 
 
-async def prepare_runtime_dirs(sandbox: Any) -> None:
-    await run_sandbox_shell(sandbox, "mkdir -p /home/bullpen/logs")
-    await run_sandbox_shell(sandbox, ": > /home/bullpen/logs/bullpen.log")
+async def prepare_runtime_dirs(sandbox: Any, config: DeployConfig) -> None:
+    command = r'''set -e
+uid="${BULLPEN_UID:-1000}"
+gid="${BULLPEN_GID:-1000}"
+if ! getent group bullpen >/dev/null 2>&1; then
+  if getent group "$gid" >/dev/null 2>&1; then
+    group_name="$(getent group "$gid" | cut -d: -f1)"
+  else
+    groupadd --gid "$gid" bullpen
+    group_name="bullpen"
+  fi
+else
+  group_name="bullpen"
+fi
+if ! id bullpen >/dev/null 2>&1; then
+  useradd --uid "$uid" --gid "$group_name" --home-dir /home/bullpen --shell /bin/bash bullpen
+fi
+actual_uid="$(id -u bullpen)"
+if [ "$actual_uid" != "$uid" ]; then
+  echo "Existing bullpen user has uid $actual_uid, expected $uid." >&2
+  exit 1
+fi
+mkdir -p /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
+chown -R bullpen:"$group_name" /var/lib/bullpen
+chmod 700 /var/lib/bullpen 2>/dev/null || true
+su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex'
+'''
+    await run_configured_sandbox_shell(sandbox, config, command, label="prepare Microsandbox runtime user")
     await run_sandbox_shell(sandbox, "test -x /opt/bullpen-venv/bin/python")
+
+
+async def verify_mount_access(sandbox: Any, config: DeployConfig) -> None:
+    repair_command = r'''set -e
+uid="${BULLPEN_UID:-1000}"
+gid="${BULLPEN_GID:-1000}"
+if [ -d /workspace/.bullpen ]; then
+  chown -R "$uid:$gid" /workspace/.bullpen
+fi
+'''
+    await run_configured_sandbox_shell(sandbox, config, repair_command, label="repair Bullpen workspace state ownership")
+    command = r'''set -e
+echo "effective user: $(id)"
+echo "workspace metadata:"
+ls -ldn /workspace /workspace/.bullpen 2>&1 || true
+ls -ln /workspace/.bullpen/config.json 2>&1 || true
+test -r /workspace/.bullpen/config.json
+test -w /workspace/.bullpen
+test -w /home/bullpen
+'''
+    await run_as_bullpen(sandbox, config, command, label="verify Microsandbox mount access")
 
 
 async def install_codex_wrapper(sandbox: Any, config: DeployConfig) -> None:
@@ -704,7 +884,9 @@ cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/ 2>/dev/null || true
 exit "\$status"
 EOF
 chmod 755 /home/bullpen/bin/codex
+chown -R bullpen:"$(id -gn bullpen)" /var/lib/bullpen
 test -x /home/bullpen/bin/codex
+su -s /bin/bash bullpen -c 'test -x /home/bullpen/bin/codex && test -w /home/bullpen/.codex'
 '''
     await run_configured_sandbox_shell(sandbox, config, command, label="install Codex wrapper")
 
@@ -715,7 +897,7 @@ async def bootstrap_bullpen_credentials(sandbox: Any, config: DeployConfig) -> N
         "cd /app; "
         "/opt/bullpen-venv/bin/python bullpen.py --bootstrap-credentials"
     )
-    await run_configured_sandbox_shell(sandbox, config, command, label="bootstrap Bullpen credentials")
+    await run_as_bullpen(sandbox, config, command, label="bootstrap Bullpen credentials")
 
 
 async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
@@ -733,7 +915,7 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         "--no-browser "
         ">/home/bullpen/logs/bullpen.log 2>&1 &"
     )
-    await run_configured_sandbox_shell(sandbox, config, command, label="start Bullpen")
+    await run_as_bullpen(sandbox, config, command, label="start Bullpen")
 
 
 def wait_for_health(port: int, timeout_seconds: int = HEALTH_TIMEOUT_SECONDS) -> None:
@@ -768,7 +950,7 @@ if not ok:
     sys.exit(1)
 print(f"Credential verification passed for user {username!r}.")
 PY'''
-    await run_configured_sandbox_shell(sandbox, config, command, label="verify Bullpen credentials")
+    await run_as_bullpen(sandbox, config, command, label="verify Bullpen credentials")
 
 
 async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
@@ -785,7 +967,23 @@ async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
         "\"$BULLPEN_CODEX_PATH\" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'; "
         "done"
     )
-    await run_configured_sandbox_shell(sandbox, config, command, label="verify Codex auth")
+    await run_as_bullpen(sandbox, config, command, label="verify Codex auth")
+
+
+async def detach_sandbox(sandbox: Any) -> None:
+    detach = getattr(sandbox, "detach", None)
+    if not callable(detach):
+        raise DeployError("Installed Microsandbox SDK does not expose sandbox.detach().")
+    result = detach()
+    if inspect.isawaitable(result):
+        await result
+
+
+async def verify_detached_sandbox(runtime: MicrosandboxRuntime, config: DeployConfig) -> None:
+    status = await runtime.status(config.sandbox_name)
+    if status is not None and "running" not in status.lower():
+        raise DeployError(f"Microsandbox '{config.sandbox_name}' is not running after detach (status: {status}).")
+    wait_for_health(config.bullpen_port)
 
 
 async def print_bullpen_log(sandbox: Any) -> None:
@@ -824,12 +1022,27 @@ async def choose_replace(runtime: MicrosandboxRuntime, config: DeployConfig) -> 
     return True
 
 
+async def replace_existing_sandbox(runtime: MicrosandboxRuntime, config: DeployConfig) -> None:
+    if not await runtime.exists(config.sandbox_name):
+        return
+    log_step(f"Replacing existing Microsandbox {config.sandbox_name}")
+    await runtime.stop(config.sandbox_name)
+    try:
+        await runtime.remove(config.sandbox_name)
+    except Exception:
+        time.sleep(1)
+        await runtime.remove(config.sandbox_name)
+    wait_for_host_ports_available(config)
+
+
 async def deploy(config: DeployConfig) -> CredentialSummary | None:
     runtime = MicrosandboxRuntime()
     await runtime.ensure_installed()
     should_deploy = await choose_replace(runtime, config)
     if not should_deploy:
         return None
+    await replace_existing_sandbox(runtime, config)
+    ensure_host_ports_available(config)
 
     build_runtime_env(config)
     summary = seed_credentials(config)
@@ -839,7 +1052,9 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
     sandbox = await runtime.create(config)
     try:
         log_step("Preparing Microsandbox runtime")
-        await prepare_runtime_dirs(sandbox)
+        await prepare_runtime_dirs(sandbox, config)
+        log_step("Verifying Microsandbox mount access")
+        await verify_mount_access(sandbox, config)
         log_step("Installing Codex wrapper")
         await install_codex_wrapper(sandbox, config)
         log_step("Bootstrapping Bullpen credentials")
@@ -853,6 +1068,10 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
         await verify_codex_auth(sandbox, config)
         log_step("Verifying Bullpen credentials")
         await verify_admin_credentials(sandbox, config)
+        log_step("Detaching Microsandbox")
+        await detach_sandbox(sandbox)
+        log_step("Verifying detached Bullpen health")
+        await verify_detached_sandbox(runtime, config)
     except Exception:
         await print_bullpen_log(sandbox)
         raise
