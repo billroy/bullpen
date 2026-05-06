@@ -865,6 +865,7 @@ if [ "$actual_uid" != "$uid" ]; then
   exit 1
 fi
 mkdir -p /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
+chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex
 chown -R bullpen:"$group_name" /var/lib/bullpen
 chmod 700 /var/lib/bullpen 2>/dev/null || true
 su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex'

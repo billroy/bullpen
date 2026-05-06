@@ -5,6 +5,8 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 from server.agents.base import AgentAdapter
@@ -21,6 +23,11 @@ else:
         "/usr/local/bin/claude",
         "/opt/homebrew/bin/claude",
     ]
+
+
+CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS = 300
+_CLAUDE_OAUTH_REFRESH_LOCK = threading.Lock()
+_CLAUDE_REFRESH_LOCK_HELD_ENV = "BULLPEN_CLAUDE_REFRESH_LOCK_HELD"
 
 
 def _is_executable(path):
@@ -70,6 +77,10 @@ def _claude_source_credentials_path():
     return Path.home() / ".claude" / ".credentials.json"
 
 
+def _env_claude_auth_overrides_file():
+    return bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
+
+
 def _copy_claude_credentials(target_config_dir):
     """Copy Claude OAuth credentials without carrying hooks/plugins/session state."""
     source_credentials = _claude_source_credentials_path()
@@ -83,6 +94,32 @@ def _copy_claude_credentials(target_config_dir):
     except OSError:
         pass
     return True
+
+
+def _oauth_expires_at_seconds(oauth):
+    expires_at = oauth.get("expiresAt")
+    if not isinstance(expires_at, (int, float)):
+        return None
+    return expires_at / 1000 if expires_at > 10_000_000_000 else expires_at
+
+
+def _claude_credentials_need_refresh(credentials_path, *, now=None):
+    """Return True when launching claude is expected to refresh OAuth credentials."""
+    try:
+        data = json.loads(Path(credentials_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    oauth = data.get("claudeAiOauth")
+    if not isinstance(oauth, dict) or not oauth.get("refreshToken"):
+        return False
+    if not oauth.get("accessToken"):
+        return True
+    expires_at = _oauth_expires_at_seconds(oauth)
+    if expires_at is None:
+        return False
+    if now is None:
+        now = time.time()
+    return expires_at <= now + CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS
 
 
 def _sync_claude_credentials_back(target_config_dir):
@@ -134,7 +171,7 @@ def _claude_credentials_usable(credentials_path):
 
 
 def _has_claude_auth():
-    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"):
+    if _env_claude_auth_overrides_file():
         return True
     source_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
     if source_config_dir:
@@ -188,14 +225,29 @@ class ClaudeAdapter(AgentAdapter):
         run_tmp = _make_isolated_tmpdir("bullpen-claude-")
         claude_config_dir = os.path.join(run_tmp, "claude-config")
         os.makedirs(claude_config_dir, mode=0o700, exist_ok=True)
-        _copy_claude_credentials(claude_config_dir)
-        env = os.environ.copy()
-        env["TMPDIR"] = run_tmp
-        env["TMP"] = run_tmp
-        env["TEMP"] = run_tmp
-        env["CLAUDE_CODE_TMPDIR"] = run_tmp
-        env["CLAUDE_CONFIG_DIR"] = claude_config_dir
-        return env, run_tmp
+        source_credentials = _claude_source_credentials_path()
+        refresh_lock_held = False
+        try:
+            if (
+                not _env_claude_auth_overrides_file()
+                and _claude_credentials_need_refresh(source_credentials)
+            ):
+                _CLAUDE_OAUTH_REFRESH_LOCK.acquire()
+                refresh_lock_held = True
+            _copy_claude_credentials(claude_config_dir)
+            env = os.environ.copy()
+            env["TMPDIR"] = run_tmp
+            env["TMP"] = run_tmp
+            env["TEMP"] = run_tmp
+            env["CLAUDE_CODE_TMPDIR"] = run_tmp
+            env["CLAUDE_CONFIG_DIR"] = claude_config_dir
+            if refresh_lock_held:
+                env[_CLAUDE_REFRESH_LOCK_HELD_ENV] = "1"
+            return env, run_tmp
+        except Exception:
+            if refresh_lock_held:
+                _CLAUDE_OAUTH_REFRESH_LOCK.release()
+            raise
 
     def finalize_env(self, env, run_tmp):
         """Mirror any refreshed credentials back to the source path.
@@ -207,9 +259,12 @@ class ClaudeAdapter(AgentAdapter):
         traffic and eventual 429 rate-limiting.
         """
         config_dir = (env or {}).get("CLAUDE_CONFIG_DIR")
-        if not config_dir:
-            return
-        _sync_claude_credentials_back(config_dir)
+        try:
+            if config_dir:
+                _sync_claude_credentials_back(config_dir)
+        finally:
+            if (env or {}).get(_CLAUDE_REFRESH_LOCK_HELD_ENV) == "1":
+                _CLAUDE_OAUTH_REFRESH_LOCK.release()
 
     def _mcp_config(self, bp_dir):
         """Generate a temporary MCP config file pointing to bullpen tools."""

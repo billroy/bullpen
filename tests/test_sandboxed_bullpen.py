@@ -718,8 +718,9 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "useradd --uid" in prepare_command
     assert "BULLPEN_UID=" in prepare_command
     assert "Existing bullpen user has uid" in prepare_command
+    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
-    assert "chown -R bullpen:\"$group_name\" /home/bullpen" not in prepare_command
+    assert "chown -R bullpen:\"$group_name\" /home/bullpen\n" not in prepare_command
     assert "test -w /home/bullpen" in prepare_command
     assert any("BULLPEN_BOOTSTRAP_PASSWORD=pw" in command for command in command_texts)
     assert any("su -s /bin/bash bullpen -c" in command for command in command_texts)

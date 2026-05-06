@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -109,6 +110,70 @@ class TestClaudeAdapter:
             with open(copied_credentials, encoding="utf-8") as f:
                 assert f.read() == '{"claudeAiOauth":{"accessToken":"token"}}'
             assert not os.path.exists(os.path.join(env["CLAUDE_CONFIG_DIR"], "settings.json"))
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
+
+    def test_prepare_env_serializes_expired_oauth_refresh(self, monkeypatch, tmp_path):
+        class FakeLock:
+            def __init__(self):
+                self.acquired = 0
+                self.released = 0
+
+            def acquire(self):
+                self.acquired += 1
+
+            def release(self):
+                self.released += 1
+
+        fake_lock = FakeLock()
+        monkeypatch.setattr(claude_mod, "_CLAUDE_OAUTH_REFRESH_LOCK", fake_lock)
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        home = tmp_path / "home"
+        claude_dir = home / ".claude"
+        claude_dir.mkdir(parents=True)
+        source_credentials = claude_dir / ".credentials.json"
+        source_credentials.write_text(
+            '{"claudeAiOauth":{"accessToken":"expired","expiresAt":1,"refreshToken":"r"}}',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", str(home))
+
+        env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
+        try:
+            assert fake_lock.acquired == 1
+            assert env["BULLPEN_CLAUDE_REFRESH_LOCK_HELD"] == "1"
+
+            config_dir = env["CLAUDE_CONFIG_DIR"]
+            (Path(config_dir) / ".credentials.json").write_text(
+                '{"claudeAiOauth":{"accessToken":"fresh","expiresAt":9999999999999,"refreshToken":"r"}}',
+                encoding="utf-8",
+            )
+            ClaudeAdapter().finalize_env(env, cleanup_path)
+
+            assert fake_lock.released == 1
+            assert '"fresh"' in source_credentials.read_text(encoding="utf-8")
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
+
+    def test_prepare_env_does_not_lock_current_oauth(self, monkeypatch, tmp_path):
+        class FailLock:
+            def acquire(self):
+                raise AssertionError("current credentials should not acquire refresh lock")
+
+        monkeypatch.setattr(claude_mod, "_CLAUDE_OAUTH_REFRESH_LOCK", FailLock())
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        home = tmp_path / "home"
+        claude_dir = home / ".claude"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / ".credentials.json").write_text(
+            '{"claudeAiOauth":{"accessToken":"current","expiresAt":9999999999999,"refreshToken":"r"}}',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", str(home))
+
+        env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
+        try:
+            assert "BULLPEN_CLAUDE_REFRESH_LOCK_HELD" not in env
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
