@@ -1513,6 +1513,7 @@ const app = createApp({
       <TopToolbar
         :project-name="activeProjectName"
         :project-path="state.workspace"
+        :deploy-label="state.config.deploy_label"
         :connected="connected"
         :themes="themeOptions"
         :active-theme="currentTheme"

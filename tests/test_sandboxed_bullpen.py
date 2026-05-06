@@ -128,6 +128,30 @@ def test_seed_credentials_skips_anthropic_key_when_claude_oauth_exists(sb, tmp_p
     assert summary.provider_sources
 
 
+def test_runtime_env_passes_microsandbox_label_to_server(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    sandbox_home = tmp_path / "sandbox-home"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    config = sb.config_from_args(
+        [
+            "--workspace",
+            str(workspace),
+            "--admin-password",
+            "pw",
+            "--sandbox-name",
+            "bullpen-3",
+            "--sandbox-home",
+            str(sandbox_home),
+            "--no-open",
+        ]
+    )
+    sb.build_runtime_env(config)
+
+    assert config.runtime_env["BULLPEN_DEPLOY_LABEL"] == "(Microsandbox:bullpen-3)"
+
+
 def test_seed_credentials_uses_existing_sandbox_codex_auth_when_host_mount_missing(sb, tmp_path, monkeypatch):
     host_home = tmp_path / "host"
     sandbox_home = tmp_path / "sandbox-home"

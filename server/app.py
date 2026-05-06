@@ -136,6 +136,30 @@ def _safe_int(value, default=0):
         return default
 
 
+def _current_deploy_label():
+    label = (os.environ.get("BULLPEN_DEPLOY_LABEL") or "").strip()
+    if not label:
+        return None
+    # Keep this runtime-only display string compact and single-line.
+    label = re.sub(r"\s+", " ", label)
+    return label[:80]
+
+
+def sync_deploy_label_config(bp_dir):
+    path = os.path.join(bp_dir, "config.json")
+    config = read_json(path)
+    label = _current_deploy_label()
+    if label:
+        if config.get("deploy_label") == label:
+            return
+        config["deploy_label"] = label
+    else:
+        if "deploy_label" not in config:
+            return
+        config.pop("deploy_label", None)
+    write_json(path, config)
+
+
 def _slot_coord(slot, index, cols=4):
     if isinstance(slot, dict):
         return _safe_int(slot.get("col"), index % cols), _safe_int(slot.get("row"), index // cols)
@@ -358,7 +382,7 @@ def create_app(
 
     def _portable_config(config):
         safe = dict(config or {})
-        for key in ("server_host", "server_port", "mcp_token"):
+        for key in ("server_host", "server_port", "mcp_token", "deploy_label"):
             safe.pop(key, None)
         return safe
 
@@ -384,6 +408,8 @@ def create_app(
         host,
         port,
     )
+    for ws in manager.all_workspaces():
+        sync_deploy_label_config(ws.bp_dir)
 
     # Startup reconciliation for all registered workspaces
     for ws in manager.all_workspaces():
@@ -1113,6 +1139,7 @@ def create_app(
                 mcp_sids.discard(request.sid)
                 mcp_sid_workspace.pop(request.sid, None)
                 return False
+            sync_deploy_label_config(ws.bp_dir)
             join_room(ws.id)
             state = load_state(ws.bp_dir, ws.path)
             state["workspaceId"] = ws.id

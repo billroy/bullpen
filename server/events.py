@@ -1074,7 +1074,8 @@ def register_events(socketio, app):
             ws.scheduler = scheduler
 
         # Reconcile new workspace
-        from server.app import reconcile, load_state
+        from server.app import reconcile, load_state, sync_deploy_label_config
+        sync_deploy_label_config(ws.bp_dir)
         reconcile(ws.bp_dir)
 
         # Send state for the new workspace to the requesting client
@@ -1102,7 +1103,8 @@ def register_events(socketio, app):
             return
         join_room(ws_id)
 
-        from server.app import load_state
+        from server.app import load_state, sync_deploy_label_config
+        sync_deploy_label_config(ws.bp_dir)
         state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws_id
         emit("state:init", state)

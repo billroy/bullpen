@@ -21,3 +21,14 @@ def test_top_toolbar_renders_bullpen_with_project_suffix():
     text = _read("static/components/TopToolbar.js")
     assert "'projectName'" in text
     assert "Bullpen<span v-if=\"projectName\" :title=\"projectPath || ''\"> / {{ projectName }}</span>" in text
+
+
+def test_top_toolbar_renders_deploy_label_after_project_suffix():
+    toolbar = _read("static/components/TopToolbar.js")
+    app = _read("static/app.js")
+    css = _read("static/style.css")
+
+    assert "'deployLabel'" in toolbar
+    assert '<span v-if="deployLabel" class="toolbar-deploy-label">{{ deployLabel }}</span>' in toolbar
+    assert ':deploy-label="state.config.deploy_label"' in app
+    assert ".toolbar-deploy-label {" in css

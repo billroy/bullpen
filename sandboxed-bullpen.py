@@ -739,6 +739,7 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_HIDE_UNAVAILABLE_PROJECTS": "1",
             "BULLPEN_WORKSPACE": "/workspace",
             "BULLPEN_WORKSPACE_NAME": config.workspace.name,
+            "BULLPEN_DEPLOY_LABEL": f"(Microsandbox:{config.sandbox_name})",
             "BULLPEN_PRODUCTION": os.environ.get("BULLPEN_PRODUCTION", "0"),
             "BULLPEN_VENV": "/opt/bullpen-venv",
             "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),

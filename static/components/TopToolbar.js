@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'quickCreateClearToken', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'quickCreateClearToken', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -460,7 +460,10 @@ const TopToolbar = {
               @change="onImportAllSelected"
             >
           </div>
-          <span class="toolbar-name">Bullpen<span v-if="projectName" :title="projectPath || ''"> / {{ projectName }}</span></span>
+          <span class="toolbar-name">
+            Bullpen<span v-if="projectName" :title="projectPath || ''"> / {{ projectName }}</span>
+            <span v-if="deployLabel" class="toolbar-deploy-label">{{ deployLabel }}</span>
+          </span>
         </div>
         <div class="toolbar-center">
           <div class="command-palette-inline" @click.stop>

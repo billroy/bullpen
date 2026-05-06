@@ -42,6 +42,13 @@ def test_deploy_docker_hides_unavailable_projects_in_container():
     assert '-e "BULLPEN_HIDE_UNAVAILABLE_PROJECTS=1"' in text
 
 
+def test_deploy_docker_passes_container_name_label_to_server():
+    text = _read("deploy-docker.sh")
+    compose = _read("docker-compose.yml")
+    assert '-e "BULLPEN_DEPLOY_LABEL=(Docker:${CONTAINER_NAME})"' in text
+    assert 'BULLPEN_DEPLOY_LABEL: "(Docker:bullpen)"' in compose
+
+
 def test_deploy_docker_syncs_github_cli_auth_into_persistent_home():
     text = _read("deploy-docker.sh")
     assert "sync_dir_if_exists()" in text
