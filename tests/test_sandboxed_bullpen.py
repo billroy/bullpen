@@ -357,6 +357,41 @@ def test_seed_credentials_ignores_expired_docker_claude_oauth(sb, tmp_path, monk
     assert not any(".claude" in source for source in summary.provider_sources)
 
 
+def test_seed_credentials_seeds_expired_access_with_refresh_token(sb, tmp_path, monkeypatch):
+    host_home = tmp_path / "host"
+    docker_home = tmp_path / "docker-home"
+    sandbox_home = tmp_path / "sandbox-home"
+    workspace = tmp_path / "project"
+    (docker_home / ".claude").mkdir(parents=True)
+    (sandbox_home / ".claude").mkdir(parents=True)
+    workspace.mkdir()
+    (docker_home / ".claude.json").write_text('{"oauthAccount":"docker"}', encoding="utf-8")
+    payload = (
+        '{"claudeAiOauth":{"accessToken":"expired","expiresAt":1,'
+        '"refreshToken":"r"}}'
+    )
+    (docker_home / ".claude" / ".credentials.json").write_text(payload, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(host_home))
+    monkeypatch.setenv("BULLPEN_DOCKER_HOME", str(docker_home))
+    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
+
+    config = sb.config_from_args(
+        [
+            "--workspace",
+            str(workspace),
+            "--admin-password",
+            "pw",
+            "--sandbox-home",
+            str(sandbox_home),
+            "--no-open",
+        ]
+    )
+    summary = sb.seed_credentials(config)
+
+    assert (sandbox_home / ".claude" / ".credentials.json").read_text(encoding="utf-8") == payload
+    assert f"home:{sandbox_home}/.claude/.credentials.json" in summary.provider_sources
+
+
 def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()

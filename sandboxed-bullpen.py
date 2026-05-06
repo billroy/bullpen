@@ -490,7 +490,14 @@ def replace_dir_if_exists(source: Path, target: Path) -> bool:
     return True
 
 
-def claude_oauth_credentials_current(credentials_path: Path, *, now: float | None = None) -> bool:
+def claude_oauth_credentials_usable(credentials_path: Path, *, now: float | None = None) -> bool:
+    """A credentials file is worth seeding if claude could act on it.
+
+    A valid refreshToken alone is sufficient because claude mints a new
+    access token from it on demand. Falling back to expiresAt-strict
+    accept only when no refreshToken is present preserves the prior
+    behavior for files that lack a refresh path.
+    """
     if not credentials_path.is_file():
         return False
     try:
@@ -498,7 +505,11 @@ def claude_oauth_credentials_current(credentials_path: Path, *, now: float | Non
     except (OSError, json.JSONDecodeError):
         return False
     oauth = data.get("claudeAiOauth")
-    if not isinstance(oauth, dict) or not oauth.get("accessToken"):
+    if not isinstance(oauth, dict):
+        return False
+    if oauth.get("refreshToken"):
+        return True
+    if not oauth.get("accessToken"):
         return False
     expires_at = oauth.get("expiresAt")
     if expires_at is None:
@@ -513,7 +524,7 @@ def claude_oauth_credentials_current(credentials_path: Path, *, now: float | Non
 
 def select_claude_source_home(home: Path, docker_home: Path) -> Path | None:
     for candidate in (docker_home, home):
-        if claude_oauth_credentials_current(candidate / ".claude" / ".credentials.json"):
+        if claude_oauth_credentials_usable(candidate / ".claude" / ".credentials.json"):
             return candidate
     return None
 
