@@ -75,6 +75,45 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
     assert config.open_browser is False
 
 
+def test_cli_auth_subcommand_does_not_require_admin_password(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(ROOT)
+
+    config = sb.config_from_args(
+        [
+            "--workspace",
+            str(workspace),
+            "--no-open",
+            "auth",
+            "claude",
+        ]
+    )
+
+    assert config.action == "auth"
+    assert config.target == "claude"
+    assert config.admin_password == ""
+
+
+def test_cli_test_provider_subcommand_parses_target(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(ROOT)
+
+    config = sb.config_from_args(
+        [
+            "--workspace",
+            str(workspace),
+            "--no-open",
+            "test-provider",
+            "git",
+        ]
+    )
+
+    assert config.action == "test-provider"
+    assert config.target == "git"
+
+
 def test_cli_rejects_duplicate_ports(sb, tmp_path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -93,39 +132,6 @@ def test_cli_rejects_duplicate_ports(sb, tmp_path, monkeypatch):
                 "3000",
             ]
         )
-
-
-def test_seed_credentials_skips_anthropic_key_when_claude_oauth_exists(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    claude_dir = host_home / ".claude"
-    claude_dir.mkdir(parents=True)
-    workspace.mkdir()
-    (claude_dir / ".credentials.json").write_text('{"claudeAiOauth":{"accessToken":"token"}}', encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "api-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
-
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
-    )
-    sb.build_runtime_env(config)
-    summary = sb.seed_credentials(config)
-
-    assert "OPENAI_API_KEY" in config.runtime_env
-    assert "ANTHROPIC_API_KEY" not in config.runtime_env
-    assert (sandbox_home / ".claude" / ".credentials.json").is_file()
-    assert summary.provider_sources
 
 
 def test_runtime_env_passes_microsandbox_label_to_server(sb, tmp_path, monkeypatch):
@@ -152,246 +158,63 @@ def test_runtime_env_passes_microsandbox_label_to_server(sb, tmp_path, monkeypat
     assert config.runtime_env["BULLPEN_DEPLOY_LABEL"] == "(Microsandbox:bullpen-3)"
 
 
-def test_seed_credentials_uses_existing_sandbox_codex_auth_when_host_mount_missing(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    host_home.mkdir()
-    workspace.mkdir()
-    (sandbox_home / ".codex").mkdir(parents=True)
-    (sandbox_home / ".codex" / "auth.json").write_text("{}", encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
+def test_run_install_tui_processes_items_sequentially(sb, monkeypatch):
+    order = []
+    prompts = iter([True, True, False])
 
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
+    async def auth_one(runtime, sandbox, config):
+        order.append("auth-claude")
+
+    async def verify_one(sandbox, config):
+        order.append("verify-claude")
+
+    async def auth_two(runtime, sandbox, config):
+        order.append("auth-codex")
+
+    async def verify_two(sandbox, config):
+        order.append("verify-codex")
+
+    async def auth_three(runtime, sandbox, config):
+        order.append("auth-git")
+
+    async def verify_three(sandbox, config):
+        order.append("verify-git")
+
+    monkeypatch.setattr(
+        sb,
+        "setup_items",
+        lambda: [
+            sb.SetupItem("claude", "Claude", auth_one, verify_one),
+            sb.SetupItem("codex", "Codex", auth_two, verify_two),
+            sb.SetupItem("git", "Git", auth_three, verify_three),
+        ],
     )
-    summary = sb.seed_credentials(config)
+    monkeypatch.setattr(sb.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sb, "prompt_yes_no", lambda _prompt, default=True: next(prompts))
 
-    assert f"home:{sandbox_home}/.codex/auth.json" in summary.provider_sources
-
-
-def test_seed_credentials_syncs_host_codex_auth_by_default(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    (host_home / ".codex").mkdir(parents=True)
-    workspace.mkdir()
-    (host_home / ".codex" / "auth.json").write_text('{"refresh_token":"host-token"}', encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
-
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
     )
-    summary = sb.seed_credentials(config)
 
-    assert (sandbox_home / ".codex" / "auth.json").read_text(encoding="utf-8") == '{"refresh_token":"host-token"}'
-    assert f"home:{sandbox_home}/.codex/auth.json" in summary.provider_sources
-    assert config.codex_auth_synced is True
-    assert "env:OPENAI_API_KEY" in summary.provider_sources
+    summary = asyncio.run(sb.run_install_tui(object(), object(), config))
 
-
-def test_seed_credentials_syncs_host_claude_json_by_default(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    host_home.mkdir()
-    (host_home / ".claude").mkdir()
-    workspace.mkdir()
-    (host_home / ".claude.json").write_text('{"oauthAccount":"fresh"}', encoding="utf-8")
-    (host_home / ".claude" / ".credentials.json").write_text(
-        '{"claudeAiOauth":{"accessToken":"token"}}',
-        encoding="utf-8",
-    )
-    (sandbox_home).mkdir(parents=True)
-    (sandbox_home / ".claude.json").write_text('{"oauthAccount":"stale"}', encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
-
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
-    )
-    sb.seed_credentials(config)
-
-    assert (sandbox_home / ".claude.json").read_text(encoding="utf-8") == '{"oauthAccount":"fresh"}'
-
-
-def test_seed_credentials_uses_docker_home_claude_oauth_fallback(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    docker_home = tmp_path / "docker-home"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    host_home.mkdir()
-    workspace.mkdir()
-    (host_home / ".claude.json").write_text('{"oauthAccount":"host"}', encoding="utf-8")
-    (docker_home / ".claude").mkdir(parents=True)
-    (sandbox_home / ".claude").mkdir(parents=True)
-    (docker_home / ".claude.json").write_text('{"oauthAccount":"docker"}', encoding="utf-8")
-    (docker_home / ".claude" / ".credentials.json").write_text('{"claudeAiOauth":{"accessToken":"docker"}}', encoding="utf-8")
-    (sandbox_home / ".claude" / "stale-host-file").write_text("stale", encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setenv("BULLPEN_DOCKER_HOME", str(docker_home))
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
-
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
-    )
-    summary = sb.seed_credentials(config)
-
-    assert (sandbox_home / ".claude" / ".credentials.json").read_text(encoding="utf-8") == '{"claudeAiOauth":{"accessToken":"docker"}}'
-    assert (sandbox_home / ".claude.json").read_text(encoding="utf-8") == '{"oauthAccount":"docker"}'
-    assert not (sandbox_home / ".claude" / "stale-host-file").exists()
-    assert f"home:{sandbox_home}/.claude/.credentials.json" in summary.provider_sources
-
-
-def test_seed_credentials_prefers_docker_claude_home_when_oauth_exists(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    docker_home = tmp_path / "docker-home"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    (host_home / ".claude").mkdir(parents=True)
-    (docker_home / ".claude").mkdir(parents=True)
-    workspace.mkdir()
-    (host_home / ".claude.json").write_text('{"oauthAccount":"host"}', encoding="utf-8")
-    (docker_home / ".claude.json").write_text('{"oauthAccount":"docker"}', encoding="utf-8")
-    (host_home / ".claude" / ".credentials.json").write_text('{"claudeAiOauth":{"accessToken":"host"}}', encoding="utf-8")
-    (docker_home / ".claude" / ".credentials.json").write_text('{"claudeAiOauth":{"accessToken":"docker"}}', encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setenv("BULLPEN_DOCKER_HOME", str(docker_home))
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
-
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
-    )
-    sb.seed_credentials(config)
-
-    assert (sandbox_home / ".claude" / ".credentials.json").read_text(encoding="utf-8") == '{"claudeAiOauth":{"accessToken":"docker"}}'
-    assert (sandbox_home / ".claude.json").read_text(encoding="utf-8") == '{"oauthAccount":"docker"}'
-
-
-def test_seed_credentials_ignores_expired_docker_claude_oauth(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    docker_home = tmp_path / "docker-home"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    (docker_home / ".claude").mkdir(parents=True)
-    (sandbox_home / ".claude").mkdir(parents=True)
-    workspace.mkdir()
-    (docker_home / ".claude.json").write_text('{"oauthAccount":"docker"}', encoding="utf-8")
-    (docker_home / ".claude" / ".credentials.json").write_text(
-        '{"claudeAiOauth":{"accessToken":"expired","expiresAt":1}}',
-        encoding="utf-8",
-    )
-    (sandbox_home / ".claude" / ".credentials.json").write_text(
-        '{"claudeAiOauth":{"accessToken":"stale","expiresAt":1}}',
-        encoding="utf-8",
-    )
-    (sandbox_home / ".claude.json").write_text('{"oauthAccount":"stale"}', encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setenv("BULLPEN_DOCKER_HOME", str(docker_home))
-    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
-
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
-    )
-    summary = sb.seed_credentials(config)
-
-    assert (sandbox_home / ".claude").is_dir()
-    assert not (sandbox_home / ".claude" / ".credentials.json").exists()
-    assert not (sandbox_home / ".claude.json").exists()
-    assert "env:OPENAI_API_KEY" in summary.provider_sources
-    assert not any(".claude" in source for source in summary.provider_sources)
-
-
-def test_seed_credentials_seeds_expired_access_with_refresh_token(sb, tmp_path, monkeypatch):
-    host_home = tmp_path / "host"
-    docker_home = tmp_path / "docker-home"
-    sandbox_home = tmp_path / "sandbox-home"
-    workspace = tmp_path / "project"
-    (docker_home / ".claude").mkdir(parents=True)
-    (sandbox_home / ".claude").mkdir(parents=True)
-    workspace.mkdir()
-    (docker_home / ".claude.json").write_text('{"oauthAccount":"docker"}', encoding="utf-8")
-    payload = (
-        '{"claudeAiOauth":{"accessToken":"expired","expiresAt":1,'
-        '"refreshToken":"r"}}'
-    )
-    (docker_home / ".claude" / ".credentials.json").write_text(payload, encoding="utf-8")
-    monkeypatch.setenv("HOME", str(host_home))
-    monkeypatch.setenv("BULLPEN_DOCKER_HOME", str(docker_home))
-    monkeypatch.setattr(sb.shutil, "which", lambda _name: None)
-
-    config = sb.config_from_args(
-        [
-            "--workspace",
-            str(workspace),
-            "--admin-password",
-            "pw",
-            "--sandbox-home",
-            str(sandbox_home),
-            "--no-open",
-        ]
-    )
-    summary = sb.seed_credentials(config)
-
-    assert (sandbox_home / ".claude" / ".credentials.json").read_text(encoding="utf-8") == payload
-    assert f"home:{sandbox_home}/.claude/.credentials.json" in summary.provider_sources
-
-
+    assert order == ["auth-claude", "verify-claude", "auth-codex", "verify-codex"]
+    assert summary.selected_items == ["claude", "codex"]
+    assert summary.skipped_items == ["git"]
 def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -411,6 +234,18 @@ def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, mon
 
     assert config.runtime_env["BULLPEN_CODEX_SANDBOX"] == "none"
     assert config.runtime_env["BULLPEN_CODEX_PATH"] == "/home/bullpen/bin/codex"
+    assert "SSL_CERT_FILE" not in config.runtime_env
+    assert "SSL_CERT_DIR" not in config.runtime_env
+    assert "NODE_EXTRA_CA_CERTS" not in config.runtime_env
+
+
+def test_claude_tls_env_prefix_exports_system_trust_paths(sb):
+    prefix = sb.claude_tls_env_prefix()
+
+    assert f"export SSL_CERT_FILE={sb.shlex.quote(sb.SYSTEM_CA_CERT_FILE)}" in prefix
+    assert f"export SSL_CERT_DIR={sb.shlex.quote(sb.SYSTEM_CA_CERT_DIR)}" in prefix
+    assert f"export NODE_EXTRA_CA_CERTS={sb.shlex.quote(sb.SYSTEM_CA_CERT_FILE)}" in prefix
+    assert 'export BUN_OPTIONS="${BUN_OPTIONS:+$BUN_OPTIONS }--use-system-ca"' in prefix
 
 
 def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypatch):
@@ -733,6 +568,253 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert any("cd /app && /opt/bullpen-venv/bin/python -" in command for command in command_texts)
 
 
+def test_verify_claude_auth_runs_minimal_claude_preflight(sb):
+    commands = []
+
+    class FakeSandbox:
+        def exec(self, cmd, args):
+            commands.append((cmd, args))
+            return types.SimpleNamespace(returncode=0)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+
+    asyncio.run(sb.verify_claude_auth(FakeSandbox(), config))
+
+    command_texts = [args[1] for _cmd, args in commands]
+    assert any("net.ipv6.conf.eth0.disable_ipv6" in command for command in command_texts)
+    assert any("claude --print --output-format stream-json" in command for command in command_texts)
+    assert not any("test -s /home/bullpen/.claude/.credentials.json" in command for command in command_texts)
+    assert any("Claude auth preflight failed inside Microsandbox" in command for command in command_texts)
+
+
+def test_auth_claude_disables_guest_ipv6_before_interactive_login(sb, monkeypatch):
+    commands = []
+    attached = []
+
+    class FakeSandbox:
+        def exec(self, cmd, args):
+            commands.append((cmd, args))
+            return types.SimpleNamespace(returncode=0)
+
+    class FakeRuntime:
+        pass
+
+    async def fake_attach(_runtime, _sandbox, _config, command, *, label):
+        attached.append((command, label))
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+    monkeypatch.setattr(sb, "attach_as_bullpen", fake_attach)
+
+    asyncio.run(sb.auth_claude(FakeRuntime(), FakeSandbox(), config))
+
+    assert "net.ipv6.conf.eth0.disable_ipv6" in commands[0][1][1]
+    assert attached
+    assert "claude auth login" in attached[0][0]
+    assert attached[0][1] == "authenticate Claude"
+
+
+def test_auth_codex_uses_browser_login_not_device_auth(sb, monkeypatch):
+    attached = []
+
+    class FakeRuntime:
+        pass
+
+    async def fake_attach(_runtime, _sandbox, _config, command, *, label, **kwargs):
+        attached.append((command, label, kwargs))
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+    monkeypatch.setattr(sb, "attach_as_bullpen", fake_attach)
+
+    asyncio.run(sb.auth_codex(FakeRuntime(), object(), config))
+
+    assert attached[0][0] == "codex login"
+    assert attached[0][1] == "authenticate Codex"
+    assert attached[0][2]["bridge_localhost_callback"] is True
+    assert attached[0][2]["prefer_exec_stream"] is True
+    assert "--device-auth" not in attached[0][0]
+
+
+def test_localhost_auth_callback_delivery_runs_curl_inside_sandbox(sb):
+    calls = []
+
+    class FakeSandbox:
+        def exec(self, cmd, args):
+            calls.append((cmd, args))
+            return types.SimpleNamespace(returncode=0, stdout_text="")
+
+    url = "http://localhost:1455/auth/callback?code=abc&state=xyz"
+
+    assert sb._is_localhost_auth_callback(url)
+    message = sb._deliver_localhost_callback_to_sandbox(FakeSandbox(), url)
+
+    assert message == "Delivered localhost auth callback inside the sandbox."
+    assert calls[0][0] == "bash"
+    assert "curl -fsS --max-time 10" in calls[0][1][1]
+    assert "http://localhost:1455/auth/callback?code=abc&state=xyz" in calls[0][1][1]
+
+
+def test_localhost_auth_callback_rejects_non_callback_urls(sb):
+    assert not sb._is_localhost_auth_callback("https://example.test/login")
+    assert not sb._is_localhost_auth_callback("http://localhost:1455/auth/callback?state=xyz")
+    assert not sb._is_localhost_auth_callback("http://localhost:1455/other?code=abc")
+
+
+def test_run_auth_command_dispatches_to_selected_setup_item(sb, monkeypatch):
+    calls = []
+
+    class FakeRuntime:
+        async def ensure_installed(self):
+            calls.append("ensure")
+
+        async def get(self, name):
+            calls.append(("get", name))
+            return object()
+
+    async def fake_health(config):
+        calls.append("health")
+
+    async def fake_install_codex_wrapper(sandbox, config):
+        calls.append("install-codex-wrapper")
+
+    async def fake_auth(runtime, sandbox, config):
+        calls.append(("auth", config.target))
+
+    monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
+    monkeypatch.setattr(sb, "ensure_bullpen_healthy", fake_health)
+    monkeypatch.setattr(sb, "install_codex_wrapper", fake_install_codex_wrapper)
+    monkeypatch.setattr(
+        sb,
+        "get_setup_item",
+        lambda key: sb.SetupItem(key, key.title(), fake_auth, lambda *_args, **_kwargs: None),
+    )
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+        action="auth",
+        target="codex",
+    )
+
+    asyncio.run(sb.run_auth_command(config))
+
+    assert calls[:3] == ["ensure", ("get", "bullpen"), "health"]
+    assert "install-codex-wrapper" in calls
+    assert ("auth", "codex") in calls
+
+
+def test_run_test_provider_command_warns_but_continues_when_bullpen_unhealthy(sb, monkeypatch, capsys):
+    calls = []
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+        action="test-provider",
+        target="claude",
+    )
+
+    class FakeRuntime:
+        async def ensure_installed(self):
+            return None
+
+        async def get(self, name):
+            return object()
+
+    async def fake_health(_config):
+        raise sb.DeployError("Bullpen health check failed for http://127.0.0.1:8080/health: boom")
+
+    async def fake_verify(_sandbox, _config):
+        calls.append("verify")
+
+    monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
+    monkeypatch.setattr(sb, "ensure_bullpen_healthy", fake_health)
+    monkeypatch.setattr(
+        sb,
+        "get_setup_item",
+        lambda key: sb.SetupItem(key, key.title(), lambda *_args, **_kwargs: None, fake_verify),
+    )
+
+    asyncio.run(sb.run_test_provider_command(config))
+
+    assert calls == ["verify"]
+    assert "Continuing because provider auth/test commands do not require Bullpen HTTP" in capsys.readouterr().err
+
+
 def test_verify_mount_access_runs_as_bullpen_and_checks_workspace_config(sb):
     commands = []
 
@@ -764,9 +846,11 @@ def test_verify_mount_access_runs_as_bullpen_and_checks_workspace_config(sb):
 
     repair_command = commands[0][1][1]
     probe_command = commands[1][1][1]
+    assert "mkdir -p /workspace/.bullpen" in repair_command
+    assert 'chown "$uid:$gid" /workspace/.bullpen' in repair_command
     assert 'chown -R "$uid:$gid" /workspace/.bullpen' in repair_command
     assert "su -s /bin/bash bullpen -c" in probe_command
-    assert "test -r /workspace/.bullpen/config.json" in probe_command
+    assert "test -w /workspace" in probe_command
     assert "test -w /workspace/.bullpen" in probe_command
     assert "effective user" not in probe_command
     assert "workspace metadata" not in probe_command
@@ -779,6 +863,257 @@ def test_run_sandbox_shell_raises_on_execoutput_exit_code(sb):
 
     with pytest.raises(sb.DeployError, match="missing command"):
         asyncio.run(sb.run_sandbox_shell(FakeSandbox(), "missing-command"))
+
+
+def test_attach_as_bullpen_uses_attach_options_and_bullpen_user(sb):
+    attached = []
+    exec_commands = []
+
+    class FakeSandbox:
+        def attach(self, cmd, options):
+            attached.append((cmd, options))
+            return None
+
+        def exec(self, cmd, args):
+            exec_commands.append((cmd, args))
+            command = args[1]
+            if "cat /tmp/bullpen-attach-status-" in command:
+                return types.SimpleNamespace(returncode=0, stdout_text="0\n")
+            return types.SimpleNamespace(returncode=0, stdout_text="")
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+
+    class FakeRuntime:
+        class AttachOptions:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(sb.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sb.sys.stdout, "isatty", lambda: True)
+    try:
+        asyncio.run(sb.attach_as_bullpen(FakeRuntime(), FakeSandbox(), config, "claude auth login"))
+    finally:
+        monkeypatch.undo()
+
+    assert attached
+    cmd, options = attached[0]
+    assert cmd == "bash"
+    assert options.kwargs["user"] == "bullpen"
+    assert options.kwargs["args"][0] == "-lc"
+    assert "claude auth login" in options.kwargs["args"][1]
+    assert any("cat /tmp/bullpen-attach-status-" in args[1] for _cmd, args in exec_commands)
+
+
+def test_attach_as_bullpen_uses_exec_stream_when_attach_is_unavailable(sb, monkeypatch):
+    attached = []
+    opened = []
+    exec_commands = []
+
+    class FakeSink:
+        def write(self, _data):
+            return None
+
+        def close(self):
+            return None
+
+    class FakeHandle:
+        def __init__(self):
+            self.events = [
+                runtime.StdoutEvent(b"Opening browser at https://example.test/login\n"),
+                runtime.ExitedEvent(0),
+            ]
+
+        def take_stdin(self):
+            return FakeSink()
+
+        def recv(self):
+            if self.events:
+                return self.events.pop(0)
+            return None
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=True,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+
+    class FakeExecOptions:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class FakeStdin:
+        @classmethod
+        def pipe(cls):
+            return "PIPE"
+
+    class FakeEvent:
+        def __init__(self, data=None, code=None):
+            self.data = data
+            self.code = code
+
+    class FakeStdoutEvent(FakeEvent):
+        pass
+
+    class FakeStderrEvent(FakeEvent):
+        pass
+
+    class FakeExitedEvent(FakeEvent):
+        pass
+
+    class FakeRuntime:
+        ExecOptions = FakeExecOptions
+        Stdin = FakeStdin
+        StdoutEvent = FakeStdoutEvent
+        StderrEvent = FakeStderrEvent
+        ExitedEvent = FakeExitedEvent
+        AttachOptions = None
+
+    runtime = FakeRuntime()
+    runtime.StdoutEvent = FakeStdoutEvent
+    runtime.StderrEvent = FakeStderrEvent
+    runtime.ExitedEvent = FakeExitedEvent
+
+    class FakeSandbox:
+        def exec_stream(self, cmd, options):
+            attached.append((cmd, options))
+            return FakeHandle()
+
+        def exec(self, cmd, args):
+            exec_commands.append((cmd, args))
+            command = args[1]
+            if "cat /tmp/bullpen-attach-status-" in command:
+                return types.SimpleNamespace(returncode=0, stdout_text="0\n")
+            return types.SimpleNamespace(returncode=0, stdout_text="")
+
+    monkeypatch.setattr(sb, "open_browser", lambda url: opened.append(url))
+    monkeypatch.setattr(sb.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sb.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(sb.sys.stdin, "fileno", lambda: 0, raising=False)
+    monkeypatch.setattr(sb.select, "select", lambda _r, _w, _x, _t: ([], [], []))
+    monkeypatch.setattr(sb.termios, "tcgetattr", lambda _fd: [0, 0, 0, 0, 0, 0])
+    monkeypatch.setattr(sb.termios, "tcsetattr", lambda _fd, _when, _attrs: None)
+    monkeypatch.setattr(sb.tty, "setcbreak", lambda _fd: None)
+
+    # Rebind runtime event classes into the fake handle closure.
+    class FakeHandle:
+        def __init__(self):
+            self.events = [
+                runtime.StdoutEvent(b"Opening browser at https://example.test/login\n"),
+                runtime.ExitedEvent(code=0),
+            ]
+
+        def take_stdin(self):
+            return FakeSink()
+
+        def recv(self):
+            if self.events:
+                return self.events.pop(0)
+            return None
+
+    class FakeSandbox:
+        def exec_stream(self, cmd, options):
+            attached.append((cmd, options))
+            return FakeHandle()
+
+        def exec(self, cmd, args):
+            exec_commands.append((cmd, args))
+            command = args[1]
+            if "cat /tmp/bullpen-attach-status-" in command:
+                return types.SimpleNamespace(returncode=0, stdout_text="0\n")
+            return types.SimpleNamespace(returncode=0, stdout_text="")
+
+    asyncio.run(sb.attach_as_bullpen(runtime, FakeSandbox(), config, "claude auth login"))
+
+    assert attached
+    assert attached[0][0] == "bash"
+    assert attached[0][1].kwargs["tty"] is True
+    assert attached[0][1].kwargs["stdin"] == "PIPE"
+    assert opened == ["https://example.test/login"]
+    assert any("cat /tmp/bullpen-attach-status-" in args[1] for _cmd, args in exec_commands)
+
+
+def test_attach_as_bullpen_attach_raises_when_interactive_command_exits_nonzero(sb):
+    class FakeSandbox:
+        def attach(self, cmd, options):
+            return None
+
+        def exec(self, cmd, args):
+            command = args[1]
+            if "cat /tmp/bullpen-attach-status-" in command:
+                return types.SimpleNamespace(returncode=0, stdout_text="1\n")
+            return types.SimpleNamespace(returncode=0, stdout_text="")
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+
+    class FakeRuntime:
+        class AttachOptions:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(sb.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sb.sys.stdout, "isatty", lambda: True)
+    try:
+        with pytest.raises(sb.DeployError, match="Sandbox interactive command failed: authenticate Claude"):
+            asyncio.run(
+                sb.attach_as_bullpen(
+                    FakeRuntime(),
+                    FakeSandbox(),
+                    config,
+                    "claude auth login",
+                    label="authenticate Claude",
+                )
+            )
+    finally:
+        monkeypatch.undo()
 
 
 def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
@@ -846,7 +1181,6 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
         bullpen_source=ROOT,
         github_repo_url="https://example.test/repo.git",
         local_project_path_default=ROOT / "project",
-        codex_auth_synced=True,
     )
     sb.build_runtime_env(config)
 
@@ -854,8 +1188,7 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
 
     command = commands[0][1][1]
     assert "su -s /bin/bash bullpen -c" in command
-    assert "test -f /home/bullpen/.codex/auth.json" in command
-    assert "test -w /home/bullpen/.codex/auth.json" in command
+    assert "cd /workspace" in command
     assert "for _attempt in 1 2" in command
     assert "timeout 45s bash -lc" in command
     assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command

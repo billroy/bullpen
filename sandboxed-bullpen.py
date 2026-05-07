@@ -12,18 +12,24 @@ import asyncio
 import getpass
 import importlib
 import inspect
-import json
 import os
 import platform
+import queue
+import re
+import select
 import shlex
 import shutil
 import socket
-import stat
 import subprocess
 import sys
+import termios
+import threading
 import time
+import tty
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -36,7 +42,8 @@ ADMIN_USER_DEFAULT = "admin"
 SANDBOX_NAME_DEFAULT = "bullpen"
 BASE_DEFAULT = "bullpen-microsandbox-local"
 HEALTH_TIMEOUT_SECONDS = 20
-CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS = 300
+SYSTEM_CA_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
+SYSTEM_CA_CERT_DIR = "/etc/ssl/certs"
 
 
 class DeployError(RuntimeError):
@@ -60,14 +67,15 @@ class DeployConfig:
     bullpen_source: Path
     github_repo_url: str
     local_project_path_default: Path
+    action: str = "deploy"
+    target: str | None = None
     runtime_env: dict[str, str] = field(default_factory=dict)
-    codex_auth_synced: bool = False
 
 
 @dataclass
 class CredentialSummary:
-    provider_sources: list[str] = field(default_factory=list)
-    git_sources: list[str] = field(default_factory=list)
+    selected_items: list[str] = field(default_factory=list)
+    skipped_items: list[str] = field(default_factory=list)
 
 
 SECRET_ENV_NAMES = {
@@ -97,6 +105,12 @@ class MicrosandboxRuntime:
             self.Snapshot = getattr(self.module, "Snapshot")
             self.Volume = getattr(self.module, "Volume")
             self.Network = getattr(self.module, "Network")
+            self.AttachOptions = getattr(self.module, "AttachOptions", None)
+            self.ExecOptions = getattr(self.module, "ExecOptions", None)
+            self.Stdin = getattr(self.module, "Stdin", None)
+            self.StdoutEvent = getattr(self.module, "StdoutEvent", None)
+            self.StderrEvent = getattr(self.module, "StderrEvent", None)
+            self.ExitedEvent = getattr(self.module, "ExitedEvent", None)
         except AttributeError as exc:
             raise DeployError("The installed microsandbox package is missing the expected SDK API.") from exc
 
@@ -251,6 +265,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
     parser.add_argument("--no-open", dest="open_browser", action="store_false")
     parser.add_argument("--install-bullpen-project", action="store_true", default=False)
+    subparsers = parser.add_subparsers(dest="command")
+    auth_parser = subparsers.add_parser("auth", help="Run sandbox-native setup/auth for one item")
+    auth_parser.add_argument("target", choices=("claude", "codex", "git"))
+    test_parser = subparsers.add_parser("test-provider", help="Run sandbox-native verification for one item")
+    test_parser.add_argument("target", choices=("claude", "codex", "git"))
     return parser
 
 
@@ -387,6 +406,9 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
     github_repo_url = os.environ.get("BULLPEN_GITHUB_REPO_URL", BULLPEN_GITHUB_REPO_URL_DEFAULT)
     local_project_path_default = root.parent / f"{root.name}-project"
 
+    action = args.command or "deploy"
+    target = getattr(args, "target", None)
+
     if args.install_bullpen_project:
         install_bullpen_project_from_github(local_project_path_default, github_repo_url)
         workspace = local_project_path_default.resolve()
@@ -394,14 +416,17 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         workspace = abs_path(args.workspace)
     else:
         cwd = Path.cwd().resolve()
-        if cwd == root and is_bullpen_source(root):
+        if action == "deploy" and cwd == root and is_bullpen_source(root):
             raise DeployError(
                 "Refusing to mount the Bullpen source checkout as the project by default. "
                 "Pass --workspace PATH, or use --install-bullpen-project."
             )
         workspace = cwd
 
-    admin_password = args.admin_password or prompt_password()
+    if action == "deploy":
+        admin_password = args.admin_password or prompt_password()
+    else:
+        admin_password = args.admin_password or ""
     replace: bool | None
     if args.replace:
         replace = True
@@ -426,6 +451,8 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         bullpen_source=root,
         github_repo_url=github_repo_url,
         local_project_path_default=local_project_path_default,
+        action=action,
+        target=target,
     )
     validate_config(config)
     return config
@@ -442,296 +469,8 @@ def validate_config(config: DeployConfig) -> None:
         raise DeployError(f"Workspace path is not a directory: {config.workspace}")
     if not is_bullpen_source(config.bullpen_source):
         raise DeployError(f"Bullpen source path does not contain bullpen.py: {config.bullpen_source}")
-
-
-def chmod_private_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
-    try:
-        path.chmod(stat.S_IRWXU)
-    except OSError:
-        pass
-
-
-def copy_file_if_exists(source: Path, target: Path, *, sync: bool = False) -> bool:
-    if not source.is_file():
-        return False
-    if target.exists() and not sync:
-        return True
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, target)
-    return True
-
-
-def remove_file_if_exists(path: Path) -> bool:
-    try:
-        path.unlink()
-        return True
-    except FileNotFoundError:
-        return False
-
-
-def copy_dir_if_exists(source: Path, target: Path, *, sync: bool = False) -> bool:
-    if not source.is_dir():
-        return False
-    if target.exists() and not sync:
-        return True
-    target.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, target, dirs_exist_ok=True)
-    return True
-
-
-def replace_dir_if_exists(source: Path, target: Path) -> bool:
-    if not source.is_dir():
-        return False
-    if target.exists():
-        shutil.rmtree(target)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, target)
-    return True
-
-
-def claude_oauth_credentials_usable(credentials_path: Path, *, now: float | None = None) -> bool:
-    """A credentials file is worth seeding if claude could act on it.
-
-    A valid refreshToken alone is sufficient because claude mints a new
-    access token from it on demand. Falling back to expiresAt-strict
-    accept only when no refreshToken is present preserves the prior
-    behavior for files that lack a refresh path.
-    """
-    if not credentials_path.is_file():
-        return False
-    try:
-        data = json.loads(credentials_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    oauth = data.get("claudeAiOauth")
-    if not isinstance(oauth, dict):
-        return False
-    if oauth.get("refreshToken"):
-        return True
-    if not oauth.get("accessToken"):
-        return False
-    expires_at = oauth.get("expiresAt")
-    if expires_at is None:
-        return True
-    if not isinstance(expires_at, (int, float)):
-        return False
-    if now is None:
-        now = time.time()
-    expires_at_seconds = expires_at / 1000 if expires_at > 10_000_000_000 else expires_at
-    return expires_at_seconds > now + CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS
-
-
-def select_claude_source_home(home: Path, docker_home: Path) -> Path | None:
-    for candidate in (docker_home, home):
-        if claude_oauth_credentials_usable(candidate / ".claude" / ".credentials.json"):
-            return candidate
-    return None
-
-
-def copy_claude_credentials(source_home: Path, sandbox_home: Path, *, replace_home_dir: bool) -> None:
-    copy_file_if_exists(source_home / ".claude.json", sandbox_home / ".claude.json", sync=True)
-    if replace_home_dir:
-        replace_dir_if_exists(source_home / ".claude", sandbox_home / ".claude")
-    else:
-        copy_dir_if_exists(source_home / ".claude", sandbox_home / ".claude")
-    credentials = sandbox_home / ".claude" / ".credentials.json"
-    copy_file_if_exists(source_home / ".claude" / ".credentials.json", credentials, sync=True)
-    try:
-        credentials.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
-
-
-def remove_stale_claude_auth(sandbox_home: Path) -> None:
-    remove_file_if_exists(sandbox_home / ".claude" / ".credentials.json")
-    remove_file_if_exists(sandbox_home / ".claude.json")
-
-
-def yaml_single_quote(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def host_github_gh(*args: str) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    for key in ("GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR", "XDG_CONFIG_HOME"):
-        env.pop(key, None)
-    return subprocess.run(["gh", *args], env=env, capture_output=True, text=True, check=False)
-
-
-def sandbox_home_gh(*args: str, sandbox_home: Path, extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env["HOME"] = str(sandbox_home)
-    env.pop("GH_CONFIG_DIR", None)
-    env.pop("XDG_CONFIG_HOME", None)
-    if extra_env:
-        env.update(extra_env)
-    return subprocess.run(["gh", *args], env=env, capture_output=True, text=True, check=False)
-
-
-def github_hosts_has_oauth_token(sandbox_home: Path) -> bool:
-    hosts = sandbox_home / ".config" / "gh" / "hosts.yml"
-    if not hosts.is_file():
-        return False
-    return "oauth_token:" in hosts.read_text(encoding="utf-8", errors="ignore")
-
-
-def github_cli_logged_in(sandbox_home: Path) -> bool:
-    if shutil.which("gh") is None:
-        return False
-    result = sandbox_home_gh("auth", "status", "--hostname", "github.com", sandbox_home=sandbox_home)
-    return result.returncode == 0
-
-
-def github_token_env_valid(sandbox_home: Path) -> bool:
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token or shutil.which("gh") is None:
-        return False
-    result = sandbox_home_gh(
-        "auth",
-        "status",
-        "--hostname",
-        "github.com",
-        sandbox_home=sandbox_home,
-        extra_env={"GH_TOKEN": token},
-    )
-    return result.returncode == 0
-
-
-def copy_host_github_cli_auth_to_sandbox_home(sandbox_home: Path) -> bool:
-    if shutil.which("gh") is None:
-        return False
-    token_result = host_github_gh("auth", "token", "--hostname", "github.com")
-    token = token_result.stdout.strip()
-    if token_result.returncode != 0 or not token:
-        return False
-    user_result = subprocess.run(
-        ["gh", "api", "--hostname", "github.com", "user", "--jq", ".login"],
-        env={**os.environ, "GH_TOKEN": token},
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    user = user_result.stdout.strip() if user_result.returncode == 0 else ""
-    gh_dir = sandbox_home / ".config" / "gh"
-    gh_dir.mkdir(parents=True, exist_ok=True)
-    hosts = gh_dir / "hosts.yml"
-    lines = [
-        "github.com:",
-        "    git_protocol: https",
-        f"    oauth_token: {yaml_single_quote(token)}",
-    ]
-    if user:
-        lines.append(f"    user: {yaml_single_quote(user)}")
-    hosts.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    try:
-        hosts.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
-    return github_cli_logged_in(sandbox_home)
-
-
-def seed_credentials(config: DeployConfig) -> CredentialSummary:
-    home = Path.home()
-    docker_home = Path(os.environ.get("BULLPEN_DOCKER_HOME", home / ".bullpen" / "docker-home"))
-    sandbox_home = config.sandbox_home
-    chmod_private_dir(sandbox_home)
-    (sandbox_home / "logs").mkdir(parents=True, exist_ok=True)
-
-    summary = CredentialSummary()
-    claude_source_home = select_claude_source_home(home, docker_home)
-    if claude_source_home is not None:
-        copy_claude_credentials(claude_source_home, sandbox_home, replace_home_dir=claude_source_home == docker_home)
-    else:
-        remove_stale_claude_auth(sandbox_home)
-    copy_dir_if_exists(home / ".config" / "codex", sandbox_home / ".config" / "codex")
-    copy_dir_if_exists(home / ".codex", sandbox_home / ".codex")
-    config.codex_auth_synced = copy_file_if_exists(home / ".codex" / "auth.json", sandbox_home / ".codex" / "auth.json", sync=True)
-    copy_dir_if_exists(home / ".config" / "gemini", sandbox_home / ".config" / "gemini")
-    copy_dir_if_exists(home / ".config" / "google-gemini", sandbox_home / ".config" / "google-gemini")
-
-    provider_home_paths = [
-        sandbox_home / ".claude" / ".credentials.json",
-        sandbox_home / ".codex",
-        sandbox_home / ".codex" / "auth.json",
-        sandbox_home / ".config" / "codex",
-        sandbox_home / ".config" / "gemini",
-        sandbox_home / ".config" / "google-gemini",
-    ]
-    for path in provider_home_paths:
-        if path.exists():
-            summary.provider_sources.append(f"home:{path}")
-
-    claude_oauth_present = (sandbox_home / ".claude" / ".credentials.json").is_file()
-    for name in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
-        if os.environ.get(name):
-            config.runtime_env[name] = os.environ[name]
-            summary.provider_sources.append(f"env:{name}")
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        if claude_oauth_present:
-            print(
-                f"warn: ANTHROPIC_API_KEY is set but OAuth credentials exist in {sandbox_home}/.claude/.credentials.json; skipping it.",
-                file=sys.stderr,
-            )
-        else:
-            config.runtime_env["ANTHROPIC_API_KEY"] = os.environ["ANTHROPIC_API_KEY"]
-            summary.provider_sources.append("env:ANTHROPIC_API_KEY")
-
-    for name in (
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
-        "GIT_AUTHOR_NAME",
-        "GIT_AUTHOR_EMAIL",
-        "GIT_COMMITTER_NAME",
-        "GIT_COMMITTER_EMAIL",
-    ):
-        if os.environ.get(name):
-            config.runtime_env[name] = os.environ[name]
-            summary.git_sources.append(f"env:{name}")
-
-    copy_file_if_exists(home / ".gitconfig", sandbox_home / ".gitconfig.host")
-    copy_dir_if_exists(home / ".config" / "gh", sandbox_home / ".config" / "gh", sync=True)
-    if (sandbox_home / ".gitconfig.host").is_file():
-        summary.git_sources.append(f"home:{sandbox_home}/.gitconfig.host")
-    if (sandbox_home / ".config" / "gh").is_dir():
-        summary.git_sources.append(f"home:{sandbox_home}/.config/gh")
-
-    if os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
-        if not github_token_env_valid(sandbox_home):
-            print("warn: GH_TOKEN/GITHUB_TOKEN is set, but GitHub CLI could not validate it.", file=sys.stderr)
-    elif github_hosts_has_oauth_token(sandbox_home) and github_cli_logged_in(sandbox_home):
-        pass
-    elif copy_host_github_cli_auth_to_sandbox_home(sandbox_home):
-        print("Copied host GitHub CLI token into Microsandbox home")
-        summary.git_sources.append(f"home:{sandbox_home}/.config/gh")
-    elif shutil.which("gh") is None:
-        print("warn: Install GitHub CLI on the host or set GH_TOKEN/GITHUB_TOKEN before git push or auto-PR.", file=sys.stderr)
-    else:
-        print("warn: No valid GitHub CLI auth found; git push and auto-PR may fail.", file=sys.stderr)
-
-    if not summary.provider_sources:
-        prompt_optional_provider_credentials(config, summary)
-    if not summary.provider_sources:
-        raise DeployError("No provider credentials were supplied.")
-
-    return summary
-
-
-def prompt_optional_provider_credentials(config: DeployConfig, summary: CredentialSummary) -> None:
-    if not sys.stdin.isatty():
-        return
-    print("No provider credentials were auto-detected. Enter any credentials you have; at least one is required.")
-    for name, label in (
-        ("CLAUDE_CODE_OAUTH_TOKEN", "Claude Code OAuth token"),
-        ("ANTHROPIC_API_KEY", "Anthropic API key"),
-        ("OPENAI_API_KEY", "OpenAI API key"),
-        ("GEMINI_API_KEY", "Gemini API key"),
-        ("GOOGLE_API_KEY", "Google API key"),
-    ):
-        value = getpass.getpass(f"{label} (optional, press Enter to skip): ")
-        if value:
-            config.runtime_env[name] = value
-            summary.provider_sources.append(f"env:{name}")
+    if config.action != "deploy" and config.install_bullpen_project:
+        raise DeployError("--install-bullpen-project is only supported for deploy")
 
 
 def build_runtime_env(config: DeployConfig) -> None:
@@ -756,6 +495,17 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),
             "BULLPEN_CODEX_PATH": "/home/bullpen/bin/codex",
         }
+    )
+
+
+def claude_tls_env_prefix() -> str:
+    return "; ".join(
+        [
+            f"export SSL_CERT_FILE={shlex.quote(SYSTEM_CA_CERT_FILE)}",
+            f"export SSL_CERT_DIR={shlex.quote(SYSTEM_CA_CERT_DIR)}",
+            f"export NODE_EXTRA_CA_CERTS={shlex.quote(SYSTEM_CA_CERT_FILE)}",
+            'export BUN_OPTIONS="${BUN_OPTIONS:+$BUN_OPTIONS }--use-system-ca"',
+        ]
     )
 
 
@@ -838,6 +588,331 @@ async def run_as_bullpen(sandbox: Any, config: DeployConfig, command: str, *, ch
         raise DeployError(message) from exc
 
 
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _extract_urls(text: str) -> list[str]:
+    return [match.group(0).rstrip(").,]") for match in _URL_RE.finditer(text or "")]
+
+
+def _is_localhost_auth_callback(url: str) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "http"
+        and parsed.hostname in {"localhost", "127.0.0.1"}
+        and parsed.path == "/auth/callback"
+        and bool(urllib.parse.parse_qs(parsed.query).get("code"))
+    )
+
+
+def _deliver_localhost_callback_to_sandbox(sandbox: Any, url: str) -> str:
+    command = f"curl -fsS --max-time 10 {shlex.quote(url)} >/tmp/bullpen-provider-auth-callback.out"
+    exec_command = getattr(sandbox, "exec", None)
+    if callable(exec_command):
+        result = exec_command("bash", ["-lc", command])
+        if inspect.isawaitable(result):
+            raise DeployError("Cannot bridge localhost callback because sandbox.exec() is asynchronous in this SDK path.")
+    else:
+        shell = getattr(sandbox, "shell", None)
+        if not callable(shell):
+            raise DeployError("Cannot bridge localhost callback because sandbox has no exec() or shell().")
+        result = shell(command)
+        if inspect.isawaitable(result):
+            raise DeployError("Cannot bridge localhost callback because sandbox.shell() is asynchronous in this SDK path.")
+    returncode = getattr(result, "returncode", None)
+    if returncode is None:
+        returncode = getattr(result, "exit_code", None)
+    if returncode not in (None, 0):
+        stderr = getattr(result, "stderr_text", "") or getattr(result, "stderr", "")
+        raise DeployError(f"Sandbox localhost callback delivery failed: {stderr}".strip())
+    return "Delivered localhost auth callback inside the sandbox."
+
+
+async def attach_as_bullpen(
+    runtime: MicrosandboxRuntime,
+    sandbox: Any,
+    config: DeployConfig,
+    command: str,
+    *,
+    label: str | None = None,
+    bridge_localhost_callback: bool = False,
+    prefer_exec_stream: bool = False,
+) -> None:
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise DeployError("Interactive sandbox setup requires a TTY.")
+    configured = f"{sandbox_env_prefix(config)}; {command}"
+    status_path = f"/tmp/bullpen-attach-status-{uuid.uuid4().hex}"
+    status_wrapped = (
+        f"status_file={shlex.quote(status_path)}; "
+        "rm -f \"$status_file\"; "
+        f"bash -lc {shlex.quote(configured)}; "
+        "status=$?; "
+        "printf '%s\\n' \"$status\" > \"$status_file\"; "
+        "exit \"$status\""
+    )
+    attach = getattr(sandbox, "attach", None)
+    if not prefer_exec_stream and callable(attach) and runtime.AttachOptions is not None:
+        options = runtime.AttachOptions(args=("-lc", status_wrapped), user="bullpen", env={})
+        try:
+            result = attach("bash", options)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            message = redact_text(str(exc), config)
+            if label:
+                message = f"Sandbox interactive command failed: {label}\n{message}"
+            raise DeployError(message) from exc
+        status_result = await run_sandbox_shell(
+            sandbox,
+            f"test -s {shlex.quote(status_path)} && cat {shlex.quote(status_path)}",
+            check=False,
+        )
+        try:
+            await run_sandbox_shell(sandbox, f"rm -f {shlex.quote(status_path)}", check=False)
+        except DeployError:
+            pass
+        status_stdout = getattr(status_result, "stdout_text", "") or getattr(status_result, "stdout", "")
+        status_text = status_stdout.strip()
+        if not status_text:
+            raise DeployError(
+                f"Sandbox interactive command failed: {label or command}\n"
+                "Interactive sandbox command exited without reporting a status."
+            )
+        try:
+            exit_code = int(status_text.splitlines()[-1].strip())
+        except ValueError as exc:
+            raise DeployError(
+                f"Sandbox interactive command failed: {label or command}\n"
+                f"Unexpected interactive exit status output: {status_text!r}"
+            ) from exc
+        if exit_code != 0:
+            raise DeployError(f"Sandbox interactive command failed: {label or command}")
+        return
+
+    exec_stream = getattr(sandbox, "exec_stream", None)
+    if callable(exec_stream) and runtime.ExecOptions is not None and runtime.Stdin is not None:
+        options = runtime.ExecOptions(
+            args=("-lc", status_wrapped),
+            user="bullpen",
+            env={},
+            tty=True,
+            stdin=runtime.Stdin.pipe(),
+        )
+        handle = exec_stream("bash", options)
+        if inspect.isawaitable(handle):
+            handle = await handle
+        stdin_sink = handle.take_stdin()
+        stop_stdin = threading.Event()
+        stdin_error: list[BaseException] = []
+        callback_messages: queue.Queue[str] = queue.Queue()
+        old_tty = termios.tcgetattr(sys.stdin.fileno())
+
+        def pump_stdin() -> None:
+            if stdin_sink is None:
+                return
+            fd = sys.stdin.fileno()
+            while not stop_stdin.is_set():
+                try:
+                    ready, _w, _x = select.select([fd], [], [], 0.1)
+                except OSError:
+                    return
+                if not ready:
+                    continue
+                try:
+                    data = os.read(fd, 1024)
+                except OSError as exc:
+                    stdin_error.append(exc)
+                    return
+                if not data:
+                    try:
+                        stdin_sink.close()
+                    except Exception:
+                        pass
+                    return
+                if bridge_localhost_callback:
+                    text = data.decode("utf-8", errors="ignore")
+                    urls = [url for url in _extract_urls(text) if _is_localhost_auth_callback(url)]
+                    if urls:
+                        for url in urls:
+                            try:
+                                callback_messages.put(_deliver_localhost_callback_to_sandbox(sandbox, url))
+                            except BaseException as exc:
+                                stdin_error.append(exc)
+                                return
+                        continue
+                try:
+                    stdin_sink.write(data)
+                except Exception as exc:
+                    stdin_error.append(exc)
+                    return
+
+        seen_urls: set[str] = set()
+        stdout_text_parts: list[str] = []
+        stderr_text_parts: list[str] = []
+        tty.setcbreak(sys.stdin.fileno())
+        stdin_thread = threading.Thread(target=pump_stdin, daemon=True)
+        stdin_thread.start()
+        exit_code = 0
+        try:
+            while True:
+                event = handle.recv()
+                if inspect.isawaitable(event):
+                    event = await event
+                if event is None:
+                    break
+                while not callback_messages.empty():
+                    print(callback_messages.get(), flush=True)
+                if runtime.StdoutEvent is not None and isinstance(event, runtime.StdoutEvent):
+                    text = event.data.decode("utf-8", errors="replace")
+                    stdout_text_parts.append(text)
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    for url in _extract_urls(text):
+                        if url not in seen_urls:
+                            seen_urls.add(url)
+                            if config.open_browser:
+                                open_browser(url)
+                elif runtime.StderrEvent is not None and isinstance(event, runtime.StderrEvent):
+                    text = event.data.decode("utf-8", errors="replace")
+                    stderr_text_parts.append(text)
+                    sys.stderr.write(text)
+                    sys.stderr.flush()
+                    for url in _extract_urls(text):
+                        if url not in seen_urls:
+                            seen_urls.add(url)
+                            if config.open_browser:
+                                open_browser(url)
+                elif runtime.ExitedEvent is not None and isinstance(event, runtime.ExitedEvent):
+                    exit_code = event.code
+            while not callback_messages.empty():
+                print(callback_messages.get(), flush=True)
+            if stdin_error:
+                raise stdin_error[0]
+        except Exception as exc:
+            message = redact_text(str(exc), config)
+            if label:
+                message = f"Sandbox interactive command failed: {label}\n{message}"
+            raise DeployError(message) from exc
+        finally:
+            stop_stdin.set()
+            try:
+                if stdin_sink is not None:
+                    stdin_sink.close()
+            except Exception:
+                pass
+            stdin_thread.join(timeout=0.5)
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_tty)
+        status_result = await run_sandbox_shell(
+            sandbox,
+            f"test -s {shlex.quote(status_path)} && cat {shlex.quote(status_path)}",
+            check=False,
+        )
+        try:
+            await run_sandbox_shell(sandbox, f"rm -f {shlex.quote(status_path)}", check=False)
+        except DeployError:
+            pass
+        status_stdout = getattr(status_result, "stdout_text", "") or getattr(status_result, "stdout", "")
+        status_text = status_stdout.strip()
+        if status_text:
+            try:
+                exit_code = int(status_text.splitlines()[-1].strip())
+            except ValueError as exc:
+                raise DeployError(
+                    f"Sandbox interactive command failed: {label or command}\n"
+                    f"Unexpected interactive exit status output: {status_text!r}"
+                ) from exc
+        elif exit_code == 0:
+            raise DeployError(
+                f"Sandbox interactive command failed: {label or command}\n"
+                "Interactive sandbox command exited without reporting a status."
+            )
+        if exit_code != 0:
+            details = redact_text("".join(stdout_text_parts + stderr_text_parts), config)
+            message = f"Sandbox interactive command failed: {label or command}"
+            if details.strip():
+                message = f"{message}\n{details}"
+            raise DeployError(message)
+        return
+
+    raise DeployError("Microsandbox sandbox object does not expose interactive attach() or exec_stream().")
+
+
+async def get_running_sandbox(runtime: MicrosandboxRuntime, config: DeployConfig) -> Any:
+    sandbox = await runtime.get(config.sandbox_name)
+    if sandbox is None:
+        raise DeployError(
+            f"Microsandbox '{config.sandbox_name}' is not running. Deploy Bullpen first:\n"
+            "  python3 sandboxed-bullpen.py --replace"
+        )
+    return sandbox
+
+
+async def ensure_bullpen_healthy(config: DeployConfig) -> None:
+    try:
+        wait_for_health(config.bullpen_port, timeout_seconds=5)
+    except DeployError as exc:
+        raise DeployError(
+            f"Microsandbox '{config.sandbox_name}' is running, but Bullpen inside it is unhealthy.\n"
+            f"{exc}"
+        ) from exc
+
+
+async def ensure_provider_command_ready(runtime: MicrosandboxRuntime, config: DeployConfig) -> Any:
+    sandbox = await get_running_sandbox(runtime, config)
+    try:
+        await ensure_bullpen_healthy(config)
+    except DeployError as exc:
+        message = str(exc)
+        if "Bullpen inside it is unhealthy" not in message:
+            message = (
+                f"Microsandbox '{config.sandbox_name}' is running, but Bullpen inside it is unhealthy.\n"
+                f"{message}"
+            )
+        print(f"warn: {message}\nContinuing because provider auth/test commands do not require Bullpen HTTP.", file=sys.stderr)
+    return sandbox
+
+
+def prompt_yes_no(prompt: str, *, default: bool = True) -> bool:
+    if not sys.stdin.isatty():
+        raise DeployError("Install-time setup requires an interactive terminal.")
+    suffix = "[Y/n]" if default else "[y/N]"
+    reply = input(f"{prompt} {suffix}: ").strip().lower()
+    if not reply:
+        return default
+    return reply in {"y", "yes"}
+
+
+def prompt_text(prompt: str, default: str | None = None) -> str:
+    if not sys.stdin.isatty():
+        raise DeployError("Interactive setup requires a terminal.")
+    suffix = f" [{default}]" if default else ""
+    reply = input(f"{prompt}{suffix}: ").strip()
+    if reply:
+        return reply
+    if default is not None:
+        return default
+    raise DeployError(f"{prompt} is required.")
+
+
+def resolve_git_identity() -> tuple[str, str]:
+    name = (
+        os.environ.get("GIT_AUTHOR_NAME")
+        or os.environ.get("GIT_COMMITTER_NAME")
+        or os.environ.get("GIT_USER_NAME")
+    )
+    email = (
+        os.environ.get("GIT_AUTHOR_EMAIL")
+        or os.environ.get("GIT_COMMITTER_EMAIL")
+        or os.environ.get("GIT_USER_EMAIL")
+    )
+    name = prompt_text("Git user.name for sandbox", name or None)
+    email = prompt_text("Git user.email for sandbox", email or None)
+    return name, email
+
+
 def log_step(message: str) -> None:
     print(f"==> {message}", flush=True)
 
@@ -892,13 +967,15 @@ async def verify_mount_access(sandbox: Any, config: DeployConfig) -> None:
     repair_command = r'''set -e
 uid="${BULLPEN_UID:-1000}"
 gid="${BULLPEN_GID:-1000}"
+mkdir -p /workspace/.bullpen
+chown "$uid:$gid" /workspace/.bullpen
 if [ -d /workspace/.bullpen ]; then
   chown -R "$uid:$gid" /workspace/.bullpen
 fi
 '''
     await run_configured_sandbox_shell(sandbox, config, repair_command, label="repair Bullpen workspace state ownership")
     command = r'''set -e
-test -r /workspace/.bullpen/config.json
+test -w /workspace
 test -w /workspace/.bullpen
 test -w /home/bullpen
 '''
@@ -1025,21 +1102,167 @@ PY'''
     await run_as_bullpen(sandbox, config, command, label="verify Bullpen credentials")
 
 
-async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
-    if not config.codex_auth_synced:
-        return
+async def disable_guest_ipv6_for_claude(sandbox: Any) -> None:
+    command = r'''set -e
+if command -v sysctl >/dev/null 2>&1; then
+  for key in net.ipv6.conf.all.disable_ipv6 net.ipv6.conf.default.disable_ipv6 net.ipv6.conf.eth0.disable_ipv6; do
+    sysctl -w "$key=1" >/dev/null
+  done
+else
+  for name in all default eth0; do
+    path="/proc/sys/net/ipv6/conf/${name}/disable_ipv6"
+    [ -e "$path" ] || continue
+    printf '1' > "$path"
+  done
+fi
+for name in all default eth0; do
+  path="/proc/sys/net/ipv6/conf/${name}/disable_ipv6"
+  [ -e "$path" ] || continue
+  value="$(cat "$path")"
+  if [ "$value" != 1 ]; then
+    echo "Failed to disable guest IPv6 for Claude: $path is $value" >&2
+    exit 1
+  fi
+done
+echo "Disabled guest IPv6 for Claude auth due Microsandbox IPv6 TLS EOFs." >&2
+'''
+    await run_sandbox_shell(sandbox, command)
+    print("Claude auth network mitigation applied: guest IPv6 disabled for this sandbox.", flush=True)
+
+
+async def verify_claude_auth(sandbox: Any, config: DeployConfig) -> None:
+    await disable_guest_ipv6_for_claude(sandbox)
     command = (
-        "set -e; "
-        "test -f /home/bullpen/.codex/auth.json; "
-        "test -w /home/bullpen/.codex/auth.json; "
-        "for _attempt in 1 2; do "
-        "echo \"Codex auth preflight attempt ${_attempt}/2\" >&2; "
-        "timeout 45s bash -lc 'printf \"Reply OK only.\" | "
-        "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "
-        "\"$BULLPEN_CODEX_PATH\" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'; "
-        "done"
+        "set -e\n"
+        f"{claude_tls_env_prefix()}\n"
+        "cd /workspace\n"
+        "out=\"$(\n"
+        "  timeout 60s bash -lc 'printf \"Reply OK only.\" | claude --print --output-format stream-json --verbose --no-session-persistence --setting-sources user --model claude-sonnet-4-6' 2>&1\n"
+        ")\" || {\n"
+        "  printf '%s\\n' \"$out\" | tail -40 >&2\n"
+        "  echo \"Claude auth preflight failed inside Microsandbox. Re-run sandbox setup and complete Claude login there.\" >&2\n"
+        "  exit 1\n"
+        "}\n"
     )
+    await run_as_bullpen(sandbox, config, command, label="verify Claude auth")
+
+
+async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
+    command = r'''set -e
+cd /workspace
+for _attempt in 1 2; do
+  echo "Codex auth preflight attempt ${_attempt}/2" >&2
+  timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'
+done
+'''
     await run_as_bullpen(sandbox, config, command, label="verify Codex auth")
+
+
+async def verify_git_auth(sandbox: Any, config: DeployConfig) -> None:
+    command = r'''set -e
+git config --global --get user.name >/dev/null
+git config --global --get user.email >/dev/null
+gh auth status --hostname github.com >/dev/null
+cd /workspace
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if git remote get-url origin >/dev/null 2>&1; then
+    remote_url="$(git remote get-url origin)"
+    case "$remote_url" in
+      *github.com*)
+        git ls-remote origin HEAD >/dev/null
+        ;;
+      *)
+        echo "warn: origin is not a GitHub remote; skipping remote auth verification" >&2
+        ;;
+    esac
+  else
+    echo "warn: git remote 'origin' not found; skipping remote auth verification" >&2
+  fi
+else
+  echo "warn: /workspace is not a git repository; skipping remote auth verification" >&2
+fi
+'''
+    await run_as_bullpen(sandbox, config, command, label="verify Git auth")
+
+
+async def auth_claude(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
+    print("Claude setup runs inside the sandbox. If localhost callback delivery fails, complete the terminal fallback.", flush=True)
+    await disable_guest_ipv6_for_claude(sandbox)
+    await attach_as_bullpen(
+        runtime,
+        sandbox,
+        config,
+        f"{claude_tls_env_prefix()}; claude auth login",
+        label="authenticate Claude",
+    )
+
+
+async def auth_codex(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
+    print(
+        "Codex setup runs inside the sandbox using browser auth. If the browser lands on a localhost callback URL, paste that full URL here.",
+        flush=True,
+    )
+    await attach_as_bullpen(
+        runtime,
+        sandbox,
+        config,
+        "codex login",
+        label="authenticate Codex",
+        bridge_localhost_callback=True,
+        prefer_exec_stream=True,
+    )
+
+
+async def auth_git(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
+    name, email = resolve_git_identity()
+    setup_command = (
+        f"git config --global user.name {shlex.quote(name)}; "
+        f"git config --global user.email {shlex.quote(email)}; "
+        "gh auth login --hostname github.com --git-protocol https --web; "
+        "gh auth setup-git --hostname github.com"
+    )
+    print("Git setup runs inside the sandbox using GitHub CLI over HTTPS.", flush=True)
+    await attach_as_bullpen(runtime, sandbox, config, setup_command, label="authenticate GitHub CLI")
+
+
+@dataclass(frozen=True)
+class SetupItem:
+    key: str
+    label: str
+    auth_func: Any
+    verify_func: Any
+
+
+def setup_items() -> list[SetupItem]:
+    return [
+        SetupItem("claude", "Claude", auth_claude, verify_claude_auth),
+        SetupItem("codex", "Codex", auth_codex, verify_codex_auth),
+        SetupItem("git", "Git", auth_git, verify_git_auth),
+    ]
+
+
+def get_setup_item(key: str) -> SetupItem:
+    for item in setup_items():
+        if item.key == key:
+            return item
+    raise DeployError(f"Unknown setup target: {key}")
+
+
+async def run_install_tui(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> CredentialSummary:
+    summary = CredentialSummary()
+    if not sys.stdin.isatty():
+        raise DeployError("Microsandbox install setup requires an interactive terminal.")
+    for item in setup_items():
+        should_setup = prompt_yes_no(f"Set up {item.label} in this sandbox?", default=True)
+        if not should_setup:
+            summary.skipped_items.append(item.key)
+            continue
+        summary.selected_items.append(item.key)
+        log_step(f"Setting up {item.label}")
+        await item.auth_func(runtime, sandbox, config)
+        log_step(f"Verifying {item.label}")
+        await item.verify_func(sandbox, config)
+    return summary
 
 
 async def detach_sandbox(sandbox: Any) -> None:
@@ -1075,6 +1298,32 @@ def open_browser(url: str) -> None:
         os.startfile(url)  # type: ignore[attr-defined]
     else:
         subprocess.run(["xdg-open", url], check=False)
+
+
+async def run_auth_command(config: DeployConfig) -> None:
+    if not config.target:
+        raise DeployError("auth requires a target")
+    runtime = MicrosandboxRuntime()
+    await runtime.ensure_installed()
+    sandbox = await ensure_provider_command_ready(runtime, config)
+    build_runtime_env(config)
+    if config.target == "codex":
+        await install_codex_wrapper(sandbox, config)
+    item = get_setup_item(config.target)
+    await item.auth_func(runtime, sandbox, config)
+
+
+async def run_test_provider_command(config: DeployConfig) -> None:
+    if not config.target:
+        raise DeployError("test-provider requires a target")
+    runtime = MicrosandboxRuntime()
+    await runtime.ensure_installed()
+    sandbox = await ensure_provider_command_ready(runtime, config)
+    build_runtime_env(config)
+    if config.target == "codex":
+        await install_codex_wrapper(sandbox, config)
+    item = get_setup_item(config.target)
+    await item.verify_func(sandbox, config)
 
 
 async def choose_replace(runtime: MicrosandboxRuntime, config: DeployConfig) -> bool:
@@ -1117,7 +1366,6 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
     ensure_host_ports_available(config)
 
     build_runtime_env(config)
-    summary = seed_credentials(config)
     config.replace = True
 
     log_step("Creating Microsandbox")
@@ -1135,11 +1383,10 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
         await start_bullpen(sandbox, config)
         log_step("Waiting for Bullpen health")
         wait_for_health(config.bullpen_port)
-        if config.codex_auth_synced:
-            log_step("Verifying Codex auth")
-        await verify_codex_auth(sandbox, config)
         log_step("Verifying Bullpen credentials")
         await verify_admin_credentials(sandbox, config)
+        log_step("Running install setup")
+        summary = await run_install_tui(runtime, sandbox, config)
         log_step("Detaching Microsandbox")
         await detach_sandbox(sandbox)
         log_step("Verifying detached Bullpen health")
@@ -1159,8 +1406,10 @@ def print_success(config: DeployConfig, summary: CredentialSummary) -> None:
     print(f"User: {config.admin_user}")
     print(f"Sandbox: {config.sandbox_name}")
     print(f"Sandbox home: {config.sandbox_home}")
-    print(f"Credential sources attached: {len(summary.provider_sources)}")
-    print(f"Git auth sources attached: {len(summary.git_sources)}")
+    if summary.selected_items:
+        print(f"Configured during install: {', '.join(summary.selected_items)}")
+    if summary.skipped_items:
+        print(f"Skipped during install: {', '.join(summary.skipped_items)}")
     if config.open_browser:
         open_browser(ui_url)
 
@@ -1168,9 +1417,16 @@ def print_success(config: DeployConfig, summary: CredentialSummary) -> None:
 async def async_main(argv: list[str] | None = None) -> int:
     try:
         config = config_from_args(argv)
-        summary = await deploy(config)
-        if summary is not None:
-            print_success(config, summary)
+        if config.action == "deploy":
+            summary = await deploy(config)
+            if summary is not None:
+                print_success(config, summary)
+        elif config.action == "auth":
+            await run_auth_command(config)
+        elif config.action == "test-provider":
+            await run_test_provider_command(config)
+        else:
+            raise DeployError(f"Unknown action: {config.action}")
         return 0
     except DeployError as exc:
         print(f"error: {exc}", file=sys.stderr)
