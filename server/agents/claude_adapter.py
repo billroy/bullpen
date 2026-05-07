@@ -83,6 +83,12 @@ def _env_claude_auth_overrides_file():
     return bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
 
 
+def _remove_claude_auth_overrides(env):
+    """Prefer Claude's credentials file over parent-process auth overrides."""
+    env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+
+
 def _copy_claude_credentials(target_config_dir):
     """Copy Claude OAuth credentials without carrying hooks/plugins/session state."""
     source_credentials = _claude_source_credentials_path()
@@ -105,14 +111,59 @@ def _oauth_expires_at_seconds(oauth):
     return expires_at / 1000 if expires_at > 10_000_000_000 else expires_at
 
 
-def _claude_credentials_need_refresh(credentials_path, *, now=None):
-    """Return True when launching claude is expected to refresh OAuth credentials."""
+def _read_claude_credentials(credentials_path):
     try:
         data = json.loads(Path(credentials_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        return None
+    oauth = data.get("claudeAiOauth")
+    if not isinstance(oauth, dict):
+        return None
+    return data
+
+
+def _oauth_has_live_access(oauth, *, now=None):
+    if not oauth.get("accessToken"):
+        return False
+    expires_at = _oauth_expires_at_seconds(oauth)
+    if expires_at is None:
+        return True
+    if now is None:
+        now = time.time()
+    return expires_at > now + CLAUDE_OAUTH_EXPIRY_SKEW_SECONDS
+
+
+def _credentials_have_refresh(data):
+    oauth = (data or {}).get("claudeAiOauth")
+    return isinstance(oauth, dict) and bool(oauth.get("refreshToken"))
+
+
+def _credentials_have_live_access(data, *, now=None):
+    oauth = (data or {}).get("claudeAiOauth")
+    return isinstance(oauth, dict) and _oauth_has_live_access(oauth, now=now)
+
+
+def _merge_missing_refresh_token(target_data, source_data):
+    target_oauth = (target_data or {}).get("claudeAiOauth")
+    source_oauth = (source_data or {}).get("claudeAiOauth")
+    if not isinstance(target_oauth, dict) or not isinstance(source_oauth, dict):
+        return target_data
+    if target_oauth.get("refreshToken") or not source_oauth.get("refreshToken"):
+        return target_data
+    merged = dict(target_data)
+    merged_oauth = dict(target_oauth)
+    merged_oauth["refreshToken"] = source_oauth["refreshToken"]
+    merged["claudeAiOauth"] = merged_oauth
+    return merged
+
+
+def _claude_credentials_need_refresh(credentials_path, *, now=None):
+    """Return True when launching claude is expected to refresh OAuth credentials."""
+    data = _read_claude_credentials(credentials_path)
+    if data is None:
         return False
     oauth = data.get("claudeAiOauth")
-    if not isinstance(oauth, dict) or not oauth.get("refreshToken"):
+    if not oauth.get("refreshToken"):
         return False
     if not oauth.get("accessToken"):
         return True
@@ -136,14 +187,30 @@ def _sync_claude_credentials_back(target_config_dir):
     target = Path(target_config_dir) / ".credentials.json"
     if not target.is_file():
         return False
+    source_data = _read_claude_credentials(source)
+    target_data = _read_claude_credentials(target)
+    if target_data is None:
+        return False
+    if not (
+        _credentials_have_refresh(target_data)
+        or _credentials_have_live_access(target_data)
+    ):
+        return False
+    sync_data = _merge_missing_refresh_token(target_data, source_data)
+    if not (
+        _credentials_have_refresh(sync_data)
+        or _credentials_have_live_access(sync_data)
+    ):
+        return False
     try:
-        if source.is_file() and target.read_bytes() == source.read_bytes():
+        sync_bytes = json.dumps(sync_data, separators=(",", ":")).encode("utf-8")
+        if source.is_file() and sync_bytes == source.read_bytes():
             return False
     except OSError:
         pass
     try:
         source.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(target, source)
+        source.write_bytes(sync_bytes)
         try:
             os.chmod(source, 0o600)
         except OSError:
@@ -228,21 +295,24 @@ class ClaudeAdapter(AgentAdapter):
         claude_config_dir = os.path.join(run_tmp, "claude-config")
         os.makedirs(claude_config_dir, mode=0o700, exist_ok=True)
         source_credentials = _claude_source_credentials_path()
+        source_credentials_usable = _claude_credentials_usable(source_credentials)
         refresh_lock_held = False
         try:
             if (
-                not _env_claude_auth_overrides_file()
+                source_credentials_usable
                 and _claude_credentials_need_refresh(source_credentials)
             ):
                 _CLAUDE_OAUTH_REFRESH_LOCK.acquire()
                 refresh_lock_held = True
-            _copy_claude_credentials(claude_config_dir)
+            copied_credentials = _copy_claude_credentials(claude_config_dir)
             env = os.environ.copy()
             env["TMPDIR"] = run_tmp
             env["TMP"] = run_tmp
             env["TEMP"] = run_tmp
             env["CLAUDE_CODE_TMPDIR"] = run_tmp
             env["CLAUDE_CONFIG_DIR"] = claude_config_dir
+            if copied_credentials and source_credentials_usable:
+                _remove_claude_auth_overrides(env)
             if os.path.isfile(_SYSTEM_CA_CERT_FILE):
                 env.setdefault("SSL_CERT_FILE", _SYSTEM_CA_CERT_FILE)
             if os.path.isdir(_SYSTEM_CA_CERT_DIR):

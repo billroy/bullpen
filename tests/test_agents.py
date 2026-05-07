@@ -181,6 +181,39 @@ class TestClaudeAdapter:
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
+    def test_prepare_env_prefers_credentials_file_over_parent_auth_env(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "stale-api-key")
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "stale-oauth-token")
+        home = tmp_path / "home"
+        claude_dir = home / ".claude"
+        claude_dir.mkdir(parents=True)
+        (claude_dir / ".credentials.json").write_text(
+            '{"claudeAiOauth":{"accessToken":"current","refreshToken":"r"}}',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", str(home))
+
+        env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
+        try:
+            assert "ANTHROPIC_API_KEY" not in env
+            assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+            assert os.path.isfile(os.path.join(env["CLAUDE_CONFIG_DIR"], ".credentials.json"))
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
+
+    def test_prepare_env_keeps_parent_auth_env_when_no_credentials_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "api-key")
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+        env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
+        try:
+            assert env["ANTHROPIC_API_KEY"] == "api-key"
+            assert not os.path.exists(os.path.join(env["CLAUDE_CONFIG_DIR"], ".credentials.json"))
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
+
     def test_parse_success(self):
         adapter = ClaudeAdapter()
         stdout = json.dumps({"type": "result", "subtype": "success",
@@ -297,6 +330,53 @@ class TestClaudeAdapter:
         adapter.finalize_env({"CLAUDE_CONFIG_DIR": str(config_dir)}, str(run_tmp))
 
         assert source_creds.stat().st_mtime == original_mtime
+
+    def test_finalize_env_does_not_sync_poisoned_expired_credentials(self, tmp_path, monkeypatch):
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_creds = source_dir / ".credentials.json"
+        source_payload = '{"claudeAiOauth":{"accessToken":"old","expiresAt":1,"refreshToken":"r"}}'
+        source_creds.write_text(source_payload, encoding="utf-8")
+
+        run_tmp = tmp_path / "run"
+        run_tmp.mkdir()
+        config_dir = run_tmp / "claude-config"
+        config_dir.mkdir()
+        (config_dir / ".credentials.json").write_text(
+            '{"claudeAiOauth":{"accessToken":"bad","expiresAt":1,"refreshToken":""}}',
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(source_dir))
+        ClaudeAdapter().finalize_env({"CLAUDE_CONFIG_DIR": str(config_dir)}, str(run_tmp))
+
+        assert source_creds.read_text(encoding="utf-8") == source_payload
+
+    def test_finalize_env_preserves_source_refresh_when_target_only_refreshes_access(self, tmp_path, monkeypatch):
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        source_creds = source_dir / ".credentials.json"
+        source_creds.write_text(
+            '{"claudeAiOauth":{"accessToken":"old","expiresAt":1,"refreshToken":"keep"}}',
+            encoding="utf-8",
+        )
+
+        run_tmp = tmp_path / "run"
+        run_tmp.mkdir()
+        config_dir = run_tmp / "claude-config"
+        config_dir.mkdir()
+        (config_dir / ".credentials.json").write_text(
+            '{"claudeAiOauth":{"accessToken":"fresh","expiresAt":9999999999999,"refreshToken":""}}',
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(source_dir))
+        ClaudeAdapter().finalize_env({"CLAUDE_CONFIG_DIR": str(config_dir)}, str(run_tmp))
+
+        data = json.loads(source_creds.read_text(encoding="utf-8"))
+        oauth = data["claudeAiOauth"]
+        assert oauth["accessToken"] == "fresh"
+        assert oauth["refreshToken"] == "keep"
 
 
 class TestCodexAdapter:
