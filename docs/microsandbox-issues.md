@@ -102,6 +102,40 @@ during early Microsandbox bring-up:
   credentials are expiring within the skew window, so concurrent
   chats / workers don't all refresh in parallel and trip rate
   limits.
+- **Prefer persisted OAuth over Claude auth env overrides**
+  (`pending`). `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`
+  both override Claude's `.credentials.json` when present in the
+  subprocess environment. The deploy path already skipped
+  `ANTHROPIC_API_KEY` when a usable OAuth file existed, but did not
+  skip `CLAUDE_CODE_OAUTH_TOKEN`; the adapter also copied the parent
+  process environment wholesale into isolated Claude runs. Bullpen now
+  skips both env overrides during Microsandbox credential seeding when
+  `/home/bullpen/.claude/.credentials.json` exists, and defensively
+  removes both variables from Claude subprocess envs after copying a
+  usable OAuth file into the isolated `CLAUDE_CONFIG_DIR`.
+- **Prevent failed Claude refreshes from poisoning persisted OAuth**
+  (`pending`). When Claude fails authentication from an isolated
+  `CLAUDE_CONFIG_DIR`, it can leave behind a degraded
+  `.credentials.json` whose `refreshToken` is empty and whose
+  `accessToken` is still expired. Bullpen previously mirrored that
+  file back to `/home/bullpen/.claude/.credentials.json`, turning one
+  failed run into a persistent failure. The adapter now refuses to sync
+  run-local credentials unless they contain a refresh token or a live
+  access token, and preserves the source refresh token when a run-local
+  file has refreshed access but dropped the refresh field.
+- **Verify Claude auth during Microsandbox deploy** (`pending`).
+  Codex already had a deploy-time auth preflight; Claude did not. The
+  Microsandbox deploy now runs a minimal `claude --print` probe when it
+  has seeded Claude OAuth credentials, so invalid or revoked Claude
+  credentials fail during deploy instead of first surfacing in Live
+  Agent or worker logs.
+- **Choose the strongest Claude credential source** (`pending`).
+  Re-authenticating Claude on the host is not enough if deploy blindly
+  prefers an older Docker-home file. Microsandbox credential seeding now
+  scores existing Microsandbox-home, Docker-home, and host-home Claude
+  credentials, preferring live access tokens over expired-access
+  refresh paths. That lets a fresh host login supersede a stale
+  Docker-home credential without requiring manual cleanup first.
 - **Provide system CA bundle to Claude** (`61bf4c5`). Sets
   `SSL_CERT_FILE` and `SSL_CERT_DIR` in the claude subprocess env.
   See "Open issues" below — Node ignores these env vars, so this
@@ -317,6 +351,76 @@ env.setdefault("ANTHROPIC_LOG", "debug")
 and error to claude's stdout — which Bullpen captures and stores.
 The error object's `message` field tells you the actual TLS / DNS /
 HTTP cause that the bucket label `error=unknown` is hiding.
+
+### To distinguish stale OAuth from bad env overrides
+
+Check presence only; do not print token values:
+
+```bash
+msb exec bullpen -- bash -lc 'su -s /bin/bash bullpen -c '\''python3 - <<"PY"
+import json, os, time
+from pathlib import Path
+print("ANTHROPIC_API_KEY", bool(os.environ.get("ANTHROPIC_API_KEY")))
+print("CLAUDE_CODE_OAUTH_TOKEN", bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")))
+p = Path.home() / ".claude/.credentials.json"
+print("credentials", p.exists())
+if p.exists():
+    oauth = (json.loads(p.read_text()).get("claudeAiOauth") or {})
+    exp = oauth.get("expiresAt")
+    ttl = None
+    if isinstance(exp, (int, float)):
+        ttl = int((exp / 1000 if exp > 10_000_000_000 else exp) - time.time())
+    print("accessToken", bool(oauth.get("accessToken")))
+    print("refreshToken", bool(oauth.get("refreshToken")))
+    print("ttl_seconds", ttl)
+PY'\'''
+```
+
+On May 7, 2026, the live sandbox had no Claude auth override env vars,
+but did have an expired access token plus refresh token. A direct
+`claude --print` probe inside the sandbox refreshed the persisted
+credential file and succeeded. That means a one-off Live Agent 401 after
+transport retries can be a failed refresh attempt against an expired
+access token, not proof that the persisted refresh token is permanently
+invalid.
+
+Later the same day, after a rebuild, Docker-home still had a
+non-empty refresh token but a direct `claude --print` probe failed with
+HTTP 401. The failing Claude process then left Microsandbox-home with
+an empty `refreshToken` and expired access token. That confirmed two
+distinct states:
+
+- A refreshable expired token, which Claude can repair.
+- A revoked/invalid refresh source, which requires re-authentication
+  and should be caught by deploy preflight.
+
+Also note that `claude auth status` is not a sufficient health check.
+It can report `loggedIn: true` from local account metadata while a
+real headless API call still fails with HTTP 401:
+
+```bash
+claude --print --output-format stream-json --verbose \
+  --no-session-persistence --setting-sources user \
+  --model claude-sonnet-4-6 'Reply OK only.'
+```
+
+Bullpen's deploy preflight intentionally uses the `--print` probe
+because Live Agent and workers need that exact noninteractive path.
+
+On macOS, a successful host `claude auth login` may update
+`~/.claude.json` and/or native local storage without creating
+`~/.claude/.credentials.json`. That works for the host CLI but is not
+portable by filesystem copy into a Linux microVM. Redeploying cannot
+fix that by itself; it can only copy portable files or pass explicit
+environment credentials. For Microsandbox, use one of:
+
+- `CLAUDE_CODE_OAUTH_TOKEN` from Claude Code's long-lived token flow.
+- A sandbox-specific Claude login/credential source that produces a
+  usable `/home/bullpen/.claude/.credentials.json`.
+
+Deploy warns when it sees host `~/.claude.json` without portable
+`~/.claude/.credentials.json`, because that is a common source of
+"host Claude works, Microsandbox Claude does not."
 
 ### To probe network reliability inside the sandbox
 

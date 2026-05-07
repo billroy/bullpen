@@ -106,7 +106,7 @@ async def main():
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
             apt-get install -y --no-install-recommends \
-              bash ca-certificates curl gh git python3 python3-pip python3-venv ripgrep
+              bash ca-certificates curl gh git iproute2 python3 python3-pip python3-venv ripgrep strace
             rm -rf /var/lib/apt/lists/*
             """,
             label="install OS packages",
