@@ -95,6 +95,8 @@ Options:
 --admin-password PASSWORD    Bullpen admin password. If omitted, prompt securely.
 --base NAME                  Prepared Microsandbox base. Default: bullpen-microsandbox-local
 --sandbox-home PATH          Persistent sandbox home. Default: ~/.bullpen/microsandbox-home
+--vcpus N                    Virtual CPUs for the final sandbox. Default: 4
+--memory-mib N               Memory for the final sandbox in MiB. Default: 4096
 --replace                    Replace an existing sandbox without prompting.
 --no-replace                 Abort if the sandbox already exists.
 --open                       Open the Bullpen UI in a host browser after startup. Default.
@@ -149,6 +151,8 @@ sandbox = await Sandbox.create(
     snapshot=prepared_base_snapshot_path,
     detached=True,
     replace=replace,
+    cpus=vcpus,
+    memory_mib=memory_mib,
     ports={
         bullpen_port: bullpen_port,
         app_port: app_port,

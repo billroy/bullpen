@@ -41,6 +41,8 @@ APP_PORT_DEFAULT = 3000
 ADMIN_USER_DEFAULT = "admin"
 SANDBOX_NAME_DEFAULT = "bullpen"
 BASE_DEFAULT = "bullpen-microsandbox-local"
+VCPUS_DEFAULT = 4
+MEMORY_MIB_DEFAULT = 4096
 HEALTH_TIMEOUT_SECONDS = 20
 SYSTEM_CA_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 SYSTEM_CA_CERT_DIR = "/etc/ssl/certs"
@@ -67,6 +69,8 @@ class DeployConfig:
     bullpen_source: Path
     github_repo_url: str
     local_project_path_default: Path
+    vcpus: int = VCPUS_DEFAULT
+    memory_mib: int = MEMORY_MIB_DEFAULT
     action: str = "deploy"
     target: str | None = None
     runtime_env: dict[str, str] = field(default_factory=dict)
@@ -195,6 +199,8 @@ class MicrosandboxRuntime:
             snapshot=prepared_base,
             detached=True,
             replace=bool(config.replace),
+            cpus=config.vcpus,
+            memory_mib=config.memory_mib,
             ports=ports,
             volumes=volumes,
             network=network,
@@ -265,6 +271,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--admin-password")
     parser.add_argument("--base", default=BASE_DEFAULT)
     parser.add_argument("--sandbox-home", default=str(Path.home() / ".bullpen" / "microsandbox-home"))
+    parser.add_argument("--vcpus", default=str(VCPUS_DEFAULT), help=f"Virtual CPUs for the final sandbox (default: {VCPUS_DEFAULT})")
+    parser.add_argument("--memory-mib", default=str(MEMORY_MIB_DEFAULT), help=f"Memory for the final sandbox in MiB (default: {MEMORY_MIB_DEFAULT})")
     parser.add_argument("--replace", action="store_true", default=False)
     parser.add_argument("--no-replace", action="store_true", default=False)
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
@@ -290,6 +298,15 @@ def parse_port(name: str, value: str) -> int:
     if port < 1 or port > 65535:
         raise DeployError(f"{name} must be between 1 and 65535")
     return port
+
+
+def parse_positive_int(name: str, value: str) -> int:
+    if not str(value).isdigit():
+        raise DeployError(f"{name} must be numeric")
+    parsed = int(value)
+    if parsed < 1:
+        raise DeployError(f"{name} must be at least 1")
+    return parsed
 
 
 def prompt_password() -> str:
@@ -410,6 +427,8 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
 
     bullpen_port = parse_port("Bullpen web port", args.bullpen_port)
     app_port = parse_port("App port", args.app_port)
+    vcpus = parse_positive_int("Virtual CPUs", args.vcpus)
+    memory_mib = parse_positive_int("Memory MiB", args.memory_mib)
     if bullpen_port == app_port:
         raise DeployError("Bullpen web port and app port must be different")
 
@@ -461,6 +480,8 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         bullpen_source=root,
         github_repo_url=github_repo_url,
         local_project_path_default=local_project_path_default,
+        vcpus=vcpus,
+        memory_mib=memory_mib,
         action=action,
         target=target,
     )

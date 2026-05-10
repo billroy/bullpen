@@ -58,6 +58,10 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
             "test-base",
             "--sandbox-home",
             str(home),
+            "--vcpus",
+            "6",
+            "--memory-mib",
+            "8192",
             "--replace",
             "--no-open",
         ]
@@ -71,8 +75,33 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
     assert config.admin_password == "pw"
     assert config.base == "test-base"
     assert config.sandbox_home == home.resolve()
+    assert config.vcpus == 6
+    assert config.memory_mib == 8192
     assert config.replace is True
     assert config.open_browser is False
+
+
+def test_cli_resource_options_default_to_larger_final_sandbox(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    config = sb.config_from_args(["--workspace", str(workspace), "--admin-password", "pw", "--no-open"])
+
+    assert config.vcpus == 4
+    assert config.memory_mib == 4096
+
+
+def test_cli_rejects_invalid_resource_options(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(sb.DeployError, match="Virtual CPUs must be at least 1"):
+        sb.config_from_args(["--workspace", str(workspace), "--admin-password", "pw", "--vcpus", "0"])
+
+    with pytest.raises(sb.DeployError, match="Memory MiB must be numeric"):
+        sb.config_from_args(["--workspace", str(workspace), "--admin-password", "pw", "--memory-mib", "4G"])
 
 
 def test_cli_auth_subcommand_does_not_require_admin_password(sb, tmp_path, monkeypatch):
@@ -574,6 +603,8 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert "image" not in calls["kwargs"]
     assert calls["kwargs"]["replace"] is True
     assert calls["kwargs"]["detached"] is True
+    assert calls["kwargs"]["cpus"] == 4
+    assert calls["kwargs"]["memory_mib"] == 4096
     assert calls["kwargs"]["ports"] == {8081: 8081, 3001: 3001}
     assert calls["kwargs"]["network"] == "allow-all"
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}
