@@ -42,13 +42,12 @@ class TestClaudeAdapter:
 
         assert claude_mod._find_claude() == configured
 
-    def test_available_requires_claude_auth(self, monkeypatch, tmp_path):
+    def test_available_requires_only_claude_executable(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setattr(claude_mod, "_find_claude", lambda: "/usr/local/bin/claude")
 
-        assert ClaudeAdapter().available() is False
+        assert ClaudeAdapter().available() is True
 
     def test_available_accepts_current_claude_oauth(self, monkeypatch, tmp_path):
         home = tmp_path / "home"
@@ -57,7 +56,6 @@ class TestClaudeAdapter:
         credentials.write_text('{"claudeAiOauth":{"accessToken":"token"}}', encoding="utf-8")
         monkeypatch.setenv("HOME", str(home))
         monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setattr(claude_mod, "_find_claude", lambda: "/usr/local/bin/claude")
 
         assert ClaudeAdapter().available() is True
@@ -181,9 +179,8 @@ class TestClaudeAdapter:
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
-    def test_prepare_env_prefers_credentials_file_over_parent_auth_env(self, monkeypatch, tmp_path):
+    def test_prepare_env_prefers_credentials_file_over_parent_claude_token(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TMPDIR", str(tmp_path))
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "stale-api-key")
         monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "stale-oauth-token")
         home = tmp_path / "home"
         claude_dir = home / ".claude"
@@ -196,21 +193,18 @@ class TestClaudeAdapter:
 
         env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
         try:
-            assert "ANTHROPIC_API_KEY" not in env
             assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
             assert os.path.isfile(os.path.join(env["CLAUDE_CONFIG_DIR"], ".credentials.json"))
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
-    def test_prepare_env_keeps_parent_auth_env_when_no_credentials_file(self, monkeypatch, tmp_path):
+    def test_prepare_env_does_not_set_claude_config_dir_without_credentials_file(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TMPDIR", str(tmp_path))
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "api-key")
         monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
         env, cleanup_path = ClaudeAdapter().prepare_env("/workspace")
         try:
-            assert env["ANTHROPIC_API_KEY"] == "api-key"
-            assert not os.path.exists(os.path.join(env["CLAUDE_CONFIG_DIR"], ".credentials.json"))
+            assert "CLAUDE_CONFIG_DIR" not in env
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 

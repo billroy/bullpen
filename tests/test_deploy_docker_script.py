@@ -74,6 +74,12 @@ def test_deploy_docker_does_not_launch_claude_browser_login():
     assert "Complete Claude Code login outside this deploy" in text
 
 
+def test_deploy_docker_does_not_support_anthropic_api_key_claude_auth():
+    text = _read("deploy-docker.sh")
+    assert "ANTHROPIC_API_KEY" not in text
+    assert "Anthropic API key" not in text
+
+
 def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():
     text = _read("deploy/docker/entrypoint.sh")
     assert 'local gh_hosts_file="$HOME/.config/gh/hosts.yml"' in text

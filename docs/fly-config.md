@@ -170,14 +170,8 @@ npm install -g @anthropic-ai/claude-code
 
 Claude Code persists across hibernation because npm global installs go to the
 persistent filesystem. The Bullpen agent adapter (`server/agents/claude_adapter.py`)
-will find it via `shutil.which("claude")`.
-
-You'll need to set `ANTHROPIC_API_KEY` in the environment. Do this inside the
-Sprite so it persists:
-
-```bash
-echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.bashrc
-```
+will find it via `shutil.which("claude")`. Authenticate Claude Code in the
+Sprite with the Claude CLI login flow before using Claude workers.
 
 ### Checkpoint after setup
 

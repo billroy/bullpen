@@ -507,18 +507,7 @@ if [[ -d "$HOME/.ssh" ]] && prompt_yes_no "Mount ~/.ssh read-only for git SSH re
   add_git_mount_if_exists "$HOME/.ssh" "/home/bullpen/.ssh"
 fi
 
-# Auto-forward commonly used API/token env vars when present on host.
-# ANTHROPIC_API_KEY takes priority over OAuth credentials inside the container,
-# which would silently switch from subscription billing to pay-as-you-go API
-# billing. Skip forwarding it when OAuth credentials are already present.
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-  if [[ -s "$DOCKER_HOME/.claude/.credentials.json" ]]; then
-    warn "ANTHROPIC_API_KEY is set on the host but OAuth credentials were found in ${DOCKER_HOME}/.claude/.credentials.json"
-    warn "Skipping ANTHROPIC_API_KEY to preserve subscription OAuth auth. Unset it on the host or remove the credentials file to use API key billing."
-  else
-    add_env_if_set "ANTHROPIC_API_KEY"
-  fi
-fi
+# Auto-forward commonly used provider env vars when present on host.
 add_env_if_set "OPENAI_API_KEY"
 add_env_if_set "GEMINI_API_KEY"
 add_env_if_set "GOOGLE_API_KEY"
@@ -527,7 +516,6 @@ if [[ ${#DETECTED_CREDENTIALS[@]} -eq 0 ]]; then
   warn "No provider credentials were auto-detected on this machine."
   echo "Enter any credentials you have now; at least one is required so agent CLIs can run."
   prompt_optional_credential "CLAUDE_CODE_OAUTH_TOKEN" "Claude Code OAuth token"
-  prompt_optional_credential "ANTHROPIC_API_KEY" "Anthropic API key"
   prompt_optional_credential "OPENAI_API_KEY" "OpenAI API key"
   prompt_optional_credential "GEMINI_API_KEY" "Gemini API key"
   prompt_optional_credential "GOOGLE_API_KEY" "Google API key"

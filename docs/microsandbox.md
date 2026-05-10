@@ -225,9 +225,9 @@ timeout 60s bash -lc 'printf "Reply OK only." | claude --print --output-format s
 `claude auth status` is not sufficient because it can report local account
 metadata even when the headless runtime path cannot authenticate.
 
-Bullpen Claude subprocesses currently run with a per-run `CLAUDE_CONFIG_DIR`
-under a private temp directory and copy only the sandbox-local
-`/home/bullpen/.claude/.credentials.json` into that temp directory. This is
+When sandbox-local `/home/bullpen/.claude/.credentials.json` exists, Bullpen
+Claude subprocesses run with a per-run `CLAUDE_CONFIG_DIR` under a private temp
+directory and copy only that credentials file into the temp directory. This is
 run isolation inside the VM. It exists to avoid loading user hooks, plugins,
 project settings, or session history during headless runs. Any future
 replacement must preserve that hardening or provide a stronger one.

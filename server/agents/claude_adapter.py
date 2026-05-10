@@ -79,13 +79,8 @@ def _claude_source_credentials_path():
     return Path.home() / ".claude" / ".credentials.json"
 
 
-def _env_claude_auth_overrides_file():
-    return bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get("ANTHROPIC_API_KEY"))
-
-
 def _remove_claude_auth_overrides(env):
     """Prefer Claude's credentials file over parent-process auth overrides."""
-    env.pop("ANTHROPIC_API_KEY", None)
     env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
 
 
@@ -239,17 +234,6 @@ def _claude_credentials_usable(credentials_path):
     return bool(oauth.get("accessToken") or oauth.get("refreshToken"))
 
 
-def _has_claude_auth():
-    if _env_claude_auth_overrides_file():
-        return True
-    source_config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
-    if source_config_dir:
-        credentials = Path(source_config_dir).expanduser() / ".credentials.json"
-    else:
-        credentials = Path.home() / ".claude" / ".credentials.json"
-    return _claude_credentials_usable(credentials)
-
-
 class ClaudeAdapter(AgentAdapter):
 
     @property
@@ -257,7 +241,7 @@ class ClaudeAdapter(AgentAdapter):
         return "claude"
 
     def available(self):
-        return _find_claude() is not None and _has_claude_auth()
+        return _find_claude() is not None
 
     def unavailable_message(self):
         configured = os.environ.get("BULLPEN_CLAUDE_PATH")
@@ -267,8 +251,8 @@ class ClaudeAdapter(AgentAdapter):
                 f"{configured!r}, but that file was not found or is not executable."
             )
         return (
-            "Claude CLI is not available or not authenticated. Install Claude Code CLI "
-            "and authenticate, or set BULLPEN_CLAUDE_PATH to the claude executable."
+            "Claude CLI is not available. Install Claude Code CLI and authenticate, "
+            "or set BULLPEN_CLAUDE_PATH to the claude executable."
         )
 
     def build_argv(self, prompt, model, workspace, bp_dir=None):
@@ -292,8 +276,6 @@ class ClaudeAdapter(AgentAdapter):
     def prepare_env(self, workspace, bp_dir=None, task_id=None):
         """Run Claude with private temp/config roots for headless launches."""
         run_tmp = _make_isolated_tmpdir("bullpen-claude-")
-        claude_config_dir = os.path.join(run_tmp, "claude-config")
-        os.makedirs(claude_config_dir, mode=0o700, exist_ok=True)
         source_credentials = _claude_source_credentials_path()
         source_credentials_usable = _claude_credentials_usable(source_credentials)
         refresh_lock_held = False
@@ -304,14 +286,18 @@ class ClaudeAdapter(AgentAdapter):
             ):
                 _CLAUDE_OAUTH_REFRESH_LOCK.acquire()
                 refresh_lock_held = True
-            copied_credentials = _copy_claude_credentials(claude_config_dir)
             env = os.environ.copy()
             env["TMPDIR"] = run_tmp
             env["TMP"] = run_tmp
             env["TEMP"] = run_tmp
             env["CLAUDE_CODE_TMPDIR"] = run_tmp
-            env["CLAUDE_CONFIG_DIR"] = claude_config_dir
-            if copied_credentials and source_credentials_usable:
+            if source_credentials_usable:
+                claude_config_dir = os.path.join(run_tmp, "claude-config")
+                os.makedirs(claude_config_dir, mode=0o700, exist_ok=True)
+                copied_credentials = _copy_claude_credentials(claude_config_dir)
+                if copied_credentials:
+                    env["CLAUDE_CONFIG_DIR"] = claude_config_dir
+            if env.get("CLAUDE_CONFIG_DIR"):
                 _remove_claude_auth_overrides(env)
             if os.path.isfile(_SYSTEM_CA_CERT_FILE):
                 env.setdefault("SSL_CERT_FILE", _SYSTEM_CA_CERT_FILE)
