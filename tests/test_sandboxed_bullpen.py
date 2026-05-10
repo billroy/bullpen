@@ -296,6 +296,46 @@ def test_run_install_tui_skips_interactive_auth_when_provider_already_verifies(s
     assert summary.skipped_items == []
 
 
+def test_auth_git_skips_browser_login_when_gh_is_already_authenticated(sb, monkeypatch):
+    captured = {}
+
+    async def fake_attach(runtime, sandbox, config, command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(sb, "resolve_git_identity", lambda: ("Test User", "test@example.com"))
+    monkeypatch.setattr(sb, "attach_as_bullpen", fake_attach)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+
+    asyncio.run(sb.auth_git(object(), object(), config))
+
+    command = captured["command"]
+    assert "git config --global user.name 'Test User'" in command
+    assert "git config --global user.email test@example.com" in command
+    assert "if gh auth status --hostname github.com >/dev/null 2>&1; then" in command
+    assert "GitHub CLI already authenticated; skipping browser login." in command
+    assert "else gh auth login --hostname github.com --git-protocol https --web; fi" in command
+    assert command.endswith("gh auth setup-git --hostname github.com")
+    assert captured["kwargs"]["label"] == "authenticate GitHub CLI"
+
+
 def test_deploy_applies_claude_network_mitigation_before_setup(sb, monkeypatch):
     calls = []
     sandbox = object()

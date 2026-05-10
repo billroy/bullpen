@@ -1286,7 +1286,11 @@ async def auth_git(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployCon
     setup_command = (
         f"git config --global user.name {shlex.quote(name)}; "
         f"git config --global user.email {shlex.quote(email)}; "
+        "if gh auth status --hostname github.com >/dev/null 2>&1; then "
+        "echo 'GitHub CLI already authenticated; skipping browser login.'; "
+        "else "
         "gh auth login --hostname github.com --git-protocol https --web; "
+        "fi; "
         "gh auth setup-git --hostname github.com"
     )
     print("Git setup runs inside the sandbox using GitHub CLI over HTTPS.", flush=True)
