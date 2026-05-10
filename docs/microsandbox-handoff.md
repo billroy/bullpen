@@ -19,11 +19,20 @@ The Microsandbox installer is far enough along to:
 - stop immediately when interactive provider setup fails
 
 The current blocker is no longer broad Bullpen startup or sandbox plumbing.
-The failure was isolated to **Claude login inside the sandbox**, specifically
-the post-code OAuth exchange after the user pastes the browser-returned code.
-The standalone repro now shows a concrete Microsandbox IPv6/TLS failure mode
-and a narrow installer-side mitigation: disable guest IPv6 before running
-Claude auth or Claude verification.
+The first auth failure was isolated to **Claude login inside the sandbox**,
+specifically the post-code OAuth exchange after the user pastes the
+browser-returned code. The standalone repro showed a concrete Microsandbox
+IPv6/TLS failure mode and a narrow installer-side mitigation: disable guest
+IPv6 before running Claude auth or Claude verification.
+
+After that mitigation, Claude auth got past the previous blocker. The next
+observed provider-flow problem is **Codex browser auth callback delivery**:
+`codex login --device-auth` is not acceptable because it depends on a ChatGPT
+Security Settings toggle, while plain `codex login` sends the host browser to a
+`http://localhost:<port>/auth/callback?...` URL whose listener is inside the
+sandbox, not on host localhost. The smallest current fix is to keep Codex on
+browser auth and allow the user to paste that full callback URL into the
+installer terminal, where the installer replays it against sandbox-localhost.
 
 ## What Is Working
 
@@ -107,6 +116,19 @@ Result:
 
 - `32 passed`
 - noninteractive mitigation cycle passed
+
+Latest focused local verification after adding the Codex localhost callback
+bridge:
+
+```bash
+python3 -m py_compile sandboxed-bullpen.py
+python3 -m pytest tests/test_sandboxed_bullpen.py -q
+```
+
+Result:
+
+- `41 passed`
+- local callback URL detection and sandbox delivery helpers are unit-covered
 
 ## Claude Auth Finding
 
@@ -435,6 +457,59 @@ transaction." The failed Claude transaction was not actually using IPv4 for the
 post-code token exchange. It opened IPv4 too, but sent the `platform.claude.com`
 ClientHello on the IPv6 socket.
 
+## Codex Auth Finding
+
+After Claude auth moved past the IPv6/TLS failure, the Codex setup path exposed
+a separate UX/runtime issue.
+
+Observed behavior:
+
+1. `codex login --device-auth` inside the sandbox can fail with:
+
+```text
+Enable device code authorization for Codex in ChatGPT Security Settings, then run "codex login --device-auth" again.
+```
+
+2. Plain `codex login` avoids that device-auth setting, but its browser OAuth
+   flow returns to a URL shaped like:
+
+```text
+http://localhost:1455/auth/callback?code=...&scope=...&state=...
+```
+
+3. That URL is host-localhost from the browser's point of view. The listening
+   Codex process is inside the sandbox, so the callback is not delivered unless
+   it is bridged.
+
+The current installer-side approach is intentionally narrow:
+
+- Codex setup now runs `codex login`, not `codex login --device-auth`.
+- `auth_codex()` tells the user that if the browser lands on a localhost
+  callback URL, paste the full URL into the installer terminal.
+- The interactive `exec_stream` path detects pasted
+  `http://localhost|127.0.0.1/.../auth/callback?code=...` URLs and runs `curl`
+  inside the sandbox against that exact URL, delivering it to the sandbox-local
+  Codex listener.
+- The bridge does not read or transform the OAuth code beyond replaying the
+  callback URL to the waiting sandbox-local listener.
+
+Current local coverage proves:
+
+- callback URL detection accepts only localhost callback URLs with `code`
+  material
+- callback delivery runs `curl` inside the sandbox path rather than forwarding
+  the pasted URL to the provider process
+- async and sync sandbox execution result shapes are accepted
+
+What this does not prove yet:
+
+- a fresh Microsandbox created through the same `runtime.create()` path can run
+  a sandbox-local `127.0.0.1:<port>/auth/callback` listener
+- a real Codex OAuth server accepts the callback after replay
+- the full installer's interactive terminal pump handles the exact pasted URL
+  in the live `codex login` process
+- Codex verification after login succeeds in the same sandbox
+
 ## What Has Been Ruled Out
 
 These are important because they narrow the search space.
@@ -592,7 +667,7 @@ Primary file:
 
 Important current behavior in that file:
 
-- removed the normal-path host credential seeding logic
+- removed the obsolete external-auth import path
 - fixed fresh workspace startup so missing `/workspace/.bullpen/config.json`
   does not crash the installer
 - uses `attach()` for interactive setup when available
@@ -610,7 +685,7 @@ Important current behavior in that file:
   `http://localhost:<port>/auth/callback?...` redirect can be pasted into the
   installer. The installer then replays that callback URL inside the sandbox
   with `curl`, where Codex's local callback listener is actually running.
-  This is callback routing, not credential copying.
+  This is callback routing only.
 - records and checks the real exit status of interactive setup commands
 
 Tests updated in:
@@ -624,7 +699,7 @@ Spec and plan documents already in place:
 
 ## Best Next Step
 
-Do **not** reopen broad installer architecture or API-key fallback questions.
+Do **not** reopen broad installer architecture questions.
 
 The next task is to verify the full installer path with the narrow IPv6
 mitigation:
@@ -660,13 +735,20 @@ What still needs to be learned:
 
 ## Recommended Immediate Work Item
 
-Continue with the full installer command path:
+Continue with the full installer command path, focused on Codex callback
+delivery:
 
 - run the same `python3 sandboxed-bullpen.py --replace ...` command used for
   the normal Microsandbox install
-- choose Claude when prompted
+- choose Claude only if the sandbox home does not already contain valid Claude
+  auth; otherwise skip it
+- choose Codex
 - complete the host browser auth URL
-- confirm the setup loop moves past Claude verification
+- if the browser lands on a `http://localhost:<port>/auth/callback?...` URL,
+  paste that full URL into the installer terminal
+- confirm the installer prints
+  `Delivered localhost auth callback inside the sandbox.`
+- confirm the setup loop moves past Codex verification
 
 Useful next harness improvements, still narrow:
 
@@ -676,6 +758,8 @@ Useful next harness improvements, still narrow:
   values are actually `1`
 - keep the forced-family TLS probe around as the VGER-style receipt for the
   Microsandbox IPv6 issue
+- add a terminal-pump unit or pseudo-TTY test that verifies pasted callback URLs
+  are consumed by the bridge and are not forwarded to the provider process
 - either remove the `auth` / `test-provider` subcommands or teach them to
   create/recover an executable sandbox handle; they are not reliable against a
   detached sandbox with the current SDK
@@ -683,12 +767,9 @@ Useful next harness improvements, still narrow:
 Do not widen that search beyond the sandbox or the project tree without
 explicit approval.
 
-Important constraint:
-
-> Do not recommend `ANTHROPIC_API_KEY` as a workaround for this blocker.
-
 The goal is to make Claude OAuth login work inside Microsandbox. Moving users
-to API-key billing is not an acceptable substitute for fixing the OAuth path.
+to a different billing/auth path is not an acceptable substitute for fixing the
+OAuth path.
 
 ## Privacy / Boundary Rule For The Next Session
 
@@ -707,4 +788,4 @@ scope narrow and explicit.
 
 Use this as the starting instruction for a fresh session:
 
-> Read [docs/microsandbox-handoff.md](/Users/bill/aistuff/bullpen/docs/microsandbox-handoff.md) first. We isolated `claude auth login` inside Microsandbox to a broken guest IPv6 TLS path: Claude's post-code OAuth request chooses IPv6, gets EOF, and reports `unknown certificate verification error`. The standalone repro succeeds when guest IPv6 is disabled, and `sandboxed-bullpen.py` now disables guest IPv6 with the same `sysctl` keys before Claude auth/verify only. Do not redesign the installer or suggest API-key fallback. Stay inside the project directory unless you ask first. The next validation is the full `sandboxed-bullpen.py --replace ...` installer path, not `auth claude`, because `Sandbox.get()` does not provide an executable handle for the detached sandbox in this SDK.
+> Read [docs/microsandbox-handoff.md](/Users/bill/aistuff/bullpen/docs/microsandbox-handoff.md) first. We isolated `claude auth login` inside Microsandbox to a broken guest IPv6 TLS path: Claude's post-code OAuth request chooses IPv6, gets EOF, and reports `unknown certificate verification error`. The standalone repro succeeds when guest IPv6 is disabled, and `sandboxed-bullpen.py` now disables guest IPv6 with the same `sysctl` keys before Claude auth/verify only. After that, Codex exposed a separate localhost callback problem: plain `codex login` returns the host browser to `http://localhost:<port>/auth/callback?...`, but the listener is inside the sandbox. `sandboxed-bullpen.py` now lets the user paste that callback URL into the installer terminal and replays it inside sandbox-localhost; the local unit tests cover callback URL detection and delivery helper behavior, but the live Codex OAuth replay still needs validation. Do not redesign the installer. Stay inside the project directory unless you ask first. The next validation is the full `sandboxed-bullpen.py --replace ...` installer path, not `auth claude`, because `Sandbox.get()` does not provide an executable handle for the detached sandbox in this SDK.

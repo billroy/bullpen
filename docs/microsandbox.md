@@ -4,7 +4,12 @@
 
 Provide a secure Microsandbox deployment path for Bullpen where Claude, Codex, Gemini, GitHub CLI, and project commands run inside a microVM, with only the intended host paths mounted.
 
-Microsandbox should become the preferred secure local deployment path. `deploy-docker.sh` remains the behavior model for prompts, defaults, credential seeding, workspace mounting, health checks, and success output. The implementation must not install heavyweight CLIs during every deploy.
+Microsandbox should become the preferred secure local deployment path.
+`deploy-docker.sh` remains the behavior model for prompts, defaults, workspace
+mounting, health checks, and success output. It is **not** the credential
+model. Provider credentials must be created inside the sandbox by running the
+provider's native setup flow as the sandbox user. The implementation must not
+install heavyweight CLIs during every deploy.
 
 ## Architecture
 
@@ -186,31 +191,47 @@ Run phase mounts:
 
 Do not install toolchains into `/home/bullpen`. Tooling belongs in the prepared base. Auth/config belongs in `/home/bullpen`.
 
-Codex OAuth auth follows the proven Docker topology: seed/sync host auth into the runtime-owned persistent home, then mount only that home. Do not add a nested `~/.codex` bind mount over `/home/bullpen/.codex`; overlapping mounts make Microsandbox differ from Docker and can hide stale state or change refresh persistence behavior.
+Provider auth follows the sandbox-native topology: login commands run inside
+the VM as the `bullpen` user and write their native Linux state under
+`/home/bullpen`. Do not add nested provider-specific host bind mounts over
+paths like `/home/bullpen/.codex` or `/home/bullpen/.claude`; overlapping
+mounts can hide state and break refresh persistence.
 
 ## Credentials
 
-Mirror `deploy-docker.sh`.
+Provider setup state must originate in the VM. Desktop auth stores,
+provider-managed host sessions, and legacy runtime homes are not part of the
+Microsandbox setup model.
 
-Seed or sync these provider credentials into the persistent sandbox home when present:
+The installer owns a host-assisted, sandbox-native setup flow:
 
-- `~/.claude`
-- `~/.claude.json`
-- `~/.config/codex`
-- `~/.codex`
-- `~/.codex/auth.json`
-- `~/.config/gemini`
-- `~/.config/google-gemini`
+- run `claude auth login` inside the sandbox as `bullpen`
+- run `codex login` inside the sandbox as `bullpen`
+- run `gh auth login --hostname github.com --git-protocol https --web` inside
+  the sandbox as `bullpen`
+- use the launcher only as browser and terminal assistance
+- persist resulting provider state only under `/home/bullpen`
 
-Claude OAuth seeding uses the Docker runtime home as the preferred source only when `~/.bullpen/docker-home/.claude/.credentials.json` contains a current, non-expired Claude OAuth access token. If Docker-home credentials are missing or expired, fall back to current host `~/.claude/.credentials.json`. If neither source is current, remove stale Claude auth files from the Microsandbox home instead of copying or counting them. `claude auth status` can report account metadata from stale files, so deploy must not treat that command as proof that headless model calls can authenticate.
+Claude verification must use a real headless model call, not account metadata:
 
-Bullpen Claude subprocesses run with a per-run `CLAUDE_CONFIG_DIR` under the private temp directory. Copy only `.credentials.json` into that directory; do not copy user hooks, plugins, project settings, or session history. Launch Claude with `--no-session-persistence` and `--setting-sources user`, and keep Live Agent `--strict-mcp-config` hardening for Bullpen's MCP server. This matches Claude Code's documented settings model: settings are hierarchical, `~/.claude.json` stores OAuth/session/project state, hooks can run from settings, and `--no-session-persistence` disables transcript writes for non-interactive runs.
+```bash
+timeout 60s bash -lc 'printf "Reply OK only." | claude --print --output-format stream-json --verbose --no-session-persistence --setting-sources user'
+```
 
-Seed host `~/.codex` into `/home/bullpen/.codex` if missing and sync host `~/.codex/auth.json` into `/home/bullpen/.codex/auth.json` on every deploy. This mirrors `deploy-docker.sh`: after deploy starts, Codex inside Microsandbox owns the runtime-home token store and can persist refresh-token rotation there.
+`claude auth status` is not sufficient because it can report local account
+metadata even when the headless runtime path cannot authenticate.
+
+Bullpen Claude subprocesses currently run with a per-run `CLAUDE_CONFIG_DIR`
+under a private temp directory and copy only the sandbox-local
+`/home/bullpen/.claude/.credentials.json` into that temp directory. This is
+run isolation inside the VM. It exists to avoid loading user hooks, plugins,
+project settings, or session history during headless runs. Any future
+replacement must preserve that hardening or provide a stronger one.
 
 Because Microsandbox bind-mount semantics may not match Docker for Codex's refresh-token write pattern, install a small `/home/bullpen/bin/codex` wrapper and set `BULLPEN_CODEX_PATH` to it. The wrapper serializes Codex invocations, copies `/home/bullpen/.codex` to guest-local `/var/lib/bullpen/codex-home`, runs the real Codex CLI with `CODEX_HOME=/var/lib/bullpen/codex-home`, then copies the resulting Codex home back to `/home/bullpen/.codex` before exiting. This makes token refresh happen on the guest-local filesystem while still persisting the rotated auth state to the mounted home.
 
-When `~/.codex/auth.json` was synced, deploy must verify the sandbox can use it before declaring success:
+After Codex login, deploy must verify the sandbox can use its own persisted
+Codex auth before declaring success:
 
 ```bash
 test -w /home/bullpen/.codex/auth.json
@@ -218,14 +239,9 @@ timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX
 timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'
 ```
 
-Forward these environment variables when present:
-
-- `OPENAI_API_KEY`
-- `GEMINI_API_KEY`
-- `GOOGLE_API_KEY`
-- `CLAUDE_CODE_OAUTH_TOKEN`
-
-Handle `ANTHROPIC_API_KEY` like `deploy-docker.sh`: if current Claude OAuth credentials exist in the persistent home, do not forward `ANTHROPIC_API_KEY`, because it can silently switch Claude Code from subscription OAuth auth to API-key billing.
+Do not forward Claude auth override variables into the sandbox deploy
+environment. They can silently switch Claude Code away from VM-created OAuth
+state and obscure the failure mode being tested.
 
 For GitHub and git operations, support:
 
@@ -238,9 +254,12 @@ For GitHub and git operations, support:
 - `~/.gitconfig`
 - `~/.config/gh`
 
-If the host `gh` CLI can provide a valid GitHub token, copy it into the sandbox home as GitHub CLI auth. If no usable GitHub auth is found, warn and continue; Bullpen can run without GitHub push/PR support.
+If GitHub setup is selected, authenticate GitHub CLI inside the sandbox. Do not
+import external tokens, SSH keys, git credential helpers, or git auth caches.
 
-If no provider credentials are found, prompt for optional provider credentials. At least one provider credential is required before starting Bullpen.
+The deploy may start Bullpen before provider setup. The sandbox is not
+considered provider-ready until every selected provider setup and verification
+step succeeds.
 
 ## Bullpen runtime
 

@@ -174,23 +174,28 @@ class MicrosandboxRuntime:
         if inspect.isawaitable(result):
             await result
 
-    async def create(self, config: DeployConfig) -> Any:
+    async def create(self, config: DeployConfig, *, expose_ports: bool = True) -> Any:
         prepared_base = await self.prepared_base_snapshot_path(config.base)
+        try:
+            config.sandbox_home.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise DeployError(f"Cannot create Microsandbox home directory {config.sandbox_home}: {exc}") from exc
         volumes = {
             "/app": self.Volume.bind(str(config.bullpen_source), readonly=True),
             "/workspace": self.Volume.bind(str(config.workspace)),
             "/home/bullpen": self.Volume.bind(str(config.sandbox_home)),
         }
         network = self.Network.allow_all()
+        ports = {
+            config.bullpen_port: config.bullpen_port,
+            config.app_port: config.app_port,
+        } if expose_ports else {}
         result = self.Sandbox.create(
             config.sandbox_name,
             snapshot=prepared_base,
             detached=True,
             replace=bool(config.replace),
-            ports={
-                config.bullpen_port: config.bullpen_port,
-                config.app_port: config.app_port,
-            },
+            ports=ports,
             volumes=volumes,
             network=network,
             env=config.runtime_env,
@@ -270,6 +275,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     auth_parser.add_argument("target", choices=("claude", "codex", "git"))
     test_parser = subparsers.add_parser("test-provider", help="Run sandbox-native verification for one item")
     test_parser.add_argument("target", choices=("claude", "codex", "git"))
+    first_light_parser = subparsers.add_parser(
+        "first-light",
+        help="Create a minimal sandbox and prove one provider works end-to-end",
+    )
+    first_light_parser.add_argument("target", choices=("claude",))
     return parser
 
 
@@ -608,27 +618,48 @@ def _is_localhost_auth_callback(url: str) -> bool:
     )
 
 
+def _localhost_callback_delivery_command(url: str) -> str:
+    return f"curl -fsS --max-time 10 {shlex.quote(url)} >/tmp/bullpen-provider-auth-callback.out"
+
+
+def _check_localhost_callback_delivery_result(result: Any) -> str:
+    returncode = getattr(result, "returncode", None)
+    if returncode is None:
+        returncode = getattr(result, "exit_code", None)
+    exit_status = getattr(result, "exit_status", None)
+    if returncode is None and exit_status is not None:
+        returncode = getattr(exit_status, "code", None)
+    success = getattr(result, "success", None)
+    if returncode not in (None, 0) or success is False:
+        stderr = getattr(result, "stderr_text", "") or getattr(result, "stderr", "")
+        raise DeployError(f"Sandbox localhost callback delivery failed: {stderr}".strip())
+    return "Delivered localhost auth callback inside the sandbox."
+
+
+async def _deliver_localhost_callback_to_sandbox_async(sandbox: Any, url: str) -> str:
+    result = await run_sandbox_shell(sandbox, _localhost_callback_delivery_command(url), check=False)
+    return _check_localhost_callback_delivery_result(result)
+
+
+async def _check_localhost_callback_delivery_awaitable(result: Any) -> str:
+    return _check_localhost_callback_delivery_result(await result)
+
+
 def _deliver_localhost_callback_to_sandbox(sandbox: Any, url: str) -> str:
-    command = f"curl -fsS --max-time 10 {shlex.quote(url)} >/tmp/bullpen-provider-auth-callback.out"
+    command = _localhost_callback_delivery_command(url)
     exec_command = getattr(sandbox, "exec", None)
     if callable(exec_command):
         result = exec_command("bash", ["-lc", command])
         if inspect.isawaitable(result):
-            raise DeployError("Cannot bridge localhost callback because sandbox.exec() is asynchronous in this SDK path.")
+            return asyncio.run(_check_localhost_callback_delivery_awaitable(result))
     else:
         shell = getattr(sandbox, "shell", None)
         if not callable(shell):
             raise DeployError("Cannot bridge localhost callback because sandbox has no exec() or shell().")
         result = shell(command)
         if inspect.isawaitable(result):
-            raise DeployError("Cannot bridge localhost callback because sandbox.shell() is asynchronous in this SDK path.")
-    returncode = getattr(result, "returncode", None)
-    if returncode is None:
-        returncode = getattr(result, "exit_code", None)
-    if returncode not in (None, 0):
-        stderr = getattr(result, "stderr_text", "") or getattr(result, "stderr", "")
-        raise DeployError(f"Sandbox localhost callback delivery failed: {stderr}".strip())
-    return "Delivered localhost auth callback inside the sandbox."
+            return asyncio.run(_check_localhost_callback_delivery_awaitable(result))
+    return _check_localhost_callback_delivery_result(result)
 
 
 async def attach_as_bullpen(
@@ -963,6 +994,40 @@ fi
     await run_sandbox_shell(sandbox, "test -x /opt/bullpen-venv/bin/python")
 
 
+async def disable_guest_ipv6_for_claude(sandbox: Any) -> None:
+    command = r'''set -e
+mkdir -p /etc/sysctl.d
+cat > /etc/sysctl.d/99-bullpen-claude-ipv4.conf <<'SYSCTL_EOF'
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.eth0.disable_ipv6 = 1
+SYSCTL_EOF
+if command -v sysctl >/dev/null 2>&1; then
+  for key in net.ipv6.conf.all.disable_ipv6 net.ipv6.conf.default.disable_ipv6 net.ipv6.conf.eth0.disable_ipv6; do
+    sysctl -w "$key=1" >/dev/null
+  done
+else
+  for name in all default eth0; do
+    path="/proc/sys/net/ipv6/conf/${name}/disable_ipv6"
+    [ -e "$path" ] || continue
+    printf '1' > "$path"
+  done
+fi
+for name in all default eth0; do
+  path="/proc/sys/net/ipv6/conf/${name}/disable_ipv6"
+  [ -e "$path" ] || continue
+  value="$(cat "$path")"
+  if [ "$value" != 1 ]; then
+    echo "Failed to disable guest IPv6 for Claude: $path is $value" >&2
+    exit 1
+  fi
+done
+echo "Disabled guest IPv6 for Claude auth due to Microsandbox IPv6 TLS EOFs." >&2
+'''
+    await run_sandbox_shell(sandbox, command)
+    print("Claude auth network mitigation applied: guest IPv6 disabled for this sandbox.", flush=True)
+
+
 async def verify_mount_access(sandbox: Any, config: DeployConfig) -> None:
     repair_command = r'''set -e
 uid="${BULLPEN_UID:-1000}"
@@ -986,6 +1051,13 @@ async def install_codex_wrapper(sandbox: Any, config: DeployConfig) -> None:
     command = r'''set -e
 mkdir -p /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
 chmod 700 /var/lib/bullpen 2>/dev/null || true
+config_file="/home/bullpen/.codex/config.toml"
+touch "$config_file"
+if grep -Eq '^[[:space:]]*cli_auth_credentials_store[[:space:]]*=' "$config_file"; then
+  sed -i 's/^[[:space:]]*cli_auth_credentials_store[[:space:]]*=.*/cli_auth_credentials_store = "file"/' "$config_file"
+else
+  printf '\ncli_auth_credentials_store = "file"\n' >> "$config_file"
+fi
 real_codex="$(command -v codex)"
 if [ -z "$real_codex" ] || [ "$real_codex" = "/home/bullpen/bin/codex" ]; then
   echo "Unable to locate real Codex CLI" >&2
@@ -1034,8 +1106,9 @@ exit "\$status"
 EOF
 chmod 755 /home/bullpen/bin/codex
 chown -R bullpen:"$(id -gn bullpen)" /var/lib/bullpen
+chown bullpen:"$(id -gn bullpen)" /home/bullpen/bin /home/bullpen/bin/codex /home/bullpen/.codex /home/bullpen/.codex/config.toml
 test -x /home/bullpen/bin/codex
-su -s /bin/bash bullpen -c 'test -x /home/bullpen/bin/codex && test -w /home/bullpen/.codex'
+su -s /bin/bash bullpen -c 'test -x /home/bullpen/bin/codex && test -w /home/bullpen/.codex && grep -Eq "^[[:space:]]*cli_auth_credentials_store[[:space:]]*=[[:space:]]*\"file\"" /home/bullpen/.codex/config.toml'
 '''
     await run_configured_sandbox_shell(sandbox, config, command, label="install Codex wrapper")
 
@@ -1102,34 +1175,6 @@ PY'''
     await run_as_bullpen(sandbox, config, command, label="verify Bullpen credentials")
 
 
-async def disable_guest_ipv6_for_claude(sandbox: Any) -> None:
-    command = r'''set -e
-if command -v sysctl >/dev/null 2>&1; then
-  for key in net.ipv6.conf.all.disable_ipv6 net.ipv6.conf.default.disable_ipv6 net.ipv6.conf.eth0.disable_ipv6; do
-    sysctl -w "$key=1" >/dev/null
-  done
-else
-  for name in all default eth0; do
-    path="/proc/sys/net/ipv6/conf/${name}/disable_ipv6"
-    [ -e "$path" ] || continue
-    printf '1' > "$path"
-  done
-fi
-for name in all default eth0; do
-  path="/proc/sys/net/ipv6/conf/${name}/disable_ipv6"
-  [ -e "$path" ] || continue
-  value="$(cat "$path")"
-  if [ "$value" != 1 ]; then
-    echo "Failed to disable guest IPv6 for Claude: $path is $value" >&2
-    exit 1
-  fi
-done
-echo "Disabled guest IPv6 for Claude auth due Microsandbox IPv6 TLS EOFs." >&2
-'''
-    await run_sandbox_shell(sandbox, command)
-    print("Claude auth network mitigation applied: guest IPv6 disabled for this sandbox.", flush=True)
-
-
 async def verify_claude_auth(sandbox: Any, config: DeployConfig) -> None:
     await disable_guest_ipv6_for_claude(sandbox)
     command = (
@@ -1137,7 +1182,7 @@ async def verify_claude_auth(sandbox: Any, config: DeployConfig) -> None:
         f"{claude_tls_env_prefix()}\n"
         "cd /workspace\n"
         "out=\"$(\n"
-        "  timeout 60s bash -lc 'printf \"Reply OK only.\" | claude --print --output-format stream-json --verbose --no-session-persistence --setting-sources user --model claude-sonnet-4-6' 2>&1\n"
+        "  timeout 60s bash -lc 'printf \"Reply OK only.\" | claude --print --output-format stream-json --verbose --no-session-persistence --setting-sources user' 2>&1\n"
         ")\" || {\n"
         "  printf '%s\\n' \"$out\" | tail -40 >&2\n"
         "  echo \"Claude auth preflight failed inside Microsandbox. Re-run sandbox setup and complete Claude login there.\" >&2\n"
@@ -1147,9 +1192,32 @@ async def verify_claude_auth(sandbox: Any, config: DeployConfig) -> None:
     await run_as_bullpen(sandbox, config, command, label="verify Claude auth")
 
 
+async def verify_claude_credentials_file(sandbox: Any, config: DeployConfig) -> None:
+    command = r'''set -e
+/opt/bullpen-venv/bin/python - <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path("/home/bullpen/.claude/.credentials.json")
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except Exception as exc:
+    print(f"Claude credentials file is not readable JSON at {path}: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+oauth = data.get("claudeAiOauth")
+if not isinstance(oauth, dict) or not (oauth.get("accessToken") or oauth.get("refreshToken")):
+    print(f"Claude credentials file at {path} does not contain usable OAuth credentials.", file=sys.stderr)
+    sys.exit(1)
+PY'''
+    await run_as_bullpen(sandbox, config, command, label="verify Claude credentials file")
+
+
 async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
     command = r'''set -e
 cd /workspace
+test -s /home/bullpen/.codex/auth.json
 for _attempt in 1 2; do
   echo "Codex auth preflight attempt ${_attempt}/2" >&2
   timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'
@@ -1206,7 +1274,7 @@ async def auth_codex(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployC
         runtime,
         sandbox,
         config,
-        "codex login",
+        '"$BULLPEN_CODEX_PATH" login',
         label="authenticate Codex",
         bridge_localhost_callback=True,
         prefer_exec_stream=True,
@@ -1253,6 +1321,16 @@ async def run_install_tui(runtime: MicrosandboxRuntime, sandbox: Any, config: De
     if not sys.stdin.isatty():
         raise DeployError("Microsandbox install setup requires an interactive terminal.")
     for item in setup_items():
+        log_step(f"Checking existing {item.label} auth")
+        try:
+            await item.verify_func(sandbox, config)
+        except DeployError as exc:
+            print(f"{item.label} is not verified yet: {exc}", file=sys.stderr)
+        else:
+            print(f"{item.label} already verifies inside Microsandbox; skipping interactive setup.", flush=True)
+            summary.selected_items.append(item.key)
+            continue
+
         should_setup = prompt_yes_no(f"Set up {item.label} in this sandbox?", default=True)
         if not should_setup:
             summary.skipped_items.append(item.key)
@@ -1326,6 +1404,42 @@ async def run_test_provider_command(config: DeployConfig) -> None:
     await item.verify_func(sandbox, config)
 
 
+async def run_first_light_command(config: DeployConfig) -> CredentialSummary | None:
+    if config.target != "claude":
+        raise DeployError("first-light currently supports only Claude")
+    runtime = MicrosandboxRuntime()
+    await runtime.ensure_installed()
+    should_deploy = await choose_replace(runtime, config)
+    if not should_deploy:
+        return None
+    await replace_existing_sandbox(runtime, config, wait_for_ports=False)
+
+    build_runtime_env(config)
+    config.replace = True
+
+    log_step("Creating Claude first-light Microsandbox")
+    sandbox = await runtime.create(config, expose_ports=False)
+    try:
+        log_step("Preparing Microsandbox runtime")
+        await prepare_runtime_dirs(sandbox, config)
+        log_step("Applying Claude network mitigation")
+        await disable_guest_ipv6_for_claude(sandbox)
+        log_step("Verifying Microsandbox mount access")
+        await verify_mount_access(sandbox, config)
+        log_step("Authenticating Claude")
+        await auth_claude(runtime, sandbox, config)
+        log_step("Verifying Claude credentials file")
+        await verify_claude_credentials_file(sandbox, config)
+        log_step("Verifying Claude real model call")
+        await verify_claude_auth(sandbox, config)
+        log_step("Detaching Microsandbox")
+        await detach_sandbox(sandbox)
+    except Exception:
+        await print_bullpen_log(sandbox)
+        raise
+    return CredentialSummary(selected_items=["claude"])
+
+
 async def choose_replace(runtime: MicrosandboxRuntime, config: DeployConfig) -> bool:
     exists = await runtime.exists(config.sandbox_name)
     if not exists:
@@ -1343,7 +1457,12 @@ async def choose_replace(runtime: MicrosandboxRuntime, config: DeployConfig) -> 
     return True
 
 
-async def replace_existing_sandbox(runtime: MicrosandboxRuntime, config: DeployConfig) -> None:
+async def replace_existing_sandbox(
+    runtime: MicrosandboxRuntime,
+    config: DeployConfig,
+    *,
+    wait_for_ports: bool = True,
+) -> None:
     if not await runtime.exists(config.sandbox_name):
         return
     log_step(f"Replacing existing Microsandbox {config.sandbox_name}")
@@ -1353,7 +1472,8 @@ async def replace_existing_sandbox(runtime: MicrosandboxRuntime, config: DeployC
     except Exception:
         time.sleep(1)
         await runtime.remove(config.sandbox_name)
-    wait_for_host_ports_available(config)
+    if wait_for_ports:
+        wait_for_host_ports_available(config)
 
 
 async def deploy(config: DeployConfig) -> CredentialSummary | None:
@@ -1373,6 +1493,8 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
     try:
         log_step("Preparing Microsandbox runtime")
         await prepare_runtime_dirs(sandbox, config)
+        log_step("Applying Claude network mitigation")
+        await disable_guest_ipv6_for_claude(sandbox)
         log_step("Verifying Microsandbox mount access")
         await verify_mount_access(sandbox, config)
         log_step("Installing Codex wrapper")
@@ -1414,6 +1536,14 @@ def print_success(config: DeployConfig, summary: CredentialSummary) -> None:
         open_browser(ui_url)
 
 
+def print_first_light_success(config: DeployConfig) -> None:
+    print()
+    print("Claude first-light passed inside Microsandbox.")
+    print(f"Sandbox: {config.sandbox_name}")
+    print(f"Sandbox home: {config.sandbox_home}")
+    print("Verified: claude auth login, persisted OAuth credentials, real claude --print model call")
+
+
 async def async_main(argv: list[str] | None = None) -> int:
     try:
         config = config_from_args(argv)
@@ -1425,6 +1555,10 @@ async def async_main(argv: list[str] | None = None) -> int:
             await run_auth_command(config)
         elif config.action == "test-provider":
             await run_test_provider_command(config)
+        elif config.action == "first-light":
+            summary = await run_first_light_command(config)
+            if summary is not None:
+                print_first_light_success(config)
         else:
             raise DeployError(f"Unknown action: {config.action}")
         return 0

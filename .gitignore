@@ -22,3 +22,7 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# Local Microsandbox runtime homes may contain provider auth and app secrets.
+tmp/*-home/
+tmp/*-home/**

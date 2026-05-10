@@ -15,7 +15,7 @@ change set that can produce a first-light end-to-end test:
 - install-time setup is a sequential TUI in `sandboxed-bullpen.py`
 - setup happens per package: ask, run setup, verify, then advance
 - provider auth is created inside the sandbox user's durable home
-- no host-to-sandbox provider credential copying is required for the normal path
+- provider setup state is created by native setup flows inside the VM
 
 This implementation slice intentionally includes one acknowledged UX defect:
 
@@ -200,10 +200,9 @@ for:
 
 ## Tranche 2 — Keep The Happy Path Sandbox-Native
 
-**Goal:** Keep the installer’s default model sandbox-native and prevent
-regression back toward host-auth copying.
+**Goal:** Keep the installer’s default model sandbox-native.
 
-### T2.1 Do not reintroduce host auth import into the default installer
+### T2.1 Keep provider setup inside the VM
 
 The default `--replace` installer path should:
 
@@ -222,16 +221,16 @@ Keep:
 - logs directory creation
 - Bullpen app credential bootstrap
 
-Remove from the normal path:
+Exclude from the normal path:
 
-- provider auth source selection
-- provider auth file copying
-- host GitHub token import
+- external auth source selection
+- external auth file import
+- external GitHub token import
 
 ### T2.3 Reframe install preconditions
 
-The installer should no longer fail up front because no provider credentials
-were supplied on the host. Instead, it should:
+The installer should not fail up front because provider setup has not happened
+yet. Instead, it should:
 
 - boot the sandbox
 - start Bullpen
@@ -241,11 +240,11 @@ were supplied on the host. Instead, it should:
 
 Update tests to reflect:
 
-- default install no longer requires host provider credentials
+- default install enters setup without preexisting provider state
 - provider setup is deferred to install-time auth steps
-- provider-related env seeding is not the normal path
+- provider-related environment import is not the normal path
 
-**Checkpoint:** deploy boots cleanly without host provider auth seeding.
+**Checkpoint:** deploy boots cleanly before provider setup.
 
 ---
 
@@ -525,12 +524,12 @@ install-time setup loop.
 
 ### T7.1 Remove obsolete provider-seeding code from normal operation
 
-After the new install flow is working, remove or quarantine the old logic for:
+After the new install flow is working, remove or quarantine old logic for:
 
-- Claude credential source selection
-- Claude credential copying
-- Codex auth copying
-- host GitHub auth copying
+- Claude external source selection
+- Claude auth-file import
+- Codex auth-file import
+- external GitHub auth import
 
 If transitional compatibility hooks remain, document them as non-default and
 not part of the normal Microsandbox install path.
@@ -609,7 +608,7 @@ need one or two rounds of polish once exercised in a real sandbox.
 
 1. Launcher command surface + PTY exec helper
 2. Sandbox-state classification and failure messaging
-3. Remove host provider credential seeding from default install path
+3. Keep provider setup state inside the VM
 4. Claude auth command
 5. Claude verify command
 6. Codex auth command

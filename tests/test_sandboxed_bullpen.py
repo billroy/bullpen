@@ -114,6 +114,26 @@ def test_cli_test_provider_subcommand_parses_target(sb, tmp_path, monkeypatch):
     assert config.target == "git"
 
 
+def test_cli_first_light_subcommand_parses_claude_without_admin_password(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(ROOT)
+
+    config = sb.config_from_args(
+        [
+            "--workspace",
+            str(workspace),
+            "--no-open",
+            "first-light",
+            "claude",
+        ]
+    )
+
+    assert config.action == "first-light"
+    assert config.target == "claude"
+    assert config.admin_password == ""
+
+
 def test_cli_rejects_duplicate_ports(sb, tmp_path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -167,18 +187,23 @@ def test_run_install_tui_processes_items_sequentially(sb, monkeypatch):
 
     async def verify_one(sandbox, config):
         order.append("verify-claude")
+        if order.count("verify-claude") == 1:
+            raise sb.DeployError("claude missing auth")
 
     async def auth_two(runtime, sandbox, config):
         order.append("auth-codex")
 
     async def verify_two(sandbox, config):
         order.append("verify-codex")
+        if order.count("verify-codex") == 1:
+            raise sb.DeployError("codex missing auth")
 
     async def auth_three(runtime, sandbox, config):
         order.append("auth-git")
 
     async def verify_three(sandbox, config):
         order.append("verify-git")
+        raise sb.DeployError("git missing auth")
 
     monkeypatch.setattr(
         sb,
@@ -212,9 +237,204 @@ def test_run_install_tui_processes_items_sequentially(sb, monkeypatch):
 
     summary = asyncio.run(sb.run_install_tui(object(), object(), config))
 
-    assert order == ["auth-claude", "verify-claude", "auth-codex", "verify-codex"]
+    assert order == [
+        "verify-claude",
+        "auth-claude",
+        "verify-claude",
+        "verify-codex",
+        "auth-codex",
+        "verify-codex",
+        "verify-git",
+    ]
     assert summary.selected_items == ["claude", "codex"]
     assert summary.skipped_items == ["git"]
+
+
+def test_run_install_tui_skips_interactive_auth_when_provider_already_verifies(sb, monkeypatch):
+    order = []
+
+    async def auth_one(runtime, sandbox, config):
+        order.append("auth-claude")
+
+    async def verify_one(sandbox, config):
+        order.append("verify-claude")
+
+    monkeypatch.setattr(
+        sb,
+        "setup_items",
+        lambda: [sb.SetupItem("claude", "Claude", auth_one, verify_one)],
+    )
+    monkeypatch.setattr(sb.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        sb,
+        "prompt_yes_no",
+        lambda _prompt, default=True: pytest.fail("should not prompt when sandbox auth verifies"),
+    )
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+
+    summary = asyncio.run(sb.run_install_tui(object(), object(), config))
+
+    assert order == ["verify-claude"]
+    assert summary.selected_items == ["claude"]
+    assert summary.skipped_items == []
+
+
+def test_deploy_applies_claude_network_mitigation_before_setup(sb, monkeypatch):
+    calls = []
+    sandbox = object()
+
+    class FakeRuntime:
+        async def ensure_installed(self):
+            calls.append("ensure")
+
+        async def exists(self, name):
+            calls.append(("exists", name))
+            return False
+
+        async def create(self, config):
+            calls.append("create")
+            return sandbox
+
+    def async_step(name):
+        async def _step(*_args):
+            calls.append(name)
+        return _step
+
+    async def fake_install_tui(_runtime, _sandbox, _config):
+        calls.append("install-tui")
+        return sb.CredentialSummary(selected_items=["claude"])
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+
+    monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
+    monkeypatch.setattr(sb, "ensure_host_ports_available", lambda _config: calls.append("ports"))
+    monkeypatch.setattr(sb, "prepare_runtime_dirs", async_step("prepare"))
+    monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
+    monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
+    monkeypatch.setattr(sb, "install_codex_wrapper", async_step("codex-wrapper"))
+    monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
+    monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
+    monkeypatch.setattr(sb, "wait_for_health", lambda _port: calls.append("health"))
+    monkeypatch.setattr(sb, "verify_admin_credentials", async_step("credentials"))
+    monkeypatch.setattr(sb, "run_install_tui", fake_install_tui)
+    monkeypatch.setattr(sb, "detach_sandbox", async_step("detach"))
+    monkeypatch.setattr(sb, "verify_detached_sandbox", async_step("detached-health"))
+
+    summary = asyncio.run(sb.deploy(config))
+
+    assert summary.selected_items == ["claude"]
+    assert calls.index("disable-ipv6") < calls.index("mounts")
+    assert calls.index("disable-ipv6") < calls.index("install-tui")
+
+
+def test_first_light_claude_runs_only_claude_gate_without_ports_or_bullpen(sb, monkeypatch):
+    calls = []
+    sandbox = object()
+
+    class FakeRuntime:
+        async def ensure_installed(self):
+            calls.append("ensure")
+
+        async def exists(self, name):
+            calls.append(("exists", name))
+            return True
+
+        async def stop(self, name):
+            calls.append(("stop", name))
+
+        async def remove(self, name):
+            calls.append(("remove", name))
+
+        async def create(self, config, *, expose_ports=True):
+            calls.append(("create", expose_ports))
+            return sandbox
+
+    def async_step(name):
+        async def _step(*_args):
+            calls.append(name)
+        return _step
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen-claude-first-light",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+        action="first-light",
+        target="claude",
+    )
+
+    monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
+    monkeypatch.setattr(sb, "prepare_runtime_dirs", async_step("prepare"))
+    monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
+    monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
+    monkeypatch.setattr(sb, "auth_claude", async_step("auth-claude"))
+    monkeypatch.setattr(sb, "verify_claude_credentials_file", async_step("credentials-file"))
+    monkeypatch.setattr(sb, "verify_claude_auth", async_step("model-call"))
+    monkeypatch.setattr(sb, "detach_sandbox", async_step("detach"))
+    monkeypatch.setattr(sb, "ensure_host_ports_available", lambda _config: calls.append("ports"))
+    monkeypatch.setattr(sb, "install_codex_wrapper", async_step("codex-wrapper"))
+    monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
+    monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
+
+    summary = asyncio.run(sb.run_first_light_command(config))
+
+    assert summary.selected_items == ["claude"]
+    assert ("stop", "bullpen-claude-first-light") in calls
+    assert ("remove", "bullpen-claude-first-light") in calls
+    assert ("create", False) in calls
+    assert "ports" not in calls
+    assert "codex-wrapper" not in calls
+    assert "bootstrap" not in calls
+    assert "start" not in calls
+    assert calls.index("disable-ipv6") < calls.index("auth-claude")
+    assert calls.index("auth-claude") < calls.index("credentials-file")
+    assert calls.index("credentials-file") < calls.index("model-call")
+
+
 def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -599,9 +819,47 @@ def test_verify_claude_auth_runs_minimal_claude_preflight(sb):
 
     command_texts = [args[1] for _cmd, args in commands]
     assert any("net.ipv6.conf.eth0.disable_ipv6" in command for command in command_texts)
+    assert any("/etc/sysctl.d/99-bullpen-claude-ipv4.conf" in command for command in command_texts)
     assert any("claude --print --output-format stream-json" in command for command in command_texts)
+    assert not any("--model claude-sonnet-4-6" in command for command in command_texts)
     assert not any("test -s /home/bullpen/.claude/.credentials.json" in command for command in command_texts)
     assert any("Claude auth preflight failed inside Microsandbox" in command for command in command_texts)
+
+
+def test_verify_claude_credentials_file_checks_persisted_oauth(sb):
+    commands = []
+
+    class FakeSandbox:
+        def exec(self, cmd, args):
+            commands.append((cmd, args))
+            return types.SimpleNamespace(returncode=0)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+
+    asyncio.run(sb.verify_claude_credentials_file(FakeSandbox(), config))
+
+    command_text = commands[0][1][1]
+    assert "su -s /bin/bash bullpen -c" in command_text
+    assert "/home/bullpen/.claude/.credentials.json" in command_text
+    assert "accessToken" in command_text
+    assert "refreshToken" in command_text
 
 
 def test_auth_claude_disables_guest_ipv6_before_interactive_login(sb, monkeypatch):
@@ -678,7 +936,7 @@ def test_auth_codex_uses_browser_login_not_device_auth(sb, monkeypatch):
 
     asyncio.run(sb.auth_codex(FakeRuntime(), object(), config))
 
-    assert attached[0][0] == "codex login"
+    assert attached[0][0] == '"$BULLPEN_CODEX_PATH" login'
     assert attached[0][1] == "authenticate Codex"
     assert attached[0][2]["bridge_localhost_callback"] is True
     assert attached[0][2]["prefer_exec_stream"] is True
@@ -702,6 +960,22 @@ def test_localhost_auth_callback_delivery_runs_curl_inside_sandbox(sb):
     assert calls[0][0] == "bash"
     assert "curl -fsS --max-time 10" in calls[0][1][1]
     assert "http://localhost:1455/auth/callback?code=abc&state=xyz" in calls[0][1][1]
+
+
+def test_localhost_auth_callback_delivery_supports_async_exec(sb):
+    calls = []
+
+    class FakeSandbox:
+        async def exec(self, cmd, args):
+            calls.append((cmd, args))
+            return types.SimpleNamespace(returncode=0, stdout_text="")
+
+    url = "http://localhost:1455/auth/callback?code=abc&state=xyz"
+    message = asyncio.run(sb._deliver_localhost_callback_to_sandbox_async(FakeSandbox(), url))
+
+    assert message == "Delivered localhost auth callback inside the sandbox."
+    assert calls[0][0] == "bash"
+    assert "curl -fsS --max-time 10" in calls[0][1][1]
 
 
 def test_localhost_auth_callback_rejects_non_callback_urls(sb):
@@ -1152,8 +1426,12 @@ def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
     assert r'LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/var/lib/bullpen/codex.lock}"' in command
     assert r'export CODEX_HOME="\$RUNTIME_CODEX_HOME"' in command
     assert r'cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/' in command
+    assert 'cli_auth_credentials_store = "file"' in command
+    assert 'grep -Eq "^[[:space:]]*cli_auth_credentials_store' in command
     assert 'chown -R bullpen:"$(id -gn bullpen)" /var/lib/bullpen' in command
-    assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen' not in command
+    assert 'chown bullpen:"$(id -gn bullpen)" /home/bullpen/bin /home/bullpen/bin/codex /home/bullpen/.codex /home/bullpen/.codex/config.toml' in command
+    assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen/.codex' not in command
+    assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen\n' not in command
     assert "test -w /home/bullpen/.codex" in command
 
 
@@ -1189,6 +1467,7 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
     command = commands[0][1][1]
     assert "su -s /bin/bash bullpen -c" in command
     assert "cd /workspace" in command
+    assert "test -s /home/bullpen/.codex/auth.json" in command
     assert "for _attempt in 1 2" in command
     assert "timeout 45s bash -lc" in command
     assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command

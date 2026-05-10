@@ -615,7 +615,7 @@ and setup plus verification for each selected item.
 The core architectural call in this spec is sound: credentials are created and
 stored inside the sandbox user's durable home, and Bullpen later runs the same
 CLIs under that same sandbox identity. That directly matches how these tools
-expect to work and eliminates the brittle host-to-sandbox credential-copy path.
+expect to work and eliminates the brittle legacy setup path.
 
 The strongest line in the document remains the simplest one: same sandbox user,
 same durable home, for both login and runtime. That is the right invariant to
