@@ -132,6 +132,16 @@ def test_worker_grid_touch_pointer_pans_from_cards_instead_of_selecting():
     assert "window._bullpenSuppressWorkerClickUntil = Date.now() + 250;" in text
 
 
+def test_worker_grid_viewport_origin_is_local_to_window():
+    text = _read("static/components/BullpenTab.js")
+    assert "workspaceViewportOrigins: {}" in text
+    assert "rememberWorkspaceViewportOrigin()" in text
+    assert "delete grid.viewportOrigin;" in text
+    assert "this.$root.updateConfig({ grid });" in text
+    assert "this.persistGrid({ viewportOrigin: this.viewportOrigin })" not in text
+    assert "'config.grid.viewportOrigin'" not in text
+
+
 def test_grid_headers_highlight_selected_cell_not_fixed_origin():
     tab = _read("static/components/BullpenTab.js")
     css = _read("static/style.css")

@@ -43,6 +43,7 @@ const BullpenTab = {
       resizeTooltip: null,
       dragViewportRect: null,
       lastDropTargetKey: '',
+      workspaceViewportOrigins: {},
     };
   },
   template: `
@@ -674,15 +675,8 @@ const BullpenTab = {
       if (this.cardVerticalResize) return;
       this.clearExpandedWorkerCard();
     },
-    'config.grid.viewportOrigin': {
-      immediate: true,
-      deep: true,
-      handler(value) {
-        this.viewportOrigin = this.clampedOrigin({
-          col: Number.isFinite(Number(value?.col)) ? Number(value.col) : 0,
-          row: Number.isFinite(Number(value?.row)) ? Number(value.row) : 0,
-        });
-      },
+    workspaceId() {
+      this.restoreWorkspaceViewportOrigin();
     },
     workspace: {
       handler() {
@@ -692,6 +686,7 @@ const BullpenTab = {
   },
   mounted() {
     this.updateViewportSize();
+    this.restoreWorkspaceViewportOrigin();
     this._resizeObserver = new ResizeObserver(() => this.updateViewportSize());
     if (this.$refs.viewport) this._resizeObserver.observe(this.$refs.viewport);
     this.selectA1();
@@ -702,7 +697,6 @@ const BullpenTab = {
   },
   beforeUnmount() {
     this._resizeObserver?.disconnect();
-    if (this._persistTimer) clearTimeout(this._persistTimer);
     this._teardownColumnResizeListeners?.();
     this._teardownRowResizeListeners?.();
     this._teardownCardVerticalResizeListeners?.();
@@ -733,19 +727,33 @@ const BullpenTab = {
       };
       this.viewportOrigin = this.clampedOrigin(this.viewportOrigin);
     },
+    viewportOriginFromConfig() {
+      const value = this.config?.grid?.viewportOrigin;
+      return this.clampedOrigin({
+        col: Number.isFinite(Number(value?.col)) ? Number(value.col) : 0,
+        row: Number.isFinite(Number(value?.row)) ? Number(value.row) : 0,
+      });
+    },
+    restoreWorkspaceViewportOrigin() {
+      const key = this.workspaceId || '__default__';
+      const cached = this.workspaceViewportOrigins[key];
+      this.viewportOrigin = cached
+        ? this.clampedOrigin(cached)
+        : this.viewportOriginFromConfig();
+    },
+    rememberWorkspaceViewportOrigin() {
+      const key = this.workspaceId || '__default__';
+      this.workspaceViewportOrigins[key] = { ...this.viewportOrigin };
+    },
     persistGrid(partial = {}) {
       const grid = {
         ...(this.config?.grid || {}),
         columnWidth: this.columnWidth,
         rowHeight: this.rowHeight,
-        viewportOrigin: this.viewportOrigin,
         ...partial,
       };
+      delete grid.viewportOrigin;
       this.$root.updateConfig({ grid });
-    },
-    persistOriginSoon() {
-      if (this._persistTimer) clearTimeout(this._persistTimer);
-      this._persistTimer = setTimeout(() => this.persistGrid({ viewportOrigin: this.viewportOrigin }), 120);
     },
     cardExpansionLimit() {
       return Math.max(0, 480 - this.rowHeight);
@@ -780,7 +788,7 @@ const BullpenTab = {
     },
     setOrigin(origin, persist = true) {
       this.viewportOrigin = this.clampedOrigin(origin);
-      if (persist) this.persistOriginSoon();
+      if (persist) this.rememberWorkspaceViewportOrigin();
     },
     nudge(dc, dr) {
       this.setOrigin({ col: this.viewportOrigin.col + dc, row: this.viewportOrigin.row + dr });
