@@ -1,7 +1,12 @@
 // Shared fetch wrapper that redirects to /login on a 401. Returning null
 // lets callers bail out early without crashing on res.json().
 async function filesFetch(input, init) {
-  const res = await fetch(input, init);
+  const options = init ? { ...init } : {};
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  if (!headers.has('X-Requested-With')) headers.set('X-Requested-With', 'XMLHttpRequest');
+  options.headers = headers;
+  const res = await fetch(input, options);
   if (res.status === 401) {
     window.location = '/login?next=' +
       encodeURIComponent(window.location.pathname + window.location.search);
@@ -60,7 +65,9 @@ const FilesTab = {
     <div class="files-container">
       <div class="files-tree-pane">
         <div class="files-tree-header">Workspace Files</div>
-        <div class="files-tree-body" v-if="tree.length">
+        <div v-if="loadingTree" class="empty-state">Loading...</div>
+        <div v-else-if="treeError" class="empty-state">{{ treeError }}</div>
+        <div class="files-tree-body" v-else-if="tree.length">
           <FileTreeNode
             v-for="node in tree"
             :key="node.path"
@@ -70,7 +77,7 @@ const FilesTab = {
             @select="openFile"
           />
         </div>
-        <div v-else class="empty-state">Loading...</div>
+        <div v-else class="empty-state">No files found</div>
       </div>
       <div class="files-viewer-pane">
         <div class="files-tab-bar" v-if="openFiles.length">
@@ -159,6 +166,8 @@ const FilesTab = {
   data() {
     return {
       tree: [],
+      loadingTree: false,
+      treeError: '',
       openFiles: [],
       activeFile: null,
       viewMode: 'preview',
@@ -266,12 +275,23 @@ const FilesTab = {
       return suffix ? base + '?' + suffix : base;
     },
     async loadTree() {
+      this.loadingTree = true;
+      this.treeError = '';
       try {
         const res = await filesFetch(this._filesUrl());
         if (!res) return;
+        if (!res.ok) {
+          this.tree = [];
+          this.treeError = 'Could not load files';
+          return;
+        }
         this.tree = await res.json();
       } catch (e) {
         console.error('Failed to load file tree', e);
+        this.tree = [];
+        this.treeError = 'Could not load files';
+      } finally {
+        this.loadingTree = false;
       }
     },
     async openFile(node) {
