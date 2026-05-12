@@ -12,11 +12,11 @@ def _read(rel_path: str) -> str:
 
 def test_worker_card_menu_commands_render_icons_before_labels():
     text = _read("static/components/WorkerCard.js")
-    assert "class=\"worker-menu-item\" :disabled=\"multipleSelectionActive\" @click=\"menuEdit\"><i class=\"menu-item-icon\" data-lucide=\"pencil\"" in text
-    assert "class=\"worker-menu-item\" :disabled=\"multipleSelectionActive\" @click=\"menuRun\"><i class=\"menu-item-icon\" data-lucide=\"play\"" in text
-    assert "class=\"worker-menu-item\" :disabled=\"multipleSelectionActive\" @click=\"menuWatch\"><i class=\"menu-item-icon\" data-lucide=\"eye\"" in text
-    assert "class=\"worker-menu-item\" :disabled=\"multipleSelectionActive || !serviceSiteUrl\" @click=\"menuOpenSite\"><i class=\"menu-item-icon\" data-lucide=\"external-link\"" in text
-    assert "class=\"worker-menu-item\" :disabled=\"multipleSelectionActive\" @click=\"menuStop\"><i class=\"menu-item-icon\" data-lucide=\"square\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuEdit\"><i class=\"menu-item-icon\" data-lucide=\"pencil\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuRun\"><i class=\"menu-item-icon\" data-lucide=\"play\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuWatch\"><i class=\"menu-item-icon\" data-lucide=\"eye\"" in text
+    assert "class=\"worker-menu-item\" :disabled=\"!serviceSiteUrl\" @click=\"menuOpenSite\"><i class=\"menu-item-icon\" data-lucide=\"external-link\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuStop\"><i class=\"menu-item-icon\" data-lucide=\"square\"" in text
     assert "class=\"worker-menu-item\" :disabled=\"multipleSelectionActive\" @click=\"menuPause\"><i class=\"menu-item-icon\" data-lucide=\"pause\"" in text
     assert "class=\"worker-menu-item\" :disabled=\"multipleSelectionActive\" @click=\"menuUnpause\"><i class=\"menu-item-icon\" data-lucide=\"play\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"><i class=\"menu-item-icon\" data-lucide=\"copy\"" in text

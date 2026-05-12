@@ -61,12 +61,12 @@ const WorkerCard = {
       </div>
       <Teleport to="body">
         <div v-if="showMenu" ref="menu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
-          <button v-if="canConfigure" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
-          <button v-if="canStart && !isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
-          <button v-if="canRestart" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
-          <button v-if="canWatch" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
-          <button v-if="isService" class="worker-menu-item" :disabled="multipleSelectionActive || !serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
-          <button v-if="canStop" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
+          <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
+          <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
+          <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
+          <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
+          <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
+          <button v-if="canStop" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
           <button v-if="isScheduled && !isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
           <button v-if="isScheduled && isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
           <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
@@ -782,22 +782,18 @@ const WorkerCard = {
       }
     },
     menuEdit() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$emit('configure', this.slotIndex);
     },
     menuRun() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.startWorkerSlot(this.slotIndex);
     },
     menuStop() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.stopWorkerSlot(this.slotIndex);
     },
     menuRestart() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.restartServiceSlot(this.slotIndex);
     },
@@ -824,12 +820,10 @@ const WorkerCard = {
       this.$root.exportWorker(this.slotIndex);
     },
     menuWatch() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$emit('open-focus', this.slotIndex);
     },
     menuOpenSite() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.openServiceSite(this.slotIndex);
     },

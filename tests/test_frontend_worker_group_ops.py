@@ -173,15 +173,24 @@ def test_worker_card_uses_group_drag_payload_and_delegates_drop_validation():
     assert "if (handled) {" in text
 
 
-def test_worker_card_disables_unsafe_menu_items_during_multiple_selection():
+def test_worker_card_keeps_per_worker_menu_items_enabled_during_group_selection():
     text = _read("static/components/WorkerCard.js")
     assert "'multipleSelectionActive'" in text
     assert "'delete-worker'" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuEdit\"" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuRun\"" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuWatch\"" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuStop\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuEdit\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuRun\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuRestart\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuWatch\"" in text
+    assert "class=\"worker-menu-item\" :disabled=\"!serviceSiteUrl\" @click=\"menuOpenSite\"" in text
+    assert "class=\"worker-menu-item\" @click=\"menuStop\"" in text
+    assert "if (this.multipleSelectionActive) return;\n      this.closeMenuAndRestoreFocus();\n      this.$emit('configure', this.slotIndex);" not in text
+    assert "if (this.multipleSelectionActive) return;\n      this.closeMenuAndRestoreFocus();\n      this.$root.startWorkerSlot(this.slotIndex);" not in text
+
+
+def test_worker_card_still_disables_group_ambiguous_menu_items():
+    text = _read("static/components/WorkerCard.js")
     assert ":disabled=\"multipleSelectionActive\" @click=\"menuPause\"" in text
+    assert ":disabled=\"multipleSelectionActive\" @click=\"menuUnpause\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuCopyWorker\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuExportWorker\"" in text
