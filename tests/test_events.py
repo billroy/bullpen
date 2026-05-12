@@ -430,6 +430,31 @@ class TestWorkerEvents:
         assert layout["slots"][0]["name"] == "Feature Architect"
         assert layout["slots"][0]["state"] == "idle"
 
+    def test_marker_worker_start_via_socket_completes_without_deadlock(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "marker",
+            "fields": {
+                "name": "Review Marker",
+                "activation": "manual",
+                "disposition": "review",
+            },
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("task:create", {"title": "Route through marker"})
+        task = get_event(c, "task:created")
+        c.emit("task:assign", {"task_id": task["id"], "slot": 0})
+        c.get_received()
+
+        c.emit("worker:start", {"slot": 0})
+
+        from server.tasks import read_task
+        updated = read_task(app.config["bp_dir"], task["id"])
+        assert updated["status"] == "review"
+        assert updated["assigned_to"] == ""
+
     def test_add_unconfigured_worker_uses_safe_defaults(self, client):
         c, _ = client
         c.emit("worker:add", {"slot": 0, "profile": "unconfigured-worker"})

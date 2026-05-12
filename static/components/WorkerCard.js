@@ -219,6 +219,7 @@ const WorkerCard = {
     },
     canStart() {
       if (this.isService) return ['idle', 'stopped', 'crashed'].includes(this.workerState);
+      if (this.isMarker) return false;
       return this.workerState === 'idle' && !this.isDisabledType;
     },
     runMenuLabel() {

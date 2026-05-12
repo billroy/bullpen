@@ -877,6 +877,25 @@ def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
 
 def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     """Marker worker backend: no subprocess, immediate disposition application."""
+    try:
+        preflight_layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
+    preflight_slots = preflight_layout.get("slots", [])
+    preflight_worker = preflight_slots[slot_index] if slot_index < len(preflight_slots) else None
+    if not preflight_worker:
+        return
+    if not preflight_worker.get("task_queue"):
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": (
+                    f"{preflight_worker.get('name', 'Marker')} routes existing tickets only; "
+                    "drop a ticket on it or connect it to another worker."
+                ),
+                "level": "info",
+            }, ws_id)
+        return
+
     begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
     if begun is None:
         return

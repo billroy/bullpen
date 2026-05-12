@@ -74,3 +74,10 @@ def test_marker_worker_card_renders_note_without_output_focus_affordances():
     assert ".worker-card-note {" in style
     assert ".worker-color-override-controls {" in style
     assert ".worker-color-override-trigger {" in style
+
+
+def test_marker_worker_card_does_not_offer_run_menu_action():
+    text = _read("static/components/WorkerCard.js")
+    can_start = text.split("canStart() {", 1)[1].split("runMenuLabel()", 1)[0]
+
+    assert "if (this.isMarker) return false;" in can_start

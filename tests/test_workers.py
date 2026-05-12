@@ -13,7 +13,7 @@ import server.workers as workers_mod
 from server.init import init_workspace
 from server.persistence import read_json, write_json
 from server.app import reconcile
-from server.tasks import create_task, read_task, update_task
+from server.tasks import create_task, list_tasks, read_task, update_task
 from server.worktrees import remove_worktree, reconcile_worktrees, setup_worktree
 from server.workers import (
     assign_task,
@@ -2023,6 +2023,33 @@ class TestMarkerWorker:
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "blocked"
         assert "Marker workers require Pass tickets to" in updated["body"]
+
+    def test_marker_empty_queue_does_not_create_synthetic_ticket(self, bp_dir):
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "type": "marker",
+            "row": 0, "col": 0,
+            "name": "Empty Marker",
+            "note": "",
+            "activation": "manual",
+            "disposition": "review",
+            "watch_column": None,
+            "max_retries": 0,
+            "task_queue": [],
+            "state": "idle",
+            "icon": "square-dot",
+            "color": "marker",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        before = {task["id"] for task in list_tasks(bp_dir)}
+        start_worker(bp_dir, 0)
+        after = {task["id"] for task in list_tasks(bp_dir)}
+
+        assert after == before
+        final_layout = _load_layout(bp_dir)
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert final_layout["slots"][0]["task_queue"] == []
 
 
 class TestWatchColumn:
