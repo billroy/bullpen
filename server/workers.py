@@ -1280,8 +1280,19 @@ def _assemble_prompt(bp_dir, worker, task):
     if expertise:
         parts.append(f"## Your Role\n\n{expertise}")
 
-    # Task body
-    parts.append(f"## Task Metadata\n\nTitle: {task.get('title', 'Untitled')}")
+    # Task metadata. Keep operational guidance about the server-assigned task id
+    # trusted, but quote ticket fields because users control them.
+    metadata_lines = [f"Title: {task.get('title', 'Untitled')}"]
+    metadata_lines.append(f"Type: {task.get('type', 'task')}")
+    metadata_lines.append(f"Priority: {task.get('priority', 'normal')}")
+    if task.get("tags"):
+        metadata_lines.append(f"Tags: {', '.join(task['tags'])}")
+
+    parts.append(render_untrusted_text_block(
+        "Task Metadata",
+        "\n".join(metadata_lines),
+        "TASK_METADATA",
+    ))
     if task.get("id"):
         parts.append(
             f"Task ID: `{task['id']}`. If you need to add notes or update "
@@ -1290,10 +1301,6 @@ def _assemble_prompt(bp_dir, worker, task):
             f"Do NOT change the ticket's `status` — the worker will set the "
             f"final status based on its configured output."
         )
-    parts.append(f"Type: {task.get('type', 'task')}")
-    parts.append(f"Priority: {task.get('priority', 'normal')}")
-    if task.get("tags"):
-        parts.append(f"Tags: {', '.join(task['tags'])}")
     if task.get("body"):
         parts.append(render_untrusted_text_block("Ticket Body", task["body"], "TASK_BODY"))
 
