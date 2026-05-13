@@ -52,6 +52,16 @@ def _wait_for_worker_state(bp_dir, state, slot=0, timeout=5.0):
     raise AssertionError(f"worker did not reach {state}")
 
 
+def _wait_for_task_status(bp_dir, task_id, status, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        task = read_task(bp_dir, task_id)
+        if task.get("status") == status:
+            return task
+        time.sleep(0.05)
+    raise AssertionError(f"task did not reach {status}")
+
+
 def _shell_run_history(task):
     return [row for row in task.get("history", []) if row.get("event") == "worker_run"]
 
@@ -145,6 +155,55 @@ def test_shell_json_stdout_overrides_disposition_and_updates_ticket(bp_dir):
     assert updated["priority"] == "high"
     assert updated["tags"] == ["shell"]
     assert "shell appended" in updated["body"]
+
+
+def test_shell_pass_to_manual_worker_starts_handoff_target(bp_dir):
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    base = {
+        "type": "shell",
+        "activation": "manual",
+        "watch_column": None,
+        "max_retries": 0,
+        "paused": False,
+        "task_queue": [],
+        "state": "idle",
+        "command": _python_command("import time; time.sleep(0.1)"),
+        "cwd": "",
+        "timeout_seconds": 10,
+        "env": [],
+        "ticket_delivery": "stdin-json",
+    }
+    layout["slots"] = [
+        {
+            **base,
+            "row": 0,
+            "col": 0,
+            "name": "First",
+            "disposition": "pass:down",
+        },
+        {
+            **base,
+            "row": 1,
+            "col": 0,
+            "name": "Second",
+            "disposition": "review",
+        },
+    ]
+    write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+    task = create_task(bp_dir, "Manual pass chain")
+    assign_task(bp_dir, 0, task["id"])
+
+    start_worker(bp_dir, 0)
+    updated = _wait_for_task_status(bp_dir, task["id"], "review")
+
+    final_layout = _load_layout(bp_dir)
+    assert final_layout["slots"][0]["state"] == "idle"
+    assert final_layout["slots"][1]["state"] == "idle"
+    assert final_layout["slots"][0]["task_queue"] == []
+    assert final_layout["slots"][1]["task_queue"] == []
+    assert updated["assigned_to"] == ""
+    assert len(_shell_run_history(updated)) == 2
 
 
 def test_shell_json_status_key_is_ignored(bp_dir):

@@ -547,6 +547,7 @@ def assign_task(
     ws_id=None,
     preserve_handoff_depth=False,
     suppress_auto_start=False,
+    trigger_handoff_start=False,
 ):
     """Add task to worker's queue, update ticket status.
 
@@ -557,6 +558,15 @@ def assign_task(
     worker = layout["slots"][slot_index]
     if not worker:
         raise ValueError(f"No worker in slot {slot_index}")
+    queue_before = list(worker.get("task_queue", []))
+    # Shell pass chains are script pipelines: a handoff into an idle empty
+    # manual shell worker should run the next script instead of parking there.
+    should_start_handoff = (
+        trigger_handoff_start
+        and worker.get("type") == "shell"
+        and worker.get("state") == "idle"
+        and not queue_before
+    )
 
     # Update task ticket
     updates = {
@@ -589,7 +599,10 @@ def assign_task(
     activation = worker.get("activation", "on_drop")
     if suppress_auto_start:
         return
-    if activation in ("on_drop", "on_queue") and worker.get("state") == "idle":
+    if (
+        worker.get("state") == "idle"
+        and (activation in ("on_drop", "on_queue") or should_start_handoff)
+    ):
         _defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=task_id)
     elif activation == "manual" and socketio:
         _ws_emit(socketio, "toast", {
@@ -2484,7 +2497,15 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
 
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     _save_layout(bp_dir, layout)
-    assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
+    assign_task(
+        bp_dir,
+        target_slot,
+        task_id,
+        socketio,
+        ws_id,
+        preserve_handoff_depth=True,
+        trigger_handoff_start=True,
+    )
 
 
 def _on_agent_success(
@@ -2708,7 +2729,15 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     # Save layout before assign_task (which reloads it)
     _save_layout(bp_dir, layout)
-    assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
+    assign_task(
+        bp_dir,
+        target_slot,
+        task_id,
+        socketio,
+        ws_id,
+        preserve_handoff_depth=True,
+        trigger_handoff_start=True,
+    )
 
 
 def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id):
@@ -2764,7 +2793,15 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
     target_slot = random.choice(candidates)
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     _save_layout(bp_dir, layout)
-    assign_task(bp_dir, target_slot, task_id, socketio, ws_id, preserve_handoff_depth=True)
+    assign_task(
+        bp_dir,
+        target_slot,
+        task_id,
+        socketio,
+        ws_id,
+        preserve_handoff_depth=True,
+        trigger_handoff_start=True,
+    )
 
 
 def _on_agent_error(
