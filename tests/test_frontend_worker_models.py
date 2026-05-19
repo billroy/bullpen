@@ -26,6 +26,7 @@ def test_claude_model_options_do_not_include_removed_haiku_slug():
 def test_gemini_model_options_present():
     text = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
     assert "gemini:" in text
+    assert "'gemini-3.5-flash'" in text
     assert "'gemini-2.5-flash'" in text
     assert "'gemini-2.5-flash-lite'" in text
     assert "'gemini-2.5-pro'" in text
