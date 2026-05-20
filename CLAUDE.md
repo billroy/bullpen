@@ -1,5 +1,8 @@
 # Bullpen — Developer Notes
 
+## Git workflow
+- Never create branches automatically. Commit directly to main unless I explicitly ask for a branch.
+
 ## Using the Bullpen MCP tools
 
 The Bullpen MCP tools (`mcp__bullpen__*`) are available in this project. When the

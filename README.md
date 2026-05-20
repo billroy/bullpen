@@ -75,21 +75,26 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Kanban board** -- drag-and-drop ticket management with user-configurable columns (add, remove, rename, reorder); drag tickets between columns or onto workers
 - **List view** -- switchable list view for the Tickets tab with sortable columns, full-text search, priority/status/type filters, timestamped Created column, and token-consumption display
 - **Worker grid** -- configurable grid of AI agent slots; drag tickets onto workers to assign them
+- **Worker grid selection** -- select multiple workers, move or delete groups, and use context-menu actions on selected worker groups
 - **Agent execution** -- workers invoke Claude, Codex, or Gemini CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (structured stream parsing for Claude/Codex)
 - **Shell / Script workers** -- run a configured shell command against a ticket, pass ticket data as JSON/env/argv, capture output, and route or update the ticket from script output
+- **Service workers** -- supervise long-running workspace processes, stream logs, run health checks, and accept ticket-triggered start/restart orders
+- **Marker workers** -- place no-op marker cards on the worker grid for labels, navigation targets, and pass-through routing
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
 - **Live Agent Chat** -- interactive chat tabs for Claude, Codex, and Gemini with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
-- **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, and an in-browser editor with find/replace; clicking `.html` files opens them in the default browser
+- **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, file downloads, and an in-browser editor with find/replace; clicking `.html` files opens them in the default browser
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
 - **Commit diff viewer** -- click a commit row to open its full patch in a modal
 - **Multi-project** -- register multiple project directories, switch between them, with per-workspace state and activity badges; clone new projects directly from a Git URL via the Projects menu
 - **Inter-project worker transfer** -- copy or move workers (optionally with profile copy) between registered workspaces
 - **Scheduling** -- workers can activate on a time schedule (at a specific time, or on an interval) or on queue events; pause/unpause individual workers
+- **Priority-aware queues** -- worker queues and watched-column claims prefer higher-priority tickets while preserving stable ordering within a priority
 - **Auto-commit & auto-PR** -- optionally commit agent output on success and open a pull request automatically
 - **Worktrees** -- agents can work in isolated git worktrees per task to avoid conflicts
 - **Worker handoff** -- chain workers by setting disposition to route completed tasks to the next worker
 - **Profiles** -- 25 built-in worker profiles (feature-architect, code-reviewer, test-writer, unconfigured-worker, etc.) with customizable expertise prompts; create custom profiles
 - **Teams** -- save and restore grid configurations
+- **Resizable left pane** -- drag the left pane width while preserving touch scrolling on iPad-style devices
 - **Ticket editing** -- edit ticket title, tags, and description inline; Cmd+Enter to save
 - **Stats tab** -- aggregated token usage and provider/model breakdowns in a dedicated dashboard view
 - **Token tracking** -- per-ticket token consumption tracking plus provider/model usage metadata, displayed in list view and ticket details
@@ -101,6 +106,8 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Persistence** -- tickets stored as frontmatter markdown files in `.bullpen/tasks/`, layout and config as JSON
 - **Ticket archiving** -- archive completed tickets to keep the board clean
 - **Authentication** -- optional local username/password login (supports multiple users; see [Authentication](#authentication) below)
+- **Logout** -- sign out from the top-left menu when authentication is enabled
+- **Deployment label** -- Docker and Microsandbox runs can show the active container or sandbox name in the top toolbar
 - **MCP server** -- expose ticket management tools to supported agents via JSON-RPC stdio (see [MCP Integration](#mcp-integration) below)
 - **Cross-platform** -- runs on macOS, Linux, and Windows
 
@@ -110,6 +117,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Sprite service port compatibility** -- Bullpen supports `PORT` env var fallback so hosted runtimes that expect port `8080` work without custom patching.
 - **Production TLS mode** -- setting `BULLPEN_PRODUCTION=1` enables secure session cookies and proxy header handling for HTTPS deployments.
 - **Docker dual-port deploy** -- run Bullpen and the in-container app with separate published ports (see [docs/docker.md](docs/docker.md)).
+- **Microsandbox local isolation** -- run Bullpen, agents, and project commands inside a Microsandbox microVM with the workspace mounted at `/workspace` (see [Microsandbox Deployment](#microsandbox-deployment)).
 - **One-command Sprite install** -- `deploy-sprite.sh` automates Sprite provisioning, auth bootstrap, service creation, and URL publication.
 - **DigitalOcean Droplet runbook** -- `docs/digitalocean-droplet.md` provides nginx + `systemd` + TLS + firewall setup, plus checked-in templates under `deploy/digitalocean/`.
 
@@ -123,12 +131,15 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 
 ```
 bullpen.py              # Entry point
+sandboxed-bullpen.py    # Microsandbox deploy/run helper
+deploy/microsandbox/    # Microsandbox prepared-base setup
 server/
   app.py                # Flask app factory, routes, startup reconciliation
   auth.py               # Optional multi-user authentication
   events.py             # Socket.IO event handlers (write-locked)
   tasks.py              # Task CRUD, slug generation, fractional indexing
   workers.py            # Worker state machine, subprocess execution, auto-commit/PR
+  service_worker.py     # Long-running service worker supervision
   persistence.py        # Atomic writes, custom frontmatter parser
   validation.py         # Input validation and sanitization
   profiles.py           # Profile management
@@ -144,7 +155,7 @@ static/
   style.css             # Light/dark theme
   components/           # Vue components (KanbanTab, WorkerCard, FilesTab, LiveAgentChatTab, etc.)
 profiles/               # 25 built-in worker profile JSON files
-tests/                  # 465 tests passing (pytest)
+tests/                  # 934 collected pytest tests
 ```
 
 ## How It Works
@@ -322,6 +333,8 @@ python3 bullpen.py ticket --workspace "$BULLPEN_PROJECT" update \
 
 Direct writes under `.bullpen/tasks` bypass Bullpen's running Flask/Socket.IO
 server, so browser boards will not receive normal live update events.
+For larger payloads, the ticket CLI also supports `--description-file` on
+`create` and `--body-file` on `update`.
 
 ## Supported Agents
 
@@ -329,7 +342,7 @@ server, so browser boards will not receive normal live update events.
 |-------|----------|-------|
 | Claude | `claude` | Real-time streaming via stream-json |
 | Codex | `codex` | GPT-5 family models, stderr streaming |
-| Gemini | `gemini` | Gemini CLI prompt execution with stdout streaming |
+| Gemini | `gemini` | Gemini CLI prompt execution with stdout streaming, including Gemini 3.5 Flash selector support |
 
 Each agent CLI must be installed, available on your PATH, and authenticated with its provider before Bullpen can use it.
 
@@ -388,6 +401,78 @@ For containerized deploys with separate Bullpen/app port mappings, use:
 - [docs/docker.md](docs/docker.md)
 - `Dockerfile`
 - `docker-compose.yml` (includes optional advanced two-container profile)
+
+## Microsandbox Deployment
+
+Microsandbox is the preferred local isolation path when you want Bullpen, AI
+agent CLIs, shell workers, and project commands to run inside a microVM instead
+of directly on the host. The host project is mounted into the sandbox as
+`/workspace`, the persistent sandbox home is mounted as `/home/bullpen`, and the
+Bullpen UI is exposed on localhost only.
+
+Install the Microsandbox Python package on the host first:
+
+```bash
+python3 -m pip install microsandbox
+```
+
+Microsandbox deploy is a two-step process:
+
+1. Prepare the reusable local base once. This creates a local snapshot with
+   Python dependencies, Node.js/npm, Git, GitHub CLI, ripgrep, and the Claude,
+   Codex, and Gemini CLIs installed.
+
+   ```bash
+   ./deploy/microsandbox/prepare.sh
+   ```
+
+2. Start Bullpen for a project. This creates or replaces the named sandbox,
+   mounts the workspace and sandbox home, bootstraps Bullpen login credentials,
+   starts Bullpen, runs sandbox-native provider setup checks, detaches the
+   sandbox, and prints the UI/app URLs.
+
+   ```bash
+   python3 sandboxed-bullpen.py --workspace /path/to/project
+   ```
+
+During the run step, Bullpen prompts for the admin password if
+`--admin-password` is omitted. Provider setup is intentionally sandbox-native:
+Claude, Codex, and GitHub login flows run inside the VM as the `bullpen` user
+and persist under `/home/bullpen`.
+
+### Microsandbox options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--sandbox-name NAME` | `bullpen` | Microsandbox instance name |
+| `--workspace PATH` | current directory | Host project directory mounted as `/workspace` |
+| `--bullpen-port PORT` | `8080` | Host and guest Bullpen UI port |
+| `--app-port PORT` | `3000` | Host and guest app preview port exposed for project commands |
+| `--admin-user USER` | `admin` | Bullpen login user to bootstrap inside the sandbox |
+| `--admin-password PASSWORD` | prompt | Bullpen login password; prompted and confirmed when omitted |
+| `--base NAME` | `bullpen-microsandbox-local` | Prepared Microsandbox base snapshot |
+| `--sandbox-home PATH` | `~/.bullpen/microsandbox-home` | Persistent sandbox home for provider auth, Bullpen config, and logs |
+| `--vcpus N` | `4` | Virtual CPUs for the sandbox |
+| `--memory-mib N` | `4096` | Sandbox memory in MiB |
+| `--replace` | off | Replace an existing sandbox without prompting |
+| `--no-replace` | off | Abort if a sandbox with the same name already exists |
+| `--open` / `--no-open` | open | Open or suppress opening the Bullpen UI in a host browser |
+| `--install-bullpen-project` | off | Clone Bullpen into the default local project path and mount it as the workspace |
+
+Additional maintenance commands:
+
+```bash
+python3 sandboxed-bullpen.py auth claude
+python3 sandboxed-bullpen.py auth codex
+python3 sandboxed-bullpen.py auth git
+python3 sandboxed-bullpen.py test-provider claude
+python3 sandboxed-bullpen.py test-provider codex
+python3 sandboxed-bullpen.py test-provider git
+python3 sandboxed-bullpen.py first-light claude
+```
+
+See [docs/microsandbox.md](docs/microsandbox.md) for implementation details,
+known auth behavior, and troubleshooting notes.
 
 ## MCP Integration
 
