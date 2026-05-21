@@ -10,6 +10,7 @@ const app = createApp({
     StatsTab,
     CommitsTab,
     LiveAgentChatTab,
+    TerminalTab,
     WorkerFocusView,
     TaskCreateModal,
     TaskDetailPanel,
@@ -269,6 +270,8 @@ const app = createApp({
       // If active tab belongs to a different workspace, fall back to tasks
       const ct = chatTabs.find(t => t.id === activeTab.value);
       if (ct && ct.workspaceId && ct.workspaceId !== wsId) { activeTab.value = 'tasks'; return; }
+      const tt = terminalTabs.find(t => t.id === activeTab.value);
+      if (tt && tt.workspaceId && tt.workspaceId !== wsId) { activeTab.value = 'tasks'; return; }
       const ft = focusTabs.find(t => 'focus-' + t.slotIndex === activeTab.value);
       if (ft && ft.workspaceId && ft.workspaceId !== wsId) activeTab.value = 'tasks';
     }
@@ -295,7 +298,10 @@ const app = createApp({
     const outputBufferMeta = reactive({});
     const focusTabs = reactive([]);      // [{slotIndex, workspaceId, label}]
     const chatTabs = reactive([]);
+    const terminalTabs = reactive([]);
     const lastLiveAgentTabByWorkspace = reactive({});
+    const terminalRefs = {};
+    const terminalPendingOutput = {};
     let taskDragActive = false;
     const deferredTaskUpdates = new Map();
     let toastId = 0;
@@ -386,6 +392,13 @@ const app = createApp({
       if (tabId === 'stats' && activeWorkspaceId.value) {
         socket.emit('task:list', _wsData({ scope: 'archived' }));
       }
+      const term = _terminalTab(tabId);
+      if (term) {
+        Vue.nextTick(() => {
+          terminalRefs[term.id]?.fit?.();
+          terminalRefs[term.id]?.focus?.();
+        });
+      }
     }
 
     function focusWorkerGridSoon() {
@@ -441,6 +454,118 @@ const app = createApp({
       }
     }
 
+    function _terminalTabId(terminalId) {
+      return 'terminal-' + terminalId;
+    }
+
+    function _terminalSize() {
+      return { cols: 120, rows: 32 };
+    }
+
+    function _terminalTab(tabId) {
+      return terminalTabs.find(t => t.id === tabId || t.terminalId === tabId);
+    }
+
+    function setTerminalRef(tabId, el) {
+      if (el) terminalRefs[tabId] = el;
+      else delete terminalRefs[tabId];
+    }
+
+    function flushTerminalOutput(tabId) {
+      const ref = terminalRefs[tabId];
+      const pending = terminalPendingOutput[tabId];
+      if (!ref || !pending?.length) return;
+      for (const chunk of pending) ref.write(chunk);
+      delete terminalPendingOutput[tabId];
+    }
+
+    function addTerminalTab({ activate = true } = {}) {
+      const wsId = activeWorkspaceId.value;
+      if (!wsId) return null;
+      const workspaceCount = terminalTabs.filter(t => t.workspaceId === wsId && t.status !== 'closed').length;
+      const sessionCount = terminalTabs.filter(t => t.status !== 'closed').length;
+      if (workspaceCount >= 8) {
+        addToast('Terminal limit reached for this workspace', 'error');
+        return null;
+      }
+      if (sessionCount >= 24) {
+        addToast('Terminal limit reached for this browser session', 'error');
+        return null;
+      }
+      const terminalId = crypto.randomUUID();
+      const perWsCount = workspaceCount + 1;
+      const tab = {
+        id: _terminalTabId(terminalId),
+        terminalId,
+        workspaceId: wsId,
+        label: perWsCount === 1 ? 'Terminal' : `Terminal ${perWsCount}`,
+        status: 'starting',
+        cwd: '',
+      };
+      terminalTabs.push(tab);
+      if (activate) setActiveTab(tab.id);
+      socket.emit('terminal:create', _wsData({ terminalId, ..._terminalSize() }));
+      return tab;
+    }
+
+    function closeTerminalTab(tabId) {
+      const tab = _terminalTab(tabId);
+      if (!tab) return;
+      if (['running', 'starting'].includes(tab.status)) {
+        const ok = confirm('Close this terminal and stop its shell?');
+        if (!ok) return;
+      }
+      tab.status = 'closing';
+      socket.emit('terminal:close', { workspaceId: tab.workspaceId, terminalId: tab.terminalId });
+      setTimeout(() => {
+        if (_terminalTab(tab.id)?.status === 'closing') removeTerminalTab(tab.id);
+      }, connected.value ? 1500 : 0);
+    }
+
+    function removeTerminalTab(tabId) {
+      const idx = terminalTabs.findIndex(t => t.id === tabId || t.terminalId === tabId);
+      if (idx < 0) return;
+      const tab = terminalTabs[idx];
+      terminalTabs.splice(idx, 1);
+      delete terminalRefs[tab.id];
+      delete terminalPendingOutput[tab.id];
+      if (activeTab.value === tab.id) {
+        const fallback = terminalTabs.find(t => t.workspaceId === tab.workspaceId) || chatTabs.find(t => t.workspaceId === tab.workspaceId);
+        if (fallback) setActiveTab(fallback.id);
+        else activeTab.value = 'tasks';
+      }
+    }
+
+    function restartTerminal(tabId) {
+      const tab = _terminalTab(tabId);
+      if (!tab) return;
+      tab.status = 'starting';
+      terminalRefs[tab.id]?.clear?.();
+      socket.emit('terminal:restart', {
+        workspaceId: tab.workspaceId,
+        terminalId: tab.terminalId,
+        ..._terminalSize(),
+      });
+    }
+
+    function sendTerminalInput({ terminalId, data }) {
+      const tab = _terminalTab(terminalId);
+      if (!tab) return;
+      socket.emit('terminal:input', { workspaceId: tab.workspaceId, terminalId, data });
+    }
+
+    function resizeTerminal({ terminalId, cols, rows }) {
+      const tab = _terminalTab(terminalId);
+      if (!tab || !cols || !rows) return;
+      socket.emit('terminal:resize', { workspaceId: tab.workspaceId, terminalId, cols, rows });
+    }
+
+    function onTerminalReady(tabId) {
+      flushTerminalOutput(tabId);
+      terminalRefs[tabId]?.fit?.();
+      if (activeTab.value === tabId) terminalRefs[tabId]?.focus?.();
+    }
+
     function _ensureChatTabForWorkspace(wsId) {
       if (!wsId) return null;
       const existing = chatTabs.find(t => t.workspaceId === wsId);
@@ -493,6 +618,9 @@ const app = createApp({
       connected.value = false;
       if (wasConnected) {
         disconnectToastId = addToast('Disconnected from Bullpen server. Changes are paused until connection is restored.', 'error');
+      }
+      for (const tab of terminalTabs) {
+        if (['running', 'starting'].includes(tab.status)) tab.status = 'error';
       }
     });
     // If the server rejects the upgrade (e.g. unauthenticated session),
@@ -632,6 +760,9 @@ const app = createApp({
       for (let i = chatTabs.length - 1; i >= 0; i -= 1) {
         if (chatTabs[i].workspaceId === removedId) chatTabs.splice(i, 1);
       }
+      for (let i = terminalTabs.length - 1; i >= 0; i -= 1) {
+        if (terminalTabs[i].workspaceId === removedId) terminalTabs.splice(i, 1);
+      }
       delete lastLiveAgentTabByWorkspace[removedId];
       if (activeWorkspaceId.value === removedId) {
         // Switch to first available
@@ -672,6 +803,76 @@ const app = createApp({
         else activeTab.value = 'tasks';
       }
     });
+
+    socket.on('terminal:created', (data) => {
+      const wsId = data?.workspaceId || activeWorkspaceId.value;
+      const terminalId = data?.terminalId;
+      if (!terminalId || !wsId) return;
+      const id = _terminalTabId(terminalId);
+      let tab = terminalTabs.find(t => t.id === id);
+      if (!tab) {
+        tab = { id, terminalId, workspaceId: wsId, label: data.label || 'Terminal', status: 'running', cwd: data.cwd || '' };
+        terminalTabs.push(tab);
+      }
+      tab.workspaceId = wsId;
+      tab.label = data.label || tab.label || 'Terminal';
+      tab.status = data.status || 'running';
+      tab.cwd = data.cwd || tab.cwd || '';
+      Vue.nextTick(() => onTerminalReady(tab.id));
+    });
+
+    socket.on('terminal:output', (data) => {
+      const tab = _terminalTab(data?.terminalId);
+      if (!tab) return;
+      const ref = terminalRefs[tab.id];
+      if (ref) {
+        ref.write(data?.data || '');
+        return;
+      }
+      const pending = terminalPendingOutput[tab.id] || [];
+      pending.push(data?.data || '');
+      let total = pending.reduce((sum, chunk) => sum + chunk.length, 0);
+      while (total > 256000 && pending.length > 1) {
+        total -= pending.shift().length;
+      }
+      terminalPendingOutput[tab.id] = pending;
+    });
+
+    socket.on('terminal:exit', (data) => {
+      const tab = _terminalTab(data?.terminalId);
+      if (tab) tab.status = 'exited';
+    });
+
+    socket.on('terminal:closed', (data) => {
+      const tab = _terminalTab(data?.terminalId);
+      if (tab) removeTerminalTab(tab.id);
+    });
+
+    socket.on('terminal:error', (data) => {
+      const tab = _terminalTab(data?.terminalId);
+      if (tab) tab.status = 'error';
+      addToast(data?.message || 'Terminal error', 'error');
+    });
+
+    socket.on('terminal:list', (data) => {
+      const wsId = data?.workspaceId || activeWorkspaceId.value;
+      const incoming = Array.isArray(data?.terminals) ? data.terminals : [];
+      for (const item of incoming) {
+        if (!item?.terminalId) continue;
+        const id = _terminalTabId(item.terminalId);
+        let tab = terminalTabs.find(t => t.id === id);
+        if (!tab) {
+          tab = { id, terminalId: item.terminalId, workspaceId: wsId, label: item.label || 'Terminal', status: item.status || 'running', cwd: item.cwd || '' };
+          terminalTabs.push(tab);
+        } else {
+          tab.workspaceId = wsId;
+          tab.label = item.label || tab.label;
+          tab.status = item.status || tab.status;
+          tab.cwd = item.cwd || tab.cwd;
+        }
+      }
+    });
+
     socket.on('files:changed', (data) => {
       const wsId = (data && data.workspaceId) || activeWorkspaceId.value;
       const ws = _getWs(wsId);
@@ -1040,6 +1241,7 @@ const app = createApp({
     function tabIcon(tab) {
       if (tab.isFocus) return 'terminal';
       if (tab.isChat) return 'message-square';
+      if (tab.isTerminal) return 'terminal';
       return ({
         tasks: 'tag',
         workers: 'bot',
@@ -1065,6 +1267,10 @@ const app = createApp({
       const wsChatTabs = chatTabs.filter(ct => ct.workspaceId === wsId);
       for (const ct of wsChatTabs) {
         tabs.push({ id: ct.id, label: ct.label, isChat: true, canClose: wsChatTabs.length > 1, icon: 'message-square' });
+      }
+      for (const tt of terminalTabs) {
+        if (tt.workspaceId && tt.workspaceId !== wsId) continue;
+        tabs.push({ id: tt.id, label: tt.label, isTerminal: true, canClose: true, icon: 'terminal' });
       }
       for (const ft of focusTabs) {
         if (ft.workspaceId && ft.workspaceId !== wsId) continue;
@@ -1488,6 +1694,7 @@ const app = createApp({
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
+      terminalTabs, addTerminalTab, closeTerminalTab, restartTerminal, sendTerminalInput, resizeTerminal, setTerminalRef, onTerminalReady,
       tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportWorker, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
       bullpenTabRef,
     };
@@ -1575,8 +1782,12 @@ const app = createApp({
                 </span>
                 <span v-if="tab.isFocus" class="tab-close" @click.stop="closeFocusTab(tab.slotIndex)">&times;</span>
                 <span v-if="tab.isChat && tab.canClose" class="tab-close" @click.stop="closeLiveAgentTab(tab.id)">&times;</span>
+                <span v-if="tab.isTerminal" class="tab-close" @click.stop="closeTerminalTab(tab.id)">&times;</span>
               </button>
               <button class="tab-btn tab-btn-add" @click="addLiveAgentTab" title="Add Live Agent tab">+</button>
+              <button class="tab-btn tab-btn-add tab-btn-terminal-add" @click="addTerminalTab" title="New terminal" aria-label="New terminal">
+                <i data-lucide="terminal" aria-hidden="true"></i>
+              </button>
             </div>
             <div v-if="activeTab === 'tasks'" class="tab-bar-right">
               <button class="btn btn-sm" @click="showColumnManager = true" title="Add, remove, or reorder columns">Columns</button>
@@ -1645,6 +1856,19 @@ const app = createApp({
               :key="ct.id"
               :session-id="ct.sessionId"
               :workspace-id="ct.workspaceId"
+            />
+            <TerminalTab
+              v-for="tt in terminalTabs"
+              v-show="activeTab === tt.id"
+              :key="tt.id"
+              :ref="el => setTerminalRef(tt.id, el)"
+              :terminal="tt"
+              :active="activeTab === tt.id"
+              :workspace-id="tt.workspaceId"
+              @terminal-input="sendTerminalInput"
+              @terminal-resize="resizeTerminal"
+              @restart-terminal="restartTerminal"
+              @ready="onTerminalReady"
             />
             <WorkerFocusView
               v-for="ft in focusTabs"

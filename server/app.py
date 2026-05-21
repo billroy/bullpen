@@ -40,6 +40,7 @@ from server.workspace_manager import WorkspaceManager
 from server import service_worker as service_worker_mod
 from server import mcp_auth
 from server import worktrees as worktree_mod
+from server.terminal import TerminalManager
 
 
 socketio = SocketIO()
@@ -379,6 +380,7 @@ def create_app(
         logger=websocket_debug,
         engineio_logger=websocket_debug,
     )
+    app.config["terminal_manager"] = TerminalManager(socketio)
 
     def _portable_config(config):
         safe = dict(config or {})
@@ -1157,6 +1159,9 @@ def create_app(
 
     @socketio.on("disconnect")
     def on_disconnect():
+        terminal_manager = app.config.get("terminal_manager")
+        if terminal_manager:
+            terminal_manager.close_for_sid(request.sid)
         mcp_sids.discard(request.sid)
         mcp_sid_workspace.pop(request.sid, None)
 

@@ -82,6 +82,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Marker workers** -- place no-op marker cards on the worker grid for labels, navigation targets, and pass-through routing
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
 - **Live Agent Chat** -- interactive chat tabs for Claude, Codex, and Gemini with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
+- **Web terminal tabs** -- open one or more PTY-backed terminal tabs rooted in the active workspace directory, with xterm.js rendering, resize support, restart/close controls, and cleanup on browser disconnect
 - **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, file downloads, and an in-browser editor with find/replace; clicking `.html` files opens them in the default browser
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
 - **Commit diff viewer** -- click a commit row to open its full patch in a modal
@@ -140,6 +141,7 @@ server/
   tasks.py              # Task CRUD, slug generation, fractional indexing
   workers.py            # Worker state machine, subprocess execution, auto-commit/PR
   service_worker.py     # Long-running service worker supervision
+  terminal.py           # PTY-backed web terminal session manager
   persistence.py        # Atomic writes, custom frontmatter parser
   validation.py         # Input validation and sanitization
   profiles.py           # Profile management
@@ -153,7 +155,7 @@ static/
   login.html            # Login page (served publicly when auth is enabled)
   app.js                # Vue app setup, state management
   style.css             # Light/dark theme
-  components/           # Vue components (KanbanTab, WorkerCard, FilesTab, LiveAgentChatTab, etc.)
+  components/           # Vue components (KanbanTab, WorkerCard, FilesTab, LiveAgentChatTab, TerminalTab, etc.)
 profiles/               # 25 built-in worker profile JSON files
 tests/                  # 934 collected pytest tests
 ```
@@ -170,6 +172,24 @@ tests/                  # 934 collected pytest tests
 8. **Scheduled workers** can activate on a timer (specific time or interval) to process queued tickets or create their own ephemeral tickets
 9. **Chat directly** with Claude, Codex, or Gemini via the Live Agent Chat tab, with conversations logged to tickets
 10. **Open additional chat tabs** as needed to run parallel conversations with separate session histories
+11. **Open terminal tabs** when you need direct shell access in the active workspace without leaving Bullpen
+
+## Web Terminal Tabs
+
+Click the terminal icon in the tab bar to open a shell rooted at the active
+workspace directory. Each terminal tab is an independent PTY-backed shell
+session, so you can keep multiple terminals open per workspace and switch among
+them like other Bullpen tabs.
+
+Terminal sessions run as the same local user that started Bullpen. Closing a
+running terminal prompts before stopping its shell, and browser disconnects clean
+up active terminal processes. The terminal is intended for trusted local or
+authenticated deployments; exposing Bullpen to a network also exposes shell
+access to authenticated browser users.
+
+The terminal frontend uses xterm.js from a CDN and the backend bridges PTY
+input/output over the existing Socket.IO connection. Terminal transcripts are
+not persisted to `.bullpen/`.
 
 ## Shell / Script Workers
 

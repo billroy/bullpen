@@ -14,6 +14,7 @@ MAX_EXPERTISE_PROMPT = 100_000
 MAX_WORKER_NOTE = 500
 MAX_SLUG = 80
 MAX_PAYLOAD_SIZE = 1_000_000  # 1MB
+MAX_TERMINAL_INPUT = 64 * 1024
 
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
@@ -31,6 +32,7 @@ VALID_THEMES = {
 
 ID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')
 SLUG_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,80}$')
+TERMINAL_ID_REGEX = re.compile(r'^[a-zA-Z0-9_-]{1,100}$')
 
 
 class ValidationError(Exception):
@@ -156,6 +158,36 @@ def validate_id(data, field="id"):
     if not val:
         raise ValidationError(f"requires {field}")
     return val
+
+
+def validate_terminal_id(data, field="terminalId"):
+    """Validate a terminal identifier."""
+    val = data.get(field) if isinstance(data, dict) else None
+    if val is None:
+        raise ValidationError(f"requires {field}")
+    val = str(val)
+    if not TERMINAL_ID_REGEX.match(val):
+        raise ValidationError(f"Invalid {field}: must match [a-zA-Z0-9_-]{{1,100}}")
+    return val
+
+
+def validate_terminal_size(data):
+    """Validate terminal dimensions. Returns (cols, rows)."""
+    cols = _int((data or {}).get("cols"), "cols", min_val=20, max_val=300)
+    rows = _int((data or {}).get("rows"), "rows", min_val=5, max_val=100)
+    if cols is None or rows is None:
+        raise ValidationError("requires cols and rows")
+    return cols, rows
+
+
+def validate_terminal_input(data):
+    """Validate terminal input data."""
+    value = (data or {}).get("data")
+    if not isinstance(value, str):
+        raise ValidationError("terminal input data must be a string")
+    if len(value.encode("utf-8", errors="surrogatepass")) > MAX_TERMINAL_INPUT:
+        raise ValidationError(f"terminal input exceeds max length ({MAX_TERMINAL_INPUT} bytes)")
+    return value
 
 
 def validate_slot(data, max_slots=100):

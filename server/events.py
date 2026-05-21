@@ -40,7 +40,8 @@ from server.validation import (
     validate_id, validate_slot, validate_coord, validate_worker_configure,
     validate_payload_size, validate_config_update, validate_worker_move,
     validate_worker_move_group, validate_worker_paste_group,
-    validate_layout_update, validate_team_name,
+    validate_layout_update, validate_team_name, validate_terminal_id,
+    validate_terminal_input, validate_terminal_size,
 )
 from server.worker_types import copy_worker_slot, normalize_layout, normalize_worker_slot
 
@@ -1056,6 +1057,144 @@ def register_events(socketio, app):
             max_bytes=(data or {}).get("max_bytes", 65536),
         )
 
+    # --- Terminal events ---
+
+    def _terminal_manager():
+        return app.config["terminal_manager"]
+
+    def _terminal_workspace(data, event_name):
+        if _forbid_mcp_project_admin(event_name):
+            return None, None
+        ws_id, _bp_dir = _resolve(data or {})
+        if not _ensure_workspace_membership(ws_id):
+            return None, None
+        workspace_path = app.config["manager"].get_workspace_path(ws_id)
+        if not workspace_path:
+            emit("terminal:error", {
+                "workspaceId": ws_id,
+                "terminalId": (data or {}).get("terminalId"),
+                "message": "Unknown workspace",
+            })
+            return None, None
+        return ws_id, workspace_path
+
+    def _emit_terminal_error(data, message):
+        emit("terminal:error", {
+            "workspaceId": (data or {}).get("workspaceId"),
+            "terminalId": (data or {}).get("terminalId"),
+            "message": message,
+        })
+
+    @socketio.on("terminal:create")
+    def on_terminal_create(data):
+        try:
+            ws_id, workspace_path = _terminal_workspace(data, "terminal:create")
+            if not ws_id:
+                return
+            terminal_id = validate_terminal_id(data or {})
+            cols, rows = validate_terminal_size(data or {})
+            payload = _terminal_manager().create(
+                workspace_id=ws_id,
+                terminal_id=terminal_id,
+                owner_sid=request.sid,
+                cwd=workspace_path,
+                cols=cols,
+                rows=rows,
+            )
+            emit("terminal:created", payload)
+        except (ValidationError, ValueError) as e:
+            _emit_terminal_error(data, str(e))
+        except Exception:
+            logging.exception("terminal:create failed")
+            _emit_terminal_error(data, "Unable to start terminal")
+
+    @socketio.on("terminal:input")
+    def on_terminal_input(data):
+        try:
+            ws_id, _workspace_path = _terminal_workspace(data, "terminal:input")
+            if not ws_id:
+                return
+            terminal_id = validate_terminal_id(data or {})
+            _terminal_manager().write(
+                workspace_id=ws_id,
+                terminal_id=terminal_id,
+                owner_sid=request.sid,
+                data=validate_terminal_input(data or {}),
+            )
+        except (ValidationError, ValueError) as e:
+            _emit_terminal_error(data, str(e))
+
+    @socketio.on("terminal:resize")
+    def on_terminal_resize(data):
+        try:
+            ws_id, _workspace_path = _terminal_workspace(data, "terminal:resize")
+            if not ws_id:
+                return
+            terminal_id = validate_terminal_id(data or {})
+            cols, rows = validate_terminal_size(data or {})
+            _terminal_manager().resize(
+                workspace_id=ws_id,
+                terminal_id=terminal_id,
+                owner_sid=request.sid,
+                cols=cols,
+                rows=rows,
+            )
+        except (ValidationError, ValueError) as e:
+            _emit_terminal_error(data, str(e))
+
+    @socketio.on("terminal:close")
+    def on_terminal_close(data):
+        try:
+            ws_id, _workspace_path = _terminal_workspace(data, "terminal:close")
+            if not ws_id:
+                return
+            terminal_id = validate_terminal_id(data or {})
+            closed = _terminal_manager().close(
+                workspace_id=ws_id,
+                terminal_id=terminal_id,
+                owner_sid=request.sid,
+            )
+            if not closed:
+                emit("terminal:closed", {"workspaceId": ws_id, "terminalId": terminal_id})
+        except ValidationError as e:
+            _emit_terminal_error(data, str(e))
+
+    @socketio.on("terminal:restart")
+    def on_terminal_restart(data):
+        try:
+            ws_id, workspace_path = _terminal_workspace(data, "terminal:restart")
+            if not ws_id:
+                return
+            terminal_id = validate_terminal_id(data or {})
+            cols, rows = validate_terminal_size(data or {})
+            payload = _terminal_manager().restart(
+                workspace_id=ws_id,
+                terminal_id=terminal_id,
+                owner_sid=request.sid,
+                cwd=workspace_path,
+                cols=cols,
+                rows=rows,
+            )
+            emit("terminal:created", payload)
+        except (ValidationError, ValueError) as e:
+            _emit_terminal_error(data, str(e))
+
+    @socketio.on("terminal:list")
+    def on_terminal_list(data):
+        try:
+            ws_id, _workspace_path = _terminal_workspace(data, "terminal:list")
+            if not ws_id:
+                return
+            emit("terminal:list", {
+                "workspaceId": ws_id,
+                "terminals": _terminal_manager().list_sessions(
+                    workspace_id=ws_id,
+                    owner_sid=request.sid,
+                ),
+            })
+        except ValidationError as e:
+            _emit_terminal_error(data, str(e))
+
     # --- Project events ---
 
     def _activate_and_broadcast_project(manager, ws_id):
@@ -1238,6 +1377,7 @@ def register_events(socketio, app):
             return
 
         service_worker_mod.stop_workspace_services(ws_id, wait=True)
+        app.config["terminal_manager"].close_workspace(ws_id)
         manager.remove_project(ws_id)
         with _chat_lock:
             _chat_tabs.pop(ws_id, None)
