@@ -414,6 +414,7 @@ BULLPEN_GITHUB_REPO_URL=https://github.com/billroy/bullpen.git
 ## References
 
 - Docker deployment model: `deploy-docker.sh`
+- Current remediation plan: [microsandbox-remediation-plan.md](microsandbox-remediation-plan.md)
 - Microsandbox repo: https://github.com/superradcompany/microsandbox
 - Microsandbox getting started: https://docs.microsandbox.dev/guides/getting-started/
 - Microsandbox Python SDK: https://docs.microsandbox.dev/references/python-sdk/
