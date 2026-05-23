@@ -1645,7 +1645,7 @@ async def prepare_base(runtime: MicrosandboxRuntime, config: DeployConfig, *, fo
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
             apt-get install -y --no-install-recommends \
-              bash ca-certificates curl gh git iproute2 python3 python3-pip python3-venv ripgrep strace
+              bash ca-certificates curl gh git iproute2 python3 python3-pip python3-venv ripgrep
             rm -rf /var/lib/apt/lists/*
             """,
             label="Installing OS packages",
