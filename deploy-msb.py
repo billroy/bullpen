@@ -1033,7 +1033,7 @@ async def get_running_sandbox(runtime: MicrosandboxRuntime, config: DeployConfig
     if sandbox is None:
         raise DeployError(
             f"Microsandbox '{config.sandbox_name}' is not running. Deploy Bullpen first:\n"
-            "  python3 sandboxed-bullpen.py --replace"
+            "  python3 deploy-msb.py --replace"
         )
     return sandbox
 
