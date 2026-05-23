@@ -371,7 +371,7 @@ const LeftPane = {
       this.showEmptyProjectHint = false;
       const url = prompt('Enter Git repository URL:');
       if (!url || !url.trim()) return;
-      const path = prompt('Enter absolute path to clone into (leave empty for default):');
+      const path = prompt('Enter absolute path to clone into (leave empty to clone next to the active project):');
       this.$emit('clone-project', { url: url.trim(), path: (path || '').trim() || null });
     },
     onRosterDragOver(e, w) {

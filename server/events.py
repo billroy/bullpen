@@ -1226,6 +1226,20 @@ def register_events(socketio, app):
         # Broadcast updated project list to authenticated clients
         socketio.emit("projects:updated", manager.list_visible_projects(include_path=False), to="authenticated")
 
+    def _default_clone_parent(manager, data):
+        root = (os.environ.get("BULLPEN_PROJECTS_ROOT") or "").strip()
+        if root:
+            return os.path.abspath(root)
+
+        ws_id = data.get("workspaceId") if isinstance(data, dict) else None
+        ws = manager.get_or_activate(ws_id) if ws_id else None
+        if ws is None:
+            active = manager.all_workspaces()
+            ws = active[0] if active else None
+        if ws is not None:
+            return os.path.dirname(ws.path)
+        return os.getcwd()
+
     @socketio.on("project:join")
     def on_project_join(data):
         manager = app.config["manager"]
@@ -1327,7 +1341,7 @@ def register_events(socketio, app):
             if not repo_name:
                 emit("error", {"message": f"Cannot derive directory name from URL: {url}"})
                 return
-            path = os.path.abspath(repo_name)
+            path = os.path.abspath(os.path.join(_default_clone_parent(manager, data), repo_name))
 
         if ".." in path.split(os.sep):
             emit("error", {"message": f"Invalid path: {path}"})

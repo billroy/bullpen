@@ -181,6 +181,32 @@ class TestTaskEvents:
             assert created["workspaceId"] == ws_id
         c2.disconnect()
 
+    def test_clone_project_defaults_to_configured_projects_root(self, client, monkeypatch, tmp_path):
+        c, _app = client
+        projects_root = tmp_path / "projects"
+        projects_root.mkdir()
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            os.makedirs(argv[3])
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(projects_root))
+        monkeypatch.setattr("server.events.subprocess.run", fake_run)
+
+        c.emit("project:clone", {"url": "https://example.test/busy-deck.git"})
+
+        err = get_event(c, "error")
+        assert err is None
+        assert calls
+        assert calls[0][0] == [
+            "git",
+            "clone",
+            "https://example.test/busy-deck.git",
+            str(projects_root / "busy-deck"),
+        ]
+
     def test_delete_task(self, client):
         c, app = client
         c.emit("task:create", {"title": "Delete Me"})

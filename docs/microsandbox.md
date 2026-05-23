@@ -190,12 +190,14 @@ The script starts Bullpen as a detached process inside the sandbox, verifies hea
 Run phase mounts:
 
 ```text
-<host project path>              -> /workspace      writable
+<host projects root>             -> /workspace      writable
 ~/.bullpen/microsandbox-home     -> /home/bullpen   writable
 <Bullpen source checkout>        -> /app            read-only, only if not baked into base
 ```
 
-`/workspace` must be a live writable bind mount, not a copy. File browser edits, worker changes, git worktrees, generated files, and task outputs must mutate the real host project directory.
+`/workspace` must be a live writable bind mount, not a copy. It is the root that can contain multiple apps under test, for example `/workspace/pr-workflow-test` and `/workspace/busy-deck`. Bullpen starts with the requested project directory as the active workspace, while clone-with-default-path creates sibling projects under `/workspace`.
+
+File browser edits, worker changes, git worktrees, generated files, and task outputs must mutate the real host project directory.
 
 `/home/bullpen` persists across sandbox replacement. Create it if needed and restrict it to the current user. Store CLI auth state, Bullpen global config, and logs there.
 
@@ -300,7 +302,8 @@ Set these environment variables inside the sandbox:
 - `BULLPEN_PORT`
 - `APP_PORT`
 - `BULLPEN_HIDE_UNAVAILABLE_PROJECTS=1`
-- `BULLPEN_WORKSPACE=/workspace`
+- `BULLPEN_PROJECTS_ROOT=/workspace`
+- `BULLPEN_WORKSPACE=/workspace/<initial-project-name>`
 - `BULLPEN_WORKSPACE_NAME=<basename of workspace path>`
 - `BULLPEN_PRODUCTION=0`, unless the host environment overrides it
 - `BULLPEN_CODEX_SANDBOX=none`, unless the host environment overrides it

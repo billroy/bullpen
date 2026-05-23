@@ -81,6 +81,7 @@ class DeployConfig:
     prepare_base_policy: str = "auto"
     source_image: str = SOURCE_IMAGE_DEFAULT
     prepare_source: Path | None = None
+    projects_root: Path | None = None
 
 
 @dataclass
@@ -194,7 +195,7 @@ class MicrosandboxRuntime:
             raise DeployError(f"Cannot create Microsandbox home directory {config.sandbox_home}: {exc}") from exc
         volumes = {
             "/app": self.Volume.bind(str(config.bullpen_source), readonly=True),
-            "/workspace": self.Volume.bind(str(config.workspace)),
+            "/workspace": self.Volume.bind(str(projects_root_path(config))),
             "/home/bullpen": self.Volume.bind(str(config.sandbox_home)),
         }
         network = self.Network.allow_all()
@@ -370,6 +371,14 @@ def is_bullpen_source(path: Path) -> bool:
     return (path / "bullpen.py").is_file() and (path / "server").is_dir()
 
 
+def projects_root_path(config: DeployConfig) -> Path:
+    return (config.projects_root or config.workspace.parent).resolve()
+
+
+def container_workspace_path(config: DeployConfig) -> str:
+    return f"/workspace/{config.workspace.name}"
+
+
 def detect_supported_host() -> bool:
     system = platform.system()
     machine = platform.machine().lower()
@@ -529,6 +538,7 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
                 "Pass --workspace PATH, or use --install-bullpen-project."
             )
         workspace = cwd
+    projects_root = workspace.parent.resolve()
 
     if action == "deploy":
         admin_password = args.admin_password or prompt_password()
@@ -565,6 +575,7 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         prepare_base_policy=prepare_base_policy,
         source_image=args.source_image,
         prepare_source=abs_path(args.source_dir) if args.source_dir else None,
+        projects_root=projects_root,
     )
     validate_config(config)
     return config
@@ -579,6 +590,16 @@ def validate_config(config: DeployConfig) -> None:
         raise DeployError(f"Workspace path does not exist: {config.workspace}")
     if not config.workspace.is_dir():
         raise DeployError(f"Workspace path is not a directory: {config.workspace}")
+    if not projects_root_path(config).exists():
+        raise DeployError(f"Projects root path does not exist: {projects_root_path(config)}")
+    if not projects_root_path(config).is_dir():
+        raise DeployError(f"Projects root path is not a directory: {projects_root_path(config)}")
+    try:
+        config.workspace.relative_to(projects_root_path(config))
+    except ValueError as exc:
+        raise DeployError(
+            f"Workspace path must be inside projects root: {config.workspace} not under {projects_root_path(config)}"
+        ) from exc
     if not is_bullpen_source(config.bullpen_source):
         raise DeployError(f"Bullpen source path does not contain bullpen.py: {config.bullpen_source}")
     if config.action != "deploy" and config.install_bullpen_project:
@@ -586,6 +607,7 @@ def validate_config(config: DeployConfig) -> None:
 
 
 def build_runtime_env(config: DeployConfig) -> None:
+    container_workspace = container_workspace_path(config)
     config.runtime_env.update(
         {
             "HOME": "/home/bullpen",
@@ -599,7 +621,8 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_PORT": str(config.bullpen_port),
             "APP_PORT": str(config.app_port),
             "BULLPEN_HIDE_UNAVAILABLE_PROJECTS": "1",
-            "BULLPEN_WORKSPACE": "/workspace",
+            "BULLPEN_PROJECTS_ROOT": "/workspace",
+            "BULLPEN_WORKSPACE": container_workspace,
             "BULLPEN_WORKSPACE_NAME": config.workspace.name,
             "BULLPEN_DEPLOY_LABEL": f"(Microsandbox:{config.sandbox_name})",
             "BULLPEN_PRODUCTION": os.environ.get("BULLPEN_PRODUCTION", "0"),
@@ -1146,19 +1169,21 @@ echo "Disabled guest IPv6 for Claude auth due to Microsandbox IPv6 TLS EOFs." >&
 
 
 async def verify_mount_access(sandbox: Any, config: DeployConfig) -> None:
-    repair_command = r'''set -e
-uid="${BULLPEN_UID:-1000}"
-gid="${BULLPEN_GID:-1000}"
-mkdir -p /workspace/.bullpen
-chown "$uid:$gid" /workspace/.bullpen
-if [ -d /workspace/.bullpen ]; then
-  chown -R "$uid:$gid" /workspace/.bullpen
+    workspace = shlex.quote(container_workspace_path(config))
+    repair_command = f'''set -e
+uid="${{BULLPEN_UID:-1000}}"
+gid="${{BULLPEN_GID:-1000}}"
+mkdir -p {workspace}/.bullpen
+chown "$uid:$gid" {workspace}/.bullpen
+if [ -d {workspace}/.bullpen ]; then
+  chown -R "$uid:$gid" {workspace}/.bullpen
 fi
 '''
     await run_configured_sandbox_shell(sandbox, config, repair_command, label="repair Bullpen workspace state ownership")
-    command = r'''set -e
+    command = f'''set -e
 test -w /workspace
-test -w /workspace/.bullpen
+test -w {workspace}
+test -w {workspace}/.bullpen
 test -w /home/bullpen
 '''
     await run_as_bullpen(sandbox, config, command, label="verify Microsandbox mount access")
@@ -1249,6 +1274,7 @@ async def bootstrap_bullpen_credentials(sandbox: Any, config: DeployConfig) -> N
 
 
 async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
+    workspace = shlex.quote(container_workspace_path(config))
     command = (
         "set -e; "
         "mkdir -p /home/bullpen/logs; "
@@ -1257,7 +1283,7 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         "cd /app; "
         "echo '[sandboxed-bullpen] starting Bullpen with /opt/bullpen-venv/bin/python' >> /home/bullpen/logs/bullpen.log; "
         "nohup /opt/bullpen-venv/bin/python bullpen.py "
-        "--workspace /workspace "
+        f"--workspace {workspace} "
         "--host 0.0.0.0 "
         '--port "$BULLPEN_PORT" '
         "--no-browser "
@@ -1303,10 +1329,11 @@ PY'''
 
 async def verify_claude_auth(sandbox: Any, config: DeployConfig) -> None:
     await disable_guest_ipv6_for_claude(sandbox)
+    workspace = shlex.quote(container_workspace_path(config))
     command = (
         "set -e\n"
         f"{claude_tls_env_prefix()}\n"
-        "cd /workspace\n"
+        f"cd {workspace}\n"
         "out=\"$(\n"
         "  timeout 60s bash -lc 'printf \"Reply OK only.\" | claude --print --output-format stream-json --verbose --no-session-persistence --setting-sources user' 2>&1\n"
         ")\" || {\n"
@@ -1341,11 +1368,12 @@ PY'''
 
 
 async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
-    command = r'''set -e
-cd /workspace
+    workspace = shlex.quote(container_workspace_path(config))
+    command = f'''set -e
+cd {workspace}
 test -s /home/bullpen/.codex/auth.json
 for _attempt in 1 2; do
-  echo "Codex auth preflight attempt ${_attempt}/2" >&2
+  echo "Codex auth preflight attempt ${{_attempt}}/2" >&2
   timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'
 done
 '''
@@ -1353,11 +1381,12 @@ done
 
 
 async def verify_git_auth(sandbox: Any, config: DeployConfig) -> None:
-    command = r'''set -e
+    workspace = shlex.quote(container_workspace_path(config))
+    command = f'''set -e
 git config --global --get user.name >/dev/null
 git config --global --get user.email >/dev/null
 gh auth status --hostname github.com >/dev/null
-cd /workspace
+cd {workspace}
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   if git remote get-url origin >/dev/null 2>&1; then
     remote_url="$(git remote get-url origin)"
@@ -1373,7 +1402,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "warn: git remote 'origin' not found; skipping remote auth verification" >&2
   fi
 else
-  echo "warn: /workspace is not a git repository; skipping remote auth verification" >&2
+  echo "warn: {workspace} is not a git repository; skipping remote auth verification" >&2
 fi
 '''
     await run_as_bullpen(sandbox, config, command, label="verify Git auth")

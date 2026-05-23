@@ -69,6 +69,7 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
 
     assert config.sandbox_name == "testbox"
     assert config.workspace == workspace.resolve()
+    assert config.projects_root == workspace.parent.resolve()
     assert config.bullpen_port == 8181
     assert config.app_port == 3131
     assert config.admin_user == "rootish"
@@ -617,9 +618,11 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert calls["kwargs"]["ports"] == {8081: 8081, 3001: 3001}
     assert calls["kwargs"]["network"] == "allow-all"
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}
-    assert calls["kwargs"]["volumes"]["/workspace"] == {"path": str(workspace), "readonly": False}
+    assert calls["kwargs"]["volumes"]["/workspace"] == {"path": str(workspace.parent), "readonly": False}
     assert calls["kwargs"]["volumes"]["/home/bullpen"] == {"path": str(sandbox_home), "readonly": False}
     assert "/home/bullpen/.codex" not in calls["kwargs"]["volumes"]
+    assert calls["kwargs"]["env"]["BULLPEN_PROJECTS_ROOT"] == "/workspace"
+    assert calls["kwargs"]["env"]["BULLPEN_WORKSPACE"] == "/workspace/project"
     assert calls["kwargs"]["env"]["BULLPEN_VENV"] == "/opt/bullpen-venv"
 
 
@@ -1200,12 +1203,13 @@ def test_verify_mount_access_runs_as_bullpen_and_checks_workspace_config(sb):
 
     repair_command = commands[0][1][1]
     probe_command = commands[1][1][1]
-    assert "mkdir -p /workspace/.bullpen" in repair_command
-    assert 'chown "$uid:$gid" /workspace/.bullpen' in repair_command
-    assert 'chown -R "$uid:$gid" /workspace/.bullpen' in repair_command
+    assert "mkdir -p /workspace/bullpen/.bullpen" in repair_command
+    assert 'chown "$uid:$gid" /workspace/bullpen/.bullpen' in repair_command
+    assert 'chown -R "$uid:$gid" /workspace/bullpen/.bullpen' in repair_command
     assert "su -s /bin/bash bullpen -c" in probe_command
     assert "test -w /workspace" in probe_command
-    assert "test -w /workspace/.bullpen" in probe_command
+    assert "test -w /workspace/bullpen" in probe_command
+    assert "test -w /workspace/bullpen/.bullpen" in probe_command
     assert "effective user" not in probe_command
     assert "workspace metadata" not in probe_command
 
@@ -1575,7 +1579,7 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
 
     command = commands[0][1][1]
     assert "su -s /bin/bash bullpen -c" in command
-    assert "cd /workspace" in command
+    assert "cd /workspace/bullpen" in command
     assert "test -s /home/bullpen/.codex/auth.json" in command
     assert "for _attempt in 1 2" in command
     assert "timeout 45s bash -lc" in command
