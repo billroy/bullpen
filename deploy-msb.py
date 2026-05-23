@@ -213,7 +213,7 @@ class MicrosandboxRuntime:
             ports=ports,
             volumes=volumes,
             network=network,
-            env=config.runtime_env,
+            env=create_time_env(config),
         )
         if inspect.isawaitable(result):
             return await result
@@ -603,6 +603,9 @@ def validate_config(config: DeployConfig) -> None:
 
 def build_runtime_env(config: DeployConfig) -> None:
     container_workspace = container_workspace_path(config)
+    internal_bullpen_port = config.bullpen_port + 10000
+    if internal_bullpen_port > 65535 or internal_bullpen_port == config.app_port:
+        internal_bullpen_port = 15000
     config.runtime_env.update(
         {
             "HOME": "/home/bullpen",
@@ -614,6 +617,9 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_BOOTSTRAP_PASSWORD": config.admin_password,
             "BULLPEN_BOOTSTRAP_FORCE": "1",
             "BULLPEN_PORT": str(config.bullpen_port),
+            "BULLPEN_INTERNAL_HOST": "127.0.0.1",
+            "BULLPEN_INTERNAL_PORT": str(internal_bullpen_port),
+            "BULLPEN_STATIC_ROOT": "/var/lib/bullpen/static",
             "APP_PORT": str(config.app_port),
             "BULLPEN_HIDE_UNAVAILABLE_PROJECTS": "1",
             "BULLPEN_PROJECTS_ROOT": "/workspace",
@@ -626,6 +632,15 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_CODEX_PATH": "/home/bullpen/bin/codex",
         }
     )
+
+
+def create_time_env(config: DeployConfig) -> dict[str, str]:
+    """Keep Sandbox.create env small; commands export the full runtime env later."""
+    return {
+        key: str(config.runtime_env[key])
+        for key in ("HOME", "USER", "LOGNAME")
+        if key in config.runtime_env
+    }
 
 
 def claude_tls_env_prefix() -> str:
@@ -1158,6 +1173,18 @@ fi
     await run_sandbox_shell(sandbox, "test -x /opt/bullpen-venv/bin/python")
 
 
+async def stage_static_assets(sandbox: Any, config: DeployConfig) -> None:
+    command = (
+        "set -e; "
+        'rm -rf "$BULLPEN_STATIC_ROOT"; '
+        'mkdir -p "$BULLPEN_STATIC_ROOT"; '
+        'cp -a /app/static/. "$BULLPEN_STATIC_ROOT"/; '
+        'chown -R bullpen:"$(id -gn bullpen)" "$BULLPEN_STATIC_ROOT"; '
+        'su -s /bin/bash bullpen -c "test -r \\"$BULLPEN_STATIC_ROOT/index.html\\" && test -r \\"$BULLPEN_STATIC_ROOT/style.css\\""'
+    )
+    await run_configured_sandbox_shell(sandbox, config, command, label="stage static assets")
+
+
 async def disable_guest_ipv6_for_claude(sandbox: Any) -> None:
     command = r'''set -e
 mkdir -p /etc/sysctl.d
@@ -1304,15 +1331,20 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         "set -e; "
         "mkdir -p /home/bullpen/logs; "
         ": > /home/bullpen/logs/bullpen.log; "
+        ": > /home/bullpen/logs/bullpen-proxy.log; "
         "test -x /opt/bullpen-venv/bin/python; "
+        "command -v node >/dev/null; "
         "cd /app; "
-        "echo '[sandboxed-bullpen] starting Bullpen with /opt/bullpen-venv/bin/python' >> /home/bullpen/logs/bullpen.log; "
+        "echo '[sandboxed-bullpen] starting Bullpen with /opt/bullpen-venv/bin/python on internal port ${BULLPEN_INTERNAL_PORT}' >> /home/bullpen/logs/bullpen.log; "
         "nohup /opt/bullpen-venv/bin/python bullpen.py "
         f"--workspace {workspace} "
-        "--host 0.0.0.0 "
-        '--port "$BULLPEN_PORT" '
+        "--host 127.0.0.1 "
+        '--port "$BULLPEN_INTERNAL_PORT" '
         "--no-browser "
-        ">/home/bullpen/logs/bullpen.log 2>&1 &"
+        ">/home/bullpen/logs/bullpen.log 2>&1 & "
+        "echo '[sandboxed-bullpen] starting Node static/proxy front server on exposed port ${BULLPEN_PORT}' >> /home/bullpen/logs/bullpen-proxy.log; "
+        "nohup node /app/deploy/microsandbox/bullpen-proxy.js "
+        ">/home/bullpen/logs/bullpen-proxy.log 2>&1 &"
     )
     await run_as_bullpen(sandbox, config, command, label="start Bullpen")
 
@@ -1569,6 +1601,10 @@ async def run_install_tui(runtime: MicrosandboxRuntime, sandbox: Any, config: De
     return summary
 
 
+def can_run_install_tui() -> bool:
+    return sys.stdin.isatty()
+
+
 async def detach_sandbox(sandbox: Any) -> None:
     detach = getattr(sandbox, "detach", None)
     if not callable(detach):
@@ -1649,6 +1685,8 @@ async def run_first_light_command(config: DeployConfig) -> CredentialSummary | N
     try:
         log_step("Preparing Microsandbox runtime")
         await prepare_runtime_dirs(sandbox, config)
+        log_step("Staging static assets")
+        await stage_static_assets(sandbox, config)
         log_step("Applying Claude network mitigation")
         await disable_guest_ipv6_for_claude(sandbox)
         log_step("Verifying Microsandbox mount access")
@@ -1841,6 +1879,8 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
     try:
         log_step("Preparing Microsandbox runtime")
         await prepare_runtime_dirs(sandbox, config)
+        log_step("Staging static assets")
+        await stage_static_assets(sandbox, config)
         log_step("Applying Claude network mitigation")
         await disable_guest_ipv6_for_claude(sandbox)
         log_step("Verifying Microsandbox mount access")
@@ -1855,8 +1895,12 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
         wait_for_health(config.bullpen_port)
         log_step("Verifying Bullpen credentials")
         await verify_admin_credentials(sandbox, config)
-        log_step("Running install setup")
-        summary = await run_install_tui(runtime, sandbox, config)
+        if can_run_install_tui():
+            log_step("Running install setup")
+            summary = await run_install_tui(runtime, sandbox, config)
+        else:
+            summary = CredentialSummary()
+            print("Skipping install setup because no interactive terminal is available.", flush=True)
         log_step("Detaching Microsandbox")
         await detach_sandbox(sandbox)
         log_step("Verifying detached Bullpen health")

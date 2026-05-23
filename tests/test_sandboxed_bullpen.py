@@ -416,6 +416,7 @@ def test_deploy_applies_claude_network_mitigation_before_setup(sb, monkeypatch):
     monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
     monkeypatch.setattr(sb, "ensure_host_ports_available", lambda _config: calls.append("ports"))
     monkeypatch.setattr(sb, "prepare_runtime_dirs", async_step("prepare"))
+    monkeypatch.setattr(sb, "stage_static_assets", async_step("stage-static"))
     monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
     monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
     monkeypatch.setattr(sb, "install_codex_wrapper", async_step("codex-wrapper"))
@@ -424,14 +425,86 @@ def test_deploy_applies_claude_network_mitigation_before_setup(sb, monkeypatch):
     monkeypatch.setattr(sb, "wait_for_health", lambda _port: calls.append("health"))
     monkeypatch.setattr(sb, "verify_admin_credentials", async_step("credentials"))
     monkeypatch.setattr(sb, "run_install_tui", fake_install_tui)
+    monkeypatch.setattr(sb, "can_run_install_tui", lambda: True)
     monkeypatch.setattr(sb, "detach_sandbox", async_step("detach"))
     monkeypatch.setattr(sb, "verify_detached_sandbox", async_step("detached-health"))
 
     summary = asyncio.run(sb.deploy(config))
 
     assert summary.selected_items == ["claude"]
+    assert calls.index("stage-static") < calls.index("disable-ipv6")
     assert calls.index("disable-ipv6") < calls.index("mounts")
     assert calls.index("disable-ipv6") < calls.index("install-tui")
+
+
+def test_deploy_skips_install_setup_without_tty_and_detaches(sb, monkeypatch):
+    calls = []
+    sandbox = object()
+
+    class FakeRuntime:
+        async def ensure_installed(self):
+            calls.append("ensure")
+
+        async def exists(self, name):
+            calls.append(("exists", name))
+            return False
+
+        async def prepared_base_exists(self, base):
+            calls.append(("base-exists", base))
+            return True
+
+        async def create(self, config):
+            calls.append("create")
+            return sandbox
+
+    def async_step(name):
+        async def _step(*_args):
+            calls.append(name)
+        return _step
+
+    async def fail_install_tui(*_args):
+        raise AssertionError("install setup should be skipped without a tty")
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+
+    monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
+    monkeypatch.setattr(sb, "ensure_host_ports_available", lambda _config: calls.append("ports"))
+    monkeypatch.setattr(sb, "prepare_runtime_dirs", async_step("prepare"))
+    monkeypatch.setattr(sb, "stage_static_assets", async_step("stage-static"))
+    monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
+    monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
+    monkeypatch.setattr(sb, "install_codex_wrapper", async_step("codex-wrapper"))
+    monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
+    monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
+    monkeypatch.setattr(sb, "wait_for_health", lambda _port: calls.append("health"))
+    monkeypatch.setattr(sb, "verify_admin_credentials", async_step("credentials"))
+    monkeypatch.setattr(sb, "run_install_tui", fail_install_tui)
+    monkeypatch.setattr(sb, "can_run_install_tui", lambda: False)
+    monkeypatch.setattr(sb, "detach_sandbox", async_step("detach"))
+    monkeypatch.setattr(sb, "verify_detached_sandbox", async_step("detached-health"))
+
+    summary = asyncio.run(sb.deploy(config))
+
+    assert summary.selected_items == []
+    assert "stage-static" in calls
+    assert "detach" in calls
+    assert "detached-health" in calls
 
 
 def test_first_light_claude_runs_only_claude_gate_without_ports_or_bullpen(sb, monkeypatch):
@@ -487,6 +560,7 @@ def test_first_light_claude_runs_only_claude_gate_without_ports_or_bullpen(sb, m
 
     monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
     monkeypatch.setattr(sb, "prepare_runtime_dirs", async_step("prepare"))
+    monkeypatch.setattr(sb, "stage_static_assets", async_step("stage-static"))
     monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
     monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
     monkeypatch.setattr(sb, "auth_claude", async_step("auth-claude"))
@@ -623,9 +697,14 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert all(volume.get("path") != str(workspace.parent) for volume in calls["kwargs"]["volumes"].values())
     assert calls["kwargs"]["volumes"]["/home/bullpen"] == {"path": str(sandbox_home), "readonly": False}
     assert "/home/bullpen/.codex" not in calls["kwargs"]["volumes"]
-    assert calls["kwargs"]["env"]["BULLPEN_PROJECTS_ROOT"] == "/workspace"
-    assert calls["kwargs"]["env"]["BULLPEN_WORKSPACE"] == "/workspace/project"
-    assert calls["kwargs"]["env"]["BULLPEN_VENV"] == "/opt/bullpen-venv"
+    assert calls["kwargs"]["env"] == {
+        "HOME": "/home/bullpen",
+        "USER": "bullpen",
+        "LOGNAME": "bullpen",
+    }
+    assert config.runtime_env["BULLPEN_PROJECTS_ROOT"] == "/workspace"
+    assert config.runtime_env["BULLPEN_WORKSPACE"] == "/workspace/project"
+    assert config.runtime_env["BULLPEN_VENV"] == "/opt/bullpen-venv"
 
 
 def test_host_port_preflight_reports_occupied_ports(sb, tmp_path, monkeypatch):
@@ -844,6 +923,7 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     sb.build_runtime_env(config)
 
     asyncio.run(sb.prepare_runtime_dirs(FakeSandbox(), config))
+    asyncio.run(sb.stage_static_assets(FakeSandbox(), config))
     asyncio.run(sb.bootstrap_bullpen_credentials(FakeSandbox(), config))
     asyncio.run(sb.start_bullpen(FakeSandbox(), config))
     asyncio.run(
@@ -863,14 +943,19 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /home/bullpen\n" not in prepare_command
     assert "test -w /home/bullpen" in prepare_command
+    assert any('cp -a /app/static/. "$BULLPEN_STATIC_ROOT"/' in command for command in command_texts)
     assert any("BULLPEN_BOOTSTRAP_PASSWORD=pw" in command for command in command_texts)
     assert any("su -s /bin/bash bullpen -c" in command for command in command_texts)
     assert any("bullpen.py --bootstrap-credentials" in command for command in command_texts)
     start_command = next(command for command in command_texts if "nohup /opt/bullpen-venv/bin/python bullpen.py" in command)
     assert all(cmd == "bash" for cmd, _args in commands)
     assert "test -x /opt/bullpen-venv/bin/python" in start_command
+    assert "command -v node >/dev/null" in start_command
     assert ": > /home/bullpen/logs/bullpen.log" in start_command
-    assert "--host 0.0.0.0" in start_command
+    assert ": > /home/bullpen/logs/bullpen-proxy.log" in start_command
+    assert "--host 127.0.0.1" in start_command
+    assert '--port "$BULLPEN_INTERNAL_PORT"' in start_command
+    assert "node /app/deploy/microsandbox/bullpen-proxy.js" in start_command
     assert any("cd /app && /opt/bullpen-venv/bin/python -" in command for command in command_texts)
 
 
