@@ -94,7 +94,7 @@ Remediation:
 Evidence:
 
 - Claude uses `--dangerously-skip-permissions`: `server/agents/claude_adapter.py:86-100`.
-- Codex uses `--full-auto` by default, or `--dangerously-bypass-approvals-and-sandbox` when `BULLPEN_CODEX_SANDBOX` is disabled: `server/agents/codex_adapter.py:50-88`.
+- Codex uses `--sandbox workspace-write` by default, or `--dangerously-bypass-approvals-and-sandbox` when `BULLPEN_CODEX_SANDBOX` is disabled: `server/agents/codex_adapter.py:50-88`.
 - Gemini uses `--approval-mode yolo`: `server/agents/gemini_adapter.py:69-78`.
 - Docker sets `BULLPEN_CODEX_SANDBOX=none`: `Dockerfile:8-13`.
 

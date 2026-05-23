@@ -52,7 +52,11 @@ def _codex_execution_flags():
     sandbox_mode = os.environ.get("BULLPEN_CODEX_SANDBOX", "").strip().lower()
     if sandbox_mode in {"none", "off", "false", "0", "bypass"}:
         return ["--dangerously-bypass-approvals-and-sandbox"]
-    return ["--full-auto"]
+    if sandbox_mode in {"read-only", "readonly"}:
+        return ["--sandbox", "read-only"]
+    if sandbox_mode in {"danger-full-access", "danger", "full", "full-access"}:
+        return ["--sandbox", "danger-full-access"]
+    return ["--sandbox", "workspace-write"]
 
 
 class CodexAdapter(AgentAdapter):

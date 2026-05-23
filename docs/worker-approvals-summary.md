@@ -27,7 +27,7 @@ Current provider defaults are intentionally permissive:
 
 - Claude workers use `--dangerously-skip-permissions`.
 - Gemini workers use `--approval-mode yolo`.
-- Codex workers use `--full-auto` by default, or `--dangerously-bypass-approvals-and-sandbox` when `BULLPEN_CODEX_SANDBOX` disables sandboxing.
+- Codex workers use `--sandbox workspace-write` by default, or `--dangerously-bypass-approvals-and-sandbox` when `BULLPEN_CODEX_SANDBOX` disables sandboxing.
 
 Bullpen already has some useful hardening:
 

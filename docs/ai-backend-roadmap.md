@@ -18,7 +18,7 @@ Bullpen currently has a process-backed agent abstraction:
 
 - `server/agents/base.py` defines `AgentAdapter` with `available()`, `build_argv()`, `parse_output()`, and `format_stream_line()`.
 - `server/agents/claude_adapter.py` launches `claude --print --output-format stream-json --verbose --dangerously-skip-permissions --model ...` and optionally writes a temporary MCP config.
-- `server/agents/codex_adapter.py` launches `codex exec --model ... --full-auto --json -` and injects Bullpen's MCP server through `-c mcp_servers...` overrides.
+- `server/agents/codex_adapter.py` launches `codex exec --model ... --sandbox workspace-write --json -` and injects Bullpen's MCP server through `-c mcp_servers...` overrides.
 - `server/workers.py` assumes every worker adapter can build an argv, receive a prompt on stdin, stream stdout/stderr, and return a final parse result.
 - `server/events.py` repeats the same subprocess shape for Live Agent Chat.
 - Provider choices are hard-coded in `server/validation.py`, `static/utils.js`, `static/components/WorkerConfigModal.js`, and `static/components/LiveAgentChatTab.js`.

@@ -386,11 +386,23 @@ class TestCodexAdapter:
         assert "exec" in argv
         assert "--model" in argv
         assert "o4-mini" in argv
-        assert "--full-auto" in argv
+        assert "--sandbox" in argv
+        assert "workspace-write" in argv
+        assert "--full-auto" not in argv
         assert "--skip-git-repo-check" in argv
         assert "-" in argv
         assert "--approval-mode" not in argv
         assert "--quiet" not in argv
+
+    def test_build_argv_honors_configured_sandbox_mode(self, monkeypatch):
+        monkeypatch.setenv("BULLPEN_CODEX_SANDBOX", "read-only")
+        adapter = CodexAdapter()
+        argv = adapter.build_argv("test prompt", "gpt-5.4", "/workspace")
+
+        assert "--sandbox" in argv
+        assert "read-only" in argv
+        assert "--full-auto" not in argv
+        assert "--dangerously-bypass-approvals-and-sandbox" not in argv
 
     def test_build_argv_can_disable_nested_sandbox(self, monkeypatch):
         monkeypatch.setenv("BULLPEN_CODEX_SANDBOX", "none")
@@ -399,6 +411,7 @@ class TestCodexAdapter:
 
         assert "--dangerously-bypass-approvals-and-sandbox" in argv
         assert "--full-auto" not in argv
+        assert "--sandbox" not in argv
 
     def test_find_codex_checks_app_bundle_when_not_on_path(self, monkeypatch):
         app_bin = "/Applications/Codex.app/Contents/Resources/codex"
