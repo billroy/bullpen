@@ -8,7 +8,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "sandboxed-bullpen.py"
+SCRIPT = ROOT / "deploy-msb.py"
 
 
 def load_module():
@@ -377,6 +377,10 @@ def test_deploy_applies_claude_network_mitigation_before_setup(sb, monkeypatch):
             calls.append(("exists", name))
             return False
 
+        async def prepared_base_exists(self, base):
+            calls.append(("base-exists", base))
+            return True
+
         async def create(self, config):
             calls.append("create")
             return sandbox
@@ -439,6 +443,10 @@ def test_first_light_claude_runs_only_claude_gate_without_ports_or_bullpen(sb, m
 
         async def exists(self, name):
             calls.append(("exists", name))
+            return True
+
+        async def prepared_base_exists(self, base):
+            calls.append(("base-exists", base))
             return True
 
         async def stop(self, name):
@@ -1578,27 +1586,56 @@ def test_configured_sandbox_shell_redacts_secret_values(sb):
     assert "export BULLPEN_BOOTSTRAP_PASSWORD" not in str(excinfo.value)
 
 
-def test_microsandbox_prepare_creates_local_snapshot_from_node_base():
-    text = (ROOT / "deploy" / "microsandbox" / "prepare.sh").read_text(encoding="utf-8")
+def test_microsandbox_prepare_cli_defaults_to_node_base(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
 
-    assert 'SOURCE_IMAGE="${BULLPEN_MICROSANDBOX_SOURCE_IMAGE:-node:22-bookworm}"' in text
-    assert 'BASE_NAME="${BULLPEN_MICROSANDBOX_BASE:-bullpen-microsandbox-local}"' in text
-    assert "BULLPEN_MICROSANDBOX_SOURCE_DIR" in text
-    assert 'git clone --depth 1 "${REPO_URL}" "${SOURCE_DIR}"' in text
-    assert "microsandbox.Image.oci(source_image)" in text
-    assert "microsandbox.Snapshot.create" in text
-    assert "sandbox.stop_and_wait" in text
-    assert text.index("sandbox.stop_and_wait") < text.index("microsandbox.Snapshot.create")
-    assert "python3 -m venv /opt/bullpen-venv" in text
-    assert "/opt/bullpen-venv/bin/python -m pip install --no-cache-dir -r /app/requirements.txt" in text
-    assert "import pyfiglet" in text
-    assert "@anthropic-ai/claude-code" in text
-    assert "@openai/codex" in text
-    assert "@google/gemini-cli" in text
-    assert "--no-audit" in text
-    assert "--no-fund" in text
-    assert "--no-progress" in text
-    assert "deb.nodesource.com" not in text
+    config = sb.config_from_args(["--prepare-base", "--source-dir", str(ROOT), "--no-open"])
+
+    assert config.action == "prepare-base"
+    assert config.base == "bullpen-microsandbox-local"
+    assert config.source_image == "node:22-bookworm"
+    assert config.prepare_source == ROOT
+    assert config.prepare_base_policy == "auto"
+
+
+def test_ensure_prepared_base_auto_prepares_missing_base(sb, monkeypatch):
+    calls = []
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+
+    class FakeRuntime:
+        async def prepared_base_exists(self, base):
+            calls.append(("exists", base))
+            return False
+
+    async def fake_prepare(runtime, cfg, *, force=True):
+        calls.append(("prepare", cfg.base, force))
+
+    monkeypatch.setattr(sb, "prepare_base", fake_prepare)
+
+    asyncio.run(sb.ensure_prepared_base(FakeRuntime(), config))
+
+    assert calls == [
+        ("exists", "bullpen-microsandbox-local"),
+        ("prepare", "bullpen-microsandbox-local", True),
+    ]
 
 
 def test_choose_replace_no_replace_errors_when_existing(sb, monkeypatch):
