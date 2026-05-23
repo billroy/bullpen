@@ -89,7 +89,7 @@ Options:
 
 ```text
 --sandbox-name NAME          Sandbox name. Default: bullpen
---workspace PATH             Project directory mounted as /workspace. Default: current directory
+--workspace PATH             Project directory mounted as /workspace/<project-name>. Default: current directory
 --bullpen-port PORT          Host and guest Bullpen port. Default: 8080
 --app-port PORT              Host and guest client app port. Default: 3000
 --admin-user USER            Bullpen admin user. Default: admin
@@ -190,14 +190,14 @@ The script starts Bullpen as a detached process inside the sandbox, verifies hea
 Run phase mounts:
 
 ```text
-<host projects root>             -> /workspace      writable
-~/.bullpen/microsandbox-home     -> /home/bullpen   writable
-<Bullpen source checkout>        -> /app            read-only, only if not baked into base
+<selected host project>          -> /workspace/<project-name>  writable
+~/.bullpen/microsandbox-home     -> /home/bullpen              writable
+<Bullpen source checkout>        -> /app                       read-only, only if not baked into base
 ```
 
-`/workspace` must be a live writable bind mount, not a copy. It is the root that can contain multiple apps under test, for example `/workspace/pr-workflow-test` and `/workspace/busy-deck`. Bullpen starts with the requested project directory as the active workspace, while clone-with-default-path creates sibling projects under `/workspace`.
+`/workspace` is sandbox-owned writable storage, not a bind mount to the host project parent. Bullpen starts with the requested host project mounted at `/workspace/<project-name>`. Clone-with-default-path creates sibling projects under `/workspace`, for example `/workspace/busy-deck`, and those sibling projects stay inside the sandbox filesystem.
 
-File browser edits, worker changes, git worktrees, generated files, and task outputs must mutate the real host project directory.
+File browser edits, worker changes, git worktrees, generated files, and task outputs inside `/workspace/<project-name>` must mutate the selected real host project directory. Projects created or cloned at other `/workspace` paths must not create files in the host parent directory.
 
 `/home/bullpen` persists across sandbox replacement. Create it if needed and restrict it to the current user. Store CLI auth state, Bullpen global config, and logs there.
 

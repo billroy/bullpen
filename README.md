@@ -426,11 +426,13 @@ For containerized deploys with separate Bullpen/app port mappings, use:
 
 Microsandbox is the preferred local isolation path when you want Bullpen, AI
 agent CLIs, shell workers, and project commands to run inside a microVM instead
-of directly on the host. The parent directory that contains the selected project
-is mounted into the sandbox as `/workspace`, the selected project starts as
-`/workspace/<project-name>`, the persistent sandbox home is mounted as
-`/home/bullpen`, and the Bullpen UI is exposed on localhost only. This keeps
-`/workspace` writable for multiple apps under test while `/app` remains the
+of directly on the host. The selected host project is mounted into the sandbox
+as `/workspace/<project-name>`, the `/workspace` root itself is sandbox-owned
+storage, the persistent sandbox home is mounted as `/home/bullpen`, and the
+Bullpen UI is exposed on localhost only. This keeps `/workspace` writable for
+multiple apps under test without exposing the host directory that contains the
+selected project. Projects cloned or created at sibling paths such as
+`/workspace/busy-deck` live inside the sandbox, while `/app` remains the
 read-only Bullpen source checkout.
 
 Install the Microsandbox Python package on the host first:
@@ -464,7 +466,7 @@ and persist under `/home/bullpen`.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--sandbox-name NAME` | `bullpen` | Microsandbox instance name |
-| `--workspace PATH` | current directory | Initial host project directory; its parent is mounted as `/workspace` |
+| `--workspace PATH` | current directory | Initial host project directory mounted as `/workspace/<project-name>` |
 | `--bullpen-port PORT` | `8080` | Host and guest Bullpen UI port |
 | `--app-port PORT` | `3000` | Host and guest app preview port exposed for project commands |
 | `--admin-user USER` | `admin` | Bullpen login user to bootstrap inside the sandbox |

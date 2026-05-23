@@ -195,7 +195,7 @@ class MicrosandboxRuntime:
             raise DeployError(f"Cannot create Microsandbox home directory {config.sandbox_home}: {exc}") from exc
         volumes = {
             "/app": self.Volume.bind(str(config.bullpen_source), readonly=True),
-            "/workspace": self.Volume.bind(str(projects_root_path(config))),
+            container_workspace_path(config): self.Volume.bind(str(config.workspace)),
             "/home/bullpen": self.Volume.bind(str(config.sandbox_home)),
         }
         network = self.Network.allow_all()
@@ -371,8 +371,10 @@ def is_bullpen_source(path: Path) -> bool:
     return (path / "bullpen.py").is_file() and (path / "server").is_dir()
 
 
-def projects_root_path(config: DeployConfig) -> Path:
-    return (config.projects_root or config.workspace.parent).resolve()
+def projects_root_path(config: DeployConfig) -> Path | None:
+    if config.projects_root is None:
+        return None
+    return config.projects_root.resolve()
 
 
 def container_workspace_path(config: DeployConfig) -> str:
@@ -538,8 +540,6 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
                 "Pass --workspace PATH, or use --install-bullpen-project."
             )
         workspace = cwd
-    projects_root = workspace.parent.resolve()
-
     if action == "deploy":
         admin_password = args.admin_password or prompt_password()
     else:
@@ -575,7 +575,6 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         prepare_base_policy=prepare_base_policy,
         source_image=args.source_image,
         prepare_source=abs_path(args.source_dir) if args.source_dir else None,
-        projects_root=projects_root,
     )
     validate_config(config)
     return config
@@ -590,16 +589,12 @@ def validate_config(config: DeployConfig) -> None:
         raise DeployError(f"Workspace path does not exist: {config.workspace}")
     if not config.workspace.is_dir():
         raise DeployError(f"Workspace path is not a directory: {config.workspace}")
-    if not projects_root_path(config).exists():
-        raise DeployError(f"Projects root path does not exist: {projects_root_path(config)}")
-    if not projects_root_path(config).is_dir():
-        raise DeployError(f"Projects root path is not a directory: {projects_root_path(config)}")
-    try:
-        config.workspace.relative_to(projects_root_path(config))
-    except ValueError as exc:
-        raise DeployError(
-            f"Workspace path must be inside projects root: {config.workspace} not under {projects_root_path(config)}"
-        ) from exc
+    projects_root = projects_root_path(config)
+    if projects_root is not None:
+        if not projects_root.exists():
+            raise DeployError(f"Projects root path does not exist: {projects_root}")
+        if not projects_root.is_dir():
+            raise DeployError(f"Projects root path is not a directory: {projects_root}")
     if not is_bullpen_source(config.bullpen_source):
         raise DeployError(f"Bullpen source path does not contain bullpen.py: {config.bullpen_source}")
     if config.action != "deploy" and config.install_bullpen_project:
@@ -694,6 +689,27 @@ def redact_text(text: str, config: DeployConfig | None = None) -> str:
             if value:
                 redacted = redacted.replace(str(value), "[REDACTED]")
     return redacted
+
+
+def result_output_text(result: Any) -> str:
+    def normalize(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        if value is None:
+            return ""
+        return str(value)
+
+    stdout = normalize(getattr(result, "stdout_text", "") or getattr(result, "stdout", ""))
+    stderr = normalize(getattr(result, "stderr_text", "") or getattr(result, "stderr", ""))
+    return "\n".join(part for part in (stdout, stderr) if part)
+
+
+def codex_auth_failure_message(output: str) -> str:
+    if "refresh_token_reused" in output or "refresh token was already used" in output:
+        return "Codex needs a fresh login before it can be used."
+    if "token_expired" in output or "Provided authentication token is expired" in output:
+        return "Codex needs a fresh login before it can be used."
+    return "Codex needs login before it can be used."
 
 
 def sandbox_env_prefix(config: DeployConfig) -> str:
@@ -811,6 +827,7 @@ async def attach_as_bullpen(
     label: str | None = None,
     bridge_localhost_callback: bool = False,
     prefer_exec_stream: bool = False,
+    exec_stream_tty: bool = True,
 ) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise DeployError("Interactive sandbox setup requires a TTY.")
@@ -869,7 +886,7 @@ async def attach_as_bullpen(
             args=("-lc", status_wrapped),
             user="bullpen",
             env={},
-            tty=True,
+            tty=exec_stream_tty,
             stdin=runtime.Stdin.pipe(),
         )
         handle = exec_stream("bash", options)
@@ -1033,6 +1050,12 @@ async def ensure_bullpen_healthy(config: DeployConfig) -> None:
 
 async def ensure_provider_command_ready(runtime: MicrosandboxRuntime, config: DeployConfig) -> Any:
     sandbox = await get_running_sandbox(runtime, config)
+    if not any(callable(getattr(sandbox, name, None)) for name in ("exec", "shell", "attach", "exec_stream")):
+        raise DeployError(
+            f"Microsandbox '{config.sandbox_name}' is detached and this Microsandbox SDK cannot run "
+            "provider auth commands inside detached sandboxes. To refresh provider auth, rerun deploy "
+            "with --replace; the sandbox home and workspace mounts are preserved."
+        )
     try:
         await ensure_bullpen_healthy(config)
     except DeployError as exc:
@@ -1110,8 +1133,8 @@ if [ "$actual_uid" != "$uid" ]; then
   echo "Existing bullpen user has uid $actual_uid, expected $uid." >&2
   exit 1
 fi
-mkdir -p /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
-chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex
+mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
+chown bullpen:"$group_name" /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex
 chown -R bullpen:"$group_name" /var/lib/bullpen
 chmod 700 /var/lib/bullpen 2>/dev/null || true
 # Lift FD ceiling for bullpen via pam_limits. Default soft 1024 / hard 4096
@@ -1125,9 +1148,10 @@ bullpen hard nofile 65536
 LIMITS_EOF
 chmod 644 /etc/security/limits.d/bullpen-fd.conf
 su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex'
+soft_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Sn')"
 hard_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Hn')"
-if [ "$hard_nofile" -lt 65536 ]; then
-  echo "warn: bullpen RLIMIT_NOFILE hard limit is $hard_nofile, expected 65536; pam_limits may not be enforcing limits.d" >&2
+if [ "$soft_nofile" -lt 65536 ] || [ "$hard_nofile" -lt 65536 ]; then
+  echo "warn: bullpen RLIMIT_NOFILE is soft=$soft_nofile hard=$hard_nofile, expected soft=65536 hard=65536; pam_limits may not be enforcing limits.d" >&2
 fi
 '''
     await run_configured_sandbox_shell(sandbox, config, command, label="prepare Microsandbox runtime user")
@@ -1251,6 +1275,7 @@ export CODEX_HOME="\$RUNTIME_CODEX_HOME"
 status="\$?"
 
 mkdir -p "\$PERSISTENT_CODEX_HOME"
+find "\$PERSISTENT_CODEX_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || true
 cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/ 2>/dev/null || true
 
 exit "\$status"
@@ -1372,12 +1397,45 @@ async def verify_codex_auth(sandbox: Any, config: DeployConfig) -> None:
     command = f'''set -e
 cd {workspace}
 test -s /home/bullpen/.codex/auth.json
-for _attempt in 1 2; do
-  echo "Codex auth preflight attempt ${{_attempt}}/2" >&2
-  timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'
-done
+timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none "$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -'
 '''
-    await run_as_bullpen(sandbox, config, command, label="verify Codex auth")
+    result = await run_as_bullpen(sandbox, config, command, check=False, label="verify Codex auth")
+    returncode = getattr(result, "returncode", None)
+    if returncode is None:
+        returncode = getattr(result, "exit_code", None)
+    success = getattr(result, "success", None)
+    if returncode not in (None, 0) or success is False:
+        raise DeployError(codex_auth_failure_message(result_output_text(result)))
+
+
+async def clear_codex_auth(sandbox: Any, config: DeployConfig) -> None:
+    command = r'''set -e
+timestamp="$(date +%Y%m%d%H%M%S)"
+lock_dir=/var/lib/bullpen/codex.lock
+if [ -f "$lock_dir/pid" ]; then
+  lock_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+    kill "$lock_pid" 2>/dev/null || true
+    sleep 1
+    if kill -0 "$lock_pid" 2>/dev/null; then
+      kill -9 "$lock_pid" 2>/dev/null || true
+    fi
+  fi
+fi
+rm -rf "$lock_dir"
+for path in \
+  /home/bullpen/.codex/auth.json \
+  /home/bullpen/.codex/auth.json.tmp \
+  /var/lib/bullpen/codex-home/auth.json \
+  /var/lib/bullpen/codex-home/auth.json.tmp
+do
+  if [ -e "$path" ]; then
+    mv "$path" "$path.stale-$timestamp"
+  fi
+done
+mkdir -p /home/bullpen/.codex /var/lib/bullpen/codex-home
+'''
+    await run_configured_sandbox_shell(sandbox, config, command, label="clear stale Codex auth")
 
 
 async def verify_git_auth(sandbox: Any, config: DeployConfig) -> None:
@@ -1422,17 +1480,19 @@ async def auth_claude(runtime: MicrosandboxRuntime, sandbox: Any, config: Deploy
 
 async def auth_codex(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
     print(
-        "Codex setup runs inside the sandbox using browser auth. If the browser lands on a localhost callback URL, paste that full URL here.",
+        "Codex setup runs inside the sandbox using device-code auth. Open the printed URL in your browser and enter the one-time code.",
         flush=True,
     )
+    log_step("Preparing Codex login")
+    await clear_codex_auth(sandbox, config)
     await attach_as_bullpen(
         runtime,
         sandbox,
         config,
-        '"$BULLPEN_CODEX_PATH" login',
+        '"$BULLPEN_CODEX_PATH" login --device-auth',
         label="authenticate Codex",
-        bridge_localhost_callback=True,
-        prefer_exec_stream=True,
+        bridge_localhost_callback=False,
+        prefer_exec_stream=False,
     )
 
 
@@ -1481,16 +1541,23 @@ async def run_install_tui(runtime: MicrosandboxRuntime, sandbox: Any, config: De
         raise DeployError("Microsandbox install setup requires an interactive terminal.")
     for item in setup_items():
         log_step(f"Checking existing {item.label} auth")
+        force_setup = False
         try:
             await item.verify_func(sandbox, config)
         except DeployError as exc:
-            print(f"{item.label} is not verified yet: {exc}", file=sys.stderr)
+            message = str(exc)
+            print(f"{item.label} is not verified yet: {message}", file=sys.stderr)
+            force_setup = item.key == "codex"
         else:
             print(f"{item.label} already verifies inside Microsandbox; skipping interactive setup.", flush=True)
             summary.selected_items.append(item.key)
             continue
 
-        should_setup = prompt_yes_no(f"Set up {item.label} in this sandbox?", default=True)
+        if force_setup:
+            print("Starting Codex login.", flush=True)
+            should_setup = True
+        else:
+            should_setup = prompt_yes_no(f"Set up {item.label} in this sandbox?", default=True)
         if not should_setup:
             summary.skipped_items.append(item.key)
             continue

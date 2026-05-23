@@ -69,7 +69,7 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
 
     assert config.sandbox_name == "testbox"
     assert config.workspace == workspace.resolve()
-    assert config.projects_root == workspace.parent.resolve()
+    assert config.projects_root is None
     assert config.bullpen_port == 8181
     assert config.app_port == 3131
     assert config.admin_user == "rootish"
@@ -210,7 +210,7 @@ def test_runtime_env_passes_microsandbox_label_to_server(sb, tmp_path, monkeypat
 
 def test_run_install_tui_processes_items_sequentially(sb, monkeypatch):
     order = []
-    prompts = iter([True, True, False])
+    prompts = iter([True, False])
 
     async def auth_one(runtime, sandbox, config):
         order.append("auth-claude")
@@ -618,7 +618,9 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert calls["kwargs"]["ports"] == {8081: 8081, 3001: 3001}
     assert calls["kwargs"]["network"] == "allow-all"
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}
-    assert calls["kwargs"]["volumes"]["/workspace"] == {"path": str(workspace.parent), "readonly": False}
+    assert "/workspace" not in calls["kwargs"]["volumes"]
+    assert calls["kwargs"]["volumes"]["/workspace/project"] == {"path": str(workspace), "readonly": False}
+    assert all(volume.get("path") != str(workspace.parent) for volume in calls["kwargs"]["volumes"].values())
     assert calls["kwargs"]["volumes"]["/home/bullpen"] == {"path": str(sandbox_home), "readonly": False}
     assert "/home/bullpen/.codex" not in calls["kwargs"]["volumes"]
     assert calls["kwargs"]["env"]["BULLPEN_PROJECTS_ROOT"] == "/workspace"
@@ -856,7 +858,8 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "useradd --uid" in prepare_command
     assert "BULLPEN_UID=" in prepare_command
     assert "Existing bullpen user has uid" in prepare_command
-    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
+    assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen" in prepare_command
+    assert "chown bullpen:\"$group_name\" /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /home/bullpen\n" not in prepare_command
     assert "test -w /home/bullpen" in prepare_command
@@ -988,14 +991,18 @@ def test_auth_claude_disables_guest_ipv6_before_interactive_login(sb, monkeypatc
     assert attached[0][1] == "authenticate Claude"
 
 
-def test_auth_codex_uses_browser_login_not_device_auth(sb, monkeypatch):
+def test_auth_codex_uses_device_auth(sb, monkeypatch):
     attached = []
+    cleared = []
 
     class FakeRuntime:
         pass
 
     async def fake_attach(_runtime, _sandbox, _config, command, *, label, **kwargs):
         attached.append((command, label, kwargs))
+
+    async def fake_clear(_sandbox, _config):
+        cleared.append(True)
 
     config = sb.DeployConfig(
         sandbox_name="bullpen",
@@ -1016,14 +1023,17 @@ def test_auth_codex_uses_browser_login_not_device_auth(sb, monkeypatch):
     )
     sb.build_runtime_env(config)
     monkeypatch.setattr(sb, "attach_as_bullpen", fake_attach)
+    monkeypatch.setattr(sb, "clear_codex_auth", fake_clear)
 
     asyncio.run(sb.auth_codex(FakeRuntime(), object(), config))
 
-    assert attached[0][0] == '"$BULLPEN_CODEX_PATH" login'
+    assert cleared == [True]
+    assert attached[0][0] == '"$BULLPEN_CODEX_PATH" login --device-auth'
     assert attached[0][1] == "authenticate Codex"
-    assert attached[0][2]["bridge_localhost_callback"] is True
-    assert attached[0][2]["prefer_exec_stream"] is True
-    assert "--device-auth" not in attached[0][0]
+    assert attached[0][2]["bridge_localhost_callback"] is False
+    assert attached[0][2]["prefer_exec_stream"] is False
+    assert "--device-auth" in attached[0][0]
+    assert "BROWSER=echo" not in attached[0][0]
 
 
 def test_localhost_auth_callback_delivery_runs_curl_inside_sandbox(sb):
@@ -1076,7 +1086,7 @@ def test_run_auth_command_dispatches_to_selected_setup_item(sb, monkeypatch):
 
         async def get(self, name):
             calls.append(("get", name))
-            return object()
+            return types.SimpleNamespace(exec=lambda *_args, **_kwargs: None)
 
     async def fake_health(config):
         calls.append("health")
@@ -1150,7 +1160,7 @@ def test_run_test_provider_command_warns_but_continues_when_bullpen_unhealthy(sb
             return None
 
         async def get(self, name):
-            return object()
+            return types.SimpleNamespace(exec=lambda *_args, **_kwargs: None)
 
     async def fake_health(_config):
         raise sb.DeployError("Bullpen health check failed for http://127.0.0.1:8080/health: boom")
@@ -1512,6 +1522,7 @@ def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
     assert "Timed out waiting for Codex lock" in command
     assert "exit 124" in command
     assert r'export CODEX_HOME="\$RUNTIME_CODEX_HOME"' in command
+    assert r'find "\$PERSISTENT_CODEX_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +' in command
     assert r'cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/' in command
     assert 'cli_auth_credentials_store = "file"' in command
     assert 'grep -Eq "^[[:space:]]*cli_auth_credentials_store' in command
@@ -1581,7 +1592,6 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
     assert "su -s /bin/bash bullpen -c" in command
     assert "cd /workspace/bullpen" in command
     assert "test -s /home/bullpen/.codex/auth.json" in command
-    assert "for _attempt in 1 2" in command
     assert "timeout 45s bash -lc" in command
     assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command
     assert '"$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -' in command
