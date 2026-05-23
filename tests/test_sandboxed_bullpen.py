@@ -612,7 +612,8 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert calls["kwargs"]["replace"] is True
     assert calls["kwargs"]["detached"] is True
     assert calls["kwargs"]["cpus"] == 4
-    assert calls["kwargs"]["memory_mib"] == 4096
+    assert calls["kwargs"]["memory"] == 4096
+    assert "memory_mib" not in calls["kwargs"]
     assert calls["kwargs"]["ports"] == {8081: 8081, 3001: 3001}
     assert calls["kwargs"]["network"] == "allow-all"
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}

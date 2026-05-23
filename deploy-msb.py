@@ -208,7 +208,7 @@ class MicrosandboxRuntime:
             detached=True,
             replace=bool(config.replace),
             cpus=config.vcpus,
-            memory_mib=config.memory_mib,
+            memory=config.memory_mib,
             ports=ports,
             volumes=volumes,
             network=network,
@@ -1682,6 +1682,7 @@ PY
             sandbox,
             r"""
             set -euo pipefail
+            versions_file=/opt/bullpen-microsandbox-base-versions.txt
             {
               python3 --version
               /opt/bullpen-venv/bin/python -c 'import flask, flask_socketio, pyfiglet'
@@ -1692,7 +1693,10 @@ PY
               claude --version
               codex --version
               gemini --version
-            } | tee /opt/bullpen-microsandbox-base-versions.txt
+            } > "$versions_file"
+            cat "$versions_file"
+            test -s "$versions_file"
+            sync "$versions_file" || sync
             """,
             label="Verifying prepared base",
         )
