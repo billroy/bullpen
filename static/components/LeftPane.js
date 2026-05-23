@@ -342,6 +342,22 @@ const LeftPane = {
     canRemoveProject(project) {
       return !!(project && project.id && this.projects && this.projects.length > 1);
     },
+    activeWorkspacePath() {
+      return this.workspaces?.[this.activeWorkspaceId]?.workspace || '';
+    },
+    defaultCloneParent() {
+      const workspace = this.activeWorkspacePath();
+      if (!workspace) return '';
+      const parts = workspace.split(/[\\/]+/);
+      parts.pop();
+      const parent = parts.join('/') || (workspace.startsWith('/') ? '/' : '');
+      return parent || '';
+    },
+    repoNameFromUrl(url) {
+      const trimmed = String(url || '').trim().replace(/\/+$/, '');
+      const name = trimmed.split('/').filter(Boolean).pop() || '';
+      return name.endsWith('.git') ? name.slice(0, -4) : name;
+    },
     confirmRemoveProject(project) {
       const name = project?.name || 'this project';
       if (!project?.id) return;
@@ -371,7 +387,12 @@ const LeftPane = {
       this.showEmptyProjectHint = false;
       const url = prompt('Enter Git repository URL:');
       if (!url || !url.trim()) return;
-      const path = prompt('Enter absolute path to clone into (leave empty to clone next to the active project):');
+      const repoName = this.repoNameFromUrl(url);
+      const defaultPath = this.defaultCloneParent() && repoName ? `${this.defaultCloneParent()}/${repoName}` : '';
+      const promptText = defaultPath
+        ? `Enter absolute path to clone into (leave empty for ${defaultPath}):`
+        : 'Enter absolute path to clone into (leave empty for the server default):';
+      const path = prompt(promptText);
       this.$emit('clone-project', { url: url.trim(), path: (path || '').trim() || null });
     },
     onRosterDragOver(e, w) {

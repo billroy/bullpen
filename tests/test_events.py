@@ -197,8 +197,16 @@ class TestTaskEvents:
 
         c.emit("project:clone", {"url": "https://example.test/busy-deck.git"})
 
-        err = get_event(c, "error")
+        events = c.get_received()
+        by_name = {evt["name"]: evt["args"][0] for evt in events}
+        err = by_name.get("error")
+        started = by_name.get("project:clone:started")
+        succeeded = by_name.get("project:clone:succeeded")
         assert err is None
+        assert started == {"url": "https://example.test/busy-deck.git", "path": str(projects_root / "busy-deck")}
+        assert succeeded["url"] == "https://example.test/busy-deck.git"
+        assert succeeded["path"] == str(projects_root / "busy-deck")
+        assert succeeded["workspaceId"]
         assert calls
         assert calls[0][0] == [
             "git",

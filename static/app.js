@@ -750,6 +750,14 @@ const app = createApp({
       if (_isActive(wsId)) state.teams = teams;
     });
     socket.on('error', (data) => { addToast((data && data.message) || 'An error occurred', 'error'); });
+    socket.on('project:clone:started', (data) => {
+      const target = data?.path ? ` into ${data.path}` : '';
+      addToast(`Cloning ${data?.url || 'repository'}${target}`);
+    });
+    socket.on('project:clone:succeeded', (data) => {
+      const target = data?.path ? `: ${data.path}` : '';
+      addToast(`Clone complete${target}`);
+    });
     socket.on('projects:updated', (list) => {
       projects.splice(0, projects.length, ...list);
       projectsLoaded.value = true;
@@ -1313,7 +1321,7 @@ const app = createApp({
     // Project actions
     function addProject(path) { socket.emit('project:add', { path }); }
     function newProject(path) { socket.emit('project:new', { path }); }
-    function cloneProject(data) { socket.emit('project:clone', withWorkspace(data)); }
+    function cloneProject(data) { socket.emit('project:clone', _wsData(data)); }
     function removeProject(wsId) { socket.emit('project:remove', { workspaceId: wsId }); }
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }

@@ -68,6 +68,22 @@ def test_leftpane_emits_new_project_and_registers_menu_dismiss_listener():
     assert "this.$emit('new-project', path.trim());" in text
 
 
+def test_clone_project_uses_explicit_default_path_prompt():
+    text = _read("static/components/LeftPane.js")
+    assert "leave empty to clone next to the active project" not in text
+    assert "Enter absolute path to clone into (leave empty for ${defaultPath}):" in text
+    assert "repoNameFromUrl(url)" in text
+    assert "defaultCloneParent()" in text
+
+
+def test_app_clone_project_attaches_workspace_id_and_shows_progress_toasts():
+    text = _read("static/app.js")
+    assert "function cloneProject(data) { socket.emit('project:clone', _wsData(data)); }" in text
+    assert "withWorkspace(data)" not in text
+    assert "socket.on('project:clone:started'" in text
+    assert "socket.on('project:clone:succeeded'" in text
+
+
 def test_switching_projects_joins_project_socket_room():
     text = _read("static/app.js")
     assert "function switchWorkspace(wsId)" in text

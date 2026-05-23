@@ -1351,6 +1351,7 @@ def register_events(socketio, app):
             emit("error", {"message": f"Path already exists: {path}"})
             return
 
+        emit("project:clone:started", {"url": url, "path": path})
         try:
             subprocess.run(
                 ["git", "clone", url, path],
@@ -1372,6 +1373,7 @@ def register_events(socketio, app):
             emit("error", {"message": str(e)})
             return
 
+        emit("project:clone:succeeded", {"url": url, "path": path, "workspaceId": ws_id})
         _activate_and_broadcast_project(manager, ws_id)
 
     @socketio.on("project:remove")
