@@ -415,42 +415,23 @@ Potential remediation later:
 - Or make it an explicit deploy/network policy with clear output.
 - Or find a provider-local IPv4 workaround for Claude OAuth.
 
-### Deferred: Codex Wrapper Lock Can Wait Forever
+### Fixed: Codex Wrapper Lock Is Bounded
 
 Relevant code:
 
-- `sandboxed-bullpen.py:1096` spins until `mkdir "$LOCK_DIR"` succeeds.
+- `deploy-msb.py` installs the `/home/bullpen/bin/codex` wrapper.
 - It removes the lock only when the stored PID is no longer alive.
-- There is no timeout.
+- Lock acquisition now has a timeout controlled by
+  `BULLPEN_CODEX_LOCK_TIMEOUT_SECONDS`, defaulting to 300 seconds.
+- On timeout, the wrapper exits 124 and prints the lock path plus recorded
+  owner PID.
 
-Reason to defer:
-
-This is a boundedness and operability issue, not the immediate Claude auth
-regression family. It should be handled in a Codex-wrapper hardening tranche.
-
-Risk:
-
-Any live-but-stuck Codex process can block all later Codex calls indefinitely.
-PID reuse can also keep a stale lock alive incorrectly. Because this is inside
-the wrapper, Bullpen will see a hanging provider rather than a clear setup or
-runtime error.
-
-Potential remediation later:
-
-- Replace the directory spin lock with `flock` if available.
-- Add a timeout.
-- Record lock owner PID, command, and timestamp.
-- On timeout, print a clear error explaining the lock path and owner.
-
-### Deferred: Microsandbox Base Installs Latest Provider CLIs
+### Partially fixed: Microsandbox Base Installs Latest Provider CLIs
 
 Relevant code:
 
-- `deploy/microsandbox/prepare.sh:136` installs latest
-  `@anthropic-ai/claude-code`.
-- `deploy/microsandbox/prepare.sh:137` installs latest `@openai/codex`.
-- `deploy/microsandbox/prepare.sh:138` installs latest
-  `@google/gemini-cli`.
+- `deploy-msb.py` installs latest `@anthropic-ai/claude-code`,
+  `@openai/codex`, and `@google/gemini-cli`.
 
 Reason to defer:
 
@@ -463,9 +444,13 @@ Risk:
 Provider CLI behavior can change under Bullpen without a Bullpen code change.
 That can affect auth storage, flags, output events, and failure modes.
 
+Current mitigation:
+
+- Base preparation records verified CLI versions at
+  `/opt/bullpen-microsandbox-base-versions.txt`.
+
 Potential remediation later:
 
-- Add diagnostic recording of installed provider CLI versions.
 - Add override variables for emergency pinning.
 - Add provider capability probes.
 - Define a regular provider upgrade validation checklist.
@@ -494,7 +479,6 @@ Potential remediation later:
 Deferred after the immediate tranche:
 
 - IPv6 mitigation policy.
-- Codex wrapper lock timeout.
 - Provider CLI version pin/override policy.
 
 ## Suggested Ticket Breakdown

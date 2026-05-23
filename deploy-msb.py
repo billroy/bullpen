@@ -1188,6 +1188,8 @@ REAL_CODEX="$real_codex"
 PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"
 RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/var/lib/bullpen/codex-home}"
 LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/var/lib/bullpen/codex.lock}"
+LOCK_TIMEOUT_SECONDS="\${BULLPEN_CODEX_LOCK_TIMEOUT_SECONDS:-300}"
+LOCK_DEADLINE="\$(( \$(date +%s) + LOCK_TIMEOUT_SECONDS ))"
 
 while ! mkdir "\$LOCK_DIR" 2>/dev/null; do
   if [ -f "\$LOCK_DIR/pid" ]; then
@@ -1196,6 +1198,13 @@ while ! mkdir "\$LOCK_DIR" 2>/dev/null; do
       rm -rf "\$LOCK_DIR"
       continue
     fi
+  fi
+  if [ "\$(date +%s)" -ge "\$LOCK_DEADLINE" ]; then
+    echo "Timed out waiting for Codex lock at \$LOCK_DIR after \${LOCK_TIMEOUT_SECONDS}s." >&2
+    if [ -f "\$LOCK_DIR/pid" ]; then
+      echo "Lock owner pid: \$(cat "\$LOCK_DIR/pid" 2>/dev/null || true)" >&2
+    fi
+    exit 124
   fi
   sleep 0.2
 done
@@ -1530,10 +1539,10 @@ async def run_first_light_command(config: DeployConfig) -> CredentialSummary | N
         raise DeployError("first-light currently supports only Claude")
     runtime = MicrosandboxRuntime()
     await runtime.ensure_installed()
-    await ensure_prepared_base(runtime, config)
     should_deploy = await choose_replace(runtime, config)
     if not should_deploy:
         return None
+    await ensure_prepared_base(runtime, config)
     await replace_existing_sandbox(runtime, config, wait_for_ports=False)
 
     build_runtime_env(config)
@@ -1673,15 +1682,17 @@ PY
             sandbox,
             r"""
             set -euo pipefail
-            python3 --version
-            /opt/bullpen-venv/bin/python -c 'import flask, flask_socketio, pyfiglet'
-            git --version
-            gh --version
-            node --version
-            npm --version
-            claude --version
-            codex --version
-            gemini --version
+            {
+              python3 --version
+              /opt/bullpen-venv/bin/python -c 'import flask, flask_socketio, pyfiglet'
+              git --version
+              gh --version
+              node --version
+              npm --version
+              claude --version
+              codex --version
+              gemini --version
+            } | tee /opt/bullpen-microsandbox-base-versions.txt
             """,
             label="Verifying prepared base",
         )
@@ -1715,10 +1726,10 @@ async def ensure_prepared_base(runtime: MicrosandboxRuntime, config: DeployConfi
 async def deploy(config: DeployConfig) -> CredentialSummary | None:
     runtime = MicrosandboxRuntime()
     await runtime.ensure_installed()
-    await ensure_prepared_base(runtime, config)
     should_deploy = await choose_replace(runtime, config)
     if not should_deploy:
         return None
+    await ensure_prepared_base(runtime, config)
     await replace_existing_sandbox(runtime, config)
     ensure_host_ports_available(config)
 
@@ -1757,11 +1768,12 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
 
 
 def print_success(config: DeployConfig, summary: CredentialSummary) -> None:
-    ui_url = f"http://localhost:{config.bullpen_port}"
+    ui_url = f"http://127.0.0.1:{config.bullpen_port}"
+    app_url = f"http://127.0.0.1:{config.app_port}"
     print()
     print("Bullpen is up.")
     print(f"UI:   {ui_url}")
-    print(f"App:  http://localhost:{config.app_port}")
+    print(f"App:  {app_url}")
     print(f"User: {config.admin_user}")
     print(f"Sandbox: {config.sandbox_name}")
     print(f"Sandbox home: {config.sandbox_home}")

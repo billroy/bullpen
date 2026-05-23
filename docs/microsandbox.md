@@ -364,8 +364,8 @@ After health and credential verification pass, print:
 
 ```text
 Bullpen is up.
-UI:   http://localhost:8080
-App:  http://localhost:3000
+UI:   http://127.0.0.1:8080
+App:  http://127.0.0.1:3000
 User: admin
 Sandbox: bullpen
 Sandbox home: ~/.bullpen/microsandbox-home
@@ -373,7 +373,7 @@ Credential sources attached: N
 Git auth sources attached: N
 ```
 
-Then open `http://localhost:$BULLPEN_PORT` in the host browser unless `--no-open` was supplied. Browser opening is best-effort; printing the URL is required.
+Then open `http://127.0.0.1:$BULLPEN_PORT` in the host browser unless `--no-open` was supplied. Browser opening is best-effort; printing the URL is required.
 
 ## Optional project install
 
@@ -396,7 +396,7 @@ BULLPEN_GITHUB_REPO_URL=https://github.com/billroy/bullpen.git
 ## Acceptance criteria
 
 - `python3 deploy-msb.py --prepare-base` creates a local prepared Bullpen Microsandbox base without requiring an external registry
-- After prepare succeeds, `python3 deploy-msb.py --admin-password test-password --no-open` starts Bullpen on `http://localhost:8080` without running apt or npm
+- After prepare succeeds, `python3 deploy-msb.py --admin-password test-password --no-open` starts Bullpen on `http://127.0.0.1:8080` without running apt or npm
 - `--sandbox-name`, `--workspace`, `--bullpen-port`, `--app-port`, `--admin-user`, `--admin-password`, `--base`, `--replace`, `--no-replace`, and `--no-open` work without prompts
 - Omitting `--admin-password` prompts securely and confirms the password
 - The mounted project appears in Bullpen as `/workspace`

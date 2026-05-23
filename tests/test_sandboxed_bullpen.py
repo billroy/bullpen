@@ -1503,6 +1503,9 @@ def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
     assert r'PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"' in command
     assert r'RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/var/lib/bullpen/codex-home}"' in command
     assert r'LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/var/lib/bullpen/codex.lock}"' in command
+    assert r'LOCK_TIMEOUT_SECONDS="\${BULLPEN_CODEX_LOCK_TIMEOUT_SECONDS:-300}"' in command
+    assert "Timed out waiting for Codex lock" in command
+    assert "exit 124" in command
     assert r'export CODEX_HOME="\$RUNTIME_CODEX_HOME"' in command
     assert r'cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/' in command
     assert 'cli_auth_credentials_store = "file"' in command
@@ -1512,6 +1515,32 @@ def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
     assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen/.codex' not in command
     assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen\n' not in command
     assert "test -w /home/bullpen/.codex" in command
+
+
+def test_print_success_uses_ipv4_loopback(sb, capsys):
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+
+    sb.print_success(config, sb.CredentialSummary())
+
+    output = capsys.readouterr().out
+    assert "UI:   http://127.0.0.1:8080" in output
+    assert "App:  http://127.0.0.1:3000" in output
 
 
 def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):

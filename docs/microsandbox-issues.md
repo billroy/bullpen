@@ -211,16 +211,10 @@ is reached by default anyway.
 
 ### Browser dual-stack delay on "localhost"
 
-The deploy prints `UI: http://localhost:8080`. Browsers on macOS
-resolve `localhost` to both `::1` and `127.0.0.1` and try IPv6 first
-(Happy Eyeballs). Microsandbox's host-side port forward listens on
-v4 only, so the v6 attempt times out (low single-digit seconds on
-modern macOS) before the browser falls back to v4. The user sees
-this as several seconds of "nothing happens after pressing Enter".
-
-Workaround: use `http://127.0.0.1:8080` instead. Could also be fixed
-by making `deploy-msb.py` print the v4 literal in the success
-output.
+**Fix.** `deploy-msb.py` prints `http://127.0.0.1:<port>` in success output
+and opens that URL. Browsers on macOS resolve `localhost` to both `::1` and
+`127.0.0.1`; Microsandbox's host-side port forward has historically been v4
+only, so the v4 literal avoids a low-single-digit-second IPv6 fallback delay.
 
 ### Microsandbox bind-mount syscall errors under load
 
