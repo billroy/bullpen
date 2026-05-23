@@ -132,8 +132,8 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 
 ```
 bullpen.py              # Entry point
-sandboxed-bullpen.py    # Microsandbox deploy/run helper
-deploy/microsandbox/    # Microsandbox prepared-base setup
+deploy-msb.py           # Microsandbox deploy, base setup, and maintenance helper
+deploy/microsandbox/    # Deprecated compatibility wrappers
 server/
   app.py                # Flask app factory, routes, startup reconciliation
   auth.py               # Optional multi-user authentication
@@ -436,24 +436,20 @@ Install the Microsandbox Python package on the host first:
 python3 -m pip install microsandbox
 ```
 
-Microsandbox deploy is a two-step process:
+Microsandbox deploy uses one Python entrypoint. On first run, the script creates
+the reusable local base snapshot if it is missing, then starts Bullpen for the
+project. The base contains Python dependencies, Node.js/npm, Git, GitHub CLI,
+ripgrep, and the Claude, Codex, and Gemini CLIs.
 
-1. Prepare the reusable local base once. This creates a local snapshot with
-   Python dependencies, Node.js/npm, Git, GitHub CLI, ripgrep, and the Claude,
-   Codex, and Gemini CLIs installed.
+```bash
+python3 deploy-msb.py --workspace /path/to/project
+```
 
-   ```bash
-   ./deploy/microsandbox/prepare.sh
-   ```
+To prepare or rebuild the reusable base without starting Bullpen:
 
-2. Start Bullpen for a project. This creates or replaces the named sandbox,
-   mounts the workspace and sandbox home, bootstraps Bullpen login credentials,
-   starts Bullpen, runs sandbox-native provider setup checks, detaches the
-   sandbox, and prints the UI/app URLs.
-
-   ```bash
-   python3 sandboxed-bullpen.py --workspace /path/to/project
-   ```
+```bash
+python3 deploy-msb.py --prepare-base
+```
 
 During the run step, Bullpen prompts for the admin password if
 `--admin-password` is omitted. Provider setup is intentionally sandbox-native:
@@ -471,6 +467,10 @@ and persist under `/home/bullpen`.
 | `--admin-user USER` | `admin` | Bullpen login user to bootstrap inside the sandbox |
 | `--admin-password PASSWORD` | prompt | Bullpen login password; prompted and confirmed when omitted |
 | `--base NAME` | `bullpen-microsandbox-local` | Prepared Microsandbox base snapshot |
+| `--source-image IMAGE` | `node:22-bookworm` | OCI source image used when preparing the base |
+| `--prepare-base` | off | Prepare the reusable base and exit |
+| `--rebuild-base` | off | Rebuild the reusable base before continuing |
+| `--no-prepare-base` | off | Fail instead of preparing a missing base |
 | `--sandbox-home PATH` | `~/.bullpen/microsandbox-home` | Persistent sandbox home for provider auth, Bullpen config, and logs |
 | `--vcpus N` | `4` | Virtual CPUs for the sandbox |
 | `--memory-mib N` | `4096` | Sandbox memory in MiB |
@@ -482,13 +482,13 @@ and persist under `/home/bullpen`.
 Additional maintenance commands:
 
 ```bash
-python3 sandboxed-bullpen.py auth claude
-python3 sandboxed-bullpen.py auth codex
-python3 sandboxed-bullpen.py auth git
-python3 sandboxed-bullpen.py test-provider claude
-python3 sandboxed-bullpen.py test-provider codex
-python3 sandboxed-bullpen.py test-provider git
-python3 sandboxed-bullpen.py first-light claude
+python3 deploy-msb.py auth claude
+python3 deploy-msb.py auth codex
+python3 deploy-msb.py auth git
+python3 deploy-msb.py test-provider claude
+python3 deploy-msb.py test-provider codex
+python3 deploy-msb.py test-provider git
+python3 deploy-msb.py first-light claude
 ```
 
 See [docs/microsandbox.md](docs/microsandbox.md) for implementation details,

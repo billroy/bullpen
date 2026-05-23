@@ -13,7 +13,7 @@ install heavyweight CLIs during every deploy.
 
 ## Architecture
 
-Use a two-phase flow:
+Use a two-phase flow behind one command-line entrypoint:
 
 1. **Prepare phase:** one-time local setup that creates a reusable Bullpen Microsandbox base with all tooling installed.
 2. **Run phase:** fast per-project startup that mounts the project and persistent auth home, syncs credentials, bootstraps Bullpen login, starts Bullpen, and exits.
@@ -24,20 +24,21 @@ No registry is required. The prepared base must live on the local machine.
 
 ## Commands
 
-Provide two scripts:
+Provide one primary script:
 
 ```bash
-./deploy/microsandbox/prepare.sh
-python3 sandboxed-bullpen.py [options]
+python3 deploy-msb.py [options]
 ```
 
-`prepare.sh` is the one-time setup. It installs or builds the local Microsandbox base.
-
-`sandboxed-bullpen.py` is the normal user entrypoint. It refuses to perform heavyweight apt/npm installs. If the prepared base is missing, it tells the user to run `./deploy/microsandbox/prepare.sh`.
+`deploy-msb.py` owns both the reusable base setup and the normal deploy path.
+By default it prepares the base only when the requested local snapshot is
+missing. `--prepare-base` prepares the base and exits, `--rebuild-base`
+rebuilds before deploying, and `--no-prepare-base` restores the old fail-fast
+behavior for operators who want setup to be explicit.
 
 ## Prepare phase
 
-`deploy/microsandbox/prepare.sh` creates a local reusable Bullpen Microsandbox base containing:
+`python3 deploy-msb.py --prepare-base` creates a local reusable Bullpen Microsandbox base containing:
 
 - Python 3 and pip
 - Bullpen Python dependencies
@@ -78,10 +79,10 @@ The prepare phase must keep tool installation separate from user auth/config sta
 
 ## Run phase
 
-`sandboxed-bullpen.py` is command-line driven. Prompting is only for secrets.
+`deploy-msb.py` is command-line driven. Prompting is only for secrets.
 
 ```bash
-python3 sandboxed-bullpen.py [options]
+python3 deploy-msb.py [options]
 ```
 
 Options:
@@ -94,6 +95,11 @@ Options:
 --admin-user USER            Bullpen admin user. Default: admin
 --admin-password PASSWORD    Bullpen admin password. If omitted, prompt securely.
 --base NAME                  Prepared Microsandbox base. Default: bullpen-microsandbox-local
+--source-image IMAGE         OCI image for base preparation. Default: node:22-bookworm
+--source-dir PATH            Bullpen source checkout for base preparation
+--prepare-base               Prepare the reusable base and exit
+--rebuild-base               Rebuild the reusable base before deploy
+--no-prepare-base            Do not auto-prepare a missing base
 --sandbox-home PATH          Persistent sandbox home. Default: ~/.bullpen/microsandbox-home
 --vcpus N                    Virtual CPUs for the final sandbox. Default: 4
 --memory-mib N               Memory for the final sandbox in MiB. Default: 4096
@@ -129,7 +135,7 @@ Validate before creating or replacing the sandbox:
 - The `microsandbox` Python package is importable; otherwise print `python3 -m pip install microsandbox`
 - Microsandbox runtime is installed; install it through the SDK when missing
 - Host is supported by Microsandbox: Apple Silicon macOS or Linux with KVM
-- Prepared Microsandbox base exists locally
+- Prepared Microsandbox base exists locally, or auto-prepare is enabled
 - Workspace path exists and is a directory
 - Bullpen source path exists and contains `bullpen.py`, unless Bullpen source is baked into the prepared base
 - Ports are numeric and in `1..65535`
@@ -137,7 +143,7 @@ Validate before creating or replacing the sandbox:
 - `--replace` and `--no-replace` are not both set
 - Git is installed on the host when `--install-bullpen-project` is used
 
-Fail fast with one clear error message per problem. Do not run apt or npm from `sandboxed-bullpen.py`.
+Fail fast with one clear error message per problem. Do not run apt or npm during the per-project run phase; package managers belong only to the base preparation path in `deploy-msb.py`.
 
 ## Microsandbox implementation
 
@@ -374,7 +380,7 @@ Then open `http://localhost:$BULLPEN_PORT` in the host browser unless `--no-open
 Support:
 
 ```bash
-python3 sandboxed-bullpen.py --install-bullpen-project
+python3 deploy-msb.py --install-bullpen-project
 ```
 
 When enabled, clone `BULLPEN_GITHUB_REPO_URL` into the default local project path and use that as `--workspace`.
@@ -389,8 +395,8 @@ BULLPEN_GITHUB_REPO_URL=https://github.com/billroy/bullpen.git
 
 ## Acceptance criteria
 
-- `deploy/microsandbox/prepare.sh` creates a local prepared Bullpen Microsandbox base without requiring an external registry
-- After prepare succeeds, `python3 sandboxed-bullpen.py --admin-password test-password --no-open` starts Bullpen on `http://localhost:8080` without running apt or npm
+- `python3 deploy-msb.py --prepare-base` creates a local prepared Bullpen Microsandbox base without requiring an external registry
+- After prepare succeeds, `python3 deploy-msb.py --admin-password test-password --no-open` starts Bullpen on `http://localhost:8080` without running apt or npm
 - `--sandbox-name`, `--workspace`, `--bullpen-port`, `--app-port`, `--admin-user`, `--admin-password`, `--base`, `--replace`, `--no-replace`, and `--no-open` work without prompts
 - Omitting `--admin-password` prompts securely and confirms the password
 - The mounted project appears in Bullpen as `/workspace`
@@ -401,7 +407,7 @@ BULLPEN_GITHUB_REPO_URL=https://github.com/billroy/bullpen.git
 - The script refuses invalid ports and refuses to use the same port for Bullpen and the app
 - `--no-replace` exits nonzero without modifying an existing sandbox
 - Answering no to the replacement prompt exits successfully without modifying an existing sandbox
-- After success, `sandboxed-bullpen.py` exits while the Microsandbox runtime and Bullpen process keep running
+- After success, `deploy-msb.py` exits while the Microsandbox runtime and Bullpen process keep running
 - Failure to start Bullpen prints useful logs and exits nonzero
 - The implementation uses the Microsandbox Python SDK directly and does not require `msb server start --dev`
 

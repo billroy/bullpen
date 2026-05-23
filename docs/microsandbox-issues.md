@@ -51,7 +51,7 @@ landing here: OAuth refresh stampedes, missing CA bundles
 Werkzeug + simple-websocket failures, and DNS misconfiguration. Each
 looked like a hit at one stage and was ruled out by an isolated test.
 
-**Fix.** [`sandboxed-bullpen.py`](../sandboxed-bullpen.py) now writes
+**Fix.** [`deploy-msb.py`](../deploy-msb.py) now writes
 `/etc/security/limits.d/bullpen-fd.conf` during `prepare_runtime_dirs`:
 
 ```
@@ -169,7 +169,7 @@ upgrade is complete. Not worth the regression risk.
 
 ### Claude has no serializing wrapper; Codex does
 
-Codex runs through [`/home/bullpen/bin/codex`](../sandboxed-bullpen.py) — a
+Codex runs through [`/home/bullpen/bin/codex`](../deploy-msb.py) — a
 wrapper installed by `install_codex_wrapper` that grabs an `mkdir`-based
 lock at `/var/lib/bullpen/codex.lock` and admits one codex invocation at
 a time. Even under heavy load only one codex is alive.
@@ -219,7 +219,7 @@ modern macOS) before the browser falls back to v4. The user sees
 this as several seconds of "nothing happens after pressing Enter".
 
 Workaround: use `http://127.0.0.1:8080` instead. Could also be fixed
-by making `sandboxed-bullpen.py` print the v4 literal in the success
+by making `deploy-msb.py` print the v4 literal in the success
 output.
 
 ### Microsandbox bind-mount syscall errors under load
@@ -397,7 +397,7 @@ microVM network or upstream is in a stressed state.
 
 ## Verifying the FD-limit fix after redeploy
 
-After `python3 sandboxed-bullpen.py --replace`:
+After `python3 deploy-msb.py --replace`:
 
 ```bash
 msb exec bullpen -- su -s /bin/bash bullpen -c 'ulimit -Hn'
@@ -416,4 +416,4 @@ deploy without needing an after-the-fact check.
 - Related earlier commits: `f7aa0b1`, `bf96a92`, `cde9a6a`, `544209b`, `61bf4c5`
 - Claude adapter: [server/agents/claude_adapter.py](../server/agents/claude_adapter.py)
 - Codex serializing wrapper, for reference: `install_codex_wrapper` in
-  [sandboxed-bullpen.py](../sandboxed-bullpen.py)
+  [deploy-msb.py](../deploy-msb.py)
