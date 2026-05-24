@@ -227,6 +227,35 @@ const app = createApp({
       document.title = project ? `Bullpen : ${project}` : 'Bullpen';
     }
 
+    const ACTIVE_PROJECT_STORAGE_KEY = 'bullpen.activeWorkspaceId';
+
+    function _rememberActiveWorkspace(wsId) {
+      try {
+        if (wsId) localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, wsId);
+      } catch (e) { /* ignore */ }
+    }
+
+    function _loadRememberedWorkspace() {
+      try {
+        return localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function _availableProjectIds() {
+      return projects.filter(p => p.available !== false).map(p => p.id);
+    }
+
+    function _restoreWorkspaceAfterProjectsUpdate() {
+      if (activeWorkspaceId.value) return;
+      const availableIds = _availableProjectIds();
+      if (!availableIds.length) return;
+      const remembered = _loadRememberedWorkspace();
+      const target = availableIds.includes(remembered) ? remembered : availableIds[0];
+      switchWorkspace(target);
+    }
+
     function switchWorkspace(wsId) {
       if (!wsId) return;
       // Accept switches to workspaces the client has not yet joined. The server
@@ -242,6 +271,7 @@ const app = createApp({
       }
       const wasLiveAgent = !!currentChatTab;
       activeWorkspaceId.value = wsId;
+      _rememberActiveWorkspace(wsId);
       workspaces[wsId].unseenActivity = 0;
       ticketListScope.value = 'live';
       // Join the workspace room before emitting any workspace-scoped events
@@ -761,6 +791,7 @@ const app = createApp({
     socket.on('projects:updated', (list) => {
       projects.splice(0, projects.length, ...list);
       projectsLoaded.value = true;
+      _restoreWorkspaceAfterProjectsUpdate();
     });
     socket.on('project:removed', (data) => {
       const removedId = data.workspaceId;
@@ -1260,6 +1291,7 @@ const app = createApp({
     }
 
     const allTabs = computed(() => {
+      if (!activeWorkspaceId.value) return [];
       const activeWorkerCount = (state.layout?.slots || []).filter(s => ['working', 'retrying'].includes(s?.state)).length;
       const shownTicketCount = Number.isFinite(ticketListShownCount.value) ? ticketListShownCount.value : visibleTicketTasks.value.length;
       const ticketsLabel = ticketsViewMode.value === 'list' ? `Tickets (${shownTicketCount})` : 'Tickets';
@@ -1792,8 +1824,8 @@ const app = createApp({
                 <span v-if="tab.isChat && tab.canClose" class="tab-close" @click.stop="closeLiveAgentTab(tab.id)">&times;</span>
                 <span v-if="tab.isTerminal" class="tab-close" @click.stop="closeTerminalTab(tab.id)">&times;</span>
               </button>
-              <button class="tab-btn tab-btn-add" @click="addLiveAgentTab" title="Add Live Agent tab">+</button>
-              <button class="tab-btn tab-btn-add tab-btn-terminal-add" @click="addTerminalTab" title="New terminal" aria-label="New terminal">
+              <button v-if="activeWorkspaceId" class="tab-btn tab-btn-add" @click="addLiveAgentTab" title="Add Live Agent tab">+</button>
+              <button v-if="activeWorkspaceId" class="tab-btn tab-btn-add tab-btn-terminal-add" @click="addTerminalTab" title="New terminal" aria-label="New terminal">
                 <i data-lucide="terminal" aria-hidden="true"></i>
               </button>
             </div>
@@ -1810,7 +1842,7 @@ const app = createApp({
           </div>
           <div class="tab-content">
             <KanbanTab
-              v-if="activeTab === 'tasks'"
+              v-if="activeWorkspaceId && activeTab === 'tasks'"
               :tasks="visibleTicketTasks"
               :columns="state.config.columns"
               :layout="state.layout"
@@ -1825,7 +1857,7 @@ const app = createApp({
               @update-shown-count="setTicketListShownCount"
             />
             <BullpenTab
-              v-if="activeTab === 'workers'"
+              v-if="activeWorkspaceId && activeTab === 'workers'"
               ref="bullpenTabRef"
               :layout="state.layout"
               :config="state.config"
@@ -1841,9 +1873,9 @@ const app = createApp({
               @open-focus="openFocusTab"
               @transfer-worker="openTransfer"
             />
-            <FilesTab v-if="activeTab === 'files'" :files-version="state.filesVersion" :workspace-id="activeWorkspaceId" :key="'files-' + (activeWorkspaceId || 'none')" />
+            <FilesTab v-if="activeWorkspaceId && activeTab === 'files'" :files-version="state.filesVersion" :workspace-id="activeWorkspaceId" :key="'files-' + (activeWorkspaceId || 'none')" />
             <StatsTab
-              v-if="activeTab === 'stats'"
+              v-if="activeWorkspaceId && activeTab === 'stats'"
               :tasks="state.tasks"
               :archived-tasks="workspaces[activeWorkspaceId]?.archivedTasks || []"
               :columns="state.config.columns"
@@ -1852,7 +1884,7 @@ const app = createApp({
               @select-task="selectTask"
             />
             <CommitsTab
-              v-if="activeTab === 'commits'"
+              v-if="activeWorkspaceId && activeTab === 'commits'"
               :workspace-id="activeWorkspaceId"
               :open-diff-hash="requestedCommitDiffHash"
               @handled-open-diff-hash="requestedCommitDiffHash = ''"

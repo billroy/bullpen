@@ -17,7 +17,8 @@ const LeftPane = {
           <div class="project-menu-wrap" @click.stop>
             <button class="btn btn-sm" @click="toggleProjectMenu">...</button>
             <div v-if="showEmptyProjectHint" class="project-menu-tooltip" role="status" aria-live="polite">
-              Open the menu to add or create your first project.
+              <span>Add a project from /workspace to start.</span>
+              <button class="btn-icon project-hint-dismiss" title="Dismiss" @click.stop="dismissEmptyProjectHint">&times;</button>
             </div>
             <div v-if="showProjectMenu" class="project-menu">
               <button class="project-menu-item" @click="promptAddProject"><i class="menu-item-icon" data-lucide="folder-open" aria-hidden="true"></i><span class="menu-item-label">Add Project</span></button>
@@ -49,7 +50,7 @@ const LeftPane = {
           </div>
         </div>
       </div>
-      <div class="left-pane-section">
+      <div v-if="activeWorkspaceId" class="left-pane-section">
         <div class="section-header">
           <select class="column-select" v-model="selectedColumn">
             <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
@@ -72,7 +73,7 @@ const LeftPane = {
           </div>
         </div>
       </div>
-      <div class="left-pane-section">
+      <div v-if="activeWorkspaceId" class="left-pane-section">
         <div class="section-header">
           <h3>Workers</h3>
         </div>
@@ -234,6 +235,9 @@ const LeftPane = {
     leftPaneStyle() {
       if (!this.visible) return null;
       return { width: `${this.draggingWidth || this.paneWidth}px` };
+    },
+    projectCount() {
+      return Array.isArray(this.projects) ? this.projects.length : 0;
     }
   },
   watch: {
@@ -250,7 +254,23 @@ const LeftPane = {
         // must not be mistaken for "user has zero projects".
         if (!loaded || this.emptyProjectHintInitialized) return;
         this.emptyProjectHintInitialized = true;
-        this.showEmptyProjectHint = Array.isArray(this.projects) && this.projects.length === 0;
+        if (this.projectCount === 0 && !this.activeWorkspaceId) {
+          this.showProjectMenu = true;
+          this.showEmptyProjectHint = true;
+          window.dispatchEvent(new Event('bullpen:menu:close-main'));
+        }
+      }
+    },
+    projectCount(count) {
+      if (count > 0) {
+        this.showEmptyProjectHint = false;
+        this.showProjectMenu = false;
+      }
+    },
+    activeWorkspaceId(next) {
+      if (next) {
+        this.showEmptyProjectHint = false;
+        this.showProjectMenu = false;
       }
     },
     showProjectMenu(next) {
@@ -304,6 +324,9 @@ const LeftPane = {
     },
     onExternalCloseProjectMenu() {
       this.showProjectMenu = false;
+      this.showEmptyProjectHint = false;
+    },
+    dismissEmptyProjectHint() {
       this.showEmptyProjectHint = false;
     },
     onDragStart(e, taskId) {

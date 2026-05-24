@@ -31,7 +31,7 @@ def test_stats_tab_uses_archived_ticket_cache_and_refreshes_archive_scope():
     app = _read("static/app.js")
     component = _read("static/components/StatsTab.js")
     assert "StatsTab," in app
-    assert 'v-if="activeTab === \'stats\'"' in app
+    assert 'v-if="activeWorkspaceId && activeTab === \'stats\'"' in app
     assert ':archived-tasks="workspaces[activeWorkspaceId]?.archivedTasks || []"' in app
     assert "if (tabId === 'stats' && activeWorkspaceId.value)" in app
     assert "socket.emit('task:list', _wsData({ scope: 'archived' }));" in app

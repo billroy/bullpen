@@ -1076,8 +1076,8 @@ body {
 
 .project-menu-tooltip {
   position: absolute;
-  /* Anchor below the "..." button so the section header above cannot clip it. */
-  top: calc(100% + 10px);
+  /* Anchor below the open menu so the hint does not cover Add Project. */
+  top: calc(100% + 116px);
   right: 0;
   width: 260px;
   max-width: 260px;
@@ -1085,12 +1085,21 @@ body {
   color: #fff;
   border: 1px solid #000;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 10px 34px 10px 12px;
   font-size: 13px;
   line-height: 1.4;
   white-space: normal;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-  z-index: 1000;
+  z-index: 41;
+}
+
+.project-hint-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  color: #fff;
 }
 
 .project-menu-tooltip::after {

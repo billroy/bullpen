@@ -24,7 +24,9 @@ def test_leftpane_projects_header_uses_menu_button_with_add_and_new_options():
 def test_leftpane_empty_project_hint_tooltip_is_wired():
     text = _read("static/components/LeftPane.js")
     assert "v-if=\"showEmptyProjectHint\" class=\"project-menu-tooltip\"" in text
-    assert "Open the menu to add or create your first project." in text
+    assert "Add a project from /workspace to start." in text
+    assert "dismissEmptyProjectHint" in text
+    assert "this.showProjectMenu = true;" in text
     assert "emptyProjectHintInitialized" in text
     # Hint must key off a "server has responded" signal, not the raw projects
     # array — the reactive([]) initial value is indistinguishable from a real
@@ -88,6 +90,7 @@ def test_switching_projects_joins_project_socket_room():
     text = _read("static/app.js")
     assert "function switchWorkspace(wsId)" in text
     assert "socket.emit('project:join', { workspaceId: wsId });" in text
+    assert "_rememberActiveWorkspace(wsId);" in text
 
 
 def test_switch_workspace_does_not_early_return_on_unjoined_workspace():
@@ -98,6 +101,18 @@ def test_switch_workspace_does_not_early_return_on_unjoined_workspace():
     appears in the project list so project:join can actually be sent."""
     text = _read("static/app.js")
     assert "if (!workspaces[wsId]) return;" not in text
+
+
+def test_projects_update_restores_remembered_or_first_available_workspace():
+    text = _read("static/app.js")
+    assert "const ACTIVE_PROJECT_STORAGE_KEY = 'bullpen.activeWorkspaceId';" in text
+    assert "localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, wsId);" in text
+    assert "localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY)" in text
+    assert "function _restoreWorkspaceAfterProjectsUpdate()" in text
+    assert "if (activeWorkspaceId.value) return;" in text
+    assert "projects.filter(p => p.available !== false).map(p => p.id)" in text
+    assert "availableIds.includes(remembered) ? remembered : availableIds[0]" in text
+    assert "_restoreWorkspaceAfterProjectsUpdate();" in text
 
 
 def test_project_menu_styles_exist():
