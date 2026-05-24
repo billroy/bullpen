@@ -1243,8 +1243,10 @@ test -w /home/bullpen
 async def configure_codex_cli(sandbox: Any, config: DeployConfig) -> None:
     command = r'''set -e
 mkdir -p /home/bullpen/.codex
+mkdir -p /home/bullpen/.codex/tmp/arg0
 rm -f /home/bullpen/bin/codex
 rm -rf /var/lib/bullpen/codex-home /var/lib/bullpen/codex.lock
+rm -rf /home/bullpen/.codex/tmp/arg0/codex-arg0*
 config_file="/home/bullpen/.codex/config.toml"
 touch "$config_file"
 if grep -Eq '^[[:space:]]*cli_auth_credentials_store[[:space:]]*=' "$config_file"; then
@@ -1258,6 +1260,7 @@ if [ -z "$real_codex" ] || [ ! -x "$real_codex" ]; then
   exit 1
 fi
 chown bullpen:"$(id -gn bullpen)" /home/bullpen/.codex /home/bullpen/.codex/config.toml
+chown -R bullpen:"$(id -gn bullpen)" /home/bullpen/.codex/tmp
 su -s /bin/bash bullpen -c 'test -x "$BULLPEN_CODEX_PATH" && test -w /home/bullpen/.codex && grep -Eq "^[[:space:]]*cli_auth_credentials_store[[:space:]]*=[[:space:]]*\"file\"" /home/bullpen/.codex/config.toml'
 '''
     await run_configured_sandbox_shell(sandbox, config, command, label="configure Codex CLI")

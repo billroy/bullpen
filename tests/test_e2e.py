@@ -12,6 +12,31 @@ from server.app import create_app, socketio
 from server.agents import register_adapter
 from server.validation import MAX_TITLE
 from tests.conftest import MockAdapter
+from server import workers as workers_mod
+
+
+def _wait_for_worker_threads(timeout=3.0):
+    """Let daemon worker threads finish their final filesystem writes."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with workers_mod._process_lock:
+            no_processes = not workers_mod._processes
+        with workers_mod._deferred_start_lock:
+            active_deferred = [t for t in workers_mod._deferred_start_threads if t.is_alive()]
+        if no_processes and not active_deferred:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _stop_app_background(app):
+    manager = app.config.get("manager")
+    if not manager:
+        return
+    for ws in manager.all_workspaces():
+        scheduler = getattr(ws, "scheduler", None)
+        if scheduler:
+            scheduler.stop()
 
 
 @pytest.fixture
@@ -25,6 +50,8 @@ def client():
         client.get_received()
         yield client, app
         client.disconnect()
+        assert _wait_for_worker_threads()
+        _stop_app_background(app)
 
 
 def get_event(client, name):

@@ -1604,12 +1604,15 @@ def test_configure_codex_cli_uses_real_codex_with_file_auth_store(sb):
     assert "CODEX_RUNTIME_HOME" not in command
     assert "LOCK_TIMEOUT_SECONDS" not in command
     assert "cp -a" not in command
+    assert "mkdir -p /home/bullpen/.codex/tmp/arg0" in command
+    assert "rm -rf /home/bullpen/.codex/tmp/arg0/codex-arg0*" in command
     assert 'cli_auth_credentials_store = "file"' in command
     assert 'grep -Eq "^[[:space:]]*cli_auth_credentials_store' in command
     assert 'real_codex="${BULLPEN_CODEX_PATH:-$(command -v codex)}"' in command
     assert 'test -x "$BULLPEN_CODEX_PATH"' in command
     assert 'chown bullpen:"$(id -gn bullpen)" /home/bullpen/.codex /home/bullpen/.codex/config.toml' in command
-    assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen/.codex' not in command
+    assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen/.codex/tmp' in command
+    assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen/.codex\n' not in command
     assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen\n' not in command
     assert "test -w /home/bullpen/.codex" in command
 
