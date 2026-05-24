@@ -159,6 +159,45 @@ class TestTaskEvents:
         assert updated["priority"] == "urgent"
         assert updated["title"] == "Update Me"
 
+    def test_mcp_status_update_for_owned_task_records_final_status(self, client):
+        c, app = client
+        bp_dir = app.config["bp_dir"]
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0,
+            "profile": "test",
+            "name": "Test Worker",
+            "agent": "mock",
+            "model": "mock-model",
+            "activation": "manual",
+            "disposition": "random:",
+            "watch_column": None,
+            "expertise_prompt": "",
+            "max_retries": 0,
+            "task_queue": [],
+            "state": "idle",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        c.emit("task:create", {"title": "MCP final status"})
+        task = get_event(c, "task:created")
+        workers_mod.assign_task(bp_dir, 0, task["id"])
+        c.get_received()
+
+        token = mcp_auth.read_workspace_mcp_token(bp_dir)
+        mcp_client = socketio.test_client(app, auth={"mcp_token": token})
+        try:
+            mcp_client.get_received()
+            mcp_client.emit("task:update", {"id": task["id"], "status": "done"})
+            updated = get_event(mcp_client, "task:updated")
+            assert updated["status"] == "assigned"
+            assert str(updated["assigned_to"]) == "0"
+            assert updated["worker_requested_status"] == "done"
+            updated_layout = read_json(os.path.join(bp_dir, "layout.json"))
+            assert task["id"] in updated_layout["slots"][0]["task_queue"]
+        finally:
+            mcp_client.disconnect()
+
     def test_create_task_auto_joins_target_workspace_on_first_action(self, client):
         c, app = client
         c2 = socketio.test_client(app)

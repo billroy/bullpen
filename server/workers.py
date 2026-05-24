@@ -572,6 +572,7 @@ def assign_task(
     updates = {
         "assigned_to": str(slot_index),
         "status": "assigned",
+        "worker_requested_status": "",
     }
     if not preserve_handoff_depth:
         updates["handoff_depth"] = 0
@@ -1310,9 +1311,10 @@ def _assemble_prompt(bp_dir, worker, task):
         parts.append(
             f"Task ID: `{task['id']}`. If you need to add notes or update "
             f"the body of this ticket, call `mcp__bullpen__update_ticket` "
-            f"with this ID directly (do not search by title). "
-            f"Do NOT change the ticket's `status` — the worker will set the "
-            f"final status based on its configured output."
+            f"with this ID directly (do not search by title). If your "
+            f"instructions require a final ticket status, request it with "
+            f"`update_ticket(status=...)`; Bullpen will apply that status "
+            f"after this worker run finishes."
         )
     if task.get("body"):
         parts.append(render_untrusted_text_block("Ticket Body", task["body"], "TASK_BODY"))
@@ -1864,6 +1866,24 @@ def _resolve_column_disposition(bp_dir, disposition):
             f"Task moved to '{fallback}' instead."
         )
     return fallback, warning
+
+
+def _resolve_worker_requested_status(bp_dir, status):
+    """Resolve an agent-requested final status to a real column only."""
+    value = str(status or "").strip()
+    if not value:
+        return None, None
+    folded = value.casefold()
+    if folded in {"review", "done", "blocked"}:
+        return folded, None
+    column_keys = _configured_column_keys(bp_dir)
+    if value in set(column_keys):
+        return value, None
+    fallback = _fallback_disposition_column(column_keys)
+    return fallback, (
+        f"Invalid worker-requested status '{value}': no matching column exists "
+        f"in this workspace. Task moved to '{fallback}' instead."
+    )
 
 
 def _validate_shell_ticket_updates(updates):
@@ -2601,7 +2621,16 @@ def _on_agent_success(
                 queue.pop(0)
 
             # Disposition: move task to target column or hand off to another worker
-            disposition = disposition_override or worker.get("disposition", "review")
+            task = task_mod.read_task(bp_dir, task_id)
+            worker_requested_status = (task or {}).get("worker_requested_status")
+            requested_status_warning = None
+            if worker_requested_status and not disposition_override:
+                disposition, requested_status_warning = _resolve_worker_requested_status(
+                    bp_dir,
+                    worker_requested_status,
+                )
+            else:
+                disposition = disposition_override or worker.get("disposition", "review")
             handed_off = False
             if disposition.startswith("worker:"):
                 target_name = disposition[len("worker:"):].strip()
@@ -2620,7 +2649,10 @@ def _on_agent_success(
                 _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, socketio, ws_id)
                 handed_off = True
             else:
-                disposition, invalid_disposition_warning = _resolve_column_disposition(bp_dir, disposition)
+                if requested_status_warning:
+                    invalid_disposition_warning = requested_status_warning
+                else:
+                    disposition, invalid_disposition_warning = _resolve_column_disposition(bp_dir, disposition)
                 if invalid_disposition_warning:
                     _append_output(bp_dir, task_id, worker, f"[CONFIG] {invalid_disposition_warning}")
                     if socketio:
@@ -2636,6 +2668,7 @@ def _on_agent_success(
                     "status": disposition,
                     "assigned_to": "",
                     "handoff_depth": 0,
+                    "worker_requested_status": "",
                 })
 
             if not handed_off:
@@ -2904,6 +2937,7 @@ def _on_agent_error(
             task_mod.update_task(bp_dir, task_id, {
                 "status": "blocked",
                 "assigned_to": "",
+                "worker_requested_status": "",
             })
 
             _mark_worker_idle(worker)

@@ -419,8 +419,8 @@ def register_events(socketio, app):
         # `status=done` update would kill its own process before
         # _on_agent_success can run, skipping output logging and the
         # worker's configured disposition. The agent's terminal status
-        # update is also discarded for the same reason — the worker owns
-        # the final status.
+        # update is deferred for the same reason — the worker success path
+        # owns the final status write.
         if "status" in fields:
             old_task = task_mod.read_task(bp_dir, task_id)
             old_status = old_task.get("status") if old_task else None
@@ -430,13 +430,18 @@ def register_events(socketio, app):
 
             if old_status in ("assigned", "in_progress") and new_status not in ("assigned", "in_progress"):
                 if is_mcp_caller:
-                    # Drop the status change; let the worker decide.
+                    # Do not move the ticket immediately while the worker's
+                    # process is still alive. Record the requested final
+                    # status so the worker success path can apply it after
+                    # output logging and queue cleanup.
+                    fields["worker_requested_status"] = new_status
                     fields.pop("status", None)
                 else:
                     worker_mod.yank_from_worker(bp_dir, task_id, socketio, ws_id)
                     # Clear assignment since the task is leaving the worker system
                     fields["assigned_to"] = ""
                     fields["handoff_depth"] = 0
+                    fields["worker_requested_status"] = ""
 
         task = task_mod.update_task(bp_dir, task_id, fields)
         _emit("task:updated", task, ws_id)

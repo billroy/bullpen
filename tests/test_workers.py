@@ -1928,6 +1928,40 @@ class TestHandoff:
         updated_layout = _load_layout(bp_dir)
         assert task["id"] in updated_layout["slots"][1]["task_queue"]
 
+    def test_worker_requested_status_overrides_random_handoff(self, bp_dir):
+        """An agent-requested final column wins over the worker's pass disposition."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "random:",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Other", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Done beats random")
+        assign_task(bp_dir, 0, task["id"])
+        update_task(bp_dir, task["id"], {"worker_requested_status": "done"})
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "done"
+        assert updated["assigned_to"] == ""
+        assert updated.get("worker_requested_status") == ""
+        assert task["id"] not in updated_layout["slots"][1]["task_queue"]
+
     def test_random_pass_no_match_blocks(self, bp_dir):
         """random:<name> with no matching worker → task moves to blocked."""
         layout = read_json(os.path.join(bp_dir, "layout.json"))
