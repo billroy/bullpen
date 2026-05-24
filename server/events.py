@@ -28,6 +28,7 @@ from server import service_worker as service_worker_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server import mcp_auth
+from server.workspace_manager import ensure_within_projects_root
 from server.prompt_hardening import (
     TRUST_MODE_UNTRUSTED,
     harden_agent_argv,
@@ -299,8 +300,16 @@ def register_events(socketio, app):
             ws_id = bound_ws_id
         if not ws_id:
             ws_id = app.config["startup_workspace_id"]
-            logging.warning("_resolve() fallback to startup_workspace_id %s — caller sent no workspaceId", ws_id)
-        return ws_id, manager.get_bp_dir(ws_id)
+            if ws_id:
+                logging.warning("_resolve() fallback to startup_workspace_id %s — caller sent no workspaceId", ws_id)
+        if not ws_id:
+            emit("error", {"message": "No active workspace. Add or select a project first."})
+            return None, None
+        try:
+            return ws_id, manager.get_bp_dir(ws_id)
+        except KeyError:
+            emit("error", {"message": f"Unknown workspace: {ws_id}"})
+            return None, None
 
     def _bound_mcp_workspace():
         from server.app import mcp_sid_workspace
@@ -1302,6 +1311,11 @@ def register_events(socketio, app):
         if ".." in path.split(os.sep):
             emit("error", {"message": f"Invalid path: {path}"})
             return
+        try:
+            ensure_within_projects_root(path)
+        except ValueError as e:
+            emit("error", {"message": str(e)})
+            return
 
         if os.path.exists(path):
             if not os.path.isdir(path):
@@ -1350,6 +1364,11 @@ def register_events(socketio, app):
 
         if ".." in path.split(os.sep):
             emit("error", {"message": f"Invalid path: {path}"})
+            return
+        try:
+            ensure_within_projects_root(path)
+        except ValueError as e:
+            emit("error", {"message": str(e)})
             return
 
         if os.path.exists(path):

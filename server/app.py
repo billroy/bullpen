@@ -262,14 +262,17 @@ def create_app(
     host="127.0.0.1",
     port=5000,
     websocket_debug=False,
+    start_without_project=False,
 ):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
     startup_workspace_name = (os.environ.get("BULLPEN_WORKSPACE_NAME") or "").strip() or None
+    start_without_project = bool(start_without_project) or os.environ.get("BULLPEN_START_WITHOUT_PROJECT") == "1"
 
-    # Initialize workspace manager and register startup project
+    # Initialize workspace manager and register startup project unless this
+    # runtime intentionally starts as an empty project shell.
     manager = WorkspaceManager(global_dir=global_dir)
-    startup_id = manager.register_project(workspace, name=startup_workspace_name)
+    startup_id = None if start_without_project else manager.register_project(workspace, name=startup_workspace_name)
     # Activate all persisted projects so the UI can switch between them immediately.
     # The registry can contain projects from prior runs that need in-memory state.
     for entry in manager.list_projects():
@@ -282,7 +285,7 @@ def create_app(
             # Keep the registry entry so it returns when the path comes back;
             # do not silently delete user data.
             continue
-    bp_dir = manager.get_bp_dir(startup_id)
+    bp_dir = manager.get_bp_dir(startup_id) if startup_id else None
 
     app = Flask(
         __name__,
@@ -325,8 +328,9 @@ def create_app(
     app.config["manager"] = manager
     app.config["startup_workspace_id"] = startup_id
     # Backward-compat: existing handlers still use these directly
-    app.config["workspace"] = workspace
+    app.config["workspace"] = None if start_without_project else workspace
     app.config["bp_dir"] = bp_dir
+    app.config["start_without_project"] = start_without_project
     app.config["no_browser"] = no_browser
 
     login_failures = {}
@@ -524,12 +528,31 @@ def create_app(
             return redirect(url_for("login"))
         return redirect(url_for("index"))
 
+    def _workspace_id_from_args():
+        return request.args.get("workspaceId") or startup_id
+
+    def _workspace_id_from_payload(payload):
+        return (payload or {}).get("workspaceId") or startup_id
+
+    def _workspace_required_response():
+        return jsonify({"error": "No active workspace. Add or select a project first."}), 400
+
+    def _workspace_from_id(ws_id, *, activate=False):
+        if not ws_id:
+            return None, _workspace_required_response()
+        ws = manager.get_or_activate(ws_id) if activate else manager.get(ws_id)
+        if ws is None:
+            return None, (jsonify({"error": "Unknown workspace"}), 404)
+        return ws, None
+
     @app.route("/api/commits")
     @auth.require_auth
     def get_commits():
         """Return git log entries for the active workspace."""
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws_path = manager.get_workspace_path(ws_id)
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
+        ws_path = ws.path
         try:
             count = min(max(int(request.args.get("count", 10)), 1), 50)
         except (ValueError, TypeError):
@@ -586,8 +609,10 @@ def create_app(
     @auth.require_auth
     def get_commit_diff(commit_hash):
         """Return the patch for a specific commit in the active workspace."""
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws_path = manager.get_workspace_path(ws_id)
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
+        ws_path = ws.path
         if not re.fullmatch(r"[0-9a-fA-F]{7,40}", commit_hash or ""):
             return jsonify({"error": "Invalid commit hash"}), 400
         try:
@@ -606,8 +631,10 @@ def create_app(
     @auth.require_auth
     def file_tree():
         """Return workspace file tree."""
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws_path = manager.get_workspace_path(ws_id)
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
+        ws_path = ws.path
         tree = build_file_tree(ws_path)
         return jsonify(tree)
 
@@ -615,8 +642,10 @@ def create_app(
     @auth.require_auth
     def file_content(filepath):
         """Return file content."""
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws_path = manager.get_workspace_path(ws_id)
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
+        ws_path = ws.path
         full_path = os.path.join(ws_path, filepath)
         try:
             ensure_within(full_path, ws_path)
@@ -652,8 +681,10 @@ def create_app(
     @auth.require_auth
     def file_write(filepath):
         """Write file content."""
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws_path = manager.get_workspace_path(ws_id)
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
+        ws_path = ws.path
         full_path = os.path.join(ws_path, filepath)
         try:
             ensure_within(full_path, ws_path)
@@ -917,10 +948,9 @@ def create_app(
     @app.route("/api/export/workspace")
     @auth.require_auth
     def export_workspace():
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws = manager.get(ws_id)
-        if ws is None:
-            return jsonify({"error": "Unknown workspace"}), 404
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
         export_name = f"bullpen-workspace-{ws.name}-{ws.id[:8]}.zip"
         return send_file(
             _export_workspace_zip_bytes(ws),
@@ -943,10 +973,9 @@ def create_app(
     @app.route("/api/export/workers")
     @auth.require_auth
     def export_workers():
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws = manager.get(ws_id)
-        if ws is None:
-            return jsonify({"error": "Unknown workspace"}), 404
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
         export_name = f"bullpen-workers-{ws.name}-{ws.id[:8]}.zip"
         return send_file(
             _export_workers_zip_bytes(ws),
@@ -958,10 +987,9 @@ def create_app(
     @app.route("/api/export/worker")
     @auth.require_auth
     def export_worker():
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws = manager.get(ws_id)
-        if ws is None:
-            return jsonify({"error": "Unknown workspace"}), 404
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
         try:
             slot = int(request.args.get("slot"))
         except (TypeError, ValueError):
@@ -982,10 +1010,9 @@ def create_app(
     @auth.require_auth
     def service_preview():
         payload = request.get_json(silent=True) or {}
-        ws_id = payload.get("workspaceId", startup_id)
-        ws = manager.get_or_activate(ws_id)
-        if ws is None:
-            return jsonify({"error": "Unknown workspace"}), 404
+        ws, error = _workspace_from_id(_workspace_id_from_payload(payload), activate=True)
+        if error:
+            return error
         slot = payload.get("slot")
         try:
             slot = int(slot)
@@ -1035,10 +1062,10 @@ def create_app(
     @app.route("/api/import/workspace", methods=["POST"])
     @auth.require_auth
     def import_workspace():
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws = manager.get(ws_id)
-        if ws is None:
-            return jsonify({"error": "Unknown workspace"}), 404
+        ws_id = _workspace_id_from_args()
+        ws, error = _workspace_from_id(ws_id)
+        if error:
+            return error
         upload = request.files.get("file")
         if not upload or not upload.filename:
             return jsonify({"error": "Missing upload file"}), 400
@@ -1061,10 +1088,10 @@ def create_app(
     @app.route("/api/import/workers", methods=["POST"])
     @auth.require_auth
     def import_workers():
-        ws_id = request.args.get("workspaceId", startup_id)
-        ws = manager.get(ws_id)
-        if ws is None:
-            return jsonify({"error": "Unknown workspace"}), 404
+        ws_id = _workspace_id_from_args()
+        ws, error = _workspace_from_id(ws_id)
+        if error:
+            return error
         upload = request.files.get("file")
         if not upload or not upload.filename:
             return jsonify({"error": "Missing upload file"}), 400

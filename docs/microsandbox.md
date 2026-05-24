@@ -89,7 +89,7 @@ Options:
 
 ```text
 --sandbox-name NAME          Sandbox name. Default: bullpen
---workspace PATH             Project directory mounted as /workspace/<project-name>. Default: current directory
+--workspace-root PATH        Host directory containing project directories; mounted as /workspace. Required for deploy.
 --bullpen-port PORT          Host and guest Bullpen port. Default: 8080
 --app-port PORT              Host and guest client app port. Default: 3000
 --admin-user USER            Bullpen admin user. Default: admin
@@ -107,7 +107,6 @@ Options:
 --no-replace                 Abort if the sandbox already exists.
 --open                       Open the Bullpen UI in a host browser after startup. Default.
 --no-open                    Do not open a browser; only print URLs.
---install-bullpen-project    Clone Bullpen into a local project directory and mount that as /workspace.
 -h, --help                   Show usage.
 ```
 
@@ -116,7 +115,7 @@ If `--admin-password` is omitted, prompt once and confirm it. No other option sh
 ## Defaults
 
 - Sandbox name: `bullpen`
-- Workspace: current directory
+- Workspace root: required for deploy
 - Bullpen port: `8080`
 - Client app port: `3000`
 - Admin user: `admin`
@@ -125,7 +124,9 @@ If `--admin-password` is omitted, prompt once and confirm it. No other option sh
 - Browser opening: enabled
 - Replacement behavior: prompt if a sandbox with the same name exists, unless `--replace` or `--no-replace` is provided
 
-When launched from the Bullpen source checkout and `--workspace` is not supplied, keep the Docker deployer's safety behavior: do not silently mount the Bullpen repo as the user project. Require `--workspace` or `--install-bullpen-project` in that case.
+The deployer does not infer a workspace root. Require `--workspace-root` so the
+user explicitly chooses the host directory that will be visible as
+`/workspace`.
 
 ## Validation
 
@@ -136,12 +137,11 @@ Validate before creating or replacing the sandbox:
 - Microsandbox runtime is installed; install it through the SDK when missing
 - Host is supported by Microsandbox: Apple Silicon macOS or Linux with KVM
 - Prepared Microsandbox base exists locally, or auto-prepare is enabled
-- Workspace path exists and is a directory
+- Workspace root path exists and is a directory
 - Bullpen source path exists and contains `bullpen.py`, unless Bullpen source is baked into the prepared base
 - Ports are numeric and in `1..65535`
 - Bullpen port and app port are different
 - `--replace` and `--no-replace` are not both set
-- Git is installed on the host when `--install-bullpen-project` is used
 
 Fail fast with one clear error message per problem. Do not run apt or npm during the per-project run phase; package managers belong only to the base preparation path in `deploy-msb.py`.
 
@@ -190,14 +190,21 @@ The script starts Bullpen as a detached process inside the sandbox, verifies hea
 Run phase mounts:
 
 ```text
-<selected host project>          -> /workspace/<project-name>  writable
+<host workspace root>            -> /workspace                 writable
 ~/.bullpen/microsandbox-home     -> /home/bullpen              writable
 <Bullpen source checkout>        -> /app                       read-only, only if not baked into base
 ```
 
-`/workspace` is sandbox-owned writable storage, not a bind mount to the host project parent. Bullpen starts with the requested host project mounted at `/workspace/<project-name>`. Clone-with-default-path creates sibling projects under `/workspace`, for example `/workspace/busy-deck`, and those sibling projects stay inside the sandbox filesystem.
+`/workspace` is the host workspace root bind mount. Bullpen starts without a
+registered project. Use the app's Add Project, New Project, or Clone Project
+command to configure one or more projects under `/workspace`, for example
+`/workspace/bullpen` or `/workspace/client-site`.
 
-File browser edits, worker changes, git worktrees, generated files, and task outputs inside `/workspace/<project-name>` must mutate the selected real host project directory. Projects created or cloned at other `/workspace` paths must not create files in the host parent directory.
+File browser edits, worker changes, git worktrees, generated files, and task
+outputs inside a configured `/workspace/<project>` path must mutate the
+corresponding real host project directory. The deployer must not create
+`/workspace/.bullpen`, chown `/workspace`, or register `/workspace` itself as a
+project.
 
 `/home/bullpen` persists across sandbox replacement. Create it if needed and restrict it to the current user. Store CLI auth state, Bullpen global config, and logs there.
 
@@ -287,6 +294,7 @@ Start Bullpen inside the sandbox:
 cd /app
 python3 bullpen.py \
   --workspace /workspace \
+  --start-without-project \
   --host 0.0.0.0 \
   --port "$BULLPEN_PORT" \
   --no-browser
@@ -309,8 +317,7 @@ Set these environment variables inside the sandbox:
 - `APP_PORT`
 - `BULLPEN_HIDE_UNAVAILABLE_PROJECTS=1`
 - `BULLPEN_PROJECTS_ROOT=/workspace`
-- `BULLPEN_WORKSPACE=/workspace/<initial-project-name>`
-- `BULLPEN_WORKSPACE_NAME=<basename of workspace path>`
+- `BULLPEN_START_WITHOUT_PROJECT=1`
 - `BULLPEN_PRODUCTION=0`, unless the host environment overrides it
 - `BULLPEN_CODEX_SANDBOX=none`, unless the host environment overrides it
 - `BULLPEN_CODEX_PATH=/usr/local/bin/codex`
@@ -384,32 +391,15 @@ Git auth sources attached: N
 
 Then open `http://127.0.0.1:$BULLPEN_PORT` in the host browser unless `--no-open` was supplied. Browser opening is best-effort; printing the URL is required.
 
-## Optional project install
-
-Support:
-
-```bash
-python3 deploy-msb.py --install-bullpen-project
-```
-
-When enabled, clone `BULLPEN_GITHUB_REPO_URL` into the default local project path and use that as `--workspace`.
-
-If the target path is already a git checkout, use it. If it exists and is not empty or not a git checkout, fail with a clear error.
-
-Default:
-
-```text
-BULLPEN_GITHUB_REPO_URL=https://github.com/billroy/bullpen.git
-```
-
 ## Acceptance criteria
 
 - `python3 deploy-msb.py --prepare-base` creates a local prepared Bullpen Microsandbox base without requiring an external registry
-- After prepare succeeds, `python3 deploy-msb.py --admin-password test-password --no-open` starts Bullpen on `http://127.0.0.1:8080` without running apt or npm
-- `--sandbox-name`, `--workspace`, `--bullpen-port`, `--app-port`, `--admin-user`, `--admin-password`, `--base`, `--replace`, `--no-replace`, and `--no-open` work without prompts
+- After prepare succeeds, `python3 deploy-msb.py --workspace-root /path/to/projects --admin-password test-password --no-open` starts Bullpen on `http://127.0.0.1:8080` without running apt or npm
+- `--sandbox-name`, `--workspace-root`, `--bullpen-port`, `--app-port`, `--admin-user`, `--admin-password`, `--base`, `--replace`, `--no-replace`, and `--no-open` work without prompts
 - Omitting `--admin-password` prompts securely and confirms the password
-- The mounted project appears in Bullpen as `/workspace`
-- Creating or editing files through Bullpen changes the host project directory
+- Bullpen starts with no active project and prompts the user to add a project
+- Adding `/workspace/<project>` in Bullpen registers that project without rebuilding the sandbox
+- Creating or editing files through Bullpen changes the matching host project directory
 - Bullpen and client app ports are both exposed on host localhost
 - Bullpen starts with authentication enabled using the requested admin credentials
 - Claude, Codex, Gemini, and GitHub credentials are available inside the sandbox when current credentials are present on the host

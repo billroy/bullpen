@@ -144,6 +144,12 @@ def parse_args(argv=None):
         help="Don't open a browser on startup",
     )
     parser.add_argument(
+        "--start-without-project",
+        action="store_true",
+        default=False,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
         "--websocket-debug",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -516,6 +522,7 @@ def main():
         host=args.host,
         port=args.port,
         websocket_debug=args.websocket_debug,
+        start_without_project=args.start_without_project,
     )
 
     if not args.no_browser:

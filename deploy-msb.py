@@ -68,11 +68,9 @@ class DeployConfig:
     sandbox_home: Path
     replace: bool | None
     open_browser: bool
-    install_bullpen_project: bool
     root: Path
     bullpen_source: Path
     github_repo_url: str
-    local_project_path_default: Path
     vcpus: int = VCPUS_DEFAULT
     memory_mib: int = MEMORY_MIB_DEFAULT
     action: str = "deploy"
@@ -81,6 +79,8 @@ class DeployConfig:
     prepare_base_policy: str = "auto"
     source_image: str = SOURCE_IMAGE_DEFAULT
     prepare_source: Path | None = None
+    install_bullpen_project: bool = False
+    local_project_path_default: Path | None = None
     projects_root: Path | None = None
 
 
@@ -295,9 +295,12 @@ class MicrosandboxRuntime:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Deploy Bullpen inside a Microsandbox microVM")
+    parser = argparse.ArgumentParser(
+        description="Deploy Bullpen inside a Microsandbox microVM",
+        allow_abbrev=False,
+    )
     parser.add_argument("--sandbox-name", default=SANDBOX_NAME_DEFAULT)
-    parser.add_argument("--workspace")
+    parser.add_argument("--workspace-root")
     parser.add_argument("--bullpen-port", default=str(BULLPEN_PORT_DEFAULT))
     parser.add_argument("--app-port", default=str(APP_PORT_DEFAULT))
     parser.add_argument("--admin-user", default=ADMIN_USER_DEFAULT)
@@ -315,7 +318,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-replace", action="store_true", default=False)
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
     parser.add_argument("--no-open", dest="open_browser", action="store_false")
-    parser.add_argument("--install-bullpen-project", action="store_true", default=False)
     subparsers = parser.add_subparsers(dest="command")
     auth_parser = subparsers.add_parser("auth", help="Run sandbox-native setup/auth for one item")
     auth_parser.add_argument("target", choices=("claude", "codex", "git"))
@@ -371,14 +373,8 @@ def is_bullpen_source(path: Path) -> bool:
     return (path / "bullpen.py").is_file() and (path / "server").is_dir()
 
 
-def projects_root_path(config: DeployConfig) -> Path | None:
-    if config.projects_root is None:
-        return None
-    return config.projects_root.resolve()
-
-
 def container_workspace_path(config: DeployConfig) -> str:
-    return f"/workspace/{config.workspace.name}"
+    return "/workspace"
 
 
 def detect_supported_host() -> bool:
@@ -451,20 +447,6 @@ def wait_for_host_ports_available(config: DeployConfig, timeout_seconds: int = 1
     ensure_host_ports_available(config)
 
 
-def install_bullpen_project_from_github(target_path: Path, repo_url: str) -> None:
-    require_command("git")
-    if (target_path / ".git").is_dir():
-        print(f"Using existing Bullpen project checkout at {target_path}")
-        return
-    if target_path.exists():
-        if target_path.is_dir() and not any(target_path.iterdir()):
-            target_path.rmdir()
-        else:
-            raise DeployError(f"Bullpen project path already exists and is not a git checkout: {target_path}")
-    print(f"Cloning Bullpen from {repo_url} into {target_path}")
-    subprocess.run(["git", "clone", "--depth", "1", repo_url, str(target_path)], check=True)
-
-
 def resolve_prepare_source(config: DeployConfig) -> Path:
     if config.prepare_source is not None:
         source = config.prepare_source
@@ -516,8 +498,6 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         raise DeployError("Bullpen web port and app port must be different")
 
     github_repo_url = os.environ.get("BULLPEN_GITHUB_REPO_URL", BULLPEN_GITHUB_REPO_URL_DEFAULT)
-    local_project_path_default = root.parent / f"{root.name}-project"
-
     action = "prepare-base" if args.prepare_base else (args.command or "deploy")
     target = getattr(args, "target", None)
     if args.rebuild_base:
@@ -527,19 +507,9 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
     else:
         prepare_base_policy = "auto"
 
-    if args.install_bullpen_project:
-        install_bullpen_project_from_github(local_project_path_default, github_repo_url)
-        workspace = local_project_path_default.resolve()
-    elif args.workspace:
-        workspace = abs_path(args.workspace)
-    else:
-        cwd = Path.cwd().resolve()
-        if action == "deploy" and cwd == root and is_bullpen_source(root):
-            raise DeployError(
-                "Refusing to mount the Bullpen source checkout as the project by default. "
-                "Pass --workspace PATH, or use --install-bullpen-project."
-            )
-        workspace = cwd
+    if not args.workspace_root and action != "prepare-base":
+        raise DeployError("Microsandbox deploy requires --workspace-root PATH.")
+    workspace = abs_path(args.workspace_root) if args.workspace_root else Path.cwd().resolve()
     if action == "deploy":
         admin_password = args.admin_password or prompt_password()
     else:
@@ -563,11 +533,9 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         sandbox_home=abs_path(args.sandbox_home),
         replace=replace,
         open_browser=args.open_browser,
-        install_bullpen_project=args.install_bullpen_project,
         root=root,
         bullpen_source=root,
         github_repo_url=github_repo_url,
-        local_project_path_default=local_project_path_default,
         vcpus=vcpus,
         memory_mib=memory_mib,
         action=action,
@@ -589,20 +557,11 @@ def validate_config(config: DeployConfig) -> None:
         raise DeployError(f"Workspace path does not exist: {config.workspace}")
     if not config.workspace.is_dir():
         raise DeployError(f"Workspace path is not a directory: {config.workspace}")
-    projects_root = projects_root_path(config)
-    if projects_root is not None:
-        if not projects_root.exists():
-            raise DeployError(f"Projects root path does not exist: {projects_root}")
-        if not projects_root.is_dir():
-            raise DeployError(f"Projects root path is not a directory: {projects_root}")
     if not is_bullpen_source(config.bullpen_source):
         raise DeployError(f"Bullpen source path does not contain bullpen.py: {config.bullpen_source}")
-    if config.action != "deploy" and config.install_bullpen_project:
-        raise DeployError("--install-bullpen-project is only supported for deploy")
 
 
 def build_runtime_env(config: DeployConfig) -> None:
-    container_workspace = container_workspace_path(config)
     internal_bullpen_port = config.bullpen_port + 10000
     if internal_bullpen_port > 65535 or internal_bullpen_port == config.app_port:
         internal_bullpen_port = 15000
@@ -623,8 +582,7 @@ def build_runtime_env(config: DeployConfig) -> None:
             "APP_PORT": str(config.app_port),
             "BULLPEN_HIDE_UNAVAILABLE_PROJECTS": "1",
             "BULLPEN_PROJECTS_ROOT": "/workspace",
-            "BULLPEN_WORKSPACE": container_workspace,
-            "BULLPEN_WORKSPACE_NAME": config.workspace.name,
+            "BULLPEN_START_WITHOUT_PROJECT": "1",
             "BULLPEN_DEPLOY_LABEL": f"(Microsandbox:{config.sandbox_name})",
             "BULLPEN_PRODUCTION": os.environ.get("BULLPEN_PRODUCTION", "0"),
             "BULLPEN_VENV": "/opt/bullpen-venv",
@@ -1149,7 +1107,7 @@ if [ "$actual_uid" != "$uid" ]; then
   exit 1
 fi
 mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
-chown bullpen:"$group_name" /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex
+chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex
 chown -R bullpen:"$group_name" /var/lib/bullpen
 chmod 700 /var/lib/bullpen 2>/dev/null || true
 # Lift FD ceiling for bullpen via pam_limits. Default soft 1024 / hard 4096
@@ -1220,21 +1178,8 @@ echo "Disabled guest IPv6 for Claude auth due to Microsandbox IPv6 TLS EOFs." >&
 
 
 async def verify_mount_access(sandbox: Any, config: DeployConfig) -> None:
-    workspace = shlex.quote(container_workspace_path(config))
-    repair_command = f'''set -e
-uid="${{BULLPEN_UID:-1000}}"
-gid="${{BULLPEN_GID:-1000}}"
-mkdir -p {workspace}/.bullpen
-chown "$uid:$gid" {workspace}/.bullpen
-if [ -d {workspace}/.bullpen ]; then
-  chown -R "$uid:$gid" {workspace}/.bullpen
-fi
-'''
-    await run_configured_sandbox_shell(sandbox, config, repair_command, label="repair Bullpen workspace state ownership")
-    command = f'''set -e
+    command = '''set -e
 test -w /workspace
-test -w {workspace}
-test -w {workspace}/.bullpen
 test -w /home/bullpen
 '''
     await run_as_bullpen(sandbox, config, command, label="verify Microsandbox mount access")
@@ -1288,6 +1233,7 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         "echo '[sandboxed-bullpen] starting Bullpen with /opt/bullpen-venv/bin/python on internal port ${BULLPEN_INTERNAL_PORT}' >> /home/bullpen/logs/bullpen.log; "
         "nohup /opt/bullpen-venv/bin/python bullpen.py "
         f"--workspace {workspace} "
+        "--start-without-project "
         "--host 127.0.0.1 "
         '--port "$BULLPEN_INTERNAL_PORT" '
         "--no-browser "

@@ -27,11 +27,23 @@ def sb(monkeypatch):
     return module
 
 
-def test_cli_requires_workspace_when_run_from_bullpen_root(sb, monkeypatch):
+def test_cli_requires_workspace_root(sb, monkeypatch):
     monkeypatch.chdir(ROOT)
 
-    with pytest.raises(sb.DeployError, match="Refusing to mount the Bullpen source checkout"):
+    with pytest.raises(sb.DeployError, match="requires --workspace-root"):
         sb.config_from_args(["--admin-password", "pw", "--no-open"])
+
+
+def test_cli_rejects_removed_workspace_options(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit):
+        sb.config_from_args(["--workspace", str(workspace), "--admin-password", "pw", "--no-open"])
+
+    with pytest.raises(SystemExit):
+        sb.config_from_args(["--install-bullpen-project", "--admin-password", "pw", "--no-open"])
 
 
 def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
@@ -42,7 +54,7 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
 
     config = sb.config_from_args(
         [
-            "--workspace",
+            "--workspace-root",
             str(workspace),
             "--admin-password",
             "pw",
@@ -87,7 +99,7 @@ def test_cli_resource_options_default_to_larger_final_sandbox(sb, tmp_path, monk
     workspace.mkdir()
     monkeypatch.chdir(tmp_path)
 
-    config = sb.config_from_args(["--workspace", str(workspace), "--admin-password", "pw", "--no-open"])
+    config = sb.config_from_args(["--workspace-root", str(workspace), "--admin-password", "pw", "--no-open"])
 
     assert config.vcpus == 4
     assert config.memory_mib == 4096
@@ -99,10 +111,10 @@ def test_cli_rejects_invalid_resource_options(sb, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(sb.DeployError, match="Virtual CPUs must be at least 1"):
-        sb.config_from_args(["--workspace", str(workspace), "--admin-password", "pw", "--vcpus", "0"])
+        sb.config_from_args(["--workspace-root", str(workspace), "--admin-password", "pw", "--vcpus", "0"])
 
     with pytest.raises(sb.DeployError, match="Memory MiB must be numeric"):
-        sb.config_from_args(["--workspace", str(workspace), "--admin-password", "pw", "--memory-mib", "4G"])
+        sb.config_from_args(["--workspace-root", str(workspace), "--admin-password", "pw", "--memory-mib", "4G"])
 
 
 def test_cli_auth_subcommand_does_not_require_admin_password(sb, tmp_path, monkeypatch):
@@ -112,7 +124,7 @@ def test_cli_auth_subcommand_does_not_require_admin_password(sb, tmp_path, monke
 
     config = sb.config_from_args(
         [
-            "--workspace",
+            "--workspace-root",
             str(workspace),
             "--no-open",
             "auth",
@@ -132,7 +144,7 @@ def test_cli_test_provider_subcommand_parses_target(sb, tmp_path, monkeypatch):
 
     config = sb.config_from_args(
         [
-            "--workspace",
+            "--workspace-root",
             str(workspace),
             "--no-open",
             "test-provider",
@@ -151,7 +163,7 @@ def test_cli_first_light_subcommand_parses_claude_without_admin_password(sb, tmp
 
     config = sb.config_from_args(
         [
-            "--workspace",
+            "--workspace-root",
             str(workspace),
             "--no-open",
             "first-light",
@@ -172,7 +184,7 @@ def test_cli_rejects_duplicate_ports(sb, tmp_path, monkeypatch):
     with pytest.raises(sb.DeployError, match="must be different"):
         sb.config_from_args(
             [
-                "--workspace",
+                "--workspace-root",
                 str(workspace),
                 "--admin-password",
                 "pw",
@@ -192,7 +204,7 @@ def test_runtime_env_passes_microsandbox_label_to_server(sb, tmp_path, monkeypat
 
     config = sb.config_from_args(
         [
-            "--workspace",
+            "--workspace-root",
             str(workspace),
             "--admin-password",
             "pw",
@@ -595,7 +607,7 @@ def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, mon
 
     config = sb.config_from_args(
         [
-            "--workspace",
+            "--workspace-root",
             str(workspace),
             "--admin-password",
             "pw",
@@ -692,9 +704,8 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert calls["kwargs"]["ports"] == {8081: 8081, 3001: 3001}
     assert calls["kwargs"]["network"] == "allow-all"
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}
-    assert "/workspace" not in calls["kwargs"]["volumes"]
-    assert calls["kwargs"]["volumes"]["/workspace/project"] == {"path": str(workspace), "readonly": False}
-    assert all(volume.get("path") != str(workspace.parent) for volume in calls["kwargs"]["volumes"].values())
+    assert calls["kwargs"]["volumes"]["/workspace"] == {"path": str(workspace), "readonly": False}
+    assert "/workspace/project" not in calls["kwargs"]["volumes"]
     assert calls["kwargs"]["volumes"]["/home/bullpen"] == {"path": str(sandbox_home), "readonly": False}
     assert "/home/bullpen/.codex" not in calls["kwargs"]["volumes"]
     assert calls["kwargs"]["env"] == {
@@ -703,7 +714,9 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
         "LOGNAME": "bullpen",
     }
     assert config.runtime_env["BULLPEN_PROJECTS_ROOT"] == "/workspace"
-    assert config.runtime_env["BULLPEN_WORKSPACE"] == "/workspace/project"
+    assert config.runtime_env["BULLPEN_START_WITHOUT_PROJECT"] == "1"
+    assert "BULLPEN_WORKSPACE" not in config.runtime_env
+    assert "BULLPEN_WORKSPACE_NAME" not in config.runtime_env
     assert config.runtime_env["BULLPEN_VENV"] == "/opt/bullpen-venv"
 
 
@@ -939,7 +952,8 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "BULLPEN_UID=" in prepare_command
     assert "Existing bullpen user has uid" in prepare_command
     assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen" in prepare_command
-    assert "chown bullpen:\"$group_name\" /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
+    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
+    assert "chown bullpen:\"$group_name\" /workspace" not in prepare_command
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /home/bullpen\n" not in prepare_command
     assert "test -w /home/bullpen" in prepare_command
@@ -953,6 +967,8 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "command -v node >/dev/null" in start_command
     assert ": > /home/bullpen/logs/bullpen.log" in start_command
     assert ": > /home/bullpen/logs/bullpen-proxy.log" in start_command
+    assert "--workspace /workspace" in start_command
+    assert "--start-without-project" in start_command
     assert "--host 127.0.0.1" in start_command
     assert '--port "$BULLPEN_INTERNAL_PORT"' in start_command
     assert "node /app/deploy/microsandbox/bullpen-proxy.js" in start_command
@@ -1296,15 +1312,12 @@ def test_verify_mount_access_runs_as_bullpen_and_checks_workspace_config(sb):
 
     asyncio.run(sb.verify_mount_access(FakeSandbox(), config))
 
-    repair_command = commands[0][1][1]
-    probe_command = commands[1][1][1]
-    assert "mkdir -p /workspace/bullpen/.bullpen" in repair_command
-    assert 'chown "$uid:$gid" /workspace/bullpen/.bullpen' in repair_command
-    assert 'chown -R "$uid:$gid" /workspace/bullpen/.bullpen' in repair_command
+    assert len(commands) == 1
+    probe_command = commands[0][1][1]
     assert "su -s /bin/bash bullpen -c" in probe_command
     assert "test -w /workspace" in probe_command
-    assert "test -w /workspace/bullpen" in probe_command
-    assert "test -w /workspace/bullpen/.bullpen" in probe_command
+    assert "/workspace/bullpen" not in probe_command
+    assert ".bullpen" not in probe_command
     assert "effective user" not in probe_command
     assert "workspace metadata" not in probe_command
 
@@ -1674,7 +1687,7 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
 
     command = commands[0][1][1]
     assert "su -s /bin/bash bullpen -c" in command
-    assert "cd /workspace/bullpen" in command
+    assert "cd /workspace" in command
     assert "test -s /home/bullpen/.codex/auth.json" in command
     assert "timeout 45s bash -lc" in command
     assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command

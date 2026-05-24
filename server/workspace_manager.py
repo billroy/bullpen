@@ -15,6 +15,29 @@ REGISTRY_PATH = os.path.join(GLOBAL_DIR, "projects.json")
 REGISTRY_VERSION = 1
 
 
+def projects_root():
+    """Return the active projects root, if this runtime constrains projects."""
+    root = (os.environ.get("BULLPEN_PROJECTS_ROOT") or "").strip()
+    if not root:
+        return None
+    return os.path.realpath(os.path.abspath(root))
+
+
+def ensure_within_projects_root(path):
+    """Resolve and validate a project path against BULLPEN_PROJECTS_ROOT."""
+    real_path = os.path.realpath(os.path.abspath(path))
+    root = projects_root()
+    if not root:
+        return real_path
+    try:
+        common = os.path.commonpath([root, real_path])
+    except ValueError:
+        common = None
+    if common != root or real_path == root:
+        raise ValueError(f"Project path must be inside {root}: {path}")
+    return real_path
+
+
 class WorkspaceState:
     """Runtime state for a single workspace."""
 
@@ -132,7 +155,7 @@ class WorkspaceManager:
         Initializes the workspace and creates a WorkspaceState.
         """
         path = os.path.abspath(path)
-        real_path = os.path.realpath(path)
+        real_path = ensure_within_projects_root(path)
         if not os.path.isdir(real_path):
             raise ValueError(f"Not a directory: {path}")
 
@@ -233,7 +256,11 @@ class WorkspaceManager:
         """
         out = []
         for e in self._registry:
-            available = os.path.isdir(e["path"])
+            try:
+                path = ensure_within_projects_root(e["path"])
+                available = os.path.isdir(path)
+            except ValueError:
+                available = False
             if not include_unavailable and not available:
                 continue
             entry = {"id": e["id"], "name": e["name"]}

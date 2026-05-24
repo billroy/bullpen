@@ -53,6 +53,153 @@ def _wait_for_event(client, name, timeout=3.0):
     return None
 
 
+def test_start_without_project_connects_with_empty_project_list(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    global_dir = tmp_path / "home" / ".bullpen"
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    events = client.get_received()
+    client.disconnect()
+
+    assert app.config["startup_workspace_id"] is None
+    assert [evt for evt in events if evt["name"] == "state:init"] == []
+    project_events = [evt for evt in events if evt["name"] == "projects:updated"]
+    assert project_events
+    assert project_events[-1]["args"][0] == []
+
+
+def test_start_without_project_hides_stale_workspace_root_registry_entry(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    global_dir = tmp_path / "home" / ".bullpen"
+    global_dir.mkdir(parents=True)
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+    monkeypatch.setenv("BULLPEN_HIDE_UNAVAILABLE_PROJECTS", "1")
+    write_json(
+        str(global_dir / "projects.json"),
+        {
+            "version": 1,
+            "projects": [
+                {"id": "stale-root", "path": str(workspace_root), "name": "old-root"},
+            ],
+        },
+    )
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    events = client.get_received()
+    client.disconnect()
+
+    project_events = [evt for evt in events if evt["name"] == "projects:updated"]
+    assert project_events
+    assert project_events[-1]["args"][0] == []
+
+
+def test_project_add_from_startupless_mode_activates_project(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    project = workspace_root / "project-a"
+    project.mkdir(parents=True)
+    global_dir = tmp_path / "home" / ".bullpen"
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("project:add", {"path": str(project)})
+    events = client.get_received()
+    client.disconnect()
+
+    state_events = [evt["args"][0] for evt in events if evt["name"] == "state:init"]
+    assert state_events
+    assert state_events[-1]["switchTo"] is True
+    ws_id = state_events[-1]["workspaceId"]
+    assert app.config["manager"].get_workspace_path(ws_id) == str(project.resolve())
+    assert os.path.isdir(project / ".bullpen")
+    assert not os.path.exists(workspace_root / ".bullpen")
+
+
+def test_start_without_project_refresh_requires_join_for_registered_project(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    project = workspace_root / "project-a"
+    project.mkdir(parents=True)
+    global_dir = tmp_path / "home" / ".bullpen"
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+
+    first_app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    first_client = socketio.test_client(first_app)
+    first_client.get_received()
+    first_client.emit("project:add", {"path": str(project)})
+    first_events = first_client.get_received()
+    first_client.disconnect()
+    ws_id = [evt["args"][0] for evt in first_events if evt["name"] == "state:init"][-1]["workspaceId"]
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    refresh_events = client.get_received()
+    assert [evt for evt in refresh_events if evt["name"] == "state:init"] == []
+    project_updates = [evt for evt in refresh_events if evt["name"] == "projects:updated"]
+    assert project_updates[-1]["args"][0] == [{"id": ws_id, "name": "project-a", "available": True}]
+
+    client.emit("project:join", {"workspaceId": ws_id})
+    join_events = client.get_received()
+    client.disconnect()
+    state_events = [evt["args"][0] for evt in join_events if evt["name"] == "state:init"]
+    assert state_events
+    assert state_events[-1]["workspaceId"] == ws_id
+
+
+def test_project_root_guard_rejects_outside_paths(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    global_dir = tmp_path / "home" / ".bullpen"
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("project:add", {"path": str(outside)})
+    error = get_event(client, "error")
+    client.disconnect()
+
+    assert error is not None
+    assert "Project path must be inside" in error["message"]
+
+
+def test_project_root_guard_rejects_symlink_escape(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = workspace_root / "outside-link"
+    link.symlink_to(outside, target_is_directory=True)
+    global_dir = tmp_path / "home" / ".bullpen"
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("project:add", {"path": str(link)})
+    error = get_event(client, "error")
+    client.disconnect()
+
+    assert error is not None
+    assert "Project path must be inside" in error["message"]
+
+
 class ChatUsageAdapter(AgentAdapter):
     @property
     def name(self):
