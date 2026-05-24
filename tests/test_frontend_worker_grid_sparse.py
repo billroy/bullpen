@@ -93,6 +93,17 @@ def test_grid_controls_replace_legacy_rows_cols_selector():
     assert "onWidthChange" not in bullpen
 
 
+def test_worker_grid_resize_uses_pending_size_until_config_echo():
+    text = _read("static/components/BullpenTab.js")
+    assert "pendingColumnWidth: null" in text
+    assert "pendingRowHeight: null" in text
+    assert "if (this.pendingColumnWidth !== null)" in text
+    assert "if (this.pendingRowHeight !== null)" in text
+    assert "reconcilePendingGridSize()" in text
+    assert "this.pendingColumnWidth = final;" in text
+    assert "this.pendingRowHeight = final;" in text
+
+
 def test_worker_card_has_header_status_and_copy_worker_menu():
     text = _read("static/components/WorkerCard.js")
     assert "worker-card-header-status" in text

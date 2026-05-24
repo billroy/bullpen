@@ -35,8 +35,10 @@ const BullpenTab = {
       liveMessage: '',
       columnResize: null,
       draggingColumnWidth: null,
+      pendingColumnWidth: null,
       rowResize: null,
       draggingRowHeight: null,
+      pendingRowHeight: null,
       cardVerticalResize: null,
       expandedWorkerCardSlot: null,
       expandedWorkerCardDelta: 0,
@@ -392,21 +394,27 @@ const BullpenTab = {
     },
     columnWidth() {
       if (this.draggingColumnWidth !== null) {
-        return Math.max(140, Math.min(480, Math.round(this.draggingColumnWidth)));
+        return this.clampColumnWidth(this.draggingColumnWidth);
+      }
+      if (this.pendingColumnWidth !== null) {
+        return this.clampColumnWidth(this.pendingColumnWidth);
       }
       const raw = Number(this.gridConfig.columnWidth);
       const n = Number.isFinite(raw) ? raw : 220;
-      return Math.max(140, Math.min(480, Math.round(n / 20) * 20));
+      return this.clampColumnWidth(n);
     },
     headerWidth() { return this.$options.HEADER_WIDTH; },
     headerHeight() { return this.$options.HEADER_HEIGHT; },
     rowHeight() {
       if (this.draggingRowHeight !== null) {
-        return Math.max(32, Math.min(480, Math.round(this.draggingRowHeight)));
+        return this.clampRowHeight(this.draggingRowHeight);
+      }
+      if (this.pendingRowHeight !== null) {
+        return this.clampRowHeight(this.pendingRowHeight);
       }
       const raw = Number(this.gridConfig.rowHeight);
       if (Number.isFinite(raw)) {
-        return Math.max(32, Math.min(480, Math.round(raw)));
+        return this.clampRowHeight(raw);
       }
       return 140;
     },
@@ -683,6 +691,12 @@ const BullpenTab = {
         this.selectA1();
       },
     },
+    gridConfig: {
+      deep: true,
+      handler() {
+        this.reconcilePendingGridSize();
+      },
+    },
   },
   mounted() {
     this.updateViewportSize();
@@ -702,6 +716,30 @@ const BullpenTab = {
     this._teardownCardVerticalResizeListeners?.();
   },
   methods: {
+    clampColumnWidth(value) {
+      const n = Number(value);
+      const base = Number.isFinite(n) ? n : 220;
+      return Math.max(140, Math.min(480, Math.round(base / 20) * 20));
+    },
+    clampRowHeight(value) {
+      const n = Number(value);
+      const base = Number.isFinite(n) ? n : 140;
+      return Math.max(32, Math.min(480, Math.round(base)));
+    },
+    reconcilePendingGridSize() {
+      if (this.pendingColumnWidth !== null) {
+        const raw = Number(this.gridConfig.columnWidth);
+        if (Number.isFinite(raw) && this.clampColumnWidth(raw) === this.clampColumnWidth(this.pendingColumnWidth)) {
+          this.pendingColumnWidth = null;
+        }
+      }
+      if (this.pendingRowHeight !== null) {
+        const raw = Number(this.gridConfig.rowHeight);
+        if (Number.isFinite(raw) && this.clampRowHeight(raw) === this.clampRowHeight(this.pendingRowHeight)) {
+          this.pendingRowHeight = null;
+        }
+      }
+    },
     coordForSlot(worker, slotIndex) {
       const col = Number(worker?.col);
       const row = Number(worker?.row);
@@ -1894,7 +1932,8 @@ const BullpenTab = {
       this.draggingColumnWidth = null;
       this.resizeTooltip = null;
       if (dragged != null) {
-        const final = Math.max(140, Math.min(480, Math.round(dragged / 20) * 20));
+        const final = this.clampColumnWidth(dragged);
+        this.pendingColumnWidth = final;
         this.persistGrid({ columnWidth: final });
       }
     },
@@ -1911,6 +1950,7 @@ const BullpenTab = {
       this._teardownColumnResizeListeners();
       this.columnResize = null;
       this.draggingColumnWidth = null;
+      this.pendingColumnWidth = 220;
       this.resizeTooltip = null;
       this.persistGrid({ columnWidth: 220 });
     },
@@ -1949,7 +1989,8 @@ const BullpenTab = {
       this.draggingRowHeight = null;
       this.resizeTooltip = null;
       if (dragged != null) {
-        const final = Math.max(32, Math.min(480, Math.round(dragged)));
+        const final = this.clampRowHeight(dragged);
+        this.pendingRowHeight = final;
         this.persistGrid({ rowHeight: final });
       }
     },
@@ -1966,6 +2007,7 @@ const BullpenTab = {
       this._teardownRowResizeListeners();
       this.rowResize = null;
       this.draggingRowHeight = null;
+      this.pendingRowHeight = 140;
       this.resizeTooltip = null;
       this.persistGrid({ rowHeight: 140 });
     },
