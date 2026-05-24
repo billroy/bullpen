@@ -1,5 +1,6 @@
 # Bullpen workspace data
 .bullpen/
+.sprite
 
 # Python
 __pycache__/
