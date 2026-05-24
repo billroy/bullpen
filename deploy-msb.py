@@ -629,7 +629,7 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_PRODUCTION": os.environ.get("BULLPEN_PRODUCTION", "0"),
             "BULLPEN_VENV": "/opt/bullpen-venv",
             "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),
-            "BULLPEN_CODEX_PATH": "/home/bullpen/bin/codex",
+            "BULLPEN_CODEX_PATH": "/usr/local/bin/codex",
         }
     )
 
@@ -1240,10 +1240,11 @@ test -w /home/bullpen
     await run_as_bullpen(sandbox, config, command, label="verify Microsandbox mount access")
 
 
-async def install_codex_wrapper(sandbox: Any, config: DeployConfig) -> None:
+async def configure_codex_cli(sandbox: Any, config: DeployConfig) -> None:
     command = r'''set -e
-mkdir -p /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
-chmod 700 /var/lib/bullpen 2>/dev/null || true
+mkdir -p /home/bullpen/.codex
+rm -f /home/bullpen/bin/codex
+rm -rf /var/lib/bullpen/codex-home /var/lib/bullpen/codex.lock
 config_file="/home/bullpen/.codex/config.toml"
 touch "$config_file"
 if grep -Eq '^[[:space:]]*cli_auth_credentials_store[[:space:]]*=' "$config_file"; then
@@ -1251,69 +1252,15 @@ if grep -Eq '^[[:space:]]*cli_auth_credentials_store[[:space:]]*=' "$config_file
 else
   printf '\ncli_auth_credentials_store = "file"\n' >> "$config_file"
 fi
-real_codex="$(command -v codex)"
-if [ -z "$real_codex" ] || [ "$real_codex" = "/home/bullpen/bin/codex" ]; then
+real_codex="${BULLPEN_CODEX_PATH:-$(command -v codex)}"
+if [ -z "$real_codex" ] || [ ! -x "$real_codex" ]; then
   echo "Unable to locate real Codex CLI" >&2
   exit 1
 fi
-cat > /home/bullpen/bin/codex <<EOF
-#!/usr/bin/env bash
-set -u
-
-REAL_CODEX="$real_codex"
-PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"
-RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/var/lib/bullpen/codex-home}"
-LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/var/lib/bullpen/codex.lock}"
-LOCK_TIMEOUT_SECONDS="\${BULLPEN_CODEX_LOCK_TIMEOUT_SECONDS:-300}"
-LOCK_DEADLINE="\$(( \$(date +%s) + LOCK_TIMEOUT_SECONDS ))"
-
-while ! mkdir "\$LOCK_DIR" 2>/dev/null; do
-  if [ -f "\$LOCK_DIR/pid" ]; then
-    old_pid="\$(cat "\$LOCK_DIR/pid" 2>/dev/null || true)"
-    if [ -n "\$old_pid" ] && ! kill -0 "\$old_pid" 2>/dev/null; then
-      rm -rf "\$LOCK_DIR"
-      continue
-    fi
-  fi
-  if [ "\$(date +%s)" -ge "\$LOCK_DEADLINE" ]; then
-    echo "Timed out waiting for Codex lock at \$LOCK_DIR after \${LOCK_TIMEOUT_SECONDS}s." >&2
-    if [ -f "\$LOCK_DIR/pid" ]; then
-      echo "Lock owner pid: \$(cat "\$LOCK_DIR/pid" 2>/dev/null || true)" >&2
-    fi
-    exit 124
-  fi
-  sleep 0.2
-done
-echo "\$\$" > "\$LOCK_DIR/pid"
-cleanup() {
-  rm -rf "\$LOCK_DIR"
-}
-trap cleanup EXIT INT TERM
-
-mkdir -p "\$PERSISTENT_CODEX_HOME"
-rm -rf "\$RUNTIME_CODEX_HOME"
-mkdir -p "\$RUNTIME_CODEX_HOME"
-if [ -d "\$PERSISTENT_CODEX_HOME" ]; then
-  cp -a "\$PERSISTENT_CODEX_HOME"/. "\$RUNTIME_CODEX_HOME"/ 2>/dev/null || true
-fi
-
-export CODEX_HOME="\$RUNTIME_CODEX_HOME"
-"\$REAL_CODEX" "\$@"
-status="\$?"
-
-mkdir -p "\$PERSISTENT_CODEX_HOME"
-find "\$PERSISTENT_CODEX_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || true
-cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/ 2>/dev/null || true
-
-exit "\$status"
-EOF
-chmod 755 /home/bullpen/bin/codex
-chown -R bullpen:"$(id -gn bullpen)" /var/lib/bullpen
-chown bullpen:"$(id -gn bullpen)" /home/bullpen/bin /home/bullpen/bin/codex /home/bullpen/.codex /home/bullpen/.codex/config.toml
-test -x /home/bullpen/bin/codex
-su -s /bin/bash bullpen -c 'test -x /home/bullpen/bin/codex && test -w /home/bullpen/.codex && grep -Eq "^[[:space:]]*cli_auth_credentials_store[[:space:]]*=[[:space:]]*\"file\"" /home/bullpen/.codex/config.toml'
+chown bullpen:"$(id -gn bullpen)" /home/bullpen/.codex /home/bullpen/.codex/config.toml
+su -s /bin/bash bullpen -c 'test -x "$BULLPEN_CODEX_PATH" && test -w /home/bullpen/.codex && grep -Eq "^[[:space:]]*cli_auth_credentials_store[[:space:]]*=[[:space:]]*\"file\"" /home/bullpen/.codex/config.toml'
 '''
-    await run_configured_sandbox_shell(sandbox, config, command, label="install Codex wrapper")
+    await run_configured_sandbox_shell(sandbox, config, command, label="configure Codex CLI")
 
 
 async def bootstrap_bullpen_credentials(sandbox: Any, config: DeployConfig) -> None:
@@ -1455,17 +1402,16 @@ if [ -f "$lock_dir/pid" ]; then
   fi
 fi
 rm -rf "$lock_dir"
+rm -rf /var/lib/bullpen/codex-home
 for path in \
   /home/bullpen/.codex/auth.json \
-  /home/bullpen/.codex/auth.json.tmp \
-  /var/lib/bullpen/codex-home/auth.json \
-  /var/lib/bullpen/codex-home/auth.json.tmp
+  /home/bullpen/.codex/auth.json.tmp
 do
   if [ -e "$path" ]; then
     mv "$path" "$path.stale-$timestamp"
   fi
 done
-mkdir -p /home/bullpen/.codex /var/lib/bullpen/codex-home
+mkdir -p /home/bullpen/.codex
 '''
     await run_configured_sandbox_shell(sandbox, config, command, label="clear stale Codex auth")
 
@@ -1648,7 +1594,7 @@ async def run_auth_command(config: DeployConfig) -> None:
     sandbox = await ensure_provider_command_ready(runtime, config)
     build_runtime_env(config)
     if config.target == "codex":
-        await install_codex_wrapper(sandbox, config)
+        await configure_codex_cli(sandbox, config)
     item = get_setup_item(config.target)
     await item.auth_func(runtime, sandbox, config)
 
@@ -1661,7 +1607,7 @@ async def run_test_provider_command(config: DeployConfig) -> None:
     sandbox = await ensure_provider_command_ready(runtime, config)
     build_runtime_env(config)
     if config.target == "codex":
-        await install_codex_wrapper(sandbox, config)
+        await configure_codex_cli(sandbox, config)
     item = get_setup_item(config.target)
     await item.verify_func(sandbox, config)
 
@@ -1885,8 +1831,8 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
         await disable_guest_ipv6_for_claude(sandbox)
         log_step("Verifying Microsandbox mount access")
         await verify_mount_access(sandbox, config)
-        log_step("Installing Codex wrapper")
-        await install_codex_wrapper(sandbox, config)
+        log_step("Configuring Codex CLI")
+        await configure_codex_cli(sandbox, config)
         log_step("Bootstrapping Bullpen credentials")
         await bootstrap_bullpen_credentials(sandbox, config)
         log_step("Starting Bullpen")

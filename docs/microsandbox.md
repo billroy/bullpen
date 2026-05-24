@@ -240,7 +240,13 @@ run isolation inside the VM. It exists to avoid loading user hooks, plugins,
 project settings, or session history during headless runs. Any future
 replacement must preserve that hardening or provide a stronger one.
 
-Because Microsandbox bind-mount semantics may not match Docker for Codex's refresh-token write pattern, install a small `/home/bullpen/bin/codex` wrapper and set `BULLPEN_CODEX_PATH` to it. The wrapper serializes Codex invocations, copies `/home/bullpen/.codex` to guest-local `/var/lib/bullpen/codex-home`, runs the real Codex CLI with `CODEX_HOME=/var/lib/bullpen/codex-home`, then copies the resulting Codex home back to `/home/bullpen/.codex` before exiting. This makes token refresh happen on the guest-local filesystem while still persisting the rotated auth state to the mounted home.
+Codex auth is created inside the sandbox and persisted under
+`/home/bullpen/.codex`. Configure Codex to use its file-backed credential store
+and point `BULLPEN_CODEX_PATH` at the real sandbox Codex binary. Do not install
+an extra copy/sync wrapper around Codex; direct shared-home invocations have
+been verified sequentially and concurrently inside Microsandbox, and the old
+wrapper added a large per-command cost by copying caches, logs, plugins, and
+sessions.
 
 After Codex login, deploy must verify the sandbox can use its own persisted
 Codex auth before declaring success:
@@ -307,7 +313,7 @@ Set these environment variables inside the sandbox:
 - `BULLPEN_WORKSPACE_NAME=<basename of workspace path>`
 - `BULLPEN_PRODUCTION=0`, unless the host environment overrides it
 - `BULLPEN_CODEX_SANDBOX=none`, unless the host environment overrides it
-- `BULLPEN_CODEX_PATH=/home/bullpen/bin/codex`
+- `BULLPEN_CODEX_PATH=/usr/local/bin/codex`
 
 The run phase bootstraps Bullpen login credentials, starts Bullpen, checks `/health`, verifies credentials, prints success output, and exits.
 

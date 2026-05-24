@@ -419,7 +419,7 @@ def test_deploy_applies_claude_network_mitigation_before_setup(sb, monkeypatch):
     monkeypatch.setattr(sb, "stage_static_assets", async_step("stage-static"))
     monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
     monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
-    monkeypatch.setattr(sb, "install_codex_wrapper", async_step("codex-wrapper"))
+    monkeypatch.setattr(sb, "configure_codex_cli", async_step("codex-cli"))
     monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
     monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
     monkeypatch.setattr(sb, "wait_for_health", lambda _port: calls.append("health"))
@@ -489,7 +489,7 @@ def test_deploy_skips_install_setup_without_tty_and_detaches(sb, monkeypatch):
     monkeypatch.setattr(sb, "stage_static_assets", async_step("stage-static"))
     monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
     monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
-    monkeypatch.setattr(sb, "install_codex_wrapper", async_step("codex-wrapper"))
+    monkeypatch.setattr(sb, "configure_codex_cli", async_step("codex-cli"))
     monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
     monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
     monkeypatch.setattr(sb, "wait_for_health", lambda _port: calls.append("health"))
@@ -568,7 +568,7 @@ def test_first_light_claude_runs_only_claude_gate_without_ports_or_bullpen(sb, m
     monkeypatch.setattr(sb, "verify_claude_auth", async_step("model-call"))
     monkeypatch.setattr(sb, "detach_sandbox", async_step("detach"))
     monkeypatch.setattr(sb, "ensure_host_ports_available", lambda _config: calls.append("ports"))
-    monkeypatch.setattr(sb, "install_codex_wrapper", async_step("codex-wrapper"))
+    monkeypatch.setattr(sb, "configure_codex_cli", async_step("codex-cli"))
     monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
     monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
 
@@ -579,7 +579,7 @@ def test_first_light_claude_runs_only_claude_gate_without_ports_or_bullpen(sb, m
     assert ("remove", "bullpen-claude-first-light") in calls
     assert ("create", False) in calls
     assert "ports" not in calls
-    assert "codex-wrapper" not in calls
+    assert "codex-cli" not in calls
     assert "bootstrap" not in calls
     assert "start" not in calls
     assert calls.index("disable-ipv6") < calls.index("auth-claude")
@@ -605,7 +605,7 @@ def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, mon
     sb.build_runtime_env(config)
 
     assert config.runtime_env["BULLPEN_CODEX_SANDBOX"] == "none"
-    assert config.runtime_env["BULLPEN_CODEX_PATH"] == "/home/bullpen/bin/codex"
+    assert config.runtime_env["BULLPEN_CODEX_PATH"] == "/usr/local/bin/codex"
     assert "SSL_CERT_FILE" not in config.runtime_env
     assert "SSL_CERT_DIR" not in config.runtime_env
     assert "NODE_EXTRA_CA_CERTS" not in config.runtime_env
@@ -1176,15 +1176,15 @@ def test_run_auth_command_dispatches_to_selected_setup_item(sb, monkeypatch):
     async def fake_health(config):
         calls.append("health")
 
-    async def fake_install_codex_wrapper(sandbox, config):
-        calls.append("install-codex-wrapper")
+    async def fake_configure_codex_cli(sandbox, config):
+        calls.append("configure-codex-cli")
 
     async def fake_auth(runtime, sandbox, config):
         calls.append(("auth", config.target))
 
     monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
     monkeypatch.setattr(sb, "ensure_bullpen_healthy", fake_health)
-    monkeypatch.setattr(sb, "install_codex_wrapper", fake_install_codex_wrapper)
+    monkeypatch.setattr(sb, "configure_codex_cli", fake_configure_codex_cli)
     monkeypatch.setattr(
         sb,
         "get_setup_item",
@@ -1214,7 +1214,7 @@ def test_run_auth_command_dispatches_to_selected_setup_item(sb, monkeypatch):
     asyncio.run(sb.run_auth_command(config))
 
     assert calls[:3] == ["ensure", ("get", "bullpen"), "health"]
-    assert "install-codex-wrapper" in calls
+    assert "configure-codex-cli" in calls
     assert ("auth", "codex") in calls
 
 
@@ -1569,7 +1569,7 @@ def test_attach_as_bullpen_attach_raises_when_interactive_command_exits_nonzero(
         monkeypatch.undo()
 
 
-def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
+def test_configure_codex_cli_uses_real_codex_with_file_auth_store(sb):
     commands = []
 
     class FakeSandbox:
@@ -1596,23 +1596,19 @@ def test_install_codex_wrapper_uses_guest_local_codex_home_and_lock(sb):
     )
     sb.build_runtime_env(config)
 
-    asyncio.run(sb.install_codex_wrapper(FakeSandbox(), config))
+    asyncio.run(sb.configure_codex_cli(FakeSandbox(), config))
 
     command = commands[0][1][1]
-    assert "cat > /home/bullpen/bin/codex" in command
-    assert r'PERSISTENT_CODEX_HOME="\${BULLPEN_PERSISTENT_CODEX_HOME:-/home/bullpen/.codex}"' in command
-    assert r'RUNTIME_CODEX_HOME="\${BULLPEN_CODEX_RUNTIME_HOME:-/var/lib/bullpen/codex-home}"' in command
-    assert r'LOCK_DIR="\${BULLPEN_CODEX_LOCK_DIR:-/var/lib/bullpen/codex.lock}"' in command
-    assert r'LOCK_TIMEOUT_SECONDS="\${BULLPEN_CODEX_LOCK_TIMEOUT_SECONDS:-300}"' in command
-    assert "Timed out waiting for Codex lock" in command
-    assert "exit 124" in command
-    assert r'export CODEX_HOME="\$RUNTIME_CODEX_HOME"' in command
-    assert r'find "\$PERSISTENT_CODEX_HOME" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +' in command
-    assert r'cp -a "\$RUNTIME_CODEX_HOME"/. "\$PERSISTENT_CODEX_HOME"/' in command
+    assert "cat > /home/bullpen/bin/codex" not in command
+    assert "rm -rf /var/lib/bullpen/codex-home /var/lib/bullpen/codex.lock" in command
+    assert "CODEX_RUNTIME_HOME" not in command
+    assert "LOCK_TIMEOUT_SECONDS" not in command
+    assert "cp -a" not in command
     assert 'cli_auth_credentials_store = "file"' in command
     assert 'grep -Eq "^[[:space:]]*cli_auth_credentials_store' in command
-    assert 'chown -R bullpen:"$(id -gn bullpen)" /var/lib/bullpen' in command
-    assert 'chown bullpen:"$(id -gn bullpen)" /home/bullpen/bin /home/bullpen/bin/codex /home/bullpen/.codex /home/bullpen/.codex/config.toml' in command
+    assert 'real_codex="${BULLPEN_CODEX_PATH:-$(command -v codex)}"' in command
+    assert 'test -x "$BULLPEN_CODEX_PATH"' in command
+    assert 'chown bullpen:"$(id -gn bullpen)" /home/bullpen/.codex /home/bullpen/.codex/config.toml' in command
     assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen/.codex' not in command
     assert 'chown -R bullpen:"$(id -gn bullpen)" /home/bullpen\n' not in command
     assert "test -w /home/bullpen/.codex" in command

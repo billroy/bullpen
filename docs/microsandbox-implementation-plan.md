@@ -76,7 +76,7 @@ These are no longer open questions for this plan:
   - `run_install_tui()`
   - `run_auth_command()`
   - `run_test_provider_command()`
-  - `install_codex_wrapper()`
+  - `configure_codex_cli()`
   - `bootstrap_bullpen_credentials()`
   - `start_bullpen()`
   - `verify_admin_credentials()`
