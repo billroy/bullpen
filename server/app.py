@@ -1402,6 +1402,7 @@ def reconcile(bp_dir):
             watched_columns.add(slot["watch_column"])
     for col in watched_columns:
         worker_mod.check_watch_columns(bp_dir, col)
+    worker_mod.drain_runnable_queues(bp_dir)
 
     workspace = os.path.dirname(bp_dir)
     try:

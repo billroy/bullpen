@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 import pytest
@@ -700,6 +701,72 @@ class TestStartWorker:
         updated = read_task(bp_dir, task["id"])
         # Task should be in disposition column (review) or still in progress
         assert updated["status"] in ("review", "in_progress")
+
+    def test_drain_runnable_queues_starts_idle_auto_worker(self, bp_dir, worker_slot):
+        class SlowAdapter(MockAdapter):
+            @property
+            def name(self):
+                return "slow-drain"
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                return [sys.executable, "-c", "import time; time.sleep(2)"]
+
+        register_adapter("slow-drain", SlowAdapter(output="slow"))
+        task = create_task(bp_dir, "Queued idle task")
+        update_task(bp_dir, task["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["activation"] = "on_queue"
+        layout["slots"][worker_slot]["agent"] = "slow-drain"
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        layout["slots"][worker_slot]["state"] = "idle"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        workers_mod.drain_runnable_queues(bp_dir)
+
+        deadline = time.time() + 2.0
+        updated = read_task(bp_dir, task["id"])
+        while time.time() < deadline and updated["status"] != "in_progress":
+            time.sleep(0.05)
+            updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "in_progress"
+        stop_worker(bp_dir, worker_slot)
+
+    def test_duplicate_start_requests_launch_once_per_slot(self, bp_dir, worker_slot):
+        calls = []
+
+        class SlowAdapter(MockAdapter):
+            @property
+            def name(self):
+                return "slow-duplicate"
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                calls.append((prompt, model, workspace))
+                return [sys.executable, "-c", "import time; time.sleep(2)"]
+
+        register_adapter("slow-duplicate", SlowAdapter(output="slow"))
+        task = create_task(bp_dir, "Duplicate start task")
+        update_task(bp_dir, task["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "slow-duplicate"
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        layout["slots"][worker_slot]["state"] = "idle"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        threads = [
+            threading.Thread(target=start_worker, args=(bp_dir, worker_slot))
+            for _ in range(5)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=1)
+
+        assert len(calls) == 1
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "in_progress"
+        stop_worker(bp_dir, worker_slot)
 
     def test_agent_output_appended(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Test task", description="Do something")

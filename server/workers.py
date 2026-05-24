@@ -400,6 +400,7 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
             watchers.append((i, slot))
 
     if not watchers:
+        drain_runnable_queues(bp_dir, socketio, ws_id)
         return
 
     # Sort by least-recently-active (oldest last_trigger_time first, None = never)
@@ -418,11 +419,13 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
         and t["id"] != exclude_task_id
     ]
     if not unclaimed:
+        drain_runnable_queues(bp_dir, socketio, ws_id)
         return
 
     # Assign one task per idle watcher, round-robin
     for (slot_idx, _watcher), task in zip(watchers, unclaimed):
         assign_task(bp_dir, slot_idx, task["id"], socketio, ws_id)
+    drain_runnable_queues(bp_dir, socketio, ws_id)
 
 
 def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
@@ -452,6 +455,7 @@ def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
         return
 
     assign_task(bp_dir, slot_index, unclaimed[0]["id"], socketio, ws_id)
+    drain_runnable_queues(bp_dir, socketio, ws_id)
 
 
 def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None,
@@ -539,6 +543,25 @@ def _defer_start_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_
     thread.start()
 
 
+def drain_runnable_queues(bp_dir, socketio=None, ws_id=None):
+    """Kick idle auto-start workers that already have queued work."""
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
+    for slot_index, worker in enumerate(layout.get("slots", [])):
+        if not worker:
+            continue
+        if worker.get("state") != "idle" or worker.get("paused"):
+            continue
+        if worker.get("activation") not in ("on_drop", "on_queue"):
+            continue
+        queue = worker.get("task_queue", [])
+        if not queue:
+            continue
+        _defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=queue[0])
+
+
 def assign_task(
     bp_dir,
     slot_index,
@@ -554,40 +577,50 @@ def assign_task(
     By default, assignment starts a fresh run chain and resets handoff depth.
     Internal worker-to-worker handoffs should set preserve_handoff_depth=True.
     """
-    layout = _load_layout(bp_dir)
-    worker = layout["slots"][slot_index]
-    if not worker:
-        raise ValueError(f"No worker in slot {slot_index}")
-    queue_before = list(worker.get("task_queue", []))
-    # Shell pass chains are script pipelines: a handoff into an idle empty
-    # manual shell worker should run the next script instead of parking there.
-    should_start_handoff = (
-        trigger_handoff_start
-        and worker.get("type") == "shell"
-        and worker.get("state") == "idle"
-        and not queue_before
-    )
+    with _write_lock:
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][slot_index]
+        if not worker:
+            raise ValueError(f"No worker in slot {slot_index}")
+        queue_before = list(worker.get("task_queue", []))
+        # Shell pass chains are script pipelines: a handoff into an idle empty
+        # manual shell worker should run the next script instead of parking there.
+        should_start_handoff = (
+            trigger_handoff_start
+            and worker.get("type") == "shell"
+            and worker.get("state") == "idle"
+            and not queue_before
+        )
 
-    # Update task ticket
-    updates = {
-        "assigned_to": str(slot_index),
-        "status": "assigned",
-        "worker_requested_status": "",
-    }
-    if not preserve_handoff_depth:
-        updates["handoff_depth"] = 0
-    task_mod.update_task(bp_dir, task_id, updates)
+        # Update task ticket
+        updates = {
+            "assigned_to": str(slot_index),
+            "status": "assigned",
+            "worker_requested_status": "",
+        }
+        if not preserve_handoff_depth:
+            updates["handoff_depth"] = 0
+        task_mod.update_task(bp_dir, task_id, updates)
 
-    # Add to queue
-    if task_id not in worker.get("task_queue", []):
-        worker.setdefault("task_queue", []).append(task_id)
-    _sort_worker_queue_for_priority(
-        bp_dir,
-        worker,
-        preserve_head=worker.get("state") in ("working", "retrying"),
-    )
+        # Add to queue
+        if task_id not in worker.get("task_queue", []):
+            worker.setdefault("task_queue", []).append(task_id)
+        _sort_worker_queue_for_priority(
+            bp_dir,
+            worker,
+            preserve_head=worker.get("state") in ("working", "retrying"),
+        )
 
-    _save_layout(bp_dir, layout)
+        activation = worker.get("activation", "on_drop")
+        should_auto_start = (
+            not suppress_auto_start
+            and worker.get("state") == "idle"
+            and (activation in ("on_drop", "on_queue") or should_start_handoff)
+        )
+        expected_task_id = (worker.get("task_queue") or [task_id])[0]
+        manual_worker_name = worker.get("name", "worker")
+
+        _save_layout(bp_dir, layout)
 
     if socketio:
         task = task_mod.read_task(bp_dir, task_id)
@@ -597,17 +630,13 @@ def assign_task(
     # Check if worker should auto-start. Synthetic tasks created by an
     # explicit start_worker call are already on the start path, so do not
     # recursively schedule a second start for on_drop/on_queue workers.
-    activation = worker.get("activation", "on_drop")
     if suppress_auto_start:
         return
-    if (
-        worker.get("state") == "idle"
-        and (activation in ("on_drop", "on_queue") or should_start_handoff)
-    ):
-        _defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=task_id)
+    if should_auto_start:
+        _defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id)
     elif activation == "manual" and socketio:
         _ws_emit(socketio, "toast", {
-            "message": f"Task queued on {worker.get('name', 'worker')}. Use Run to start this manual worker.",
+            "message": f"Task queued on {manual_worker_name}. Use Run to start this manual worker.",
             "level": "info",
         }, ws_id)
 
@@ -712,33 +741,55 @@ def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manu
         queue.pop(0)
         _save_layout(bp_dir, layout)
         if queue:
-            start_worker(bp_dir, slot_index, socketio, ws_id)
+            _defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=queue[0])
         return None
 
     return layout, worker, task, task_id
 
 
-def _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id):
+def _commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id, worker_updates=None):
     """Transition a run to `working` / `in_progress` and emit updates.
 
     Called by type-specific runners after preflight succeeds and they are
     committed to launching a subprocess.
     """
-    started_at = _now_iso()
-    worker["state"] = "working"
-    worker["started_at"] = started_at
-    worker["last_trigger_time"] = int(time.time())
-    _clear_worker_retry_state(worker)
-    task_mod.update_task(bp_dir, task_id, {
-        "status": "in_progress",
-        ACTIVE_TASK_TIME_FIELD: started_at,
-    })
-    _save_layout(bp_dir, layout)
+    with _write_lock:
+        try:
+            layout = _load_layout(bp_dir)
+        except FileNotFoundError:
+            return None
+        slots = layout.get("slots", [])
+        if slot_index >= len(slots):
+            return None
+        worker = slots[slot_index]
+        if not worker or worker.get("state") != "idle":
+            return None
+        queue = worker.get("task_queue", [])
+        if not queue or queue[0] != task_id:
+            return None
+
+        if worker_updates:
+            worker.update(worker_updates)
+        started_at = _now_iso()
+        worker["state"] = "working"
+        worker["started_at"] = started_at
+        worker["last_trigger_time"] = int(time.time())
+        _clear_worker_retry_state(worker)
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "in_progress",
+            ACTIVE_TASK_TIME_FIELD: started_at,
+        })
+        _save_layout(bp_dir, layout)
+
+        if socketio:
+            updated_task = task_mod.read_task(bp_dir, task_id)
+        else:
+            updated_task = None
 
     if socketio:
-        updated_task = task_mod.read_task(bp_dir, task_id)
         _ws_emit(socketio, "task:updated", updated_task, ws_id)
         _ws_emit(socketio, "layout:updated", layout, ws_id)
+    return layout, worker
 
 
 def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
@@ -765,9 +816,11 @@ def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
         return
 
     model = normalize_model(worker.get("agent", "claude"), worker.get("model", "claude-sonnet-4-6"))
-    worker["model"] = model
-
-    _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id)
+    committed = _commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id, worker_updates={"model": model})
+    if committed is None:
+        drain_runnable_queues(bp_dir, socketio, ws_id)
+        return
+    layout, worker = committed
 
     prompt = _assemble_prompt(bp_dir, worker, task)
     workspace = os.path.dirname(bp_dir)  # workspace is parent of .bullpen
@@ -879,7 +932,11 @@ def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         _on_agent_error(bp_dir, slot_index, task_id, str(exc), socketio, ws_id=ws_id, non_retryable=True)
         return
 
-    _commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id)
+    committed = _commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id)
+    if committed is None:
+        drain_runnable_queues(bp_dir, socketio, ws_id)
+        return
+    layout, worker = committed
 
     thread = threading.Thread(
         target=_run_shell,
@@ -2698,6 +2755,7 @@ def _on_agent_success(
         # worker B watches "review" → auto-claims)
         if disposition_status:
             check_watch_columns(bp_dir, disposition_status, socketio, ws_id)
+        drain_runnable_queues(bp_dir, socketio, ws_id)
     except Exception as exc:
         _on_agent_error(
             bp_dir,
@@ -2966,6 +3024,7 @@ def _on_agent_error(
     # Notify watchers of "blocked" column (unlikely but consistent)
     if not should_retry:
         check_watch_columns(bp_dir, "blocked", socketio, ws_id)
+        drain_runnable_queues(bp_dir, socketio, ws_id)
 
 
 def _retry_worker_after_delay(bp_dir, slot_index, task_id, retry_delay, socketio=None, ws_id=None):
