@@ -27,10 +27,10 @@ No registry is required. The prepared base must live on the local machine.
 Provide one primary script:
 
 ```bash
-python3 deploy-msb.py [options]
+python3 deploy-sandbox.py [options]
 ```
 
-`deploy-msb.py` owns both the reusable base setup and the normal deploy path.
+`deploy-sandbox.py` owns both the reusable base setup and the normal deploy path.
 By default it prepares the base only when the requested local snapshot is
 missing. `--prepare-base` prepares the base and exits, `--rebuild-base`
 rebuilds before deploying, and `--no-prepare-base` restores the old fail-fast
@@ -38,7 +38,7 @@ behavior for operators who want setup to be explicit.
 
 ## Prepare phase
 
-`python3 deploy-msb.py --prepare-base` creates a local reusable Bullpen Microsandbox base containing:
+`python3 deploy-sandbox.py --prepare-base` creates a local reusable Bullpen Microsandbox base containing:
 
 - Python 3 and pip
 - Bullpen Python dependencies
@@ -79,10 +79,10 @@ The prepare phase must keep tool installation separate from user auth/config sta
 
 ## Run phase
 
-`deploy-msb.py` is command-line driven. Prompting is only for secrets.
+`deploy-sandbox.py` is command-line driven. Prompting is only for secrets.
 
 ```bash
-python3 deploy-msb.py [options]
+python3 deploy-sandbox.py [options]
 ```
 
 Options:
@@ -143,7 +143,7 @@ Validate before creating or replacing the sandbox:
 - Bullpen port and app port are different
 - `--replace` and `--no-replace` are not both set
 
-Fail fast with one clear error message per problem. Do not run apt or npm during the per-project run phase; package managers belong only to the base preparation path in `deploy-msb.py`.
+Fail fast with one clear error message per problem. Do not run apt or npm during the per-project run phase; package managers belong only to the base preparation path in `deploy-sandbox.py`.
 
 ## Microsandbox implementation
 
@@ -393,8 +393,8 @@ Then open `http://127.0.0.1:$BULLPEN_PORT` in the host browser unless `--no-open
 
 ## Acceptance criteria
 
-- `python3 deploy-msb.py --prepare-base` creates a local prepared Bullpen Microsandbox base without requiring an external registry
-- After prepare succeeds, `python3 deploy-msb.py --workspace-root /path/to/projects --admin-password test-password --no-open` starts Bullpen on `http://127.0.0.1:8080` without running apt or npm
+- `python3 deploy-sandbox.py --prepare-base` creates a local prepared Bullpen Microsandbox base without requiring an external registry
+- After prepare succeeds, `python3 deploy-sandbox.py --workspace-root /path/to/projects --admin-password test-password --no-open` starts Bullpen on `http://127.0.0.1:8080` without running apt or npm
 - `--sandbox-name`, `--workspace-root`, `--bullpen-port`, `--app-port`, `--admin-user`, `--admin-password`, `--base`, `--replace`, `--no-replace`, and `--no-open` work without prompts
 - Omitting `--admin-password` prompts securely and confirms the password
 - Bullpen starts with no active project and prompts the user to add a project
@@ -406,7 +406,7 @@ Then open `http://127.0.0.1:$BULLPEN_PORT` in the host browser unless `--no-open
 - The script refuses invalid ports and refuses to use the same port for Bullpen and the app
 - `--no-replace` exits nonzero without modifying an existing sandbox
 - Answering no to the replacement prompt exits successfully without modifying an existing sandbox
-- After success, `deploy-msb.py` exits while the Microsandbox runtime and Bullpen process keep running
+- After success, `deploy-sandbox.py` exits while the Microsandbox runtime and Bullpen process keep running
 - Failure to start Bullpen prints useful logs and exits nonzero
 - The implementation uses the Microsandbox Python SDK directly and does not require `msb server start --dev`
 

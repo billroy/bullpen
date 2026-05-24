@@ -7,26 +7,23 @@ Updated: 2026-05-23
 Microsandbox deploy now has one primary entrypoint:
 
 ```bash
-python3 deploy-msb.py --workspace /path/to/project
+python3 deploy-sandbox.py --workspace-root /path/to/projects
 ```
 
-`deploy-msb.py` owns both phases:
+`deploy-sandbox.py` owns both phases:
 
 - base preparation from an OCI source image into a local Microsandbox snapshot;
 - per-project sandbox creation, Bullpen startup, provider setup, verification,
   detach, and success output.
 
-The old entrypoints remain only as compatibility wrappers:
-
-- `sandboxed-bullpen.py`
-- `deploy/microsandbox/prepare.sh`
-
-They should not grow new logic.
+Older entrypoints such as `deploy/microsandbox/prepare.sh` should remain out
+of the user-facing path. New Microsandbox deployment logic belongs in
+`deploy-sandbox.py`.
 
 ## Simplifications Completed
 
 - Removed the shell-plus-embedded-Python prepare implementation.
-- Centralized Microsandbox SDK use in `deploy-msb.py`.
+- Centralized Microsandbox SDK use in `deploy-sandbox.py`.
 - Added base controls: `--prepare-base`, `--rebuild-base`,
   `--no-prepare-base`, `--base`, `--source-image`, and `--source-dir`.
 - Made deploy auto-prepare a missing base by default.
@@ -64,9 +61,9 @@ They should not grow new logic.
    checklist for provider CLI upgrades.
 
 6. Script decomposition.
-   `deploy-msb.py` is intentionally unified but now large. Once behavior settles,
+   `deploy-sandbox.py` is intentionally unified but now large. Once behavior settles,
    split internal sections into small local modules under `deploy/microsandbox/`
-   while keeping `deploy-msb.py` as the single user entrypoint.
+   while keeping `deploy-sandbox.py` as the single user entrypoint.
 
 ## Test Themes
 

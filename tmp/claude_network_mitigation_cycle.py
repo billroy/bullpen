@@ -13,20 +13,20 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SANDBOXED_BULLPEN = ROOT / "sandboxed-bullpen.py"
+DEPLOY_SANDBOX = ROOT / "deploy-sandbox.py"
 
 
-def load_sandboxed_bullpen() -> Any:
-    spec = importlib.util.spec_from_file_location("sandboxed_bullpen_network_cycle", SANDBOXED_BULLPEN)
+def load_deploy_sandbox() -> Any:
+    spec = importlib.util.spec_from_file_location("deploy_sandbox_network_cycle", DEPLOY_SANDBOX)
     module = importlib.util.module_from_spec(spec)
     if spec.loader is None:
-        raise RuntimeError(f"Unable to load {SANDBOXED_BULLPEN}")
+        raise RuntimeError(f"Unable to load {DEPLOY_SANDBOX}")
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
-sb = load_sandboxed_bullpen()
+sb = load_deploy_sandbox()
 
 
 def output_text(result: Any) -> str:

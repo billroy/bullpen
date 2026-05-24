@@ -41,13 +41,13 @@ de4b576 fix: restore Claude worker auth handling
 
 Reviewed surfaces:
 
-- `sandboxed-bullpen.py`
+- `deploy-sandbox.py`
 - `deploy/microsandbox/prepare.sh`
 - `deploy-docker.sh`
 - `deploy/docker/entrypoint.sh`
 - `server/agents/claude_adapter.py`
 - `server/agents/codex_adapter.py`
-- `tests/test_sandboxed_bullpen.py`
+- `tests/test_deploy_sandbox.py`
 - `tests/test_agents.py`
 - Microsandbox and Docker docs
 
@@ -145,9 +145,9 @@ Suggested tests:
 
 Relevant code:
 
-- `sandboxed-bullpen.py:1216` defines `verify_claude_credentials_file()`.
+- `deploy-sandbox.py:1216` defines `verify_claude_credentials_file()`.
 - It requires `/home/bullpen/.claude/.credentials.json`.
-- `sandboxed-bullpen.py:1456` runs this verifier before the real Claude model
+- `deploy-sandbox.py:1456` runs this verifier before the real Claude model
   call in first-light.
 
 Risk:
@@ -242,10 +242,10 @@ Suggested tests:
 
 Relevant code:
 
-- `sandboxed-bullpen.py:1348` checks existing provider auth.
-- `sandboxed-bullpen.py:1355` appends already-verified providers to
+- `deploy-sandbox.py:1348` checks existing provider auth.
+- `deploy-sandbox.py:1355` appends already-verified providers to
   `summary.selected_items`.
-- `sandboxed-bullpen.py:1556` prints `Configured during install`.
+- `deploy-sandbox.py:1556` prints `Configured during install`.
 
 Risk:
 
@@ -289,7 +289,7 @@ path. That was removed from live product paths in `de4b576`.
 
 Remaining appearances are acceptable generic secret hygiene:
 
-- `sandboxed-bullpen.py` redaction list,
+- `deploy-sandbox.py` redaction list,
 - `docs/worker-types.md` secret-filtering examples,
 - a test asserting Docker does not support it.
 
@@ -376,7 +376,7 @@ remediation tranche.
 
 Relevant code:
 
-- `sandboxed-bullpen.py:1018` defines `disable_guest_ipv6_for_claude()`.
+- `deploy-sandbox.py:1018` defines `disable_guest_ipv6_for_claude()`.
 - That function writes `/etc/sysctl.d/99-bullpen-claude-ipv4.conf`.
 - It disables:
 
@@ -386,7 +386,7 @@ net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.eth0.disable_ipv6 = 1
 ```
 
-- `sandboxed-bullpen.py:1521` applies this during general deploy before
+- `deploy-sandbox.py:1521` applies this during general deploy before
   mount checks, Codex setup, Git setup, Bullpen startup, and user app usage.
 
 Reason to defer:
@@ -419,7 +419,7 @@ Potential remediation later:
 
 Relevant code:
 
-- `deploy-msb.py` installs the `/home/bullpen/bin/codex` wrapper.
+- `deploy-sandbox.py` installs the `/home/bullpen/bin/codex` wrapper.
 - It removes the lock only when the stored PID is no longer alive.
 - Lock acquisition now has a timeout controlled by
   `BULLPEN_CODEX_LOCK_TIMEOUT_SECONDS`, defaulting to 300 seconds.
@@ -430,7 +430,7 @@ Relevant code:
 
 Relevant code:
 
-- `deploy-msb.py` installs latest `@anthropic-ai/claude-code`,
+- `deploy-sandbox.py` installs latest `@anthropic-ai/claude-code`,
   `@openai/codex`, and `@google/gemini-cli`.
 
 Reason to defer:

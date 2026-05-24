@@ -51,7 +51,7 @@ landing here: OAuth refresh stampedes, missing CA bundles
 Werkzeug + simple-websocket failures, and DNS misconfiguration. Each
 looked like a hit at one stage and was ruled out by an isolated test.
 
-**Fix.** [`deploy-msb.py`](../deploy-msb.py) now writes
+**Fix.** [`deploy-sandbox.py`](../deploy-sandbox.py) now writes
 `/etc/security/limits.d/bullpen-fd.conf` during `prepare_runtime_dirs`:
 
 ```
@@ -169,7 +169,7 @@ upgrade is complete. Not worth the regression risk.
 
 ### Claude has no serializing wrapper; Codex does
 
-Codex runs through [`/home/bullpen/bin/codex`](../deploy-msb.py) — a
+Codex runs through [`/home/bullpen/bin/codex`](../deploy-sandbox.py) — a
 wrapper installed by `install_codex_wrapper` that grabs an `mkdir`-based
 lock at `/var/lib/bullpen/codex.lock` and admits one codex invocation at
 a time. Even under heavy load only one codex is alive.
@@ -211,7 +211,7 @@ is reached by default anyway.
 
 ### Browser dual-stack delay on "localhost"
 
-**Fix.** `deploy-msb.py` prints `http://127.0.0.1:<port>` in success output
+**Fix.** `deploy-sandbox.py` prints `http://127.0.0.1:<port>` in success output
 and opens that URL. Browsers on macOS resolve `localhost` to both `::1` and
 `127.0.0.1`; Microsandbox's host-side port forward has historically been v4
 only, so the v4 literal avoids a low-single-digit-second IPv6 fallback delay.
@@ -391,7 +391,7 @@ microVM network or upstream is in a stressed state.
 
 ## Verifying the FD-limit fix after redeploy
 
-After `python3 deploy-msb.py --replace`:
+After `python3 deploy-sandbox.py --replace`:
 
 ```bash
 msb exec bullpen -- su -s /bin/bash bullpen -c 'ulimit -Hn'
@@ -410,4 +410,4 @@ deploy without needing an after-the-fact check.
 - Related earlier commits: `f7aa0b1`, `bf96a92`, `cde9a6a`, `544209b`, `61bf4c5`
 - Claude adapter: [server/agents/claude_adapter.py](../server/agents/claude_adapter.py)
 - Codex serializing wrapper, for reference: `install_codex_wrapper` in
-  [deploy-msb.py](../deploy-msb.py)
+  [deploy-sandbox.py](../deploy-sandbox.py)

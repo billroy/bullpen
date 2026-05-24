@@ -36,12 +36,12 @@ Microsandbox deploy flow.
 
 ### CLI
 
-Add a first-class `--workspace-root PATH` option to `deploy-msb.py`.
+Add a first-class `--workspace-root PATH` option to `deploy-sandbox.py`.
 
 Recommended command:
 
 ```bash
-python3 deploy-msb.py --workspace-root /Users/bill/aistuff --replace
+python3 deploy-sandbox.py --workspace-root /Users/bill/aistuff --replace
 ```
 
 The deployer mounts `/Users/bill/aistuff` as `/workspace` in the sandbox. The
@@ -204,8 +204,8 @@ from the previous layout and keeps the implementation focused on the new model.
 
 Primary files:
 
-- `deploy-msb.py`
-- `tests/test_sandboxed_bullpen.py`
+- `deploy-sandbox.py`
+- `tests/test_deploy_sandbox.py`
 - `docs/microsandbox.md`
 
 Steps:
@@ -253,7 +253,7 @@ Steps:
 
 Tests:
 
-- Update existing `tests/test_sandboxed_bullpen.py` cases that currently pass
+- Update existing `tests/test_deploy_sandbox.py` cases that currently pass
   `--workspace`.
 - Add a parser test proving deploy without `--workspace-root` fails.
 - Add a parser test proving `--workspace` and `--install-bullpen-project` are

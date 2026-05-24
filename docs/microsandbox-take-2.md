@@ -38,7 +38,7 @@ Microsandbox mode uses one long-running VM per Bullpen deployment.
 
 ```text
 Host
-  sandboxed-bullpen.py
+  deploy-sandbox.py
   Browser
   <workspace directory>
   Persistent sandbox home directory
@@ -253,7 +253,7 @@ needs to be set up again.
 Claude login launcher:
 
 ```bash
-python3 sandboxed-bullpen.py auth claude
+python3 deploy-sandbox.py auth claude
 ```
 
 Equivalent sandbox action:
@@ -270,7 +270,7 @@ cannot reach localhost.
 Codex login launcher:
 
 ```bash
-python3 sandboxed-bullpen.py auth codex
+python3 deploy-sandbox.py auth codex
 ```
 
 Equivalent sandbox action:
@@ -285,7 +285,7 @@ browser-callback complexity in the common path.
 Git setup launcher:
 
 ```bash
-python3 sandboxed-bullpen.py auth git
+python3 deploy-sandbox.py auth git
 ```
 
 Git setup configures git for use inside the sandbox as the sandbox user. That
@@ -318,7 +318,7 @@ runtime path works.
 Claude verification launcher:
 
 ```bash
-python3 sandboxed-bullpen.py test-provider claude
+python3 deploy-sandbox.py test-provider claude
 ```
 
 Equivalent sandbox action:
@@ -333,7 +333,7 @@ msb exec bullpen -- su -s /bin/bash bullpen -c \
 Codex verification launcher:
 
 ```bash
-python3 sandboxed-bullpen.py test-provider codex
+python3 deploy-sandbox.py test-provider codex
 ```
 
 The exact Codex verification command should be the same noninteractive command
@@ -343,7 +343,7 @@ Bullpen-specific environment applied.
 Git verification launcher:
 
 ```bash
-python3 sandboxed-bullpen.py test-provider git
+python3 deploy-sandbox.py test-provider git
 ```
 
 Git verification should prove that git is usable inside the sandbox for the
@@ -412,22 +412,22 @@ Bullpen must show a concrete repair command, for example:
 
 ```text
 Claude authentication failed inside Microsandbox.
-Run:  python3 sandboxed-bullpen.py auth claude
-Then: python3 sandboxed-bullpen.py test-provider claude
+Run:  python3 deploy-sandbox.py auth claude
+Then: python3 deploy-sandbox.py test-provider claude
 ```
 
 ## CLI Surface
 
-Microsandbox support requires these commands in `sandboxed-bullpen.py`:
+Microsandbox support requires these commands in `deploy-sandbox.py`:
 
 ```bash
-python3 sandboxed-bullpen.py --replace
-python3 sandboxed-bullpen.py auth claude
-python3 sandboxed-bullpen.py auth codex
-python3 sandboxed-bullpen.py auth git
-python3 sandboxed-bullpen.py test-provider claude
-python3 sandboxed-bullpen.py test-provider codex
-python3 sandboxed-bullpen.py test-provider git
+python3 deploy-sandbox.py --replace
+python3 deploy-sandbox.py auth claude
+python3 deploy-sandbox.py auth codex
+python3 deploy-sandbox.py auth git
+python3 deploy-sandbox.py test-provider claude
+python3 deploy-sandbox.py test-provider codex
+python3 deploy-sandbox.py test-provider git
 ```
 
 Expected behavior:
@@ -468,7 +468,7 @@ Codex in Microsandbox mode.
 
 ## Implementation Requirements
 
-1. `sandboxed-bullpen.py --replace` must launch the install TUI, not stop after
+1. `deploy-sandbox.py --replace` must launch the install TUI, not stop after
    merely booting Bullpen.
 2. The install TUI must walk through Claude, Codex, and Git in order.
 3. The install TUI must process one item at a time.
@@ -498,7 +498,7 @@ Codex in Microsandbox mode.
 
 ### Initial Installation
 
-1. Run `python3 sandboxed-bullpen.py --replace`.
+1. Run `python3 deploy-sandbox.py --replace`.
 2. Confirm that the installer boots the VM and starts Bullpen.
 3. Confirm that the TUI presents Claude first.
 4. Select Claude.
@@ -602,7 +602,7 @@ User-facing docs should describe Microsandbox mode this way:
 The normal setup example is:
 
 ```bash
-python3 sandboxed-bullpen.py --replace
+python3 deploy-sandbox.py --replace
 ```
 
 That command should perform the full installation flow, including the setup TUI

@@ -255,7 +255,7 @@ class MicrosandboxRuntime:
         if snapshot is None:
             raise DeployError(
                 f"Prepared Microsandbox base '{base}' was not found. "
-                "Run: python3 deploy-msb.py --prepare-base"
+                "Run: python3 deploy-sandbox.py --prepare-base"
             )
         path = getattr(snapshot, "path", None)
         if path is None:
@@ -1006,7 +1006,7 @@ async def get_running_sandbox(runtime: MicrosandboxRuntime, config: DeployConfig
     if sandbox is None:
         raise DeployError(
             f"Microsandbox '{config.sandbox_name}' is not running. Deploy Bullpen first:\n"
-            "  python3 deploy-msb.py --replace"
+            "  python3 deploy-sandbox.py --replace"
         )
     return sandbox
 
@@ -1230,7 +1230,7 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         "test -x /opt/bullpen-venv/bin/python; "
         "command -v node >/dev/null; "
         "cd /app; "
-        "echo '[sandboxed-bullpen] starting Bullpen with /opt/bullpen-venv/bin/python on internal port ${BULLPEN_INTERNAL_PORT}' >> /home/bullpen/logs/bullpen.log; "
+        "echo '[deploy-sandbox] starting Bullpen with /opt/bullpen-venv/bin/python on internal port ${BULLPEN_INTERNAL_PORT}' >> /home/bullpen/logs/bullpen.log; "
         "nohup /opt/bullpen-venv/bin/python bullpen.py "
         f"--workspace {workspace} "
         "--start-without-project "
@@ -1238,7 +1238,7 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         '--port "$BULLPEN_INTERNAL_PORT" '
         "--no-browser "
         ">/home/bullpen/logs/bullpen.log 2>&1 & "
-        "echo '[sandboxed-bullpen] starting Node static/proxy front server on exposed port ${BULLPEN_PORT}' >> /home/bullpen/logs/bullpen-proxy.log; "
+        "echo '[deploy-sandbox] starting Node static/proxy front server on exposed port ${BULLPEN_PORT}' >> /home/bullpen/logs/bullpen-proxy.log; "
         "nohup node /app/deploy/microsandbox/bullpen-proxy.js "
         ">/home/bullpen/logs/bullpen-proxy.log 2>&1 &"
     )
@@ -1750,7 +1750,7 @@ async def ensure_prepared_base(runtime: MicrosandboxRuntime, config: DeployConfi
     if config.prepare_base_policy == "never":
         raise DeployError(
             f"Prepared Microsandbox base '{config.base}' was not found. "
-            "Run: python3 deploy-msb.py --prepare-base"
+            "Run: python3 deploy-sandbox.py --prepare-base"
         )
     log_step(f"Prepared base {config.base} not found; preparing it now")
     await prepare_base(runtime, config, force=True)

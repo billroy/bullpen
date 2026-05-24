@@ -51,7 +51,7 @@ Use the normal deploy command. No `MSB_PATH`, wrapper script, or special
 environment variable is needed:
 
 ```bash
-python3 deploy-msb.py --replace \
+python3 deploy-sandbox.py --replace \
   --sandbox-name bullpen-pr-workflow-test \
   --workspace /Users/bill/aistuff/pr-workflow-test \
   --bullpen-port 8080 \

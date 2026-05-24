@@ -12,7 +12,7 @@ change set that can produce a first-light end-to-end test:
 
 - Bullpen runs inside Microsandbox
 - Claude, Codex, and GitHub-over-HTTPS git setup run inside Microsandbox
-- install-time setup is a sequential TUI in `sandboxed-bullpen.py`
+- install-time setup is a sequential TUI in `deploy-sandbox.py`
 - setup happens per package: ask, run setup, verify, then advance
 - provider auth is created inside the sandbox user's durable home
 - provider setup state is created by native setup flows inside the VM
@@ -66,7 +66,7 @@ These are no longer open questions for this plan:
 
 ### Host launcher / sandbox orchestration
 
-- [sandboxed-bullpen.py](/Users/bill/aistuff/bullpen/sandboxed-bullpen.py)
+- [deploy-sandbox.py](/Users/bill/aistuff/bullpen/deploy-sandbox.py)
   - `build_arg_parser()`
   - `MicrosandboxRuntime.create()`
   - `run_sandbox_shell()`
@@ -94,7 +94,7 @@ These matter mostly for verification-command parity and Codex runtime flags.
 
 ### Existing tests
 
-- [tests/test_sandboxed_bullpen.py](/Users/bill/aistuff/bullpen/tests/test_sandboxed_bullpen.py)
+- [tests/test_deploy_sandbox.py](/Users/bill/aistuff/bullpen/tests/test_deploy_sandbox.py)
 - [tests/test_agents.py](/Users/bill/aistuff/bullpen/tests/test_agents.py)
 
 ### Existing docs to update after implementation
@@ -109,13 +109,13 @@ These matter mostly for verification-command parity and Codex runtime flags.
 
 The implementation should preserve one strong separation:
 
-- `sandboxed-bullpen.py` owns installation UX, browser brokering, PTY setup,
+- `deploy-sandbox.py` owns installation UX, browser brokering, PTY setup,
   and recovery messaging.
 - Bullpen inside the VM remains the runtime service being installed.
 
 Do not push the install TUI into the Bullpen web app in this slice.
 
-Recommended internal structure additions inside `sandboxed-bullpen.py`:
+Recommended internal structure additions inside `deploy-sandbox.py`:
 
 - a small **interactive exec helper** for PTY-backed sandbox commands
 - a **setup item abstraction** for Claude, Codex, and Git
@@ -130,12 +130,12 @@ reintroducing host-auth import assumptions into the normal path.
 
 ## Tranche 1 — Installer Foundations
 
-**Goal:** Make `sandboxed-bullpen.py` capable of driving an interactive setup
+**Goal:** Make `deploy-sandbox.py` capable of driving an interactive setup
 session inside Microsandbox without yet changing all provider flows.
 
 ### T1.1 Add explicit command surface for setup and verification
 
-Refactor [sandboxed-bullpen.py](/Users/bill/aistuff/bullpen/sandboxed-bullpen.py)
+Refactor [deploy-sandbox.py](/Users/bill/aistuff/bullpen/deploy-sandbox.py)
 CLI parsing so it supports:
 
 - deploy / replace flow
@@ -148,7 +148,7 @@ CLI parsing so it supports:
 
 Recommended approach:
 
-- preserve `python3 sandboxed-bullpen.py --replace` as the main install entry
+- preserve `python3 deploy-sandbox.py --replace` as the main install entry
 - add subcommands or equivalent dispatch for auth/test operations
 
 ### T1.2 Add sandbox-state error classification
@@ -186,7 +186,7 @@ new command surface and PTY helper in a way that can be tested in isolation.
 ### T1.5 Tests
 
 Add or update tests in
-[tests/test_sandboxed_bullpen.py](/Users/bill/aistuff/bullpen/tests/test_sandboxed_bullpen.py)
+[tests/test_deploy_sandbox.py](/Users/bill/aistuff/bullpen/tests/test_deploy_sandbox.py)
 for:
 
 - CLI dispatch for auth/test commands
@@ -304,8 +304,8 @@ If Claude auth/setup fails, error output should make clear whether:
 The retry instruction should always be:
 
 ```bash
-python3 sandboxed-bullpen.py auth claude
-python3 sandboxed-bullpen.py test-provider claude
+python3 deploy-sandbox.py auth claude
+python3 deploy-sandbox.py test-provider claude
 ```
 
 ### T3.5 Tests
@@ -458,7 +458,7 @@ per-package installer.
 ### T6.1 Add setup item abstraction
 
 Recommended simple structure inside
-[sandboxed-bullpen.py](/Users/bill/aistuff/bullpen/sandboxed-bullpen.py):
+[deploy-sandbox.py](/Users/bill/aistuff/bullpen/deploy-sandbox.py):
 
 ```python
 SetupItem(
@@ -513,7 +513,7 @@ Add tests for:
 - full-install success path
 - full-install abort on selected-item failure
 
-**Checkpoint:** `python3 sandboxed-bullpen.py --replace` performs the full
+**Checkpoint:** `python3 deploy-sandbox.py --replace` performs the full
 install-time setup loop.
 
 ---
@@ -563,7 +563,7 @@ Run:
 
 - targeted launcher/unit tests
 - provider command tests
-- `tests/test_sandboxed_bullpen.py`
+- `tests/test_deploy_sandbox.py`
 - `tests/test_agents.py`
 
 **Checkpoint:** docs and code agree on the new Microsandbox install model.

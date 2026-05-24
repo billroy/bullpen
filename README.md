@@ -131,9 +131,9 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **MCP**: stdio JSON-RPC server for agent ticket-tool integration
 
 ```
-bullpen.py              # Entry point
-deploy-msb.py           # Microsandbox deploy, base setup, and maintenance helper
-deploy/microsandbox/    # Deprecated compatibility wrappers
+bullpen.py              # Main app entry point
+deploy-sandbox.py       # Microsandbox deploy, base setup, and maintenance helper
+deploy/microsandbox/    # Microsandbox support files
 server/
   app.py                # Flask app factory, routes, startup reconciliation
   auth.py               # Optional multi-user authentication
@@ -447,13 +447,13 @@ project. The base contains Python dependencies, Node.js/npm, Git, GitHub CLI,
 ripgrep, and the Claude, Codex, and Gemini CLIs.
 
 ```bash
-python3 deploy-msb.py --workspace /path/to/project
+python3 deploy-sandbox.py --workspace-root /path/to/projects
 ```
 
 To prepare or rebuild the reusable base without starting Bullpen:
 
 ```bash
-python3 deploy-msb.py --prepare-base
+python3 deploy-sandbox.py --prepare-base
 ```
 
 During the run step, Bullpen prompts for the admin password if
@@ -466,7 +466,7 @@ and persist under `/home/bullpen`.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--sandbox-name NAME` | `bullpen` | Microsandbox instance name |
-| `--workspace PATH` | current directory | Initial host project directory mounted as `/workspace/<project-name>` |
+| `--workspace-root PATH` | required | Host directory containing projects, mounted as `/workspace` |
 | `--bullpen-port PORT` | `8080` | Host and guest Bullpen UI port |
 | `--app-port PORT` | `3000` | Host and guest app preview port exposed for project commands |
 | `--admin-user USER` | `admin` | Bullpen login user to bootstrap inside the sandbox |
@@ -482,18 +482,17 @@ and persist under `/home/bullpen`.
 | `--replace` | off | Replace an existing sandbox without prompting |
 | `--no-replace` | off | Abort if a sandbox with the same name already exists |
 | `--open` / `--no-open` | open | Open or suppress opening the Bullpen UI in a host browser |
-| `--install-bullpen-project` | off | Clone Bullpen into the default local project path and mount it as the workspace |
 
 Additional maintenance commands:
 
 ```bash
-python3 deploy-msb.py auth claude
-python3 deploy-msb.py auth codex
-python3 deploy-msb.py auth git
-python3 deploy-msb.py test-provider claude
-python3 deploy-msb.py test-provider codex
-python3 deploy-msb.py test-provider git
-python3 deploy-msb.py first-light claude
+python3 deploy-sandbox.py auth claude
+python3 deploy-sandbox.py auth codex
+python3 deploy-sandbox.py auth git
+python3 deploy-sandbox.py test-provider claude
+python3 deploy-sandbox.py test-provider codex
+python3 deploy-sandbox.py test-provider git
+python3 deploy-sandbox.py first-light claude
 ```
 
 See [docs/microsandbox.md](docs/microsandbox.md) for implementation details,

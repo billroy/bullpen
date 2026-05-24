@@ -8,11 +8,11 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "deploy-msb.py"
+SCRIPT = ROOT / "deploy-sandbox.py"
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("sandboxed_bullpen_test", SCRIPT)
+    spec = importlib.util.spec_from_file_location("deploy_sandbox_test", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module

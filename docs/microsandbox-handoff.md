@@ -38,7 +38,7 @@ installer terminal, where the installer replays it against sandbox-localhost.
 
 ### Installer flow
 
-`sandboxed-bullpen.py --replace` now:
+`deploy-sandbox.py --replace` now:
 
 - creates the sandbox from the prepared base
 - waits for Bullpen health
@@ -83,8 +83,8 @@ This ruled out the earlier suspicion that the base image was stale.
 Verified before this handoff:
 
 ```bash
-python3 -m pytest tests/test_sandboxed_bullpen.py tests/test_agents.py
-python3 -m py_compile sandboxed-bullpen.py
+python3 -m pytest tests/test_deploy_sandbox.py tests/test_agents.py
+python3 -m py_compile deploy-sandbox.py
 git diff --check
 ```
 
@@ -95,8 +95,8 @@ Result at handoff:
 Additional focused checks during the standalone repro pass:
 
 ```bash
-python3 -m py_compile sandboxed-bullpen.py tmp/claude_auth_microsandbox_repro.py
-python3 -m pytest tests/test_sandboxed_bullpen.py -q
+python3 -m py_compile deploy-sandbox.py tmp/claude_auth_microsandbox_repro.py
+python3 -m pytest tests/test_deploy_sandbox.py -q
 git diff --check
 ```
 
@@ -107,8 +107,8 @@ Result:
 Latest focused verification after adding the scoped IPv6 mitigation:
 
 ```bash
-python3 -m py_compile sandboxed-bullpen.py tmp/claude_auth_microsandbox_repro.py tmp/probe_existing_microsandbox_tls.py tmp/claude_network_mitigation_cycle.py tmp/microsandbox_vger.py tmp/run_microsandbox_vger.py
-python3 -m pytest tests/test_sandboxed_bullpen.py -q
+python3 -m py_compile deploy-sandbox.py tmp/claude_auth_microsandbox_repro.py tmp/probe_existing_microsandbox_tls.py tmp/claude_network_mitigation_cycle.py tmp/microsandbox_vger.py tmp/run_microsandbox_vger.py
+python3 -m pytest tests/test_deploy_sandbox.py -q
 python3 tmp/claude_network_mitigation_cycle.py
 ```
 
@@ -121,8 +121,8 @@ Latest focused local verification after adding the Codex localhost callback
 bridge:
 
 ```bash
-python3 -m py_compile sandboxed-bullpen.py
-python3 -m pytest tests/test_sandboxed_bullpen.py -q
+python3 -m py_compile deploy-sandbox.py
+python3 -m pytest tests/test_deploy_sandbox.py -q
 ```
 
 Result:
@@ -248,7 +248,7 @@ harness captures `strace -ff -tt -s 256 -e trace=network` logs when possible
 and polls `ss` during the run.
 
 The current `--disable-ipv6` flag is diagnostic-only in the repro harness. The
-installer-side mitigation is implemented separately in `sandboxed-bullpen.py`
+installer-side mitigation is implemented separately in `deploy-sandbox.py`
 before Claude auth and Claude verification.
 
 ## VGER Environment Probe
@@ -394,7 +394,7 @@ python3 tmp/claude_network_mitigation_cycle.py
 `tmp/claude_network_mitigation_cycle.py` is the preferred noninteractive test
 cycle. It creates a fresh Microsandbox through the same live `runtime.create()`
 path as the installer, applies `disable_guest_ipv6_for_claude()` from
-`sandboxed-bullpen.py`, verifies `all/default/eth0` IPv6 disable flags, proves
+`deploy-sandbox.py`, verifies `all/default/eth0` IPv6 disable flags, proves
 IPv4 TLS to `platform.claude.com` succeeds, and proves IPv6 no longer succeeds.
 
 Latest cycle output:
@@ -663,7 +663,7 @@ successful IPv6-disabled diagnostic run did create:
 
 Primary file:
 
-- [sandboxed-bullpen.py](/Users/bill/aistuff/bullpen/sandboxed-bullpen.py)
+- [deploy-sandbox.py](/Users/bill/aistuff/bullpen/deploy-sandbox.py)
 
 Important current behavior in that file:
 
@@ -690,7 +690,7 @@ Important current behavior in that file:
 
 Tests updated in:
 
-- [tests/test_sandboxed_bullpen.py](/Users/bill/aistuff/bullpen/tests/test_sandboxed_bullpen.py)
+- [tests/test_deploy_sandbox.py](/Users/bill/aistuff/bullpen/tests/test_deploy_sandbox.py)
 
 Spec and plan documents already in place:
 
@@ -705,10 +705,10 @@ The next task is to verify the full installer path with the narrow IPv6
 mitigation:
 
 ```bash
-python3 sandboxed-bullpen.py --replace ...
+python3 deploy-sandbox.py --replace ...
 ```
 
-Do not use `python3 sandboxed-bullpen.py auth claude` as the next validation
+Do not use `python3 deploy-sandbox.py auth claude` as the next validation
 after a failed deploy process exits. With the current Microsandbox SDK,
 `Sandbox.get()` can see that the named sandbox exists but does not return a
 handle with `exec()`/`attach()`, so the command cannot operate on the existing
@@ -738,7 +738,7 @@ What still needs to be learned:
 Continue with the full installer command path, focused on Codex callback
 delivery:
 
-- run the same `python3 sandboxed-bullpen.py --replace ...` command used for
+- run the same `python3 deploy-sandbox.py --replace ...` command used for
   the normal Microsandbox install
 - choose Claude only if the sandbox home does not already contain valid Claude
   auth; otherwise skip it
@@ -788,4 +788,4 @@ scope narrow and explicit.
 
 Use this as the starting instruction for a fresh session:
 
-> Read [docs/microsandbox-handoff.md](/Users/bill/aistuff/bullpen/docs/microsandbox-handoff.md) first. We isolated `claude auth login` inside Microsandbox to a broken guest IPv6 TLS path: Claude's post-code OAuth request chooses IPv6, gets EOF, and reports `unknown certificate verification error`. The standalone repro succeeds when guest IPv6 is disabled, and `sandboxed-bullpen.py` now disables guest IPv6 with the same `sysctl` keys before Claude auth/verify only. After that, Codex exposed a separate localhost callback problem: plain `codex login` returns the host browser to `http://localhost:<port>/auth/callback?...`, but the listener is inside the sandbox. `sandboxed-bullpen.py` now lets the user paste that callback URL into the installer terminal and replays it inside sandbox-localhost; the local unit tests cover callback URL detection and delivery helper behavior, but the live Codex OAuth replay still needs validation. Do not redesign the installer. Stay inside the project directory unless you ask first. The next validation is the full `sandboxed-bullpen.py --replace ...` installer path, not `auth claude`, because `Sandbox.get()` does not provide an executable handle for the detached sandbox in this SDK.
+> Read [docs/microsandbox-handoff.md](/Users/bill/aistuff/bullpen/docs/microsandbox-handoff.md) first. We isolated `claude auth login` inside Microsandbox to a broken guest IPv6 TLS path: Claude's post-code OAuth request chooses IPv6, gets EOF, and reports `unknown certificate verification error`. The standalone repro succeeds when guest IPv6 is disabled, and `deploy-sandbox.py` now disables guest IPv6 with the same `sysctl` keys before Claude auth/verify only. After that, Codex exposed a separate localhost callback problem: plain `codex login` returns the host browser to `http://localhost:<port>/auth/callback?...`, but the listener is inside the sandbox. `deploy-sandbox.py` now lets the user paste that callback URL into the installer terminal and replays it inside sandbox-localhost; the local unit tests cover callback URL detection and delivery helper behavior, but the live Codex OAuth replay still needs validation. Do not redesign the installer. Stay inside the project directory unless you ask first. The next validation is the full `deploy-sandbox.py --replace ...` installer path, not `auth claude`, because `Sandbox.get()` does not provide an executable handle for the detached sandbox in this SDK.

@@ -155,13 +155,13 @@ Expected result on this host after #671:
    - Claude `--print --verbose --output-format stream-json` succeeds
 
 8. If the clean runtime proves address-family gating works, remove
-   `disable_guest_ipv6_for_claude()` from `deploy-msb.py` and update
-   `tests/test_sandboxed_bullpen.py` accordingly.
+   `disable_guest_ipv6_for_claude()` from `deploy-sandbox.py` and update
+   `tests/test_deploy_sandbox.py` accordingly.
 
 9. Run the full Bullpen test suite:
 
 ```bash
-python3 -m py_compile deploy-msb.py
+python3 -m py_compile deploy-sandbox.py
 python3 -m pytest -q
 git diff --check
 ```
