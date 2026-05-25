@@ -140,6 +140,7 @@ const TopToolbar = {
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
     window.addEventListener('keydown', this.onGlobalKeydown);
+    window.addEventListener('bullpen:command-palette:open', this.openPaletteOverlay);
     window.addEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
     renderLucideIcons(this.$el);
   },
@@ -149,6 +150,7 @@ const TopToolbar = {
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
     window.removeEventListener('keydown', this.onGlobalKeydown);
+    window.removeEventListener('bullpen:command-palette:open', this.openPaletteOverlay);
     window.removeEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
   },
   methods: {

@@ -40,3 +40,18 @@ def test_json_file_is_returned_as_text_payload_for_viewer(tmp_workspace):
     assert body["path"] == "data.json"
     assert body["mime"].startswith("application/json")
     assert '"name": "Bullpen"' in body["content"]
+
+
+def test_file_write_rejects_payloads_over_one_mb(tmp_workspace):
+    init_workspace(tmp_workspace)
+    path = os.path.join(tmp_workspace, "large.txt")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("small")
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    resp = client.put("/api/files/large.txt", data="x" * 1_000_001, content_type="text/plain")
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "File too large (max 1MB)"

@@ -60,7 +60,7 @@ const FileTreeNode = {
 };
 
 const FilesTab = {
-  props: ['filesVersion', 'workspaceId'],
+  props: ['filesVersion', 'workspaceId', 'activeTheme'],
   template: `
     <div class="files-container">
       <div class="files-tree-pane">
@@ -109,21 +109,8 @@ const FilesTab = {
           </div>
           <!-- Edit mode -->
           <div v-if="editing" class="file-edit-container">
-            <div v-if="showFind" class="find-replace-bar">
-              <div class="find-replace-row">
-                <input class="find-input" v-model="findText" placeholder="Find" ref="findInput" @keydown.enter="findNext" @keydown.esc="closeFind" @input="updateFindCount" />
-                <span class="find-count">{{ findText ? findIndex + ' / ' + findCount : '' }}</span>
-                <button class="btn btn-sm" @click="findPrev" title="Previous">&#9650;</button>
-                <button class="btn btn-sm" @click="findNext" title="Next">&#9660;</button>
-                <button class="btn btn-sm" @click="closeFind" title="Close">&times;</button>
-              </div>
-              <div v-if="showReplace" class="find-replace-row">
-                <input class="find-input" v-model="replaceText" placeholder="Replace" @keydown.esc="closeFind" />
-                <button class="btn btn-sm" @click="doReplace">Replace</button>
-                <button class="btn btn-sm" @click="doReplaceAll">Replace All</button>
-              </div>
-            </div>
-            <textarea class="file-editor-textarea" v-model="editContent" ref="editTextarea" @keydown="onEditorKeydown"></textarea>
+            <div v-if="editorError" class="file-editor-error">{{ editorError }}</div>
+            <div v-show="!editorError" ref="aceContainer" class="ace-host"></div>
           </div>
           <!-- Image -->
           <div v-else-if="isImage" class="file-view-image">
@@ -173,12 +160,8 @@ const FilesTab = {
       viewMode: 'preview',
       editing: false,
       editContent: '',
-      showFind: false,
-      showReplace: false,
-      findText: '',
-      replaceText: '',
-      findCount: 0,
-      findIndex: 0,
+      editorError: '',
+      _ace: null,
     };
   },
   computed: {
@@ -242,6 +225,7 @@ const FilesTab = {
   },
   watch: {
     activeFile() {
+      this._destroyAceEditor();
       this.viewMode = 'preview';
       this.editing = false;
     },
@@ -253,15 +237,22 @@ const FilesTab = {
     },
     workspaceId(newId, oldId) {
       if (newId === oldId) return;
+      this._destroyAceEditor();
       this.openFiles = [];
       this.activeFile = null;
       this.editing = false;
       this.loadTree();
     },
+    activeTheme() {
+      this._setAceTheme();
+    },
   },
   mounted() {
     this.loadTree();
     this.$nextTick(() => renderLucideIcons(this.$el));
+  },
+  unmounted() {
+    this._destroyAceEditor();
   },
   updated() {
     renderLucideIcons(this.$el);
@@ -326,6 +317,7 @@ const FilesTab = {
     switchToFile(f) {
       if (this.editing) {
         if (!confirm('Discard unsaved changes?')) return;
+        this._destroyAceEditor();
         this.editing = false;
       }
       this.activeFile = f;
@@ -334,6 +326,7 @@ const FilesTab = {
     closeFile(path) {
       if (this.editing && this.activeFile?.path === path) {
         if (!confirm('Discard unsaved changes?')) return;
+        this._destroyAceEditor();
         this.editing = false;
       }
       const idx = this.openFiles.findIndex(f => f.path === path);
@@ -346,13 +339,16 @@ const FilesTab = {
     startEditing() {
       this.editContent = this.activeFile.content || '';
       this.editing = true;
+      this.editorError = '';
+      this.$nextTick(() => this._createAceEditor());
     },
     async saveEdit() {
       try {
+        const content = this._aceValue();
         const res = await filesFetch(this._filesUrl(this.activeFile.path), {
           method: 'PUT',
           headers: { 'Content-Type': 'text/plain' },
-          body: this.editContent,
+          body: content,
         });
         if (!res) return;
         if (!res.ok) {
@@ -360,105 +356,17 @@ const FilesTab = {
           alert('Save failed: ' + (data.error || 'Unknown error'));
           return;
         }
-        this.activeFile.content = this.editContent;
+        this.activeFile.content = content;
+        this.editContent = content;
+        this._destroyAceEditor();
         this.editing = false;
       } catch (e) {
         alert('Save failed: ' + e.message);
       }
     },
     cancelEdit() {
+      this._destroyAceEditor();
       this.editing = false;
-      this.closeFind();
-    },
-    onEditorKeydown(e) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        e.preventDefault();
-        this.showFind = true;
-        this.showReplace = false;
-        this.$nextTick(() => this.$refs.findInput?.focus());
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
-        e.preventDefault();
-        this.showFind = true;
-        this.showReplace = true;
-        this.$nextTick(() => this.$refs.findInput?.focus());
-      }
-    },
-    closeFind() {
-      this.showFind = false;
-      this.showReplace = false;
-      this.findText = '';
-      this.replaceText = '';
-      this.findCount = 0;
-      this.findIndex = 0;
-    },
-    updateFindCount() {
-      if (!this.findText) {
-        this.findCount = 0;
-        this.findIndex = 0;
-        return;
-      }
-      const matches = this.editContent.split(this.findText).length - 1;
-      this.findCount = matches;
-      this.findIndex = matches > 0 ? 1 : 0;
-    },
-    findNext() {
-      if (!this.findText || this.findCount === 0) return;
-      const ta = this.$refs.editTextarea;
-      const start = (ta.selectionEnd || 0);
-      const idx = this.editContent.indexOf(this.findText, start);
-      if (idx >= 0) {
-        ta.focus();
-        ta.setSelectionRange(idx, idx + this.findText.length);
-        this.findIndex = this._matchIndexAt(idx);
-      } else {
-        // Wrap around
-        const wrapIdx = this.editContent.indexOf(this.findText);
-        if (wrapIdx >= 0) {
-          ta.focus();
-          ta.setSelectionRange(wrapIdx, wrapIdx + this.findText.length);
-          this.findIndex = 1;
-        }
-      }
-    },
-    findPrev() {
-      if (!this.findText || this.findCount === 0) return;
-      const ta = this.$refs.editTextarea;
-      const end = (ta.selectionStart || this.editContent.length) - 1;
-      const idx = this.editContent.lastIndexOf(this.findText, end);
-      if (idx >= 0) {
-        ta.focus();
-        ta.setSelectionRange(idx, idx + this.findText.length);
-        this.findIndex = this._matchIndexAt(idx);
-      } else {
-        // Wrap around
-        const wrapIdx = this.editContent.lastIndexOf(this.findText);
-        if (wrapIdx >= 0) {
-          ta.focus();
-          ta.setSelectionRange(wrapIdx, wrapIdx + this.findText.length);
-          this.findIndex = this.findCount;
-        }
-      }
-    },
-    _matchIndexAt(pos) {
-      const before = this.editContent.substring(0, pos);
-      return before.split(this.findText).length;
-    },
-    doReplace() {
-      if (!this.findText || this.findCount === 0) return;
-      const ta = this.$refs.editTextarea;
-      const selected = this.editContent.substring(ta.selectionStart, ta.selectionEnd);
-      if (selected === this.findText) {
-        this.editContent = this.editContent.substring(0, ta.selectionStart) + this.replaceText + this.editContent.substring(ta.selectionEnd);
-        this.updateFindCount();
-        this.findNext();
-      } else {
-        this.findNext();
-      }
-    },
-    doReplaceAll() {
-      if (!this.findText) return;
-      this.editContent = this.editContent.replaceAll(this.findText, this.replaceText);
-      this.updateFindCount();
     },
     async reloadActiveFile() {
       if (!this.activeFile || this.isImage || this.isPdf) return;
@@ -475,6 +383,102 @@ const FilesTab = {
     getExt(name) {
       const dot = name.lastIndexOf('.');
       return dot >= 0 ? name.substring(dot).toLowerCase() : '';
+    },
+    _createAceEditor() {
+      if (!this.editing) return;
+      if (!window.ace) {
+        this.editorError = 'Editor failed to load.';
+        return;
+      }
+      const container = this.$refs.aceContainer;
+      if (!container) return;
+      this._destroyAceEditor();
+      this.editorError = '';
+      window.ace.config.set('basePath', 'https://cdn.jsdelivr.net/npm/ace-builds@1.44.0/src-min-noconflict/');
+      this._ace = window.ace.edit(container, {
+        mode: `ace/mode/${this._aceModeForExt(this.ext)}`,
+        theme: this._aceThemeForActiveTheme(),
+        fontSize: 13,
+        showPrintMargin: false,
+        useWorker: false,
+        wrap: true,
+        behavioursEnabled: false,
+        wrapBehavioursEnabled: false,
+        enableAutoIndent: false,
+        enableBasicAutocompletion: false,
+        enableLiveAutocompletion: false,
+        enableSnippets: false,
+        highlightActiveLine: false,
+        highlightGutterLine: false,
+        highlightSelectedWord: false,
+        displayIndentGuides: false,
+        highlightIndentGuides: false,
+        showFoldWidgets: false,
+      });
+      this._ace.setValue(this.editContent, -1);
+      this._installAceCommands();
+      this._ace.focus();
+      this._ace.resize(true);
+    },
+    _installAceCommands() {
+      if (!this._ace) return;
+      this._ace.commands.addCommand({
+        name: 'bullpenSave',
+        bindKey: { win: 'Ctrl-S', mac: 'Command-S' },
+        exec: () => this.saveEdit(),
+      });
+      this._ace.commands.addCommand({
+        name: 'bullpenReplace',
+        bindKey: { win: 'Ctrl-H', mac: 'Command-H' },
+        exec: (editor) => {
+          const searchbox = window.ace?.require?.('ace/ext/searchbox');
+          if (searchbox?.Search) searchbox.Search(editor, true);
+        },
+      });
+      this._ace.commands.addCommand({
+        name: 'bullpenCommandPalette',
+        bindKey: { win: 'Ctrl-K', mac: 'Command-K' },
+        exec: () => window.dispatchEvent(new Event('bullpen:command-palette:open')),
+      });
+    },
+    _destroyAceEditor() {
+      if (!this._ace) return;
+      this.editContent = this._ace.getValue();
+      this._ace.destroy();
+      this._ace = null;
+      if (this.$refs.aceContainer) this.$refs.aceContainer.textContent = '';
+    },
+    _setAceMode() {
+      if (!this._ace) return;
+      this._ace.session.setMode(`ace/mode/${this._aceModeForExt(this.ext)}`);
+      this._ace.session.setUseWorker(false);
+    },
+    _setAceTheme() {
+      if (!this._ace) return;
+      this._ace.setTheme(this._aceThemeForActiveTheme());
+    },
+    _aceValue() {
+      return this._ace ? this._ace.getValue() : this.editContent;
+    },
+    _aceModeForExt(ext) {
+      const map = {
+        '.js': 'javascript', '.mjs': 'javascript', '.jsx': 'javascript',
+        '.ts': 'typescript', '.tsx': 'typescript',
+        '.py': 'python',
+        '.json': 'json',
+        '.css': 'css', '.scss': 'css',
+        '.html': 'html', '.htm': 'html',
+        '.xml': 'xml', '.svg': 'xml',
+        '.md': 'markdown', '.markdown': 'markdown',
+        '.sh': 'sh', '.bash': 'sh', '.zsh': 'sh',
+        '.yaml': 'yaml', '.yml': 'yaml',
+        '.toml': 'toml',
+      };
+      return map[ext] || 'text';
+    },
+    _aceThemeForActiveTheme() {
+      const lightThemes = new Set(['light', 'light-ethereal', 'light-stone-teal', 'light-ivory-olive', 'eyeshade']);
+      return lightThemes.has(this.activeTheme) ? 'ace/theme/chrome' : 'ace/theme/tomorrow_night';
     },
     escapeHtml(str) {
       return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

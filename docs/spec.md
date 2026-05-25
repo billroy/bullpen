@@ -670,14 +670,13 @@ All client-server communication uses socket.io. No REST endpoints for core funct
 - **Tab bar** at top: Multiple files can be open. Click tab to switch, "x" to close.
 - **View modes by file type:**
   - `.md` files: Rendered markdown preview with toggle to raw edit mode
-  - `.txt` files: Plain text editor
-  - Source code (`.py`, `.js`, `.ts`, `.css`, `.json`, `.yaml`, etc.): Syntax-highlighted **read-only** view. Use a lightweight library like CodeMirror (available via CDN, no build step) or Prism.js for highlighting. Source editing is intentionally out of scope — agents like Codex may modify workspace files directly, but the Operator reviews and commits those changes via their normal git tools (IDE, `git diff`, etc.).
+  - Text and source files (`.txt`, `.py`, `.js`, `.ts`, `.css`, `.json`, `.yaml`, etc.): Syntax-highlighted source view, with raw edit mode for files accepted by the Files API. Edit mode uses a quiet in-browser editor: syntax highlighting, line numbers, viewport-edge word wrap, explicit Tab indentation, and single-file find/replace are allowed; automated text interventions such as auto-indent, bracket matching, autocomplete, lint popups, and suggestions are disabled.
   - `.html` files: Rendered preview in a **sandboxed iframe** (no script execution) with toggle to syntax-highlighted source view
   - `.pdf` files: Embedded PDF viewer (`<iframe>` or `<embed>`)
   - Images (`.png`, `.jpg`, `.gif`, `.svg`): Inline display
   - Other files: Plain text fallback or "unsupported format" message
 
-> **No-build-step constraint:** Use CDN-hosted libraries (CodeMirror, Prism.js, or Monaco) loaded via `<script>` tags. No npm/webpack/vite.
+> **No-build-step constraint:** Use CDN-hosted libraries loaded via `<script>` tags. No npm/webpack/vite.
 
 ---
 
@@ -863,7 +862,7 @@ Every client->server socket event is validated on the server before processing:
 - **Multi-user / authentication**: No login, no user identity, no permissions.
 - **Remote agents / API-based agents**: All agents are local CLI processes.
 - **Undo/redo**: No undo for kanban or bullpen actions.
-- **Advanced file editing**: The file viewer is primarily for viewing. Editing is limited to markdown and plain text. Source code modifications happen through agents (e.g., Codex `--auto-edit`) and are reviewed via external git tools, not in the bullpen UI.
+- **Advanced file editing**: The file viewer is primarily for viewing and light edits. Source/text files accepted by the Files API can be edited in a quiet in-browser editor, but full IDE features such as autocomplete, diagnostics, formatting, language servers, project-wide refactors, and multi-file replace remain out of scope.
 
 ---
 
