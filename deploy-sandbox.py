@@ -32,9 +32,14 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from pathlib import Path
 from typing import Any
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - deploy validation rejects unsupported hosts.
+    resource = None
 
 
 BULLPEN_GITHUB_REPO_URL_DEFAULT = "https://github.com/billroy/bullpen.git"
@@ -47,6 +52,9 @@ SOURCE_IMAGE_DEFAULT = "node:22-bookworm"
 MANAGED_SOURCE_DIR_DEFAULT = Path.home() / ".bullpen" / "microsandbox-source" / "bullpen"
 VCPUS_DEFAULT = 4
 MEMORY_MIB_DEFAULT = 4096
+HOST_NOFILE_DEFAULT = 12000
+GUEST_NOFILE_DEFAULT = 65536
+NETWORK_MAX_CONNECTIONS_DEFAULT = 8192
 HEALTH_TIMEOUT_SECONDS = 20
 SYSTEM_CA_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 SYSTEM_CA_CERT_DIR = "/etc/ssl/certs"
@@ -73,6 +81,9 @@ class DeployConfig:
     github_repo_url: str
     vcpus: int = VCPUS_DEFAULT
     memory_mib: int = MEMORY_MIB_DEFAULT
+    host_nofile: int = HOST_NOFILE_DEFAULT
+    guest_nofile: int = GUEST_NOFILE_DEFAULT
+    network_max_connections: int = NETWORK_MAX_CONNECTIONS_DEFAULT
     action: str = "deploy"
     target: str | None = None
     runtime_env: dict[str, str] = field(default_factory=dict)
@@ -198,7 +209,8 @@ class MicrosandboxRuntime:
             container_workspace_path(config): self.Volume.bind(str(config.workspace)),
             "/home/bullpen": self.Volume.bind(str(config.sandbox_home)),
         }
-        network = self.Network.allow_all()
+        ensure_host_nofile(config.host_nofile)
+        network = network_with_max_connections(self.Network.allow_all(), config.network_max_connections)
         ports = {
             config.bullpen_port: config.bullpen_port,
             config.app_port: config.app_port,
@@ -314,6 +326,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sandbox-home", default=str(Path.home() / ".bullpen" / "microsandbox-home"))
     parser.add_argument("--vcpus", default=str(VCPUS_DEFAULT), help=f"Virtual CPUs for the final sandbox (default: {VCPUS_DEFAULT})")
     parser.add_argument("--memory-mib", default=str(MEMORY_MIB_DEFAULT), help=f"Memory for the final sandbox in MiB (default: {MEMORY_MIB_DEFAULT})")
+    parser.add_argument(
+        "--host-nofile",
+        default=os.environ.get("BULLPEN_MICROSANDBOX_HOST_NOFILE", str(HOST_NOFILE_DEFAULT)),
+        help=f"Target host process RLIMIT_NOFILE before creating the sandbox runtime (default: {HOST_NOFILE_DEFAULT})",
+    )
+    parser.add_argument(
+        "--guest-nofile",
+        default=os.environ.get("BULLPEN_MICROSANDBOX_GUEST_NOFILE", str(GUEST_NOFILE_DEFAULT)),
+        help=f"Target bullpen user RLIMIT_NOFILE inside the sandbox (default: {GUEST_NOFILE_DEFAULT})",
+    )
+    parser.add_argument(
+        "--network-max-connections",
+        default=os.environ.get("BULLPEN_MICROSANDBOX_MAX_CONNECTIONS", str(NETWORK_MAX_CONNECTIONS_DEFAULT)),
+        help=f"Microsandbox network max concurrent guest connections (default: {NETWORK_MAX_CONNECTIONS_DEFAULT})",
+    )
     parser.add_argument("--replace", action="store_true", default=False)
     parser.add_argument("--no-replace", action="store_true", default=False)
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
@@ -347,6 +374,54 @@ def parse_positive_int(name: str, value: str) -> int:
     if parsed < 1:
         raise DeployError(f"{name} must be at least 1")
     return parsed
+
+
+def ensure_host_nofile(target: int) -> tuple[int, int]:
+    if resource is None:
+        print(
+            f"warn: host RLIMIT_NOFILE is unavailable on this platform; target={target} was not applied",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 0, 0
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft >= target:
+        return soft, hard
+    new_soft = target
+    if hard != resource.RLIM_INFINITY:
+        new_soft = min(target, hard)
+    try:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (new_soft, hard))
+    except (OSError, ValueError) as exc:
+        print(
+            f"warn: could not raise host RLIMIT_NOFILE from soft={soft} hard={hard} "
+            f"to target={target}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return soft, hard
+    updated_soft, updated_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if updated_soft < target:
+        print(
+            f"warn: host RLIMIT_NOFILE is soft={updated_soft} hard={updated_hard}, "
+            f"below target={target}; Microsandbox runtime may hit host-side FD pressure",
+            file=sys.stderr,
+            flush=True,
+        )
+    return updated_soft, updated_hard
+
+
+def network_with_max_connections(network: Any, max_connections: int) -> Any:
+    if hasattr(network, "max_connections"):
+        try:
+            return dataclass_replace(network, max_connections=max_connections)
+        except TypeError:
+            setattr(network, "max_connections", max_connections)
+            return network
+    raise DeployError(
+        "The installed microsandbox SDK Network object does not expose max_connections; "
+        "upgrade microsandbox or omit this deploy path."
+    )
 
 
 def prompt_password() -> str:
@@ -494,6 +569,9 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
     app_port = parse_port("App port", args.app_port)
     vcpus = parse_positive_int("Virtual CPUs", args.vcpus)
     memory_mib = parse_positive_int("Memory MiB", args.memory_mib)
+    host_nofile = parse_positive_int("Host nofile", args.host_nofile)
+    guest_nofile = parse_positive_int("Guest nofile", args.guest_nofile)
+    network_max_connections = parse_positive_int("Network max connections", args.network_max_connections)
     if bullpen_port == app_port:
         raise DeployError("Bullpen web port and app port must be different")
 
@@ -538,6 +616,9 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         github_repo_url=github_repo_url,
         vcpus=vcpus,
         memory_mib=memory_mib,
+        host_nofile=host_nofile,
+        guest_nofile=guest_nofile,
+        network_max_connections=network_max_connections,
         action=action,
         target=target,
         prepare_base_policy=prepare_base_policy,
@@ -588,6 +669,9 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_VENV": "/opt/bullpen-venv",
             "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),
             "BULLPEN_CODEX_PATH": "/usr/local/bin/codex",
+            "BULLPEN_MICROSANDBOX_HOST_NOFILE": str(config.host_nofile),
+            "BULLPEN_MICROSANDBOX_GUEST_NOFILE": str(config.guest_nofile),
+            "BULLPEN_MICROSANDBOX_MAX_CONNECTIONS": str(config.network_max_connections),
         }
     )
 
@@ -1116,17 +1200,17 @@ chmod 700 /var/lib/bullpen 2>/dev/null || true
 # as misclassified TLS or DNS errors that look like API retry storms.
 mkdir -p /etc/security/limits.d
 cat > /etc/security/limits.d/bullpen-fd.conf <<'LIMITS_EOF'
-bullpen soft nofile 65536
-bullpen hard nofile 65536
+bullpen soft nofile __GUEST_NOFILE__
+bullpen hard nofile __GUEST_NOFILE__
 LIMITS_EOF
 chmod 644 /etc/security/limits.d/bullpen-fd.conf
 su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex'
 soft_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Sn')"
 hard_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Hn')"
-if [ "$soft_nofile" -lt 65536 ] || [ "$hard_nofile" -lt 65536 ]; then
-  echo "warn: bullpen RLIMIT_NOFILE is soft=$soft_nofile hard=$hard_nofile, expected soft=65536 hard=65536; pam_limits may not be enforcing limits.d" >&2
+if [ "$soft_nofile" -lt __GUEST_NOFILE__ ] || [ "$hard_nofile" -lt __GUEST_NOFILE__ ]; then
+  echo "warn: bullpen RLIMIT_NOFILE is soft=$soft_nofile hard=$hard_nofile, expected soft=__GUEST_NOFILE__ hard=__GUEST_NOFILE__; pam_limits may not be enforcing limits.d" >&2
 fi
-'''
+'''.replace("__GUEST_NOFILE__", str(config.guest_nofile))
     await run_configured_sandbox_shell(sandbox, config, command, label="prepare Microsandbox runtime user")
     await run_sandbox_shell(sandbox, "test -x /opt/bullpen-venv/bin/python")
 
@@ -1230,6 +1314,7 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         "test -x /opt/bullpen-venv/bin/python; "
         "command -v node >/dev/null; "
         "cd /app; "
+        "echo '[deploy-sandbox] runtime limits: host_nofile=${BULLPEN_MICROSANDBOX_HOST_NOFILE} guest_nofile=${BULLPEN_MICROSANDBOX_GUEST_NOFILE} network_max_connections=${BULLPEN_MICROSANDBOX_MAX_CONNECTIONS}' >> /home/bullpen/logs/bullpen.log; "
         "echo '[deploy-sandbox] starting Bullpen with /opt/bullpen-venv/bin/python on internal port ${BULLPEN_INTERNAL_PORT}' >> /home/bullpen/logs/bullpen.log; "
         "nohup /opt/bullpen-venv/bin/python bullpen.py "
         f"--workspace {workspace} "
@@ -1238,6 +1323,7 @@ async def start_bullpen(sandbox: Any, config: DeployConfig) -> None:
         '--port "$BULLPEN_INTERNAL_PORT" '
         "--no-browser "
         ">/home/bullpen/logs/bullpen.log 2>&1 & "
+        "echo '[deploy-sandbox] runtime limits: host_nofile=${BULLPEN_MICROSANDBOX_HOST_NOFILE} guest_nofile=${BULLPEN_MICROSANDBOX_GUEST_NOFILE} network_max_connections=${BULLPEN_MICROSANDBOX_MAX_CONNECTIONS}' >> /home/bullpen/logs/bullpen-proxy.log; "
         "echo '[deploy-sandbox] starting Node static/proxy front server on exposed port ${BULLPEN_PORT}' >> /home/bullpen/logs/bullpen-proxy.log; "
         "nohup node /app/deploy/microsandbox/bullpen-proxy.js "
         ">/home/bullpen/logs/bullpen-proxy.log 2>&1 &"
@@ -1575,7 +1661,11 @@ async def run_first_light_command(config: DeployConfig) -> CredentialSummary | N
     build_runtime_env(config)
     config.replace = True
 
-    log_step("Creating Claude first-light Microsandbox")
+    log_step(
+        "Creating Claude first-light Microsandbox "
+        f"(host nofile target={config.host_nofile}, guest nofile={config.guest_nofile}, "
+        f"network max_connections={config.network_max_connections})"
+    )
     sandbox = await runtime.create(config, expose_ports=False)
     try:
         log_step("Preparing Microsandbox runtime")
@@ -1769,7 +1859,11 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
     build_runtime_env(config)
     config.replace = True
 
-    log_step("Creating Microsandbox")
+    log_step(
+        "Creating Microsandbox "
+        f"(host nofile target={config.host_nofile}, guest nofile={config.guest_nofile}, "
+        f"network max_connections={config.network_max_connections})"
+    )
     sandbox = await runtime.create(config)
     try:
         log_step("Preparing Microsandbox runtime")
@@ -1816,6 +1910,12 @@ def print_success(config: DeployConfig, summary: CredentialSummary) -> None:
     print(f"User: {config.admin_user}")
     print(f"Sandbox: {config.sandbox_name}")
     print(f"Sandbox home: {config.sandbox_home}")
+    print(
+        "Limits: "
+        f"host nofile target {config.host_nofile}, "
+        f"guest nofile {config.guest_nofile}, "
+        f"network max_connections {config.network_max_connections}"
+    )
     if summary.selected_items:
         print(f"Configured during install: {', '.join(summary.selected_items)}")
     if summary.skipped_items:

@@ -1,0 +1,11 @@
+run=netcap8192-20260525-154636
+dir=/private/tmp/bullpen-netcap8192-20260525-154636
+host_log=/private/tmp/bullpen-netcap8192-20260525-154636/passive-host.log
+host_monitor_pid=86286
+runtime_pid=85205
+started=2026-05-25T15:46:36Z
+worker_scan_log=/private/tmp/bullpen-netcap8192-20260525-154636/worker-error-scan.log
+worker_scan_pid=86598
+actual_passive_host_pid=90305
+actual_passive_host_log=/private/tmp/bullpen-netcap8192-20260525-154636/passive-host.log
+note=worker_error_scans_will_be_taken_manually

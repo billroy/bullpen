@@ -479,9 +479,18 @@ and persist under `/home/bullpen`.
 | `--sandbox-home PATH` | `~/.bullpen/microsandbox-home` | Persistent sandbox home for provider auth, Bullpen config, and logs |
 | `--vcpus N` | `4` | Virtual CPUs for the sandbox |
 | `--memory-mib N` | `4096` | Sandbox memory in MiB |
+| `--host-nofile N` | `12000` | Target host process `RLIMIT_NOFILE` before the Microsandbox runtime is created |
+| `--guest-nofile N` | `65536` | Target `RLIMIT_NOFILE` for the in-sandbox `bullpen` user |
+| `--network-max-connections N` | `8192` | Microsandbox network connection tracker cap |
 | `--replace` | off | Replace an existing sandbox without prompting |
 | `--no-replace` | off | Abort if a sandbox with the same name already exists |
 | `--open` / `--no-open` | open | Open or suppress opening the Bullpen UI in a host browser |
+
+The deployer logs these effective Microsandbox limits at startup. The defaults
+come from the May 25, 2026 investigation runs: low host `nofile` produced
+host-side `EMFILE` through the Microsandbox filesystem layer, while the SDK's
+default network cap of 256 produced intermittent global outbound connect
+failures under Bullpen worker load.
 
 Additional maintenance commands:
 

@@ -12,6 +12,48 @@ number of root causes at the platform layer, not in Bullpen code.
 
 ## Fixes that have landed
 
+### Host runtime `EMFILE` and Microsandbox network cap saturation
+
+**Symptom.** High-concurrency Bullpen worker batches could stall in two
+different ways inside Microsandbox:
+
+- filesystem operations failed with `EMFILE` even though guest process FD
+  counts were nowhere near a 64k limit
+- Claude workers intermittently emitted `api_retry ... error=unknown` storms
+  while unrelated guest `curl` probes also failed to connect
+
+**Root cause.** The May 25, 2026 live captures split this into two platform
+limits:
+
+- Host-side `EMFILE` came from the detached `msb` runtime inheriting a low
+  host soft `RLIMIT_NOFILE`. The first captured `EMFILE` was a `close()` on a
+  passthrough filesystem path; Microsandbox's macOS passthrough/virtiofs close
+  path performs a `dup()` internally, so a low host runtime FD ceiling can
+  surface as guest filesystem `EMFILE`.
+- Network retry storms came from Microsandbox's smoltcp/proxy
+  `ConnectionTracker`. Its SDK default is 256 concurrent guest connections;
+  once saturated, new guest connects failed globally. A run with
+  `max_connections=2048` saturated exactly at the new cap and failed guest
+  canaries to both Anthropic and `example.com`. A follow-up run with
+  `max_connections=8192` completed the same Bullpen ticket workload with
+  headroom and drained from roughly 1696 remote HTTPS sockets during load to
+  311 after a one-minute quiet period.
+
+**Fix.** [`deploy-sandbox.py`](../deploy-sandbox.py) now exposes and logs
+three launch controls:
+
+- `--host-nofile` (default `12000`) raises the deployer's soft
+  `RLIMIT_NOFILE` before the final sandbox is created, so the detached `msb`
+  runtime inherits a larger host FD budget.
+- `--guest-nofile` (default `65536`) writes the in-sandbox
+  `/etc/security/limits.d/bullpen-fd.conf` value for the `bullpen` user.
+- `--network-max-connections` (default `8192`) sets the Microsandbox SDK
+  `Network.max_connections` field instead of accepting the SDK default.
+
+The important operational distinction: these are fuses, not throughput
+targets. `max_connections` should be sized from observed high-water plus
+headroom because each smoltcp TCP connection allocates substantial buffers.
+
 ### File-descriptor exhaustion masquerading as TLS / DNS errors
 
 **Symptom.** Live Agent chats and worker dispatches occasionally entered a

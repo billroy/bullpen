@@ -1,0 +1,12 @@
+2026-05-25T15:45:45.671026Z  INFO microsandbox_runtime::vm: sandbox starting sandbox=bullpen
+2026-05-25T15:45:45.671360Z  INFO microsandbox_runtime::relay: agent relay listening on /Users/bill/.microsandbox/sandboxes/bullpen/runtime/agent.sock
+2026-05-25T15:45:45.687354Z  INFO microsandbox_runtime::vm: entering VM sandbox=bullpen
+2026-05-25T15:45:45.890234Z  INFO microsandbox_runtime::relay: agent relay: received core.ready from agentd
+2026-05-25T15:45:45.890419Z  INFO microsandbox_runtime::relay: agent relay: client connected slot=0 id_offset=0
+2026-05-25T15:45:48.851693Z  INFO microsandbox_runtime::relay: agent relay: client disconnected slot=0
+2026-05-25T15:46:17.345262Z  INFO microsandbox_runtime::relay: agent relay: client connected slot=0 id_offset=0
+2026-05-25T15:46:17.362714Z  INFO microsandbox_runtime::relay: agent relay: client disconnected slot=0
+2026-05-25T15:49:44.337227Z  INFO microsandbox_runtime::relay: agent relay: client connected slot=0 id_offset=0
+2026-05-25T15:49:44.491442Z  INFO microsandbox_runtime::relay: agent relay: client disconnected slot=0
+2026-05-25T15:58:07.279466Z  INFO microsandbox_runtime::relay: agent relay: client connected slot=0 id_offset=0
+2026-05-25T15:58:07.592350Z  INFO microsandbox_runtime::relay: agent relay: client disconnected slot=0

@@ -1,0 +1,2296 @@
+Bullpen auth: ENABLED (1 user(s), primary=admin)
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+ _           _ _                  
+| |__  _   _| | |_ __   ___ _ __  
+| '_ \| | | | | | '_ \ / _ \ '_ \ 
+| |_) | |_| | | | |_) |  __/ | | |
+|_.__/ \__,_|_|_| .__/ \___|_| |_|
+                |_|               
+Bullpen starting — workspace: /workspace, host: 127.0.0.1, port: 18080
+ * Serving Flask app 'server.app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:18080
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [25/May/2026 15:45:48] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 15:45:48] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 15:46:16] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 15:46:17] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 15:47:13] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 15:50:24] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724220.2261622 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:27] "[36mGET / HTTP/1.1[0m" 304 -
+127.0.0.1 - - [25/May/2026 15:50:27] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:32] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 15:50:34] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724229.6131608 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:35] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724230.725873 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:36] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724232.713621 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:44] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724239.9777257 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:47] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724244.890032 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:47] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724245.5142527 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:47] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724245.098205 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:49] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724245.3105667 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:49] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724247.658783 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:50] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724246.3430882 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:53] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724251.4224968 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:53] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724251.7212753 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:58] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724257.1628275 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:50:59] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724256.5040193 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:02] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724257.6849453 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:03] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724260.019357 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724258.9923759 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:05] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724260.6706266 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-320 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-61-jjqj.md'
+127.0.0.1 - - [25/May/2026 15:51:07] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724263.8886657 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:07] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724262.2290912 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:15] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724273.1037087 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:15] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724272.4725926 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:16] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724270.0840282 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:17] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724273.690956 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:17] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724273.2309518 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-393 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-65-ovB8.md'
+127.0.0.1 - - [25/May/2026 15:51:18] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724275.0203495 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:18] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724276.2563558 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:20] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724278.1608076 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-416 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-61-jjqj.md'
+127.0.0.1 - - [25/May/2026 15:51:30] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724285.9937892 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:30] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724286.3629017 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724287.8214576 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724287.1505585 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:33] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724291.1869519 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:34] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724292.654088 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:34] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724288.6960814 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:36] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724292.5449321 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:40] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724298.9792967 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724296.7254822 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:44] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724303.0599618 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:45] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724301.7757442 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:45] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724303.2739966 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:46] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724303.0389378 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:47] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724303.0309722 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:49] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724307.7074864 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:50] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724306.36873 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:51] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:51] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724306.5587828 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:52] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724310.376365 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:55] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724314.0947561 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:58] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724316.2009141 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:51:58] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 15:51:59] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724318.347104 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:02] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724318.991551 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:03] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724321.8445525 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724320.605717 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724322.6453378 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724320.9745734 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:05] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724321.6458235 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:05] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724322.1114364 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:11] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724328.6742055 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:14] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724332.3828 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:14] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724330.387881 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:19] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724335.076381 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:22] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724337.5757074 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:22] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724339.3435426 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:27] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724342.7252595 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:29] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724345.322735 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:32] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724349.0844953 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:34] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724352.5729053 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-889 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-70-rFQc.md'
+127.0.0.1 - - [25/May/2026 15:52:36] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724352.6627495 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:36] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724352.6843743 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:38] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724357.3915052 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:39] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724355.4330366 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:39] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724356.3162386 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:42] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724358.2043157 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:46] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724362.853617 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:48] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724364.5980115 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:49] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724365.9168947 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:52] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724369.8187099 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:56] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724371.7751617 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:52:58] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724373.894574 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:02] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724380.0765386 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724381.9527688 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724382.9585333 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:06] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724384.1068957 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:09] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724384.6779208 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:10] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724388.0689921 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:18] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724394.9510725 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:26] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724402.5860739 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-1090 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-68-0k6k.md'
+127.0.0.1 - - [25/May/2026 15:53:28] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724403.9719684 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:29] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724408.0710504 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:30] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724406.0707555 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724407.525987 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724407.6760807 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724419.1925097 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724419.9564853 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:44] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724420.1786046 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:45] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724421.510449 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:45] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724422.0489187 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:51] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724427.2409754 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:54] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724432.5770855 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:53:56] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724432.72679 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:00] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724438.830345 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:01] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724437.3094127 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:02] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724440.333823 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724440.0015414 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724440.6012754 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:06] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724441.620664 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:09] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724448.3474252 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:14] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724451.381891 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:20] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724458.4099743 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:22] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724458.5312152 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:25] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724461.909051 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:30] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724464.8499231 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:33] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724469.74215 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:38] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724476.3949747 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:38] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724475.3099074 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-1389 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-72-mp1M.md'
+127.0.0.1 - - [25/May/2026 15:54:40] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724476.7808635 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:45] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724482.5168786 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:47] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724484.0320623 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:51] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724487.0826852 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:51] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724487.3372874 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:54:56] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724492.5440047 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:01] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724500.312956 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:02] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724498.4205387 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-1476 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-77-Q62T.md'
+127.0.0.1 - - [25/May/2026 15:55:08] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724504.4010665 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:12] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724510.5892777 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:14] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724509.8273544 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:15] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724511.6697528 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:19] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724517.4626284 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:21] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724515.1030388 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:21] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724517.645046 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:26] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724524.8323448 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724528.6001556 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:38] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724533.4477947 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:40] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724536.1491072 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724534.5238461 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724540.2817006 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:43] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724538.5108397 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:47] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724544.14543 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:57] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724553.6162214 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:55:58] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724557.3402495 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:01] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724557.34018 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:01] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724557.8201323 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:01] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724557.9979928 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:03] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724559.3755095 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:06] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724562.4945552 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:21] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724577.574772 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:22] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724578.8139906 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+Exception in thread Thread-1749 (_run):
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 535, in _run
+    start_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 665, in start_worker
+    _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+  File "/app/server/workers.py", line 797, in _run_ai_worker
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 738, in _begin_run
+    task = task_mod.read_task(bp_dir, task_id)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/tasks.py", line 91, in read_task
+    meta, body, slug = read_frontmatter(path)
+                       ^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 148, in read_frontmatter
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/workspace/art-2/.bullpen/tasks/ticket-71-HiSZ.md'
+127.0.0.1 - - [25/May/2026 15:56:23] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724579.3513913 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:23] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724576.384209 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:27] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724585.6462264 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:38] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724597.1717095 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724596.7655885 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:43] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724599.8496985 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:44] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724602.5522578 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:56:59] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724617.0937707 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:00] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724616.7730076 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:03] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724619.1816924 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724620.080683 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:19] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724635.9572713 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:21] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724637.679398 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:22] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724639.9031632 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:22] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724637.6547167 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:29] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724646.903809 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:34] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724652.849625 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:38] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724656.548306 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724657.9518034 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:46] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724663.0210319 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:53] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724671.4722283 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:54] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724673.3554552 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:57:58] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724674.7035496 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:07] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724684.3055558 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:14] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724690.1673605 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:19] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724695.5510874 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:30] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724706.0644646 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724707.9226058 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:34] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724710.0406923 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:44] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724720.6728106 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:46] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724725.0280414 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:51] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724726.603473 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:58:53] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724729.9226835 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:59:08] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724744.0862224 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:59:09] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724746.0082836 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:59:15] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724752.291293 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:59:30] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724767.2372308 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:59:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724768.6732974 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 15:59:51] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779724787.233198 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 16:01:02] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response

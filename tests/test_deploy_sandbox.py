@@ -74,6 +74,12 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
             "6",
             "--memory-mib",
             "8192",
+            "--host-nofile",
+            "16000",
+            "--guest-nofile",
+            "70000",
+            "--network-max-connections",
+            "16384",
             "--replace",
             "--no-open",
         ]
@@ -90,6 +96,9 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
     assert config.sandbox_home == home.resolve()
     assert config.vcpus == 6
     assert config.memory_mib == 8192
+    assert config.host_nofile == 16000
+    assert config.guest_nofile == 70000
+    assert config.network_max_connections == 16384
     assert config.replace is True
     assert config.open_browser is False
 
@@ -103,6 +112,9 @@ def test_cli_resource_options_default_to_larger_final_sandbox(sb, tmp_path, monk
 
     assert config.vcpus == 4
     assert config.memory_mib == 4096
+    assert config.host_nofile == 12000
+    assert config.guest_nofile == 65536
+    assert config.network_max_connections == 8192
 
 
 def test_cli_rejects_invalid_resource_options(sb, tmp_path, monkeypatch):
@@ -115,6 +127,11 @@ def test_cli_rejects_invalid_resource_options(sb, tmp_path, monkeypatch):
 
     with pytest.raises(sb.DeployError, match="Memory MiB must be numeric"):
         sb.config_from_args(["--workspace-root", str(workspace), "--admin-password", "pw", "--memory-mib", "4G"])
+
+    with pytest.raises(sb.DeployError, match="Network max connections must be at least 1"):
+        sb.config_from_args(
+            ["--workspace-root", str(workspace), "--admin-password", "pw", "--network-max-connections", "0"]
+        )
 
 
 def test_cli_auth_subcommand_does_not_require_admin_password(sb, tmp_path, monkeypatch):
@@ -643,7 +660,7 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     class FakeNetwork:
         @staticmethod
         def allow_all():
-            return "allow-all"
+            return types.SimpleNamespace(policy="allow-all", max_connections=None)
 
     class FakeSandbox:
         @staticmethod
@@ -689,6 +706,7 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     )
 
     sb.build_runtime_env(config)
+    monkeypatch.setattr(sb, "ensure_host_nofile", lambda target: (target, target))
     runtime = sb.MicrosandboxRuntime()
     asyncio.run(runtime.ensure_installed())
     asyncio.run(runtime.create(config))
@@ -702,7 +720,8 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert calls["kwargs"]["memory"] == 4096
     assert "memory_mib" not in calls["kwargs"]
     assert calls["kwargs"]["ports"] == {8081: 8081, 3001: 3001}
-    assert calls["kwargs"]["network"] == "allow-all"
+    assert calls["kwargs"]["network"].policy == "allow-all"
+    assert calls["kwargs"]["network"].max_connections == 8192
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}
     assert calls["kwargs"]["volumes"]["/workspace"] == {"path": str(workspace), "readonly": False}
     assert "/workspace/project" not in calls["kwargs"]["volumes"]
@@ -718,6 +737,9 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert "BULLPEN_WORKSPACE" not in config.runtime_env
     assert "BULLPEN_WORKSPACE_NAME" not in config.runtime_env
     assert config.runtime_env["BULLPEN_VENV"] == "/opt/bullpen-venv"
+    assert config.runtime_env["BULLPEN_MICROSANDBOX_HOST_NOFILE"] == "12000"
+    assert config.runtime_env["BULLPEN_MICROSANDBOX_GUEST_NOFILE"] == "65536"
+    assert config.runtime_env["BULLPEN_MICROSANDBOX_MAX_CONNECTIONS"] == "8192"
 
 
 def test_host_port_preflight_reports_occupied_ports(sb, tmp_path, monkeypatch):
@@ -952,6 +974,8 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "BULLPEN_UID=" in prepare_command
     assert "Existing bullpen user has uid" in prepare_command
     assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen" in prepare_command
+    assert "bullpen soft nofile 65536" in prepare_command
+    assert "bullpen hard nofile 65536" in prepare_command
     assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
     assert "chown bullpen:\"$group_name\" /workspace" not in prepare_command
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
@@ -967,6 +991,7 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "command -v node >/dev/null" in start_command
     assert ": > /home/bullpen/logs/bullpen.log" in start_command
     assert ": > /home/bullpen/logs/bullpen-proxy.log" in start_command
+    assert "runtime limits: host_nofile=${BULLPEN_MICROSANDBOX_HOST_NOFILE}" in start_command
     assert "--workspace /workspace" in start_command
     assert "--start-without-project" in start_command
     assert "--host 127.0.0.1" in start_command

@@ -103,6 +103,9 @@ Options:
 --sandbox-home PATH          Persistent sandbox home. Default: ~/.bullpen/microsandbox-home
 --vcpus N                    Virtual CPUs for the final sandbox. Default: 4
 --memory-mib N               Memory for the final sandbox in MiB. Default: 4096
+--host-nofile N              Target host process RLIMIT_NOFILE before creating the runtime. Default: 12000
+--guest-nofile N             Target bullpen user RLIMIT_NOFILE inside the sandbox. Default: 65536
+--network-max-connections N  Microsandbox network connection tracker cap. Default: 8192
 --replace                    Replace an existing sandbox without prompting.
 --no-replace                 Abort if the sandbox already exists.
 --open                       Open the Bullpen UI in a host browser after startup. Default.
@@ -121,6 +124,9 @@ If `--admin-password` is omitted, prompt once and confirm it. No other option sh
 - Admin user: `admin`
 - Prepared base: `bullpen-microsandbox-local`
 - Sandbox home: `~/.bullpen/microsandbox-home`
+- Host process `RLIMIT_NOFILE` target: `12000`
+- Guest `bullpen` user `RLIMIT_NOFILE`: `65536`
+- Microsandbox network `max_connections`: `8192`
 - Browser opening: enabled
 - Replacement behavior: prompt if a sandbox with the same name exists, unless `--replace` or `--no-replace` is provided
 
@@ -171,6 +177,15 @@ sandbox = await Sandbox.create(
     env=runtime_env,
 )
 ```
+
+Before creating the final sandbox, the deployer raises its own soft
+`RLIMIT_NOFILE` toward `--host-nofile` so the detached `msb` runtime inherits a
+larger host FD budget. The network object is created with
+`max_connections=--network-max-connections`. Inside the guest,
+`/etc/security/limits.d/bullpen-fd.conf` sets `--guest-nofile` for the
+`bullpen` user. These values are startup diagnostics as well as launch
+settings; Bullpen writes them to the sandbox logs before starting the server
+and proxy.
 
 If Bullpen source is not baked into the prepared base, also mount the local Bullpen checkout read-only:
 
