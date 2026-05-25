@@ -55,3 +55,33 @@ def test_file_write_rejects_payloads_over_one_mb(tmp_workspace):
 
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "File too large (max 1MB)"
+
+
+def test_create_only_file_write_rejects_existing_file(tmp_workspace):
+    init_workspace(tmp_workspace)
+    path = os.path.join(tmp_workspace, "exists.txt")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("original")
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    resp = client.put("/api/files/exists.txt?create=1", data="replacement", content_type="text/plain")
+
+    assert resp.status_code == 409
+    assert resp.get_json()["error"] == "File already exists"
+    with open(path, encoding="utf-8") as handle:
+        assert handle.read() == "original"
+
+
+def test_create_only_file_write_creates_missing_file(tmp_workspace):
+    init_workspace(tmp_workspace)
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    resp = client.put("/api/files/new/note.txt?create=1", data="draft", content_type="text/plain")
+
+    assert resp.status_code == 200
+    with open(os.path.join(tmp_workspace, "new", "note.txt"), encoding="utf-8") as handle:
+        assert handle.read() == "draft"

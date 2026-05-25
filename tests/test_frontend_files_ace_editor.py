@@ -35,6 +35,36 @@ def test_files_tab_uses_ace_host_and_removes_custom_find_bar():
     assert "doReplaceAll" not in text
 
 
+def test_files_tab_has_new_file_draft_flow():
+    text = _read("static/components/FilesTab.js")
+    assert 'class="files-tree-menu-wrap"' in text
+    assert 'class="files-tree-action"' in text
+    assert '@click="toggleFileMenu"' in text
+    assert 'v-if="showFileMenu" class="project-menu files-tree-menu"' in text
+    assert 'data-lucide="file-plus"' in text
+    assert "<span class=\"menu-item-label\">New File</span>" in text
+    assert "toggleFileMenu()" in text
+    assert "async createNewFile()" in text
+    assert "this.showFileMenu = false;" in text
+    assert "const raw = prompt('New file name');" in text
+    assert "const exists = await this._fileExists(path);" in text
+    assert "isNew: true" in text
+    assert "this.$nextTick(() => this.startEditing());" in text
+
+
+def test_files_tab_create_flow_verifies_existence_and_create_only_save():
+    text = _read("static/components/FilesTab.js")
+    assert "_normalizeNewFileName(raw)" in text
+    assert "Enter a file name, not a path." in text
+    assert "[\\/\\\\?#\\u0000-\\u001f]" in text
+    assert "async _fileExists(path)" in text
+    assert "method: 'HEAD'" in text
+    assert "if (res.status === 404) return false;" in text
+    assert "const params = this.activeFile?.isNew ? { create: '1' } : {};" in text
+    assert "this.activeFile.isNew = false;" in text
+    assert "if (cancelled?.isNew) this._removeOpenFile(cancelled.path);" in text
+
+
 def test_files_tab_saves_from_ace_and_keeps_size_guard():
     text = _read("static/components/FilesTab.js")
     assert "const content = this._aceValue();" in text
@@ -82,6 +112,10 @@ def test_files_tab_has_ace_mode_map_and_theme_watcher():
 
 def test_files_styles_replace_textarea_and_hide_bracket_marker():
     text = _read("static/style.css")
+    assert ".files-tree-menu-wrap" in text
+    assert ".files-tree-menu" in text
+    assert ".files-tree-action" in text
+    assert ".file-tab.unsaved .file-tab-name" in text
     assert ".ace-host {" in text
     assert ".ace-host .ace_bracket" in text
     assert ".file-editor-error" in text

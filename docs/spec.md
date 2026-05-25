@@ -663,6 +663,7 @@ All client-server communication uses socket.io. No REST endpoints for core funct
 
 ### Tree View (left side of tab)
 - Shows the workspace directory tree, excluding `.bullpen/`, `.git/`, `node_modules/`, and other common ignore patterns (respects `.gitignore`).
+- The tree header includes a compact actions menu beside "Workspace Files". The menu contains a "New File" item with a file-plus icon. The command prompts for a file name only, verifies that name does not already exist in the workspace root, then opens an unsaved empty edit tab. No file is written until the user explicitly saves.
 - Folders are expandable/collapsible.
 - Click a file to open it in the viewer area.
 

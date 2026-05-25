@@ -694,6 +694,8 @@ def create_app(
         content = request.get_data(as_text=True)
         if len(content) > 1_000_000:
             return jsonify({"error": "File too large (max 1MB)"}), 400
+        if request.args.get("create") == "1" and os.path.exists(full_path):
+            return jsonify({"error": "File already exists"}), 409
 
         # Reject binary content
         try:

@@ -64,7 +64,18 @@ const FilesTab = {
   template: `
     <div class="files-container">
       <div class="files-tree-pane">
-        <div class="files-tree-header">Workspace Files</div>
+        <div class="files-tree-header">
+          <span>Workspace Files</span>
+          <div class="files-tree-menu-wrap" @click.stop>
+            <button class="files-tree-action" @click="toggleFileMenu" title="File actions" aria-label="File actions">...</button>
+            <div v-if="showFileMenu" class="project-menu files-tree-menu">
+              <button class="project-menu-item" @click="createNewFile">
+                <i class="menu-item-icon" data-lucide="file-plus" aria-hidden="true"></i>
+                <span class="menu-item-label">New File</span>
+              </button>
+            </div>
+          </div>
+        </div>
         <div v-if="loadingTree" class="empty-state">Loading...</div>
         <div v-else-if="treeError" class="empty-state">{{ treeError }}</div>
         <div class="files-tree-body" v-else-if="tree.length">
@@ -85,10 +96,10 @@ const FilesTab = {
             v-for="f in openFiles"
             :key="f.path"
             class="file-tab"
-            :class="{ active: activeFile?.path === f.path }"
+            :class="{ active: activeFile?.path === f.path, unsaved: f.isNew }"
             @click="switchToFile(f)"
           >
-            <span class="file-tab-name">{{ f.name }}</span>
+            <span class="file-tab-name">{{ f.isNew ? '* ' + f.name : f.name }}</span>
             <button class="file-tab-close" @click.stop="closeFile(f.path)">&times;</button>
           </div>
         </div>
@@ -161,6 +172,7 @@ const FilesTab = {
       editing: false,
       editContent: '',
       editorError: '',
+      showFileMenu: false,
       _ace: null,
     };
   },
@@ -241,6 +253,7 @@ const FilesTab = {
       this.openFiles = [];
       this.activeFile = null;
       this.editing = false;
+      this.showFileMenu = false;
       this.loadTree();
     },
     activeTheme() {
@@ -248,16 +261,24 @@ const FilesTab = {
     },
   },
   mounted() {
+    document.addEventListener('click', this.onGlobalClick);
     this.loadTree();
     this.$nextTick(() => renderLucideIcons(this.$el));
   },
   unmounted() {
+    document.removeEventListener('click', this.onGlobalClick);
     this._destroyAceEditor();
   },
   updated() {
     renderLucideIcons(this.$el);
   },
   methods: {
+    toggleFileMenu() {
+      this.showFileMenu = !this.showFileMenu;
+    },
+    onGlobalClick() {
+      this.showFileMenu = false;
+    },
     _filesUrl(path, params = {}) {
       const base = path ? '/api/files/' + encodeURI(path) : '/api/files';
       const query = new URLSearchParams(params);
@@ -314,11 +335,46 @@ const FilesTab = {
         console.error('Failed to open file', e);
       }
     },
-    switchToFile(f) {
+    async createNewFile() {
+      this.showFileMenu = false;
       if (this.editing) {
         if (!confirm('Discard unsaved changes?')) return;
         this._destroyAceEditor();
         this.editing = false;
+      }
+      const raw = prompt('New file name');
+      const path = this._normalizeNewFileName(raw);
+      if (!path) return;
+      if (this.openFiles.some(f => f.path === path)) {
+        alert('That file is already open.');
+        return;
+      }
+      const exists = await this._fileExists(path);
+      if (exists === null) return;
+      if (exists) {
+        alert('A file already exists at that path.');
+        return;
+      }
+      const file = {
+        path,
+        name: path.split('/').pop(),
+        content: '',
+        isNew: true,
+      };
+      this.openFiles.push(file);
+      this.activeFile = file;
+      this.$nextTick(() => this.startEditing());
+    },
+    switchToFile(f) {
+      if (this.editing) {
+        if (!confirm('Discard unsaved changes?')) return;
+        const discarded = this.activeFile;
+        this._destroyAceEditor();
+        this.editing = false;
+        if (discarded?.isNew) {
+          this._removeOpenFile(discarded.path);
+          if (discarded.path === f.path) return;
+        }
       }
       this.activeFile = f;
       this.reloadActiveFile();
@@ -345,7 +401,8 @@ const FilesTab = {
     async saveEdit() {
       try {
         const content = this._aceValue();
-        const res = await filesFetch(this._filesUrl(this.activeFile.path), {
+        const params = this.activeFile?.isNew ? { create: '1' } : {};
+        const res = await filesFetch(this._filesUrl(this.activeFile.path, params), {
           method: 'PUT',
           headers: { 'Content-Type': 'text/plain' },
           body: content,
@@ -357,16 +414,20 @@ const FilesTab = {
           return;
         }
         this.activeFile.content = content;
+        this.activeFile.isNew = false;
         this.editContent = content;
         this._destroyAceEditor();
         this.editing = false;
+        this.loadTree();
       } catch (e) {
         alert('Save failed: ' + e.message);
       }
     },
     cancelEdit() {
+      const cancelled = this.activeFile;
       this._destroyAceEditor();
       this.editing = false;
+      if (cancelled?.isNew) this._removeOpenFile(cancelled.path);
     },
     async reloadActiveFile() {
       if (!this.activeFile || this.isImage || this.isPdf) return;
@@ -383,6 +444,36 @@ const FilesTab = {
     getExt(name) {
       const dot = name.lastIndexOf('.');
       return dot >= 0 ? name.substring(dot).toLowerCase() : '';
+    },
+    _removeOpenFile(path) {
+      const idx = this.openFiles.findIndex(f => f.path === path);
+      if (idx < 0) return;
+      this.openFiles.splice(idx, 1);
+      if (this.activeFile?.path === path) {
+        this.activeFile = this.openFiles[Math.min(idx, this.openFiles.length - 1)] || null;
+      }
+    },
+    _normalizeNewFileName(raw) {
+      const name = String(raw || '').trim();
+      if (!name) return '';
+      if (/[\/\\?#\u0000-\u001f]/.test(name) || name === '.' || name === '..') {
+        alert('Enter a file name, not a path.');
+        return '';
+      }
+      return name;
+    },
+    async _fileExists(path) {
+      try {
+        const res = await filesFetch(this._filesUrl(path), { method: 'HEAD' });
+        if (!res) return null;
+        if (res.status === 404) return false;
+        if (res.ok) return true;
+        alert('Could not verify whether that file exists.');
+        return null;
+      } catch (e) {
+        alert('Could not verify whether that file exists.');
+        return null;
+      }
     },
     _createAceEditor() {
       if (!this.editing) return;
