@@ -1,0 +1,14 @@
+=== ps runtime command ===
+42055 /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/microsandbox/_bundled/bin/msb sandbox --name bullpen --sandbox-id 259 --db-path /Users/bill/.microsandbox/db/msb.db --db-connect-timeout-secs 30 --log-dir /Users/bill/.microsandbox/sandboxes/bullpen/logs --runtime-dir /Users/bill/.microsandbox/sandboxes/bullpen/runtime --agent-sock /Users/bill/.microsandbox/sandboxes/bullpen/runtime/agent.sock --libkrunfw-path /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/microsandbox/_bundled/lib/libkrunfw.5.dylib --vcpus 4 --memory-mib 4096 --rootfs-disk /Users/bill/.microsandbox/cache/vmdk/sha256_8aa893bdb28b440e904a8160a8d2da6a221c84496a31b1a4c757d8dbe9c88bda.vmdk --rootfs-disk-format vmdk --rootfs-blk /Users/bill/.microsandbox/sandboxes/bullpen/upper.ext4 --env MSB_BLOCK_ROOT=kind=oci-erofs,lower=/dev/vda,upper=/dev/vdb,upper_fstype=ext4 --mount app_f53b52ad:/Users/bill/aistuff/bullpen:ro --mount workspace_c52ddf65:/Users/bill/aistuff --mount home_bullpe_babae95f:/Users/bill/.bullpen/microsandbox-home --env MSB_TMPFS=/tmp,size=512 --env MSB_DIR_MOUNTS=app_f53b52ad:/app:ro;workspace_c52ddf65:/workspace;home_bullpe_babae95f:/home/bullpen --network-config {"enabled":true,"interface":{"mac":null,"mtu":null,"ipv4_address":null,"ipv6_address":null},"ports":[{"host_port":8080,"guest_port":8080,"protocol":"Tcp","host_bind":"127.0.0.1"},{"host_port":3000,"guest_port":3000,"protocol":"Tcp","host_bind":"127.0.0.1"}],"policy":{"default_egress":"allow","default_ingress":"allow","rules":[]},"dns":{"rebind_protection":true,"nameservers":[],"query_timeout_ms":5000},"tls":{"enabled":false,"intercepted_ports":[443],"bypass":[],"verify_upstream":true,"block_quic_on_intercept":true,"upstream_ca_cert":[],"intercept_ca":{"cert_path":null,"key_path":null},"cache":{"capacity":1000,"validity_hours":24}},"secrets":{"secrets":[],"on_violation":"BlockAndLog"},"max_connections":2048,"trust_host_cas":false} --sandbox-slot 259 --env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --env NODE_VERSION=22.22.2 --env YARN_VERSION=1.22.22 --env HOME=/home/bullpen --env USER=bullpen --env LOGNAME=bullpen --env MSB_HOSTNAME=bullpen
+
+=== current runtime tcp/fd snapshot ===
+ESTABLISHED 22
+LISTEN 2
+SYN_SENT 0
+CLOSE_WAIT 0
+OTHER 0
+REMOTE443 21
+TOTAL 24
+FD_TOTAL 238
+
+=== post-restart worker retry/refusal signatures ===

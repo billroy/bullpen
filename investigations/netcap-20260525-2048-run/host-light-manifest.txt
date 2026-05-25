@@ -1,0 +1,6 @@
+run=netcap2048-20260525-151019
+dir=/private/tmp/bullpen-netcap2048-20260525-151019
+host_light_log=/private/tmp/bullpen-netcap2048-20260525-151019/host-runtime-light.log
+host_light_monitor_pid=48240
+runtime_pid=42055
+started=2026-05-25T15:14:28Z
