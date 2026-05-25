@@ -1432,14 +1432,17 @@ def _assemble_prompt(bp_dir, worker, task):
     if task.get("id"):
         parts.append(
             f"Task ID: `{task['id']}`. If you need to add notes or update "
-            f"the body of this ticket, call `mcp__bullpen__update_ticket` "
-            f"with this ID directly (do not search by title). If your "
+            f"the body of this ticket, call the Bullpen `update_ticket` MCP "
+            f"tool with this ID directly (do not search by title). Depending "
+            f"on your client, that tool may appear as "
+            f"`mcp__bullpen__update_ticket` or `mcp_bullpen_update_ticket`. If your "
             f"instructions require a final ticket status, request it with "
             f"`update_ticket(status=...)`; Bullpen will apply that status "
             f"after this worker run finishes."
         )
-    if task.get("body"):
-        parts.append(render_untrusted_text_block("Ticket Body", task["body"], "TASK_BODY"))
+    prompt_body = _ticket_body_for_prompt(task.get("body", ""))
+    if prompt_body:
+        parts.append(render_untrusted_text_block("Ticket Body", prompt_body, "TASK_BODY"))
 
     prompt = "\n\n".join(parts)
 
@@ -1455,6 +1458,19 @@ def _assemble_prompt(bp_dir, worker, task):
         prompt = prompt[:max_chars] + "\n\n[Prompt truncated]"
 
     return prompt
+
+
+def _ticket_body_for_prompt(body):
+    """Return user-authored ticket body content without runtime output transcripts."""
+    body = str(body or "")
+    marker_positions = [
+        pos for marker in ("\n## Worker Output", "\n## Agent Output")
+        for pos in [body.find(marker)]
+        if pos != -1
+    ]
+    if marker_positions:
+        body = body[:min(marker_positions)]
+    return body.rstrip()
 
 
 def _auto_commit(cwd, task_title, task_id):
@@ -2272,7 +2288,7 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message):
         return
     force_fail_message[0] = (
         "Gemini model capacity exhausted. "
-        "Try gemini-2.5-flash or wait and retry later."
+        "Try flash or wait and retry later."
     )
     if proc.poll() is None:
         try:
@@ -3122,6 +3138,9 @@ def _retry_worker_after_delay(bp_dir, slot_index, task_id, retry_delay, socketio
 
 def _append_output(bp_dir, task_id, worker, output):
     """Append agent output to task under ## Agent Output heading."""
+    output = str(output or "")
+    if not output.strip():
+        return
     task = task_mod.read_task(bp_dir, task_id)
     if not task:
         return

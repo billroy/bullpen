@@ -80,7 +80,8 @@ def test_claude_mcp_startup_state_error_when_server_missing():
 def test_classify_chat_provider_error_for_gemini_model_not_found():
     msg = _classify_chat_provider_error("gemini", "ModelNotFoundError: Requested entity was not found.")
     assert msg is not None
-    assert "model not found" in msg.lower()
+    assert "did not accept" in msg.lower()
+    assert "Try flash" in msg
 
 
 def test_classify_chat_provider_error_for_current_gemini_flash_capacity():
@@ -103,4 +104,4 @@ def test_classify_chat_provider_error_for_gemini_pro_capacity():
     )
     assert msg is not None
     assert "gemini-2.5-pro" in msg
-    assert "Try gemini-2.5-flash" in msg
+    assert "Try flash" in msg

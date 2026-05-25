@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 
 from server.agents.base import AgentAdapter
 from server.usage import extract_gemini_usage_event, merge_usage_dicts
@@ -77,6 +78,64 @@ class GeminiAdapter(AgentAdapter):
         ]
         return argv
 
+    def prepare_env(self, workspace, bp_dir=None, task_id=None):
+        """Inject Bullpen MCP settings for this Gemini run without touching the project."""
+        if not bp_dir:
+            return None
+
+        run_tmp = tempfile.mkdtemp(prefix="bullpen-gemini-")
+        settings_path = os.path.join(run_tmp, "settings.json")
+        with open(settings_path, "w", encoding="utf-8") as f:
+            json.dump(self._mcp_settings(bp_dir), f)
+
+        env = os.environ.copy()
+        env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = settings_path
+        return env, run_tmp
+
+    def _mcp_settings(self, bp_dir):
+        """Return a Gemini CLI settings.json fragment for the Bullpen MCP server."""
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        server_script = os.path.join(project_root, "server", "mcp_tools.py")
+        bp_dir = os.path.abspath(bp_dir)
+
+        from server.persistence import read_json
+
+        bp_config = read_json(os.path.join(bp_dir, "config.json"))
+        host = bp_config.get("server_host", "127.0.0.1")
+        if host == "0.0.0.0":
+            host = "127.0.0.1"
+        port = str(bp_config.get("server_port", 5000))
+
+        return {
+            "mcp": {
+                "allowed": ["bullpen"],
+            },
+            "mcpServers": {
+                "bullpen": {
+                    "command": sys.executable,
+                    "args": [
+                        server_script,
+                        "--bp-dir", bp_dir,
+                        "--host", host,
+                        "--port", port,
+                    ],
+                    "cwd": project_root,
+                    "env": {
+                        "PYTHONPATH": project_root,
+                    },
+                    "timeout": 120000,
+                    "trust": True,
+                    "includeTools": [
+                        "list_tickets",
+                        "list_tasks",
+                        "list_tickets_by_title",
+                        "create_ticket",
+                        "update_ticket",
+                    ],
+                },
+            },
+        }
+
     def prompt_via_stdin(self):
         """Gemini headless mode receives the prompt through --prompt.
 
@@ -136,6 +195,7 @@ class GeminiAdapter(AgentAdapter):
         error_msg = ""
         result_text = ""
         non_json_lines = []
+        saw_json = False
 
         for raw_line in (stdout or "").splitlines():
             line = raw_line.strip()
@@ -146,6 +206,7 @@ class GeminiAdapter(AgentAdapter):
             except json.JSONDecodeError:
                 non_json_lines.append(raw_line)
                 continue
+            saw_json = True
 
             usage = merge_usage_dicts(usage, extract_gemini_usage_event(obj))
 
@@ -202,7 +263,7 @@ class GeminiAdapter(AgentAdapter):
                 "usage": usage,
             }
 
-        if not result_text:
+        if not result_text and not saw_json:
             result_text = (stdout or "").strip() or (stderr or "").strip()
 
         return {

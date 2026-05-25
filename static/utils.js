@@ -9,7 +9,7 @@ const MODEL_OPTIONS = {
     'claude-haiku-4-5-20251001',
   ],
   codex: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'],
-  gemini: ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro'],
+  gemini: ['flash', 'flash-lite', 'gemini-3-flash-preview'],
 };
 
 const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', shell: '#64748b', service: '#0f766e', marker: '#c8b38c' };

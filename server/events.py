@@ -74,6 +74,10 @@ def _build_chat_prompt(history, message):
         "- create_ticket: Create a new ticket.",
         "- update_ticket: Update an existing ticket's fields.",
         "",
+        "Some clients expose these tools with a namespace, for example "
+        "`mcp__bullpen__update_ticket` or `mcp_bullpen_update_ticket`. Use the "
+        "available Bullpen ticket tool with the matching base name.",
+        "",
         "IMPORTANT: Always use these MCP tools for ticket operations. Do NOT read "
         ".bullpen/tasks/ files directly — those are internal storage. The MCP tools "
         "ensure the UI updates in real time.",
@@ -136,12 +140,12 @@ def _classify_chat_provider_error(provider, *texts, model=None):
         if "requested entity was not found" in haystack or "modelnotfounderror" in haystack:
             if model:
                 return (
-                    f"Gemini model {model} was not found or is not available for this account. "
-                    "Try gemini-2.5-flash."
+                    f"Gemini CLI did not accept model {model}. "
+                    "Try flash."
                 )
             return (
-                "Gemini model not found or unavailable for this account. "
-                "Try gemini-2.5-flash."
+                "Gemini CLI did not accept the selected model. "
+                "Try flash."
             )
         if worker_mod.is_non_retryable_provider_error(provider, haystack):
             if model == "gemini-2.5-flash":
@@ -157,11 +161,11 @@ def _classify_chat_provider_error(provider, *texts, model=None):
             if model:
                 return (
                     f"Gemini says capacity or quota is exhausted for {model}. "
-                    "Try gemini-2.5-flash or wait and retry later."
+                    "Try flash or wait and retry later."
                 )
             return (
                 "Gemini model capacity exhausted. "
-                "Try gemini-2.5-flash or wait and retry later."
+                "Try flash or wait and retry later."
             )
     return None
 

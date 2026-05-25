@@ -122,6 +122,74 @@ def parse_args(argv=None):
 
     ticket_list = ticket_subparsers.add_parser("list", help="List tickets")
     ticket_list.add_argument("--status", help="Optional status filter")
+
+    model_catalog_parser = subparsers.add_parser(
+        "model-catalog",
+        help="Validate provider model candidates through Bullpen adapters",
+        description=(
+            "Probe model identifiers through the same CLI adapter path Bullpen uses "
+            "for workers and Live Agent chat. This is intended as a host-side "
+            "diagnostic before changing provider dropdown catalogs."
+        ),
+    )
+    model_catalog_parser.add_argument(
+        "--workspace",
+        dest="model_catalog_workspace",
+        default=None,
+        help="Path to the workspace directory (default: current directory)",
+    )
+    model_catalog_parser.add_argument(
+        "--bp-dir",
+        dest="model_catalog_bp_dir",
+        help="Optional .bullpen directory for MCP-enabled adapter runs",
+    )
+    model_catalog_subparsers = model_catalog_parser.add_subparsers(
+        dest="model_catalog_action",
+        required=True,
+    )
+    model_catalog_validate = model_catalog_subparsers.add_parser(
+        "validate",
+        help="Run a tiny prompt against provider/model candidates",
+    )
+    model_catalog_validate.add_argument(
+        "--provider",
+        action="append",
+        dest="model_catalog_providers",
+        help="Provider to validate; repeatable. Defaults to all built-in providers.",
+    )
+    model_catalog_validate.add_argument(
+        "--model",
+        action="append",
+        dest="model_catalog_models",
+        help="Model candidate to validate; repeatable. Applies to each selected provider.",
+    )
+    model_catalog_validate.add_argument(
+        "--timeout",
+        type=float,
+        default=45,
+        dest="model_catalog_timeout",
+        help="Seconds to wait per model probe (default: 45)",
+    )
+    model_catalog_validate.add_argument(
+        "--prompt",
+        default=None,
+        dest="model_catalog_prompt",
+        help="Probe prompt (default: 'Reply with exactly: OK')",
+    )
+    model_catalog_validate.add_argument(
+        "--api-catalog",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        dest="model_catalog_api_catalog",
+        help="Also fetch provider API model lists when matching API credentials are set",
+    )
+    model_catalog_validate.add_argument(
+        "--output",
+        choices=["json", "text"],
+        default="json",
+        dest="model_catalog_output",
+        help="Output format (default: json)",
+    )
     parser.add_argument(
         "--workspace",
         default=os.getcwd(),
@@ -207,6 +275,9 @@ def parse_args(argv=None):
         args.bp_dir = args.ticket_bp_dir
         args.host = args.ticket_host
         args.port = args.ticket_port
+    elif args.command == "model-catalog":
+        args.workspace = args.model_catalog_workspace or args.workspace
+        args.bp_dir = args.model_catalog_bp_dir
     return args
 
 
@@ -355,6 +426,41 @@ def run_ticket_cli(args):
     return 0
 
 
+def run_model_catalog_cli(args):
+    """Run host-side model catalog validation probes."""
+    import json
+
+    from server.model_catalog_validator import (
+        DEFAULT_PROBE_PROMPT,
+        text_summary,
+        validate_model_catalog,
+    )
+
+    if args.model_catalog_action != "validate":
+        print(f"Error: unknown model-catalog action {args.model_catalog_action}", file=sys.stderr)
+        return 1
+
+    workspace = os.path.abspath(args.workspace)
+    if not os.path.isdir(workspace):
+        print(f"Error: workspace directory does not exist: {workspace}", file=sys.stderr)
+        return 1
+
+    report = validate_model_catalog(
+        providers=args.model_catalog_providers,
+        models=args.model_catalog_models,
+        workspace=workspace,
+        bp_dir=args.bp_dir,
+        timeout_seconds=args.model_catalog_timeout,
+        prompt=args.model_catalog_prompt or DEFAULT_PROBE_PROMPT,
+        include_api_catalog=args.model_catalog_api_catalog,
+    )
+    if args.model_catalog_output == "text":
+        print(text_summary(report))
+    else:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    return 0
+
+
 def set_password_cli(set_usernames=None, delete_usernames=None):
     """Prompt for username/password updates, write hashed credentials to the
     global .env file. Never echoes the password. Never accepts the
@@ -490,6 +596,8 @@ def main():
         sys.exit(run_mcp_token_cli(args))
     if args.command == "ticket":
         sys.exit(run_ticket_cli(args))
+    if args.command == "model-catalog":
+        sys.exit(run_model_catalog_cli(args))
 
     if args.bootstrap_credentials:
         sys.exit(bootstrap_credentials())

@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -593,6 +594,38 @@ class TestGeminiAdapter:
         adapter = GeminiAdapter()
         assert adapter.prompt_via_stdin() is False
 
+    def test_prepare_env_injects_bullpen_mcp_settings(self, tmp_path):
+        workspace = tmp_path / "project"
+        bp_dir = workspace / ".bullpen"
+        bp_dir.mkdir(parents=True)
+        (bp_dir / "config.json").write_text(
+            json.dumps({"server_host": "0.0.0.0", "server_port": 5050}),
+            encoding="utf-8",
+        )
+
+        adapter = GeminiAdapter()
+        env, run_tmp = adapter.prepare_env(os.fspath(workspace), bp_dir=os.fspath(bp_dir))
+        try:
+            settings_path = env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"]
+            settings = json.loads(Path(settings_path).read_text(encoding="utf-8"))
+            server = settings["mcpServers"]["bullpen"]
+            assert settings["mcp"]["allowed"] == ["bullpen"]
+            assert server["command"] == sys.executable
+            assert server["args"][:3] == [
+                os.path.abspath(os.path.join("server", "mcp_tools.py")),
+                "--bp-dir",
+                os.fspath(bp_dir),
+            ]
+            assert "--host" in server["args"]
+            assert "127.0.0.1" in server["args"]
+            assert "--port" in server["args"]
+            assert "5050" in server["args"]
+            assert server["trust"] is True
+            assert "update_ticket" in server["includeTools"]
+            assert server["env"]["PYTHONPATH"] == os.getcwd()
+        finally:
+            shutil.rmtree(run_tmp, ignore_errors=True)
+
     def test_find_gemini_honors_configured_path(self, monkeypatch):
         configured = "/opt/bullpen/bin/gemini"
         monkeypatch.setenv("BULLPEN_GEMINI_PATH", configured)
@@ -692,6 +725,20 @@ class TestGeminiAdapter:
         result = adapter.parse_output("line 1\nline 2\n", "", 0)
         assert result["success"] is True
         assert result["output"] == "line 1\nline 2"
+
+    def test_parse_output_tool_only_json_does_not_echo_raw_stream(self):
+        adapter = GeminiAdapter()
+        stdout = "\n".join([
+            json.dumps({"type": "init", "model": "gemini-2.5-flash"}),
+            json.dumps({"type": "message", "role": "user", "content": "prompt"}),
+            json.dumps({"type": "tool_use", "tool_name": "mcp_bullpen_update_ticket"}),
+            json.dumps({"type": "tool_result", "status": "success", "output": "{}"}),
+        ])
+
+        result = adapter.parse_output(stdout, "", 0)
+
+        assert result["success"] is True
+        assert result["output"] == ""
 
     def test_parse_output_response_stats_json(self):
         adapter = GeminiAdapter()

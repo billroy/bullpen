@@ -14,6 +14,12 @@ def test_normalize_keeps_unknown_models_unchanged():
 
 
 def test_normalize_legacy_gemini_models():
-    assert normalize_model("gemini", "auto-gemini-2.5") == "gemini-2.5-flash"
-    assert normalize_model("gemini", "gemini-2.0-flash") == "gemini-2.5-flash"
-    assert normalize_model("gemini", "gemini-pro-2.5") == "gemini-2.5-pro"
+    assert normalize_model("gemini", "auto-gemini-2.5") == "flash"
+    assert normalize_model("gemini", "gemini-2.0-flash") == "flash"
+    assert normalize_model("gemini", "gemini-2.5-flash") == "flash"
+    assert normalize_model("gemini", "gemini-2.5-flash-lite") == "flash-lite"
+    assert normalize_model("gemini", "gemini-3.5-flash") == "flash"
+    assert normalize_model("gemini", "gemini-pro-2.5") == "flash"
+    assert normalize_model("gemini", "gemini-2.5-pro") == "flash"
+    assert normalize_model("gemini", "gemini-3-pro-preview") == "flash"
+    assert normalize_model("gemini", "pro") == "flash"

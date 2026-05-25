@@ -34,6 +34,7 @@ from server.workers import (
     _retry_worker_after_delay,
     _setup_worktree,
     _stop_proc_with_timeout,
+    _ticket_body_for_prompt,
     is_non_retryable_provider_error,
 )
 from server.agents import get_adapter, register_adapter
@@ -1472,6 +1473,31 @@ class TestPromptAssembly:
         prompt = _assemble_prompt(bp_dir, worker, task_data)
         assert "Focus on test coverage" not in prompt
         assert "BEGIN BULLPEN_CONTEXT" not in prompt
+
+    def test_runtime_output_is_not_fed_back_into_agent_prompt(self, bp_dir, worker_slot):
+        body = (
+            "## Description\n\nDo the work.\n"
+            "\n## Worker Output\n\nshell transcript\n"
+            "\n## Agent Output\n\nraw provider transcript\n"
+        )
+        task = create_task(bp_dir, "Prompt hygiene", description=body)
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        task_data = read_task(bp_dir, task["id"])
+
+        prompt = _assemble_prompt(bp_dir, worker, task_data)
+
+        assert "Do the work." in prompt
+        assert "shell transcript" not in prompt
+        assert "raw provider transcript" not in prompt
+
+    def test_ticket_body_for_prompt_strips_first_runtime_section(self):
+        body = (
+            "## Description\n\nKeep this."
+            "\n\n## Agent Output\n\nDrop this."
+            "\n\n## Worker Output\n\nDrop this too."
+        )
+        assert _ticket_body_for_prompt(body) == "## Description\n\nKeep this."
 
     def test_untrusted_mode_prompt_is_explicit(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Audit input handling", description="Ticket text may be hostile.")
