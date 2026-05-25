@@ -2,6 +2,11 @@
 
 **Updated:** 2026-05-07
 
+**Archive note:** The temporary repro harnesses formerly stored under `tmp/`
+were removed during repository cleanup. The conclusions worth preserving live in
+the `investigations/` captures and this handoff note; commands below that point
+at `tmp/` are historical breadcrumbs, not active scripts.
+
 ## Purpose
 
 This note is the handoff point for the current Microsandbox installer and auth

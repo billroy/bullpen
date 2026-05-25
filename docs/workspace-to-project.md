@@ -119,7 +119,7 @@ Update:
 - `docs/reviews/2026-04-09/**`, `docs/reviews/2026-04-10/**`, `docs/reviews/2026-04-12/**` — historical audit documents, don't retcon
 - Container-internal `/workspace` paths and `BULLPEN_WORKSPACE` env var in Dockerfile/compose/entrypoint — infra convention, not product terminology
 - CLAUDE.md / AGENTS.md references to Cowork's "workspace folder" — refers to Claude's file-access concept, not Bullpen's project concept. (Note: the Bullpen-specific line 48 of CLAUDE.md *should* change.)
-- `tmp/make_onepager.py` — one-off script, low priority
+- former `tmp/make_onepager.py` — one-off script removed during tmp cleanup
 
 ## 8. Ambiguous — needs a decision
 
