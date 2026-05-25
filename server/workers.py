@@ -2881,7 +2881,13 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
             }, ws_id)
         return
 
-    target_slot = random.choice(candidates)
+    idle_candidates = [
+        i for i in candidates
+        if layout["slots"][i].get("state") == "idle"
+        and not layout["slots"][i].get("task_queue")
+        and not layout["slots"][i].get("paused")
+    ]
+    target_slot = random.choice(idle_candidates or candidates)
     task_mod.update_task(bp_dir, task_id, {"handoff_depth": depth + 1})
     _save_layout(bp_dir, layout)
     assign_task(

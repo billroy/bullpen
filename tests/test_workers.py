@@ -1995,6 +1995,95 @@ class TestHandoff:
         updated_layout = _load_layout(bp_dir)
         assert task["id"] in updated_layout["slots"][1]["task_queue"]
 
+    def test_random_pass_prefers_idle_empty_worker(self, bp_dir, monkeypatch):
+        """random: chooses from idle workers with empty queues when possible."""
+        choices_seen = []
+
+        def choose_first(candidates):
+            choices_seen.append(list(candidates))
+            return candidates[0]
+
+        monkeypatch.setattr(workers_mod.random, "choice", choose_first)
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "random:",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Busy", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": ["already-queued"], "state": "working",
+            },
+            {
+                "row": 0, "col": 2, "profile": "test",
+                "name": "Idle", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random prefers idle task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated_layout = _load_layout(bp_dir)
+        assert choices_seen == [[2]]
+        assert task["id"] in updated_layout["slots"][2]["task_queue"]
+        assert task["id"] not in updated_layout["slots"][1].get("task_queue", [])
+
+    def test_random_pass_falls_back_to_all_candidates_when_none_idle(self, bp_dir, monkeypatch):
+        """random: keeps existing behavior when every candidate is busy or queued."""
+        choices_seen = []
+
+        def choose_last(candidates):
+            choices_seen.append(list(candidates))
+            return candidates[-1]
+
+        monkeypatch.setattr(workers_mod.random, "choice", choose_last)
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "random:",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "profile": "test",
+                "name": "Busy", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": ["already-queued"], "state": "working",
+            },
+            {
+                "row": 0, "col": 2, "profile": "test",
+                "name": "Queued", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "review",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": ["already-waiting"], "state": "idle",
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random fallback task")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated_layout = _load_layout(bp_dir)
+        assert choices_seen == [[1, 2]]
+        assert task["id"] in updated_layout["slots"][2]["task_queue"]
+
     def test_worker_requested_status_overrides_random_handoff(self, bp_dir):
         """An agent-requested final column wins over the worker's pass disposition."""
         layout = read_json(os.path.join(bp_dir, "layout.json"))
