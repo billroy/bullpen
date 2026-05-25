@@ -189,6 +189,8 @@ def test_worker_card_keeps_per_worker_menu_items_enabled_during_group_selection(
 
 def test_worker_card_still_disables_group_ambiguous_menu_items():
     text = _read("static/components/WorkerCard.js")
+    assert "v-if=\"canPauseWorker && !isPaused\"" in text
+    assert "v-if=\"canPauseWorker && isPaused\"" in text
     assert ":disabled=\"multipleSelectionActive\" @click=\"menuPause\"" in text
     assert ":disabled=\"multipleSelectionActive\" @click=\"menuUnpause\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"" in text
@@ -198,6 +200,13 @@ def test_worker_card_still_disables_group_ambiguous_menu_items():
     assert ":disabled=\"multipleSelectionActive\" @click=\"menuDelete\"" in text
     assert "if (this.multipleSelectionActive) return;" in text
     assert "this.$emit('delete-worker', this.slotIndex);" in text
+
+
+def test_worker_card_blocks_run_during_automation_pause():
+    text = _read("static/components/WorkerCard.js")
+    assert "automationPausedForWorker()" in text
+    assert "this.$root?.state?.config?.worker_automation_paused === true" in text
+    assert "canStart && !isPaused && !automationPausedForWorker" in text
 
 
 def test_bullpen_tab_deletes_selected_worker_group_from_menu():

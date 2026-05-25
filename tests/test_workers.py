@@ -344,6 +344,43 @@ class TestAssignTask:
         layout = _load_layout(bp_dir)
         assert layout["slots"][worker_slot]["task_queue"] == [urgent["id"], normal["id"]]
 
+    def test_assign_to_paused_auto_worker_queues_without_start(self, bp_dir, worker_slot, monkeypatch):
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][worker_slot]["activation"] = "on_drop"
+        layout["slots"][worker_slot]["paused"] = True
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Paused assign task")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        updated_layout = _load_layout(bp_dir)
+        assert starts == []
+        assert updated_layout["slots"][worker_slot]["task_queue"] == [task["id"]]
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert read_task(bp_dir, task["id"])["status"] == "assigned"
+
+    def test_assign_while_automation_paused_queues_without_start(self, bp_dir, worker_slot, monkeypatch):
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        config["worker_automation_paused"] = True
+        write_json(os.path.join(bp_dir, "config.json"), config)
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][worker_slot]["activation"] = "on_drop"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Automation paused assign task")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        updated_layout = _load_layout(bp_dir)
+        assert starts == []
+        assert updated_layout["slots"][worker_slot]["task_queue"] == [task["id"]]
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+
     def test_start_worker_selects_highest_priority_from_existing_queue(self, bp_dir, worker_slot):
         class SlowAdapter(MockAdapter):
             @property
@@ -670,6 +707,52 @@ class TestWorkerReconcile:
         assert (None, worker_slot) not in _processes
         assert stop_calls == [fake_proc]
 
+    def test_stop_line_stops_active_ai_shell_and_leaves_services(self, bp_dir, worker_slot, monkeypatch):
+        task = create_task(bp_dir, "Stop line active task")
+        assign_task(bp_dir, worker_slot, task["id"])
+        update_task(bp_dir, task["id"], {"status": "in_progress"})
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["state"] = "working"
+        layout["slots"].append({
+            "type": "service",
+            "row": 0,
+            "col": 1,
+            "name": "Service",
+            "activation": "manual",
+            "disposition": "review",
+            "watch_column": None,
+            "max_retries": 0,
+            "task_queue": ["service-order"],
+            "state": "working",
+            "paused": False,
+        })
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        stopped_entries = []
+        monkeypatch.setattr(
+            workers_mod,
+            "_request_process_shutdown_and_cleanup",
+            lambda bp, entry: stopped_entries.append(entry),
+        )
+        _processes[(None, worker_slot)] = {
+            "proc": object(),
+            "buffer": [],
+            "buffer_size": 0,
+            "task_id": task["id"],
+            "run_id": "run-stop-line-1",
+        }
+
+        stopped = workers_mod.stop_line_workers(bp_dir)
+
+        updated_layout = _load_layout(bp_dir)
+        updated = read_task(bp_dir, task["id"])
+        assert stopped == 1
+        assert updated["status"] == "assigned"
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert updated_layout["slots"][1]["state"] == "working"
+        assert stopped_entries and stopped_entries[0]["task_id"] == task["id"]
+
 
 class TestStartWorker:
     def test_non_retryable_gemini_capacity_error_is_classified(self):
@@ -702,6 +785,38 @@ class TestStartWorker:
         # Task should be in disposition column (review) or still in progress
         assert updated["status"] in ("review", "in_progress")
 
+    def test_start_worker_ignores_paused_worker(self, bp_dir, worker_slot):
+        task = create_task(bp_dir, "Paused start task")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["paused"] = True
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.1)
+
+        updated_layout = _load_layout(bp_dir)
+        updated = read_task(bp_dir, task["id"])
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert updated["status"] == "assigned"
+
+    def test_start_worker_ignores_automation_pause(self, bp_dir, worker_slot):
+        task = create_task(bp_dir, "Automation paused start task")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        config["worker_automation_paused"] = True
+        write_json(os.path.join(bp_dir, "config.json"), config)
+
+        start_worker(bp_dir, worker_slot)
+        time.sleep(0.1)
+
+        updated_layout = _load_layout(bp_dir)
+        updated = read_task(bp_dir, task["id"])
+        assert updated_layout["slots"][worker_slot]["state"] == "idle"
+        assert updated["status"] == "assigned"
+
     def test_drain_runnable_queues_starts_idle_auto_worker(self, bp_dir, worker_slot):
         class SlowAdapter(MockAdapter):
             @property
@@ -731,6 +846,25 @@ class TestStartWorker:
             updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "in_progress"
         stop_worker(bp_dir, worker_slot)
+
+    def test_drain_runnable_queues_skips_automation_pause(self, bp_dir, worker_slot, monkeypatch):
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        task = create_task(bp_dir, "Automation paused queued task")
+        update_task(bp_dir, task["id"], {"status": "assigned", "assigned_to": str(worker_slot)})
+
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        config["worker_automation_paused"] = True
+        write_json(os.path.join(bp_dir, "config.json"), config)
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["activation"] = "on_queue"
+        layout["slots"][worker_slot]["task_queue"] = [task["id"]]
+        layout["slots"][worker_slot]["state"] = "idle"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        workers_mod.drain_runnable_queues(bp_dir)
+
+        assert starts == []
 
     def test_duplicate_start_requests_launch_once_per_slot(self, bp_dir, worker_slot):
         calls = []
@@ -2332,6 +2466,21 @@ class TestWatchColumn:
 
         layout = _load_layout(bp_dir)
         assert task["id"] not in layout["slots"][0].get("task_queue", [])
+
+    def test_check_watch_columns_ignores_automation_pause(self, bp_dir, watcher_slot):
+        """Workspace automation pause prevents watch-column claims."""
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        config["worker_automation_paused"] = True
+        write_json(os.path.join(bp_dir, "config.json"), config)
+
+        task = create_task(bp_dir, "Automation paused watch")
+        update_task(bp_dir, task["id"], {"status": "assigned"})
+
+        check_watch_columns(bp_dir, "assigned")
+
+        layout = _load_layout(bp_dir)
+        assert task["id"] not in layout["slots"][0].get("task_queue", [])
+        assert read_task(bp_dir, task["id"])["assigned_to"] == ""
 
     def test_check_watch_columns_ignores_busy_worker(self, bp_dir, watcher_slot):
         """Working on_queue worker does not claim tasks."""

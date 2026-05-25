@@ -68,7 +68,7 @@ const app = createApp({
     // Active view state — mirrors whichever workspace is active
     const state = reactive({
       workspace: '',
-      config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40 },
+      config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40, worker_automation_paused: false },
       layout: { slots: [] },
       tasks: [],
       profiles: [],
@@ -84,7 +84,7 @@ const app = createApp({
     function _defaultWsData() {
       return {
         workspace: '',
-        config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40 },
+        config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40, worker_automation_paused: false },
         layout: { slots: [] },
         tasks: [],
         archivedTasks: [],
@@ -136,6 +136,7 @@ const app = createApp({
       safe.ambient_preset = _normalizeAmbientPreset(safe.ambient_preset);
       safe.ambient_volume = _normalizeAmbientVolume(safe.ambient_volume);
       safe.provider_colors = _normalizeProviderColors(safe.provider_colors);
+      safe.worker_automation_paused = safe.worker_automation_paused === true;
       return safe;
     }
 
@@ -1234,6 +1235,15 @@ const app = createApp({
     function restartServiceSlot(slot) {
       socket.emit('service:restart', _wsData({ slot }));
     }
+    function pauseAutomation() {
+      socket.emit('workers:pause_automation', _wsData({}));
+    }
+    function resumeAutomation() {
+      socket.emit('workers:resume_automation', _wsData({}));
+    }
+    function stopTheLine() {
+      socket.emit('workers:stop_line', _wsData({}));
+    }
     function openServiceSite(slot) {
       const worker = _workerAt(slot);
       const url = window.getServiceSiteUrl ? window.getServiceSiteUrl(worker, window.location) : '';
@@ -1728,7 +1738,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, restartServiceSlot, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, multipleWorkspaces, taskById,
       transferSlot, transferMode, openTransfer, transferWorker,
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
@@ -1769,6 +1779,7 @@ const app = createApp({
         :ambient-volume="currentAmbientVolume"
         :provider-colors="currentProviderColors"
         :default-provider-colors="defaultProviderColors"
+        :worker-automation-paused="state.config.worker_automation_paused === true"
         :quick-create-clear-token="quickCreateClearToken"
         :palette-commands="paletteCommands"
         @toggle-left-pane="toggleLeftPane"
@@ -1783,6 +1794,9 @@ const app = createApp({
         @set-ambient-volume="setAmbientVolume"
         @set-provider-color="(agent, color) => setProviderColor(agent, color)"
         @reset-provider-colors="resetProviderColors"
+        @pause-automation="pauseAutomation"
+        @resume-automation="resumeAutomation"
+        @stop-the-line="stopTheLine"
         @quick-create-task="quickCreateTask"
         @run-palette-command="runPaletteCommand"
         @run-palette-input="runPaletteInput"

@@ -1503,6 +1503,25 @@ class TestConfigEvents:
         assert config["name"] == "My Team"
         assert config["theme"] == "nord"
 
+    def test_pause_and_resume_worker_automation_events(self, client):
+        c, app = client
+        c.emit("workers:pause_automation", {})
+        config = get_event(c, "config:updated")
+        assert config is not None
+        assert config["worker_automation_paused"] is True
+
+        c.emit("workers:resume_automation", {})
+        config = get_event(c, "config:updated")
+        assert config is not None
+        assert config["worker_automation_paused"] is False
+
+    def test_stop_line_pauses_automation_even_without_active_workers(self, client):
+        c, app = client
+        c.emit("workers:stop_line", {})
+        config = get_event(c, "config:updated")
+        assert config is not None
+        assert config["worker_automation_paused"] is True
+
     def test_prompt_update(self, client):
         c, app = client
         c.emit("prompt:update", {"type": "workspace", "content": "This is a Flask project."})

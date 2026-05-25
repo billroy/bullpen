@@ -57,6 +57,8 @@ class Scheduler:
 
         with write_lock:
             config = read_json(os.path.join(self.bp_dir, "config.json"))
+            if config.get("worker_automation_paused"):
+                return
             layout = normalize_layout(read_json(layout_path), config=config)
             dirty = False
 

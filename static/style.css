@@ -634,6 +634,39 @@ body {
   min-width: 0;
 }
 
+.toolbar-worker-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-worker-controls .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.toolbar-btn-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.toolbar-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: #4a3a1f;
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .toolbar-name {
   font-weight: 600;
   font-size: 14px;
@@ -692,6 +725,14 @@ body {
 }
 
 @media (max-width: 900px) {
+  .toolbar-worker-controls .btn span {
+    display: none;
+  }
+
+  .toolbar-status-pill {
+    display: none;
+  }
+
   .toolbar-audio-value {
     display: none;
   }

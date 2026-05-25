@@ -312,6 +312,7 @@ VALID_CONFIG_KEYS = {
     "name", "grid", "columns", "agent_timeout_seconds",
     "max_prompt_chars", "auto_commit", "auto_pr", "theme",
     "ambient_preset", "ambient_volume", "provider_colors",
+    "worker_automation_paused",
 }
 
 HEX_COLOR_REGEX = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
@@ -359,6 +360,9 @@ def validate_config_update(data):
             continue
         if k == "provider_colors":
             sanitized[k] = _validate_provider_colors(v)
+            continue
+        if k == "worker_automation_paused":
+            sanitized[k] = bool(v)
             continue
         sanitized[k] = v
     return sanitized

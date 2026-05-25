@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'quickCreateClearToken', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'workerAutomationPaused', 'quickCreateClearToken', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -8,6 +8,9 @@ const TopToolbar = {
     'set-ambient-volume',
     'set-provider-color',
     'reset-provider-colors',
+    'pause-automation',
+    'resume-automation',
+    'stop-the-line',
     'export-workspace',
     'export-all',
     'import-workers',
@@ -201,6 +204,16 @@ const TopToolbar = {
     },
     onResetProviderColors() {
       this.$emit('reset-provider-colors');
+    },
+    onToggleAutomationPause() {
+      this.$emit(this.workerAutomationPaused ? 'resume-automation' : 'pause-automation');
+    },
+    onStopTheLine() {
+      const ok = window.confirm(
+        'Stop The Line will stop active AI and Shell runs, keep services running, and pause automation until you resume it.'
+      );
+      if (!ok) return;
+      this.$emit('stop-the-line');
     },
     onGlobalKeydown(event) {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
@@ -495,6 +508,26 @@ const TopToolbar = {
           </div>
         </div>
         <div class="toolbar-right">
+          <div class="toolbar-worker-controls">
+            <span v-if="workerAutomationPaused" class="toolbar-status-pill">AUTOMATION PAUSED</span>
+            <button
+              class="btn btn-sm"
+              :class="workerAutomationPaused ? 'btn-primary' : ''"
+              @click="onToggleAutomationPause"
+              :title="workerAutomationPaused ? 'Allow queued and scheduled AI and Shell workers to run again.' : 'Prevent new AI and Shell worker runs in this workspace.'"
+            >
+              <i class="toolbar-btn-icon" :data-lucide="workerAutomationPaused ? 'play' : 'pause'" aria-hidden="true"></i>
+              <span>{{ workerAutomationPaused ? 'Resume automation' : 'Pause automation' }}</span>
+            </button>
+            <button
+              class="btn btn-sm btn-danger"
+              @click="onStopTheLine"
+              title="Stop active AI and Shell runs now and pause automation."
+            >
+              <i class="toolbar-btn-icon" data-lucide="octagon-alert" aria-hidden="true"></i>
+              <span>Stop The Line</span>
+            </button>
+          </div>
           <div class="toolbar-audio">
             <label class="toolbar-audio-label" for="ambient-preset">Ambient</label>
             <select id="ambient-preset" class="form-select toolbar-audio-select" :value="ambientPreset || ''" @change="$emit('set-ambient-preset', $event.target.value)" title="Ambient sound">

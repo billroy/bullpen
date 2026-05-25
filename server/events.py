@@ -940,6 +940,64 @@ def register_events(socketio, app):
         write_json(os.path.join(bp_dir, "config.json"), config)
         _emit("config:updated", config, ws_id)
 
+    def _set_worker_automation_paused(bp_dir, ws_id, paused):
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        config["worker_automation_paused"] = bool(paused)
+        write_json(os.path.join(bp_dir, "config.json"), config)
+        _emit("config:updated", config, ws_id)
+        return config
+
+    def _resume_worker_automation(bp_dir, socketio, ws_id):
+        layout = worker_mod._load_layout(bp_dir)
+        watched_columns = {
+            worker.get("watch_column")
+            for worker in layout.get("slots", [])
+            if worker
+            and worker.get("activation") == "on_queue"
+            and worker.get("watch_column")
+            and worker.get("state") == "idle"
+            and not worker.get("paused")
+            and not worker.get("task_queue")
+        }
+        for column in watched_columns:
+            worker_mod.check_watch_columns(bp_dir, column, socketio, ws_id)
+        worker_mod.drain_runnable_queues(bp_dir, socketio, ws_id)
+
+    @socketio.on("workers:pause_automation")
+    @with_lock
+    def on_workers_pause_automation(data):
+        ws_id, bp_dir = _resolve(data)
+        _set_worker_automation_paused(bp_dir, ws_id, True)
+        _emit("toast", {
+            "message": "Worker automation paused. Active AI and Shell runs will finish.",
+            "level": "info",
+        }, ws_id)
+
+    @socketio.on("workers:resume_automation")
+    @with_lock
+    def on_workers_resume_automation(data):
+        ws_id, bp_dir = _resolve(data)
+        _set_worker_automation_paused(bp_dir, ws_id, False)
+        _resume_worker_automation(bp_dir, socketio, ws_id)
+        _emit("toast", {
+            "message": "Worker automation resumed.",
+            "level": "info",
+        }, ws_id)
+
+    @socketio.on("workers:stop_line")
+    @with_lock
+    def on_workers_stop_line(data):
+        ws_id, bp_dir = _resolve(data)
+        _set_worker_automation_paused(bp_dir, ws_id, True)
+        stopped = worker_mod.stop_line_workers(bp_dir, socketio, ws_id)
+        _emit("toast", {
+            "message": (
+                f"Stop The Line: stopped {stopped} active worker"
+                f"{'' if stopped == 1 else 's'} and paused automation."
+            ),
+            "level": "warning",
+        }, ws_id)
+
     @socketio.on("prompt:update")
     @with_lock
     def on_prompt_update(data):

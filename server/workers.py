@@ -327,6 +327,31 @@ def _shell_workers_enabled(bp_dir):
     return features.get("shell_workers_enabled", True) is not False
 
 
+def worker_automation_paused(bp_dir):
+    """Return True when workspace ticket-processing automation is paused."""
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        return False
+    return bool(config.get("worker_automation_paused"))
+
+
+def _worker_obeys_automation_pause(worker):
+    """Return True for workers governed by workspace automation pause."""
+    return str((worker or {}).get("type") or "ai") in {"ai", "shell", "marker"}
+
+
+def worker_start_blocked(bp_dir, worker):
+    """Return (blocked, reason) for worker execution start gates."""
+    if not worker:
+        return True, "worker missing"
+    if worker.get("paused"):
+        return True, "worker paused"
+    if _worker_obeys_automation_pause(worker) and worker_automation_paused(bp_dir):
+        return True, "automation paused"
+    return False, None
+
+
 def _load_layout(bp_dir):
     layout = read_json(os.path.join(bp_dir, "layout.json"))
     try:
@@ -383,6 +408,8 @@ def check_watch_columns(bp_dir, task_status, socketio=None, ws_id=None, exclude_
         layout = _load_layout(bp_dir)
     except FileNotFoundError:
         return
+    if worker_automation_paused(bp_dir):
+        return
     slots = layout.get("slots", [])
 
     # Find eligible watchers: on_queue, watching this column, idle, empty queue,
@@ -434,6 +461,8 @@ def _refill_from_watch_column(bp_dir, slot_index, socketio=None, ws_id=None):
     try:
         layout = _load_layout(bp_dir)
     except FileNotFoundError:
+        return
+    if worker_automation_paused(bp_dir):
         return
     worker = layout["slots"][slot_index]
     if not worker:
@@ -527,6 +556,9 @@ def _defer_start_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_
             worker = slots[slot_index]
             if not worker or worker.get("state") != "idle":
                 return
+            blocked, _reason = worker_start_blocked(bp_dir, worker)
+            if blocked:
+                return
             queue = worker.get("task_queue", [])
             if not queue:
                 return
@@ -549,8 +581,11 @@ def drain_runnable_queues(bp_dir, socketio=None, ws_id=None):
         layout = _load_layout(bp_dir)
     except FileNotFoundError:
         return
+    automation_paused = worker_automation_paused(bp_dir)
     for slot_index, worker in enumerate(layout.get("slots", [])):
         if not worker:
+            continue
+        if automation_paused and _worker_obeys_automation_pause(worker):
             continue
         if worker.get("state") != "idle" or worker.get("paused"):
             continue
@@ -590,6 +625,7 @@ def assign_task(
             and worker.get("type") == "shell"
             and worker.get("state") == "idle"
             and not queue_before
+            and not worker_start_blocked(bp_dir, worker)[0]
         )
 
         # Update task ticket
@@ -615,6 +651,7 @@ def assign_task(
         should_auto_start = (
             not suppress_auto_start
             and worker.get("state") == "idle"
+            and not worker_start_blocked(bp_dir, worker)[0]
             and (activation in ("on_drop", "on_queue") or should_start_handoff)
         )
         expected_task_id = (worker.get("task_queue") or [task_id])[0]
@@ -659,6 +696,14 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         return
     worker = slots[slot_index]
     if not worker:
+        return
+    blocked, reason = worker_start_blocked(bp_dir, worker)
+    if blocked:
+        if socketio and reason in {"worker paused", "automation paused"}:
+            _ws_emit(socketio, "toast", {
+                "message": f"{worker.get('name', 'Worker')} cannot start: {reason}",
+                "level": "info",
+            }, ws_id)
         return
     worker_type = get_worker_type(worker.get("type", "ai"))
     if worker_type.type_id == "ai":
@@ -709,6 +754,9 @@ def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manu
     if not worker:
         return None
     if worker.get("state") == "working":
+        return None
+    blocked, _reason = worker_start_blocked(bp_dir, worker)
+    if blocked:
         return None
 
     original_queue = list(worker.get("task_queue", []))
@@ -1252,6 +1300,23 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         if socketio:
             _ws_emit(socketio, "layout:updated", layout, ws_id)
     _request_process_shutdown_and_cleanup(bp_dir, entry)
+
+
+def stop_line_workers(bp_dir, socketio=None, ws_id=None):
+    """Stop active AI/Shell workers for an emergency automation hold."""
+    try:
+        layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return 0
+    stopped = 0
+    for slot_index, worker in enumerate(layout.get("slots", [])):
+        if not worker or str(worker.get("type") or "ai") not in {"ai", "shell"}:
+            continue
+        if worker.get("state") not in {"working", "retrying"}:
+            continue
+        stop_worker(bp_dir, slot_index, socketio, ws_id)
+        stopped += 1
+    return stopped
 
 
 def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):

@@ -221,6 +221,32 @@ class TestSchedulerTick:
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         assert layout["slots"][0]["state"] == "idle"
 
+    def test_worker_automation_pause_skips_scheduler_tick(self, bp_dir):
+        """Workspace automation pause prevents scheduled triggers."""
+        now = datetime.now()
+        current_time = now.strftime("%H:%M")
+
+        _make_worker(bp_dir, activation="at_time", trigger_time=current_time,
+                     trigger_every_day=False, paused=False)
+
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        config["worker_automation_paused"] = True
+        write_json(os.path.join(bp_dir, "config.json"), config)
+        task = create_task(bp_dir, "Automation paused scheduled task")
+        assign_task(bp_dir, 0, task["id"])
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"][0]["state"] = "idle"
+        layout["slots"][0]["activation"] = "at_time"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        scheduler = Scheduler(bp_dir, None, interval=60)
+        scheduler._tick()
+
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        assert layout["slots"][0]["state"] == "idle"
+        assert layout["slots"][0]["activation"] == "at_time"
+
     def test_unpaused_worker_fires(self, bp_dir):
         """Unpaused worker fires normally."""
         now = datetime.now()

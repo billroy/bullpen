@@ -500,7 +500,7 @@ def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None):
         return
     layout, worker, task, task_id = begun
     worker_snapshot = dict(worker)
-    worker_mod._commit_run_start(bp_dir, layout, worker, task_id, socketio, ws_id)
+    worker_mod._commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id)
 
     thread = threading.Thread(
         target=_run_service_order_thread,
@@ -1255,6 +1255,13 @@ def get_controller(bp_dir, ws_id, slot, socketio=None):
 
 
 def start_service(bp_dir, ws_id, slot, socketio=None):
+    worker = _load_service_slot(bp_dir, slot)
+    if worker.get("paused"):
+        _emit(socketio, "toast", {
+            "message": f"{worker.get('name', 'Service worker')} cannot start: worker paused",
+            "level": "info",
+        }, ws_id)
+        return False
     return get_controller(bp_dir, ws_id, slot, socketio).start()
 
 
@@ -1263,6 +1270,13 @@ def stop_service(bp_dir, ws_id, slot, socketio=None):
 
 
 def restart_service(bp_dir, ws_id, slot, socketio=None):
+    worker = _load_service_slot(bp_dir, slot)
+    if worker.get("paused"):
+        _emit(socketio, "toast", {
+            "message": f"{worker.get('name', 'Service worker')} cannot restart: worker paused",
+            "level": "info",
+        }, ws_id)
+        return False
     return get_controller(bp_dir, ws_id, slot, socketio).restart()
 
 

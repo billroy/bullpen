@@ -112,6 +112,9 @@ const WorkerConfigModal = {
     isAI() {
       return this.form.type === 'ai' || this.form.type == null;
     },
+    canPauseWorker() {
+      return this.isAI || this.isShell || this.isService;
+    },
     isUntrustedAI() {
       return this.isAI && this.form.trust_mode === 'untrusted';
     },
@@ -356,7 +359,7 @@ const WorkerConfigModal = {
                 Interval (minutes)
                 <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
               </label>
-              <label class="form-label form-label-inline" v-if="form.activation === 'at_time' || form.activation === 'on_interval'">
+              <label class="form-label form-label-inline" v-if="canPauseWorker">
                 <input type="checkbox" v-model="form.paused">
                 Paused
               </label>
@@ -535,7 +538,7 @@ const WorkerConfigModal = {
               Interval (minutes)
               <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
             </label>
-            <label class="form-label form-label-inline" v-if="form.activation === 'at_time' || form.activation === 'on_interval'">
+            <label class="form-label form-label-inline" v-if="canPauseWorker">
               <input type="checkbox" v-model="form.paused">
               Paused
             </label>

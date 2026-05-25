@@ -69,6 +69,28 @@ def test_worker_colors_menu_includes_marker():
     assert "['claude','codex','gemini','shell','service','marker']" in text
 
 
+def test_toolbar_exposes_worker_pause_and_stop_line_controls():
+    text = _read("static/components/TopToolbar.js")
+    assert "'pause-automation'," in text
+    assert "'resume-automation'," in text
+    assert "'stop-the-line'," in text
+    assert "workerAutomationPaused ? 'Resume automation' : 'Pause automation'" in text
+    assert "AUTOMATION PAUSED" in text
+    assert "Stop The Line" in text
+    assert "window.confirm(" in text
+
+
+def test_app_wires_toolbar_worker_pause_events():
+    text = _read("static/app.js")
+    assert ":worker-automation-paused=\"state.config.worker_automation_paused === true\"" in text
+    assert "@pause-automation=\"pauseAutomation\"" in text
+    assert "@resume-automation=\"resumeAutomation\"" in text
+    assert "@stop-the-line=\"stopTheLine\"" in text
+    assert "socket.emit('workers:pause_automation'" in text
+    assert "socket.emit('workers:resume_automation'" in text
+    assert "socket.emit('workers:stop_line'" in text
+
+
 def test_toolbar_audio_and_worker_color_menus_are_mutually_exclusive():
     text = _read("static/components/TopToolbar.js")
     assert "this.showEventSoundsMenu = false;" in text

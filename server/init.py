@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
     "ambient_preset": None,
     "ambient_volume": 40,
     "provider_colors": dict(DEFAULT_PROVIDER_COLORS),
+    "worker_automation_paused": False,
     "grid": {"layout": "medium", "columnWidth": 220, "viewportOrigin": {"col": 0, "row": 0}},
     "columns": [
         {"key": "inbox", "label": "Inbox", "color": "#6B7280"},

@@ -123,6 +123,20 @@ def test_service_restart_replaces_process(tmp_workspace):
     stop_service(bp_dir, ws_id, 0, socket)
 
 
+def test_paused_service_worker_blocks_direct_start_and_restart(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _install_service_worker(bp_dir, tmp_workspace, paused=True)
+    socket = FakeSocket()
+    ws_id = "ws-service-paused"
+
+    assert start_service(bp_dir, ws_id, 0, socket) is False
+    assert restart_service(bp_dir, ws_id, 0, socket) is False
+    assert any(
+        event == "toast" and "worker paused" in payload.get("message", "")
+        for event, payload, _ in socket.events
+    )
+
+
 def test_service_pre_start_failure_crashes_without_main_process(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     _install_service_worker(bp_dir, tmp_workspace, pre_start=f'"{sys.executable}" -c "import sys; sys.exit(3)"')
