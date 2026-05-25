@@ -173,6 +173,61 @@ def test_cli_test_provider_subcommand_parses_target(sb, tmp_path, monkeypatch):
     assert config.target == "git"
 
 
+def test_cli_gemini_provider_subcommands_parse(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(ROOT)
+
+    auth_config = sb.config_from_args(
+        [
+            "--workspace-root",
+            str(workspace),
+            "--no-open",
+            "auth",
+            "gemini",
+        ]
+    )
+    test_config = sb.config_from_args(
+        [
+            "--workspace-root",
+            str(workspace),
+            "--no-open",
+            "test-provider",
+            "gemini",
+        ]
+    )
+
+    assert auth_config.action == "auth"
+    assert auth_config.target == "gemini"
+    assert test_config.action == "test-provider"
+    assert test_config.target == "gemini"
+
+
+def test_cli_deploy_verify_provider_option_is_repeatable(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(ROOT)
+
+    config = sb.config_from_args(
+        [
+            "--workspace-root",
+            str(workspace),
+            "--admin-password",
+            "pw",
+            "--verify-provider",
+            "gemini",
+            "--verify-provider",
+            "codex",
+            "--setup-provider",
+            "gemini",
+            "--no-open",
+        ]
+    )
+
+    assert config.setup_providers == ["gemini"]
+    assert config.verify_providers == ["gemini", "codex"]
+
+
 def test_cli_first_light_subcommand_parses_claude_without_admin_password(sb, tmp_path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -536,6 +591,157 @@ def test_deploy_skips_install_setup_without_tty_and_detaches(sb, monkeypatch):
     assert "detached-health" in calls
 
 
+def test_deploy_runs_requested_provider_verifications_before_detach(sb, monkeypatch):
+    calls = []
+    sandbox = object()
+
+    class FakeRuntime:
+        async def ensure_installed(self):
+            calls.append("ensure")
+
+        async def exists(self, name):
+            calls.append(("exists", name))
+            return False
+
+        async def prepared_base_exists(self, base):
+            calls.append(("base-exists", base))
+            return True
+
+        async def create(self, config):
+            calls.append("create")
+            return sandbox
+
+    def async_step(name):
+        async def _step(*_args):
+            calls.append(name)
+        return _step
+
+    def fake_get_setup_item(key):
+        async def fake_verify(_sandbox, _config):
+            calls.append(("verify-provider", key))
+
+        return sb.SetupItem(key, key.title(), lambda *_args, **_kwargs: None, fake_verify)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+        verify_providers=["gemini"],
+    )
+
+    monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
+    monkeypatch.setattr(sb, "ensure_host_ports_available", lambda _config: calls.append("ports"))
+    monkeypatch.setattr(sb, "prepare_runtime_dirs", async_step("prepare"))
+    monkeypatch.setattr(sb, "stage_static_assets", async_step("stage-static"))
+    monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
+    monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
+    monkeypatch.setattr(sb, "configure_codex_cli", async_step("codex-cli"))
+    monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
+    monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
+    monkeypatch.setattr(sb, "wait_for_health", lambda _port: calls.append("health"))
+    monkeypatch.setattr(sb, "verify_admin_credentials", async_step("credentials"))
+    monkeypatch.setattr(sb, "get_setup_item", fake_get_setup_item)
+    monkeypatch.setattr(sb, "run_install_tui", lambda *_args: (_ for _ in ()).throw(AssertionError("skip")))
+    monkeypatch.setattr(sb, "can_run_install_tui", lambda: False)
+    monkeypatch.setattr(sb, "detach_sandbox", async_step("detach"))
+    monkeypatch.setattr(sb, "verify_detached_sandbox", async_step("detached-health"))
+
+    summary = asyncio.run(sb.deploy(config))
+
+    assert summary.selected_items == []
+    assert ("verify-provider", "gemini") in calls
+    assert calls.index(("verify-provider", "gemini")) < calls.index("detach")
+
+
+def test_deploy_runs_requested_provider_setup_before_extra_verification(sb, monkeypatch):
+    calls = []
+    sandbox = object()
+
+    class FakeRuntime:
+        async def ensure_installed(self):
+            calls.append("ensure")
+
+        async def exists(self, name):
+            calls.append(("exists", name))
+            return False
+
+        async def prepared_base_exists(self, base):
+            calls.append(("base-exists", base))
+            return True
+
+        async def create(self, config):
+            calls.append("create")
+            return sandbox
+
+    def async_step(name):
+        async def _step(*_args):
+            calls.append(name)
+        return _step
+
+    def fake_get_setup_item(key):
+        async def fake_auth(_runtime, _sandbox, _config):
+            calls.append(("auth-provider", key))
+
+        async def fake_verify(_sandbox, _config):
+            calls.append(("verify-provider", key))
+
+        return sb.SetupItem(key, key.title(), fake_auth, fake_verify)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+        setup_providers=["gemini"],
+        verify_providers=["gemini"],
+    )
+
+    monkeypatch.setattr(sb, "MicrosandboxRuntime", FakeRuntime)
+    monkeypatch.setattr(sb, "ensure_host_ports_available", lambda _config: calls.append("ports"))
+    monkeypatch.setattr(sb, "prepare_runtime_dirs", async_step("prepare"))
+    monkeypatch.setattr(sb, "stage_static_assets", async_step("stage-static"))
+    monkeypatch.setattr(sb, "disable_guest_ipv6_for_claude", async_step("disable-ipv6"))
+    monkeypatch.setattr(sb, "verify_mount_access", async_step("mounts"))
+    monkeypatch.setattr(sb, "configure_codex_cli", async_step("codex-cli"))
+    monkeypatch.setattr(sb, "bootstrap_bullpen_credentials", async_step("bootstrap"))
+    monkeypatch.setattr(sb, "start_bullpen", async_step("start"))
+    monkeypatch.setattr(sb, "wait_for_health", lambda _port: calls.append("health"))
+    monkeypatch.setattr(sb, "verify_admin_credentials", async_step("credentials"))
+    monkeypatch.setattr(sb, "get_setup_item", fake_get_setup_item)
+    monkeypatch.setattr(sb, "run_install_tui", lambda *_args: (_ for _ in ()).throw(AssertionError("skip")))
+    monkeypatch.setattr(sb, "can_run_install_tui", lambda: False)
+    monkeypatch.setattr(sb, "detach_sandbox", async_step("detach"))
+    monkeypatch.setattr(sb, "verify_detached_sandbox", async_step("detached-health"))
+
+    asyncio.run(sb.deploy(config))
+
+    assert calls.index(("auth-provider", "gemini")) < calls.index(("verify-provider", "gemini"))
+    assert calls.index(("verify-provider", "gemini")) < calls.index("detach")
+
+
 def test_first_light_claude_runs_only_claude_gate_without_ports_or_bullpen(sb, monkeypatch):
     calls = []
     sandbox = object()
@@ -635,6 +841,7 @@ def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, mon
 
     assert config.runtime_env["BULLPEN_CODEX_SANDBOX"] == "none"
     assert config.runtime_env["BULLPEN_CODEX_PATH"] == "/usr/local/bin/codex"
+    assert config.runtime_env["BULLPEN_GEMINI_PATH"] == "/usr/local/bin/gemini"
     assert "SSL_CERT_FILE" not in config.runtime_env
     assert "SSL_CERT_DIR" not in config.runtime_env
     assert "NODE_EXTRA_CA_CERTS" not in config.runtime_env
@@ -973,10 +1180,10 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "useradd --uid" in prepare_command
     assert "BULLPEN_UID=" in prepare_command
     assert "Existing bullpen user has uid" in prepare_command
-    assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen" in prepare_command
+    assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini /var/lib/bullpen" in prepare_command
     assert "bullpen soft nofile 65536" in prepare_command
     assert "bullpen hard nofile 65536" in prepare_command
-    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
+    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini" in prepare_command
     assert "chown bullpen:\"$group_name\" /workspace" not in prepare_command
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /home/bullpen\n" not in prepare_command
@@ -1717,6 +1924,119 @@ def test_verify_codex_auth_runs_codex_exec_with_nested_sandbox_disabled(sb):
     assert "timeout 45s bash -lc" in command
     assert "HOME=/home/bullpen BULLPEN_CODEX_SANDBOX=none" in command
     assert '"$BULLPEN_CODEX_PATH" exec --dangerously-bypass-approvals-and-sandbox --json --skip-git-repo-check -' in command
+
+
+def test_verify_gemini_auth_runs_adapter_model_probe(sb):
+    commands = []
+
+    class FakeSandbox:
+        def exec(self, cmd, args):
+            commands.append((cmd, args))
+            return types.SimpleNamespace(returncode=0)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+    sb.build_runtime_env(config)
+
+    asyncio.run(sb.verify_gemini_auth(FakeSandbox(), config))
+
+    command = commands[0][1][1]
+    assert "su -s /bin/bash bullpen -c" in command
+    assert "cd /app" in command
+    assert "validate_model_catalog" in command
+    assert 'providers=[\\"gemini\\"]' in command or 'providers=["gemini"]' in command
+    assert 'models=[\\"flash\\"]' in command or 'models=["flash"]' in command
+    assert 'provider.get("models", [])' in command
+    assert "glob.glob(os.path.join(workspace_root, \"*\", \".bullpen\"))" in command
+    assert "Gemini probe using Bullpen MCP config" in command
+    assert "Gemini auth/model preflight failed inside Microsandbox" in command
+
+
+def test_auth_gemini_api_key_writes_sandbox_home_env(sb, tmp_path, monkeypatch):
+    async def fail_attach(*_args, **_kwargs):
+        raise AssertionError("api-key setup should not open interactive sandbox attach")
+
+    monkeypatch.setattr(sb, "attach_as_bullpen", fail_attach)
+    monkeypatch.setattr(sb.getpass, "getpass", lambda _prompt: "secret-key")
+
+    sandbox_home = tmp_path / "sandbox-home"
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=sandbox_home,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+        gemini_auth_mode="api-key",
+    )
+    sb.build_runtime_env(config)
+
+    asyncio.run(sb.auth_gemini(object(), object(), config))
+
+    env_path = sandbox_home / ".gemini" / ".env"
+    assert env_path.read_text(encoding="utf-8") == 'GEMINI_API_KEY="secret-key"\n'
+
+
+def test_auth_gemini_interactive_launches_sandbox_native_cli_setup(sb, monkeypatch):
+    attached = []
+
+    async def fake_attach(runtime, sandbox, config, command, **kwargs):
+        attached.append((command, kwargs))
+
+    monkeypatch.setattr(sb, "attach_as_bullpen", fake_attach)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+        gemini_auth_mode="interactive",
+    )
+    sb.build_runtime_env(config)
+
+    asyncio.run(sb.auth_gemini(object(), object(), config))
+
+    command, kwargs = attached[0]
+    assert "mkdir -p /home/bullpen/.gemini" in command
+    assert '"$BULLPEN_GEMINI_PATH"' in command
+    assert kwargs["label"] == "authenticate Gemini"
+    assert kwargs["bridge_localhost_callback"] is True
+    assert kwargs["prefer_exec_stream"] is True
 
 
 def test_configured_sandbox_shell_redacts_secret_values(sb):

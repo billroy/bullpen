@@ -93,6 +93,9 @@ class DeployConfig:
     install_bullpen_project: bool = False
     local_project_path_default: Path | None = None
     projects_root: Path | None = None
+    setup_providers: list[str] = field(default_factory=list)
+    verify_providers: list[str] = field(default_factory=list)
+    gemini_auth_mode: str = "prompt"
 
 
 @dataclass
@@ -343,13 +346,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--replace", action="store_true", default=False)
     parser.add_argument("--no-replace", action="store_true", default=False)
+    parser.add_argument(
+        "--verify-provider",
+        action="append",
+        choices=("claude", "codex", "gemini", "git"),
+        default=[],
+        help="Run a provider verification inside the sandbox before detaching; repeatable",
+    )
+    parser.add_argument(
+        "--setup-provider",
+        action="append",
+        choices=("claude", "codex", "gemini", "git"),
+        default=[],
+        help="Run sandbox-native provider setup before detaching; repeatable",
+    )
+    parser.add_argument(
+        "--gemini-auth-mode",
+        choices=("prompt", "interactive", "api-key", "vertex"),
+        default="prompt",
+        help="Gemini setup method when setting up Gemini (default: prompt)",
+    )
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
     parser.add_argument("--no-open", dest="open_browser", action="store_false")
     subparsers = parser.add_subparsers(dest="command")
     auth_parser = subparsers.add_parser("auth", help="Run sandbox-native setup/auth for one item")
-    auth_parser.add_argument("target", choices=("claude", "codex", "git"))
+    auth_parser.add_argument("target", choices=("claude", "codex", "gemini", "git"))
     test_parser = subparsers.add_parser("test-provider", help="Run sandbox-native verification for one item")
-    test_parser.add_argument("target", choices=("claude", "codex", "git"))
+    test_parser.add_argument("target", choices=("claude", "codex", "gemini", "git"))
     first_light_parser = subparsers.add_parser(
         "first-light",
         help="Create a minimal sandbox and prove one provider works end-to-end",
@@ -624,6 +647,9 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         prepare_base_policy=prepare_base_policy,
         source_image=args.source_image,
         prepare_source=abs_path(args.source_dir) if args.source_dir else None,
+        setup_providers=list(args.setup_provider or []),
+        verify_providers=list(args.verify_provider or []),
+        gemini_auth_mode=args.gemini_auth_mode,
     )
     validate_config(config)
     return config
@@ -669,6 +695,7 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_VENV": "/opt/bullpen-venv",
             "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),
             "BULLPEN_CODEX_PATH": "/usr/local/bin/codex",
+            "BULLPEN_GEMINI_PATH": "/usr/local/bin/gemini",
             "BULLPEN_MICROSANDBOX_HOST_NOFILE": str(config.host_nofile),
             "BULLPEN_MICROSANDBOX_GUEST_NOFILE": str(config.guest_nofile),
             "BULLPEN_MICROSANDBOX_MAX_CONNECTIONS": str(config.network_max_connections),
@@ -1164,6 +1191,48 @@ def resolve_git_identity() -> tuple[str, str]:
     return name, email
 
 
+def _quote_dotenv_value(value: str) -> str:
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _write_gemini_env_file(config: DeployConfig, values: dict[str, str]) -> Path:
+    gemini_dir = config.sandbox_home / ".gemini"
+    gemini_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(gemini_dir, 0o700)
+    except OSError:
+        pass
+    env_path = gemini_dir / ".env"
+    lines = [f"{key}={_quote_dotenv_value(value)}" for key, value in values.items() if value]
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        os.chmod(env_path, 0o600)
+    except OSError:
+        pass
+    return env_path
+
+
+def _choose_gemini_auth_mode(config: DeployConfig) -> str:
+    mode = config.gemini_auth_mode
+    if mode != "prompt":
+        return mode
+    if not sys.stdin.isatty():
+        raise DeployError("Gemini setup requires --gemini-auth-mode when no interactive terminal is available.")
+    print(
+        "Gemini auth options:\n"
+        "  1) Interactive Gemini CLI auth inside the sandbox\n"
+        "  2) Save a Gemini API key to the sandbox home\n"
+        "  3) Save Vertex AI environment values to the sandbox home",
+        flush=True,
+    )
+    choice = input("Choose Gemini auth option [2]: ").strip()
+    if choice == "1":
+        return "interactive"
+    if choice == "3":
+        return "vertex"
+    return "api-key"
+
+
 def log_step(message: str) -> None:
     print(f"==> {message}", flush=True)
 
@@ -1190,8 +1259,8 @@ if [ "$actual_uid" != "$uid" ]; then
   echo "Existing bullpen user has uid $actual_uid, expected $uid." >&2
   exit 1
 fi
-mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen
-chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex
+mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini /var/lib/bullpen
+chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini
 chown -R bullpen:"$group_name" /var/lib/bullpen
 chmod 700 /var/lib/bullpen 2>/dev/null || true
 # Lift FD ceiling for bullpen via pam_limits. Default soft 1024 / hard 4096
@@ -1204,7 +1273,7 @@ bullpen soft nofile __GUEST_NOFILE__
 bullpen hard nofile __GUEST_NOFILE__
 LIMITS_EOF
 chmod 644 /etc/security/limits.d/bullpen-fd.conf
-su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex'
+su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex && test -w /home/bullpen/.gemini'
 soft_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Sn')"
 hard_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Hn')"
 if [ "$soft_nofile" -lt __GUEST_NOFILE__ ] || [ "$hard_nofile" -lt __GUEST_NOFILE__ ]; then
@@ -1422,6 +1491,63 @@ timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX
         raise DeployError(codex_auth_failure_message(result_output_text(result)))
 
 
+async def verify_gemini_auth(sandbox: Any, config: DeployConfig) -> None:
+    workspace = shlex.quote(container_workspace_path(config))
+    command = f'''set -e
+cd /app
+WORKSPACE_ROOT={workspace} /opt/bullpen-venv/bin/python - <<'PY'
+import glob
+import os
+import sys
+
+from server.model_catalog_validator import text_summary, validate_model_catalog
+
+workspace_root = os.environ["WORKSPACE_ROOT"]
+candidate_bp_dirs = []
+root_bp_dir = os.path.join(workspace_root, ".bullpen")
+if os.path.isdir(root_bp_dir):
+    candidate_bp_dirs.append(root_bp_dir)
+candidate_bp_dirs.extend(sorted(glob.glob(os.path.join(workspace_root, "*", ".bullpen"))))
+bp_dir = candidate_bp_dirs[0] if candidate_bp_dirs else None
+workspace = os.path.dirname(bp_dir) if bp_dir else workspace_root
+if bp_dir:
+    print(f"Gemini probe using Bullpen MCP config: {{bp_dir}}")
+else:
+    print("Gemini probe found no .bullpen project under /workspace; validating auth/model only.")
+report = validate_model_catalog(
+    providers=["gemini"],
+    models=["flash"],
+    workspace=workspace,
+    bp_dir=bp_dir,
+    timeout_seconds=60,
+    prompt="Reply with exactly: OK",
+    include_api_catalog=False,
+)
+print(text_summary(report))
+rows = [
+    candidate
+    for provider in report.get("providers", [])
+    for candidate in provider.get("models", [])
+]
+if not rows or not all(candidate.get("success") for candidate in rows):
+    for candidate in rows:
+        if candidate.get("success"):
+            continue
+        for key in ("error", "stderr_preview", "stdout_preview", "output_preview"):
+            value = candidate.get(key)
+            if value:
+                print(f"{{key}}: {{value}}", file=sys.stderr)
+    print(
+        "Gemini auth/model preflight failed inside Microsandbox. "
+        "Run: python3 deploy-sandbox.py auth gemini",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+'''
+    await run_as_bullpen(sandbox, config, command, label="verify Gemini auth")
+
+
 async def clear_codex_auth(sandbox: Any, config: DeployConfig) -> None:
     command = r'''set -e
 timestamp="$(date +%Y%m%d%H%M%S)"
@@ -1509,6 +1635,52 @@ async def auth_codex(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployC
     )
 
 
+async def auth_gemini(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
+    print("Gemini setup stores credentials in the mounted sandbox home at /home/bullpen/.gemini.", flush=True)
+    mode = _choose_gemini_auth_mode(config)
+    if mode == "api-key":
+        api_key = getpass.getpass("Gemini API key for sandbox: ").strip()
+        if not api_key:
+            raise DeployError("Gemini API key cannot be empty.")
+        env_path = _write_gemini_env_file(config, {"GEMINI_API_KEY": api_key})
+        print(f"Saved Gemini API key to sandbox home: {env_path}", flush=True)
+        return
+    if mode == "vertex":
+        if not sys.stdin.isatty():
+            raise DeployError("Vertex Gemini setup requires an interactive terminal.")
+        cloud_project = input("GOOGLE_CLOUD_PROJECT: ").strip()
+        if not cloud_project:
+            raise DeployError("GOOGLE_CLOUD_PROJECT cannot be empty for Vertex AI.")
+        cloud_location = input("GOOGLE_CLOUD_LOCATION [us-central1]: ").strip() or "us-central1"
+        google_api_key = getpass.getpass("GOOGLE_API_KEY (leave blank for ADC/service-account env): ").strip()
+        values = {
+            "GOOGLE_GENAI_USE_VERTEXAI": "true",
+            "GOOGLE_CLOUD_PROJECT": cloud_project,
+            "GOOGLE_CLOUD_LOCATION": cloud_location,
+        }
+        if google_api_key:
+            values["GOOGLE_API_KEY"] = google_api_key
+        env_path = _write_gemini_env_file(config, values)
+        print(f"Saved Gemini Vertex AI env to sandbox home: {env_path}", flush=True)
+        return
+
+    setup_command = r'''set -e
+mkdir -p /home/bullpen/.gemini
+chmod 700 /home/bullpen/.gemini
+echo 'Gemini CLI authentication will start now. Complete setup, then exit Gemini with /quit.'
+"$BULLPEN_GEMINI_PATH"
+'''
+    await attach_as_bullpen(
+        runtime,
+        sandbox,
+        config,
+        setup_command,
+        label="authenticate Gemini",
+        bridge_localhost_callback=True,
+        prefer_exec_stream=True,
+    )
+
+
 async def auth_git(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
     name, email = resolve_git_identity()
     setup_command = (
@@ -1537,6 +1709,7 @@ def setup_items() -> list[SetupItem]:
     return [
         SetupItem("claude", "Claude", auth_claude, verify_claude_auth),
         SetupItem("codex", "Codex", auth_codex, verify_codex_auth),
+        SetupItem("gemini", "Gemini", auth_gemini, verify_gemini_auth),
         SetupItem("git", "Git", auth_git, verify_git_auth),
     ]
 
@@ -1645,6 +1818,22 @@ async def run_test_provider_command(config: DeployConfig) -> None:
         await configure_codex_cli(sandbox, config)
     item = get_setup_item(config.target)
     await item.verify_func(sandbox, config)
+
+
+async def verify_requested_providers(sandbox: Any, config: DeployConfig) -> None:
+    for provider in config.verify_providers:
+        item = get_setup_item(provider)
+        log_step(f"Verifying {item.label}")
+        await item.verify_func(sandbox, config)
+
+
+async def setup_requested_providers(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
+    for provider in config.setup_providers:
+        item = get_setup_item(provider)
+        log_step(f"Setting up {item.label}")
+        await item.auth_func(runtime, sandbox, config)
+        log_step(f"Verifying {item.label}")
+        await item.verify_func(sandbox, config)
 
 
 async def run_first_light_command(config: DeployConfig) -> CredentialSummary | None:
@@ -1884,6 +2073,8 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
         wait_for_health(config.bullpen_port)
         log_step("Verifying Bullpen credentials")
         await verify_admin_credentials(sandbox, config)
+        await setup_requested_providers(runtime, sandbox, config)
+        await verify_requested_providers(sandbox, config)
         if can_run_install_tui():
             log_step("Running install setup")
             summary = await run_install_tui(runtime, sandbox, config)

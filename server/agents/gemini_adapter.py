@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 import shutil
 import sys
 import tempfile
@@ -46,6 +47,47 @@ def _find_gemini():
     return None
 
 
+def _parse_dotenv_line(line):
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None
+    key, value = stripped.split("=", 1)
+    key = key.strip()
+    value = value.strip()
+    if not key:
+        return None
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1]
+    return key, value.replace('\\"', '"').replace("\\\\", "\\")
+
+
+def _load_gemini_env_file():
+    """Load sandbox-local Gemini headless auth env from ~/.gemini/.env."""
+    env_path = Path.home() / ".gemini" / ".env"
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    allowed = {
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_GENAI_USE_VERTEXAI",
+        "GOOGLE_GENAI_USE_GCA",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    }
+    env = {}
+    for line in lines:
+        parsed = _parse_dotenv_line(line)
+        if not parsed:
+            continue
+        key, value = parsed
+        if key in allowed and value:
+            env[key] = value
+    return env
+
+
 class GeminiAdapter(AgentAdapter):
 
     @property
@@ -73,6 +115,7 @@ class GeminiAdapter(AgentAdapter):
             gemini_bin,
             "--model", model,
             "--output-format", "stream-json",
+            "--allowed-mcp-server-names", "bullpen",
             "--approval-mode", "yolo",
             "--prompt", prompt,
         ]
@@ -89,6 +132,7 @@ class GeminiAdapter(AgentAdapter):
             json.dump(self._mcp_settings(bp_dir), f)
 
         env = os.environ.copy()
+        env.update(_load_gemini_env_file())
         env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = settings_path
         return env, run_tmp
 
@@ -107,6 +151,11 @@ class GeminiAdapter(AgentAdapter):
         port = str(bp_config.get("server_port", 5000))
 
         return {
+            "security": {
+                "folderTrust": {
+                    "enabled": False,
+                },
+            },
             "mcp": {
                 "allowed": ["bullpen"],
             },

@@ -362,7 +362,7 @@ For larger payloads, the ticket CLI also supports `--description-file` on
 |-------|----------|-------|
 | Claude | `claude` | Real-time streaming via stream-json |
 | Codex | `codex` | GPT-5 family models, stderr streaming |
-| Gemini | `gemini` | Gemini CLI prompt execution with stdout streaming, including Gemini 3.5 Flash selector support |
+| Gemini | `gemini` | Gemini CLI prompt execution with stdout streaming, MCP ticket tools, and conservative Flash defaults |
 
 Each agent CLI must be installed, available on your PATH, and authenticated with its provider before Bullpen can use it.
 
@@ -458,8 +458,8 @@ python3 deploy-sandbox.py --prepare-base
 
 During the run step, Bullpen prompts for the admin password if
 `--admin-password` is omitted. Provider setup is intentionally sandbox-native:
-Claude, Codex, and GitHub login flows run inside the VM as the `bullpen` user
-and persist under `/home/bullpen`.
+Claude, Codex, Gemini, and GitHub login flows run inside the VM as the
+`bullpen` user and persist under `/home/bullpen`.
 
 ### Microsandbox options
 
@@ -482,6 +482,8 @@ and persist under `/home/bullpen`.
 | `--host-nofile N` | `12000` | Target host process `RLIMIT_NOFILE` before the Microsandbox runtime is created |
 | `--guest-nofile N` | `65536` | Target `RLIMIT_NOFILE` for the in-sandbox `bullpen` user |
 | `--network-max-connections N` | `8192` | Microsandbox network connection tracker cap |
+| `--setup-provider NAME` | off | Run sandbox-native provider setup before detach; repeatable |
+| `--verify-provider NAME` | off | Verify a provider inside the sandbox before detach; repeatable |
 | `--replace` | off | Replace an existing sandbox without prompting |
 | `--no-replace` | off | Abort if a sandbox with the same name already exists |
 | `--open` / `--no-open` | open | Open or suppress opening the Bullpen UI in a host browser |
@@ -497,9 +499,11 @@ Additional maintenance commands:
 ```bash
 python3 deploy-sandbox.py auth claude
 python3 deploy-sandbox.py auth codex
+python3 deploy-sandbox.py auth gemini
 python3 deploy-sandbox.py auth git
 python3 deploy-sandbox.py test-provider claude
 python3 deploy-sandbox.py test-provider codex
+python3 deploy-sandbox.py test-provider gemini
 python3 deploy-sandbox.py test-provider git
 python3 deploy-sandbox.py first-light claude
 ```
@@ -523,7 +527,7 @@ Bullpen ships an MCP (Model Context Protocol) stdio server that lets supported a
 
 ### How it works
 
-Claude and Codex adapters spawn `server/mcp_tools.py` as a child process and communicate via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.
+Claude, Codex, and Gemini adapters spawn `server/mcp_tools.py` as a child process and communicate via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.
 
 When auth is enabled, the MCP server authenticates using a shared token that Bullpen writes to `~/.bullpen/secrets.json` on startup, keyed per project, while keeping runtime host/port metadata in each workspace's `.bullpen/config.json`.
 

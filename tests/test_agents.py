@@ -584,6 +584,8 @@ class TestGeminiAdapter:
         assert "gemini-2.5-pro" in argv
         assert "--output-format" in argv
         assert "stream-json" in argv
+        assert "--allowed-mcp-server-names" in argv
+        assert "bullpen" in argv
         assert "--approval-mode" in argv
         assert "yolo" in argv
         assert "--prompt" in argv
@@ -609,6 +611,7 @@ class TestGeminiAdapter:
             settings_path = env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"]
             settings = json.loads(Path(settings_path).read_text(encoding="utf-8"))
             server = settings["mcpServers"]["bullpen"]
+            assert settings["security"]["folderTrust"]["enabled"] is False
             assert settings["mcp"]["allowed"] == ["bullpen"]
             assert server["command"] == sys.executable
             assert server["args"][:3] == [
@@ -623,6 +626,28 @@ class TestGeminiAdapter:
             assert server["trust"] is True
             assert "update_ticket" in server["includeTools"]
             assert server["env"]["PYTHONPATH"] == os.getcwd()
+        finally:
+            shutil.rmtree(run_tmp, ignore_errors=True)
+
+    def test_prepare_env_loads_sandbox_gemini_env_file(self, tmp_path, monkeypatch):
+        workspace = tmp_path / "project"
+        bp_dir = workspace / ".bullpen"
+        bp_dir.mkdir(parents=True)
+        (bp_dir / "config.json").write_text("{}", encoding="utf-8")
+        gemini_dir = tmp_path / ".gemini"
+        gemini_dir.mkdir()
+        (gemini_dir / ".env").write_text(
+            'GEMINI_API_KEY="secret-key"\nIGNORED=value\nGOOGLE_GENAI_USE_VERTEXAI=true\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HOME", os.fspath(tmp_path))
+
+        adapter = GeminiAdapter()
+        env, run_tmp = adapter.prepare_env(os.fspath(workspace), bp_dir=os.fspath(bp_dir))
+        try:
+            assert env["GEMINI_API_KEY"] == "secret-key"
+            assert env["GOOGLE_GENAI_USE_VERTEXAI"] == "true"
+            assert "IGNORED" not in env
         finally:
             shutil.rmtree(run_tmp, ignore_errors=True)
 
