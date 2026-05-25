@@ -1,0 +1,310 @@
+Bullpen auth: ENABLED (1 user(s), primary=admin)
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+ _           _ _                  
+| |__  _   _| | |_ __   ___ _ __  
+| '_ \| | | | | | '_ \ / _ \ '_ \ 
+| |_) | |_| | | | |_) |  __/ | | |
+|_.__/ \__,_|_|_| .__/ \___|_| |_|
+                |_|               
+Bullpen starting — workspace: /workspace, host: 127.0.0.1, port: 18080
+ * Serving Flask app 'server.app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:18080
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [25/May/2026 12:37:26] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 12:37:34] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 12:37:35] "[32mGET / HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 12:37:35] "GET /login?next=/ HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 12:37:35] "GET /login/csrf HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 12:38:11] "[36mGET /login HTTP/1.1[0m" 304 -
+127.0.0.1 - - [25/May/2026 12:38:11] "GET /login/csrf HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 12:38:20] "[32mPOST /login HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 12:38:20] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 12:46:32] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 12:46:47] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779713205.1912742 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 12:47:04] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779713219.2088609 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 12:47:27] "[32mGET /api/tickets/fly-for-five-pi5O/ HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 12:47:32] "[32mPOST /login HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 12:47:32] "[33mGET /login?error=csrf HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 12:47:32] "[32mGET /api/tickets/fly-for-five-pi5O/ HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 12:47:35] "[33mGET /login HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 12:47:38] "[33mGET /login HTTP/1.1[0m" 404 -
+Exception in thread Thread-83 (_run_agent):
+Traceback (most recent call last):
+  File "/app/server/workers.py", line 2359, in _run_agent
+  File "/app/server/workers.py", line 3082, in _write_log
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 2396, in _run_agent
+  File "/app/server/workers.py", line 2928, in _on_agent_error
+  File "/app/server/workers.py", line 331, in _load_layout
+  File "/app/server/persistence.py", line 28, in read_json
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen/layout.json'
+Exception in thread Thread-108 (_run_agent):
+Traceback (most recent call last):
+  File "/app/server/workers.py", line 2359, in _run_agent
+  File "/app/server/workers.py", line 3082, in _write_log
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 2396, in _run_agent
+  File "/app/server/workers.py", line 2928, in _on_agent_error
+  File "/app/server/workers.py", line 331, in _load_layout
+  File "/app/server/persistence.py", line 28, in read_json
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen/layout.json'
+127.0.0.1 - - [25/May/2026 12:56:52] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:10:04] "[35m[1mGET /socket.io/?EIO=4&transport=websocket HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:32:18] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779715934.761515 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:32:31] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779715949.3341017 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:32:49] "[32mGET /api/mcp/tools HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:32:53] "[32mGET /api/tickets/ticket-for-10-I1Te HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:32:55] "[32mGET / HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:32:58] "[32mGET /api/v1/tickets/ticket-for-10-I1Te HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:33:01] "[31m[1mPOST /api/v1/auth/login HTTP/1.1[0m" 405 -
+127.0.0.1 - - [25/May/2026 13:33:05] "[32mPOST /login HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:33:09] "[33mGET /login HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 13:33:09] "[33mGET /login HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 13:33:12] "[33mGET /login HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 13:33:16] "[33mGET /login HTTP/1.1[0m" 404 -
+127.0.0.1 - - [25/May/2026 13:33:19] "[32mGET /api/ HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:33:19] "[32mGET /api/v1/ HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:33:44] "[32mGET /api/v1/tickets/ticket-for-10-I1Te HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:33:44] "[32mGET /api/tickets/ticket-for-10-I1Te HTTP/1.1[0m" 302 -
+Exception in thread Thread-257 (_run_agent):
+Traceback (most recent call last):
+  File "/app/server/workers.py", line 2359, in _run_agent
+    _write_log(bp_dir, slot_index, task_id, prompt, result)
+  File "/app/server/workers.py", line 3086, in _write_log
+    existing = sorted(f for f in os.listdir(logs_dir) if f.startswith(prefix))
+                                 ^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen/logs'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 2396, in _run_agent
+    _on_agent_error(
+  File "/app/server/workers.py", line 2928, in _on_agent_error
+    layout = _load_layout(bp_dir)
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/workers.py", line 331, in _load_layout
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/server/persistence.py", line 28, in read_json
+    with open(path, "r") as f:
+         ^^^^^^^^^^^^^^^
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen/layout.json'
+127.0.0.1 - - [25/May/2026 13:46:54] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779716970.0029461 HTTP/1.1[0m" 500 -
+127.0.0.1 - - [25/May/2026 13:46:54] "GET /socket.io/?transport=polling&EIO=4&t=1779716973.018795 HTTP/1.1" 200 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:46:54] "POST /socket.io/?transport=polling&EIO=4&sid=CoPKGvnFyzN8oIktAAAO HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "GET /socket.io/?transport=polling&EIO=4&sid=CoPKGvnFyzN8oIktAAAO&t=1779716973.026304 HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "POST /socket.io/?transport=polling&EIO=4&sid=CoPKGvnFyzN8oIktAAAO HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779716973.0361972 HTTP/1.1[0m" 500 -
+127.0.0.1 - - [25/May/2026 13:46:54] "GET /socket.io/?transport=polling&EIO=4&t=1779716973.04174 HTTP/1.1" 200 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:46:54] "POST /socket.io/?transport=polling&EIO=4&sid=4_tSGBEuwlZm5o7zAAAS HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "GET /socket.io/?transport=polling&EIO=4&sid=4_tSGBEuwlZm5o7zAAAS&t=1779716973.043828 HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "POST /socket.io/?transport=polling&EIO=4&sid=4_tSGBEuwlZm5o7zAAAS HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "GET /socket.io/?transport=polling&EIO=4&sid=4_tSGBEuwlZm5o7zAAAS&t=1779716973.109629 HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "GET /socket.io/?transport=polling&EIO=4&t=1779716973.181417 HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779716973.173783 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:46:54] "POST /socket.io/?transport=polling&EIO=4&sid=2EgA-ao_Dd39tF4LAAAW HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "GET /socket.io/?transport=polling&EIO=4&sid=2EgA-ao_Dd39tF4LAAAW&t=1779716973.183232 HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:46:54] "POST /socket.io/?transport=polling&EIO=4&sid=2EgA-ao_Dd39tF4LAAAW HTTP/1.1" 200 -
+127.0.0.1 - - [25/May/2026 13:52:41] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779717159.2979684 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:52:53] "[35m[1mGET /socket.io/?transport=websocket&EIO=4&t=1779717171.736052 HTTP/1.1[0m" 500 -
+Error on request:
+Traceback (most recent call last):
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 371, in run_wsgi
+    execute(self.server.app)
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 337, in execute
+    write(b"")
+  File "/opt/bullpen-venv/lib/python3.11/site-packages/werkzeug/serving.py", line 262, in write
+    assert status_set is not None, "write() before start_response"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: write() before start_response
+127.0.0.1 - - [25/May/2026 13:53:19] "[32mGET /api/tickets/testing-again-Fm1h/ HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:22] "[32mGET /api/tickets/testing-again-Fm1h/ HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:25] "[32mGET / HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+127.0.0.1 - - [25/May/2026 13:53:27] "[32mPOST /login?error=csrf HTTP/1.1[0m" 302 -
+Exception in thread Thread-375 (_run_agent):
+Traceback (most recent call last):
+  File "/app/server/workers.py", line 2359, in _run_agent
+  File "/app/server/workers.py", line 3082, in _write_log
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/threading.py", line 1038, in _bootstrap_inner
+    self.run()
+  File "/usr/lib/python3.11/threading.py", line 975, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/server/workers.py", line 2396, in _run_agent
+  File "/app/server/workers.py", line 2928, in _on_agent_error
+  File "/app/server/workers.py", line 331, in _load_layout
+  File "/app/server/persistence.py", line 28, in read_json
+OSError: [Errno 24] Too many open files: '/workspace/art-2/.bullpen/layout.json'
