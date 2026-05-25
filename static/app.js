@@ -313,6 +313,7 @@ const app = createApp({
     const ticketsViewMode = ref('kanban');
     const ticketListScope = ref('live');
     const leftPaneVisible = ref(true);
+    const workerMinimapCollapsed = ref(true);
     const toasts = reactive([]);
     const showCreateModal = ref(false);
     const showColumnManager = ref(false);
@@ -1367,6 +1368,9 @@ const app = createApp({
     function removeProject(wsId) { socket.emit('project:remove', { workspaceId: wsId }); }
 
     function toggleLeftPane() { leftPaneVisible.value = !leftPaneVisible.value; }
+    function setWorkerMinimapCollapsed(collapsed) {
+      workerMinimapCollapsed.value = collapsed === true;
+    }
 
     function _downloadNameFromDisposition(contentDisposition, fallback) {
       if (typeof contentDisposition !== 'string' || !contentDisposition) return fallback;
@@ -1732,7 +1736,7 @@ const app = createApp({
     return {
       state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded,
       addProject, newProject, cloneProject, removeProject,
-      connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, toasts, quickCreateClearToken,
+      connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
@@ -1780,6 +1784,7 @@ const app = createApp({
         :provider-colors="currentProviderColors"
         :default-provider-colors="defaultProviderColors"
         :worker-automation-paused="state.config.worker_automation_paused === true"
+        :worker-minimap-collapsed="workerMinimapCollapsed"
         :quick-create-clear-token="quickCreateClearToken"
         :palette-commands="paletteCommands"
         @toggle-left-pane="toggleLeftPane"
@@ -1797,6 +1802,7 @@ const app = createApp({
         @pause-automation="pauseAutomation"
         @resume-automation="resumeAutomation"
         @stop-the-line="stopTheLine"
+        @set-worker-minimap-collapsed="setWorkerMinimapCollapsed"
         @quick-create-task="quickCreateTask"
         @run-palette-command="runPaletteCommand"
         @run-palette-input="runPaletteInput"
@@ -1881,11 +1887,13 @@ const app = createApp({
               :workspace="state.workspace"
               :workspace-id="activeWorkspaceId"
               :multiple-workspaces="multipleWorkspaces"
+              :minimap-collapsed="workerMinimapCollapsed"
               @add-worker="addWorker"
               @configure-worker="configureSlot = $event"
               @select-task="selectTask"
               @open-focus="openFocusTab"
               @transfer-worker="openTransfer"
+              @set-minimap-collapsed="setWorkerMinimapCollapsed"
             />
             <FilesTab v-if="activeWorkspaceId && activeTab === 'files'" :files-version="state.filesVersion" :workspace-id="activeWorkspaceId" :active-theme="currentTheme" :key="'files-' + (activeWorkspaceId || 'none')" />
             <StatsTab

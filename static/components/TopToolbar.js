@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'workerAutomationPaused', 'quickCreateClearToken', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -11,6 +11,7 @@ const TopToolbar = {
     'pause-automation',
     'resume-automation',
     'stop-the-line',
+    'set-worker-minimap-collapsed',
     'export-workspace',
     'export-all',
     'import-workers',
@@ -207,6 +208,10 @@ const TopToolbar = {
     },
     onToggleAutomationPause() {
       this.$emit(this.workerAutomationPaused ? 'resume-automation' : 'pause-automation');
+    },
+    onToggleWorkerMinimap() {
+      this.showMainMenu = false;
+      this.$emit('set-worker-minimap-collapsed', !this.workerMinimapCollapsed);
     },
     onStopTheLine() {
       const ok = window.confirm(
@@ -444,6 +449,7 @@ const TopToolbar = {
             <button class="btn btn-icon" @click="toggleMainMenu" title="Main menu">&#9776;</button>
             <div v-if="showMainMenu" class="project-menu toolbar-menu">
               <button class="project-menu-item" @click="onToggleLeftPane"><i class="menu-item-icon" data-lucide="panel-left" aria-hidden="true"></i><span class="menu-item-label">Toggle Left Pane</span></button>
+              <button class="project-menu-item" @click="onToggleWorkerMinimap"><i class="menu-item-icon" data-lucide="map" aria-hidden="true"></i><span class="menu-item-label">{{ workerMinimapCollapsed ? 'Show Minimap' : 'Hide Minimap' }}</span></button>
               <button class="project-menu-item" @click="onExportWorkspace"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Project</span></button>
               <button class="project-menu-item" @click="onExportWorkers"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Workers</span></button>
               <button class="project-menu-item" @click="onExportAll"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export All</span></button>

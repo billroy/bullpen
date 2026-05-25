@@ -3,8 +3,8 @@ const BullpenTab = {
   HEADER_WIDTH: 40,
   HEADER_HEIGHT: 24,
   MINIMAP_HEADER_PX: 30,
-  props: ['layout', 'config', 'profiles', 'tasks', 'taskById', 'workspace', 'workspaceId', 'multipleWorkspaces'],
-  emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker'],
+  props: ['layout', 'config', 'profiles', 'tasks', 'taskById', 'workspace', 'workspaceId', 'multipleWorkspaces', 'minimapCollapsed'],
+  emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker', 'set-minimap-collapsed'],
   components: { WorkerCard },
   data() {
     return {
@@ -31,7 +31,6 @@ const BullpenTab = {
       viewportPx: { width: 0, height: 0 },
       dragStart: null,
       isPanning: false,
-      minimapCollapsed: false,
       liveMessage: '',
       columnResize: null,
       draggingColumnWidth: null,
@@ -182,7 +181,12 @@ const BullpenTab = {
         </div>
 
         <div class="worker-minimap" :class="{ collapsed: minimapCollapsed }">
-          <button class="worker-minimap-toggle" @click="minimapCollapsed = !minimapCollapsed" title="Toggle minimap">▣</button>
+          <button
+            class="worker-minimap-toggle"
+            @click="toggleMinimap"
+            :title="minimapCollapsed ? 'Show minimap' : 'Hide minimap'"
+            :aria-label="minimapCollapsed ? 'Show minimap' : 'Hide minimap'"
+          >▣</button>
           <template v-if="!minimapCollapsed">
             <div class="worker-minimap-map" ref="minimap" @click="onMinimapClick">
               <div v-for="dot in minimapDots" :key="dot.key" class="worker-minimap-dot" :style="dot.style"></div>
@@ -2058,6 +2062,9 @@ const BullpenTab = {
     },
     updateResizeTooltip(e, text) {
       this.resizeTooltip = { x: e.clientX + 14, y: e.clientY + 14, text };
+    },
+    toggleMinimap() {
+      this.$emit('set-minimap-collapsed', !this.minimapCollapsed);
     },
     onMinimapClick(e) {
       const rect = e.currentTarget.getBoundingClientRect();
