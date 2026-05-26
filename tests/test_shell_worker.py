@@ -297,6 +297,23 @@ def test_shell_exit_2_is_retryable_error(bp_dir):
     assert "Shell command exited 2" in updated["body"]
 
 
+def test_shell_exit_127_reports_missing_command(bp_dir):
+    _set_shell_worker(
+        bp_dir,
+        command=_python_command('import sys; print("/bin/sh: 1: say: not found", file=sys.stderr); sys.exit(127)'),
+        max_retries=0,
+    )
+    task = create_task(bp_dir, "Missing command")
+    assign_task(bp_dir, 0, task["id"])
+
+    start_worker(bp_dir, 0)
+    _wait_for_worker_done(bp_dir)
+
+    updated = read_task(bp_dir, task["id"])
+    assert updated["status"] == "blocked"
+    assert "Shell command not found: say (exit 127)" in updated["body"]
+
+
 def test_shell_timeout_records_canonical_reason(bp_dir):
     _set_shell_worker(
         bp_dir,

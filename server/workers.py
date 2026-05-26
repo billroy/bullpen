@@ -1905,7 +1905,7 @@ def _parse_shell_result(bp_dir, worker, completed):
     if completed.returncode != 0:
         return ShellResult(
             outcome="error",
-            reason=_json_reason(parsed) or f"Shell command exited {completed.returncode}",
+            reason=_json_reason(parsed) or _shell_exit_reason(completed),
         )
 
     if not parsed:
@@ -1937,6 +1937,27 @@ def _parse_shell_result(bp_dir, worker, completed):
 def _json_reason(parsed):
     if isinstance(parsed, dict) and isinstance(parsed.get("reason"), str):
         return parsed["reason"]
+    return None
+
+
+def _shell_exit_reason(completed):
+    returncode = completed.returncode
+    if returncode == 127:
+        missing_command = _extract_missing_shell_command(completed.stderr)
+        if missing_command:
+            return f"Shell command not found: {missing_command} (exit 127)"
+        return "Shell command not found (exit 127)"
+    return f"Shell command exited {returncode}"
+
+
+def _extract_missing_shell_command(stderr):
+    for line in str(stderr or "").splitlines():
+        line = line.strip()
+        if not line.endswith(": not found"):
+            continue
+        candidate = line[: -len(": not found")].rsplit(":", 1)[-1].strip()
+        if candidate:
+            return candidate
     return None
 
 
