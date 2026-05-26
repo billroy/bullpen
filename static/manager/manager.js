@@ -14,6 +14,10 @@ createApp({
       displayName: 'Local Bullpen',
       workspaceRoot: '',
       runtime: 'local',
+      adminUser: 'admin',
+      adminPassword: '',
+      sandboxName: '',
+      base: 'bullpen-microsandbox-local',
       autoStartWhenManagerStarts: false,
     });
 
@@ -74,6 +78,10 @@ createApp({
         state.selectedId = data.profile.id;
         form.displayName = 'Local Bullpen';
         form.workspaceRoot = '';
+        form.adminUser = 'admin';
+        form.adminPassword = '';
+        form.sandboxName = '';
+        form.base = 'bullpen-microsandbox-local';
         form.autoStartWhenManagerStarts = false;
         await refresh();
       } catch (err) {
@@ -168,7 +176,7 @@ createApp({
                 <label>Runtime</label>
                 <select v-model="form.runtime">
                   <option value="local">Local</option>
-                  <option value="microsandbox" disabled>Microsandbox (later)</option>
+                  <option value="microsandbox">Microsandbox</option>
                   <option value="docker" disabled>Docker (later)</option>
                 </select>
               </div>
@@ -176,6 +184,24 @@ createApp({
                 <label>Workspace Root</label>
                 <input v-model="form.workspaceRoot" placeholder="/Users/bill/aistuff" required>
               </div>
+              <template v-if="form.runtime === 'microsandbox'">
+                <div class="field">
+                  <label>Sandbox Name</label>
+                  <input v-model="form.sandboxName" placeholder="bullpen-personal">
+                </div>
+                <div class="field">
+                  <label>Base Snapshot</label>
+                  <input v-model="form.base">
+                </div>
+                <div class="field">
+                  <label>Admin User</label>
+                  <input v-model="form.adminUser">
+                </div>
+                <div class="field">
+                  <label>Admin Password</label>
+                  <input type="password" v-model="form.adminPassword" required>
+                </div>
+              </template>
               <label class="status-line">
                 <input type="checkbox" v-model="form.autoStartWhenManagerStarts" style="width:auto">
                 Auto-start when manager starts
@@ -222,6 +248,8 @@ createApp({
                 <div class="kv"><strong>URL</strong><span>{{ urlFor(selected) }}</span></div>
                 <div class="kv"><strong>Workspace</strong><span>{{ selected.workspaceRoot }}</span></div>
                 <div class="kv"><strong>Home</strong><span>{{ selected.instanceHome }}</span></div>
+                <div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>
+                <div class="kv" v-if="selected.base"><strong>Base</strong><span>{{ selected.base }}</span></div>
                 <div class="kv"><strong>Ports</strong><span>{{ portText(selected) }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.pid"><strong>PID</strong><span>{{ selected.observed.pid }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.lastError"><strong>Error</strong><span>{{ selected.observed.lastError }}</span></div>
@@ -238,7 +266,7 @@ createApp({
           </section>
 
           <div v-else class="empty">
-            Create a local Bullpen instance to get started.
+            Create a Bullpen instance to get started.
           </div>
         </main>
       </div>

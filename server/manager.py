@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import asyncio
+import importlib.util
 import os
 import re
 import signal
@@ -30,6 +32,7 @@ DEFAULT_BULLPEN_PORT = 8080
 DEFAULT_APP_PORT = 3000
 DEFAULT_BULLPEN_PORT_RANGE = (8081, 8180)
 DEFAULT_APP_PORT_RANGE = (3001, 3100)
+DEFAULT_MICROSANDBOX_BASE = "bullpen-microsandbox-local"
 LOCALHOST = "127.0.0.1"
 PROFILE_ID_RE = re.compile(r"[^a-z0-9-]+")
 
@@ -205,11 +208,45 @@ class PortAllocator:
             if port is None:
                 continue
             listening = is_port_listening(int(port))
+            observed_state = (profile.get("observed") or {}).get("state")
+            managed = observed_state in {"running", "healthy", "starting"} or bool(profile.get("observed", {}).get("pid"))
             result[key] = {
                 "port": int(port),
-                "state": "listening-managed" if listening and profile.get("observed", {}).get("pid") else ("listening-unmanaged" if listening else "reserved"),
+                "state": "listening-managed" if listening and managed else ("listening-unmanaged" if listening else "reserved"),
             }
         return result
+
+
+def _mark_profile_observed(
+    registry: ProfileRegistry,
+    profile: dict[str, Any],
+    *,
+    state: str,
+    pid: int | None = None,
+    log_path: str | None = None,
+    last_error: str | None = None,
+    desired_state: str | None = None,
+) -> dict[str, Any]:
+    updated = dict(profile)
+    if desired_state:
+        updated["desiredState"] = desired_state
+        updated["updatedAt"] = now_ts()
+    observed = dict(updated.get("observed") or {})
+    observed["state"] = state
+    observed["updatedAt"] = now_ts()
+    if pid:
+        observed["pid"] = pid
+    else:
+        observed.pop("pid", None)
+    if log_path:
+        observed["logPath"] = log_path
+    if last_error:
+        observed["lastError"] = last_error
+    elif state not in {"needs-attention", "unhealthy"}:
+        observed.pop("lastError", None)
+    updated["observed"] = observed
+    registry.upsert(updated)
+    return updated
 
 
 class LocalRuntimeController:
@@ -338,26 +375,15 @@ class LocalRuntimeController:
         last_error: str | None = None,
         desired_state: str | None = None,
     ) -> dict[str, Any]:
-        updated = dict(profile)
-        if desired_state:
-            updated["desiredState"] = desired_state
-            updated["updatedAt"] = now_ts()
-        observed = dict(updated.get("observed") or {})
-        observed["state"] = state
-        observed["updatedAt"] = now_ts()
-        if pid:
-            observed["pid"] = pid
-        else:
-            observed.pop("pid", None)
-        if log_path:
-            observed["logPath"] = log_path
-        if last_error:
-            observed["lastError"] = last_error
-        elif state not in {"needs-attention", "unhealthy"}:
-            observed.pop("lastError", None)
-        updated["observed"] = observed
-        self.registry.upsert(updated)
-        return updated
+        return _mark_profile_observed(
+            self.registry,
+            profile,
+            state=state,
+            pid=pid,
+            log_path=log_path,
+            last_error=last_error,
+            desired_state=desired_state,
+        )
 
     def _emit_update(self) -> None:
         if self.socketio:
@@ -396,14 +422,239 @@ class LocalRuntimeController:
             return False
 
 
+class MicrosandboxRuntimeController:
+    """Start and stop Bullpen instances through deploy-sandbox.py."""
+
+    def __init__(self, registry: ProfileRegistry, socketio: SocketIO | None = None):
+        self.registry = registry
+        self.socketio = socketio
+        self._lock = threading.RLock()
+
+    def build_argv(self, profile: dict[str, Any]) -> list[str]:
+        workspace = Path(profile.get("workspaceRoot") or "").expanduser()
+        if not workspace.is_dir():
+            raise ManagerError(f"Workspace path does not exist: {workspace}")
+        deploy_script = repo_root() / "deploy-sandbox.py"
+        if not deploy_script.is_file():
+            raise ManagerError(f"deploy-sandbox.py not found: {deploy_script}")
+        ports = profile.get("ports") or {}
+        auth = profile.get("auth") or {}
+        admin_password = auth.get("adminPassword")
+        if not admin_password:
+            raise ManagerError("Microsandbox profiles require auth.adminPassword until secret storage is implemented")
+        return [
+            sys.executable,
+            str(deploy_script),
+            "--workspace-root",
+            str(workspace),
+            "--sandbox-name",
+            str(profile.get("sandboxName") or profile.get("id")),
+            "--bullpen-port",
+            str(int(ports.get("bullpen") or DEFAULT_BULLPEN_PORT)),
+            "--app-port",
+            str(int(ports.get("app") or DEFAULT_APP_PORT)),
+            "--admin-user",
+            str(auth.get("adminUser") or "admin"),
+            "--admin-password",
+            str(admin_password),
+            "--base",
+            str(profile.get("base") or DEFAULT_MICROSANDBOX_BASE),
+            "--sandbox-home",
+            str(Path(profile.get("sandboxHome") or profile.get("instanceHome")).expanduser()),
+            "--replace",
+            "--no-open",
+        ]
+
+    def start(self, profile_id: str) -> dict[str, Any]:
+        with self._lock:
+            profile = self.registry.get(profile_id)
+            if profile.get("runtime") != "microsandbox":
+                raise ManagerError("Microsandbox controller can only start microsandbox profiles")
+            ports = profile.get("ports") or {}
+            bullpen_port = int(ports.get("bullpen") or DEFAULT_BULLPEN_PORT)
+            if is_port_listening(bullpen_port) and not wait_for_http_health(bullpen_port, timeout_seconds=1.0):
+                raise ManagerError(f"Port {bullpen_port} is already occupied")
+
+            instance_home = Path(profile.get("instanceHome") or self.registry.paths.home / "instances" / profile_id / "home").expanduser()
+            logs_dir = instance_home / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = logs_dir / "manager-microsandbox.log"
+            argv = self.build_argv(profile)
+            profile = _mark_profile_observed(
+                self.registry,
+                profile,
+                state="starting",
+                log_path=str(log_path),
+                desired_state="running",
+            )
+            self._emit_update()
+            env = os.environ.copy()
+            env["BULLPEN_MANAGER_PROFILE_ID"] = profile_id
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"\n[{now_ts()}] {' '.join(self._redacted_argv(argv))}\n")
+                result = subprocess.run(
+                    argv,
+                    cwd=str(repo_root()),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    check=False,
+                )
+            if result.returncode != 0:
+                profile = _mark_profile_observed(
+                    self.registry,
+                    profile,
+                    state="needs-attention",
+                    log_path=str(log_path),
+                    last_error=f"deploy-sandbox.py exited with {result.returncode}",
+                    desired_state="running",
+                )
+                self._emit_update()
+                raise ManagerError(f"Microsandbox deploy failed; see {log_path}")
+            state = "healthy" if wait_for_http_health(bullpen_port, timeout_seconds=8) else "unhealthy"
+            profile = _mark_profile_observed(
+                self.registry,
+                profile,
+                state=state,
+                log_path=str(log_path),
+                desired_state="running",
+            )
+            self._emit_update()
+            return profile
+
+    def stop(self, profile_id: str) -> dict[str, Any]:
+        with self._lock:
+            profile = self.registry.get(profile_id)
+            if profile.get("runtime") != "microsandbox":
+                raise ManagerError("Microsandbox controller can only stop microsandbox profiles")
+            try:
+                self._stop_sandbox(str(profile.get("sandboxName") or profile_id))
+            except Exception as exc:
+                profile = _mark_profile_observed(
+                    self.registry,
+                    profile,
+                    state="needs-attention",
+                    last_error=f"Microsandbox stop failed: {exc}",
+                )
+                self._emit_update()
+                raise ManagerError(str(exc)) from exc
+            profile = _mark_profile_observed(self.registry, profile, state="stopped", desired_state="stopped")
+            self._emit_update()
+            return profile
+
+    def restart(self, profile_id: str) -> dict[str, Any]:
+        try:
+            self.stop(profile_id)
+        except ManagerError:
+            pass
+        return self.start(profile_id)
+
+    def reconcile(self) -> list[dict[str, Any]]:
+        updated = []
+        for profile in self.registry.profiles():
+            if profile.get("runtime") != "microsandbox":
+                updated.append(profile)
+                continue
+            port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
+            if wait_for_http_health(port, timeout_seconds=0.5):
+                state = "healthy"
+            elif is_port_listening(port):
+                state = "unhealthy"
+            else:
+                state = "stopped"
+            profile = _mark_profile_observed(self.registry, profile, state=state)
+            if profile.get("desiredState") == "running" and profile.get("startup", {}).get("autoStartWhenManagerStarts") and state == "stopped":
+                try:
+                    profile = self.start(profile["id"])
+                except ManagerError as exc:
+                    profile = _mark_profile_observed(self.registry, profile, state="needs-attention", last_error=str(exc))
+            updated.append(profile)
+        self._emit_update()
+        return updated
+
+    def _stop_sandbox(self, sandbox_name: str) -> None:
+        module = _load_deploy_sandbox_module()
+
+        async def _stop() -> None:
+            runtime = module.MicrosandboxRuntime()
+            await runtime.ensure_installed()
+            await runtime.stop(sandbox_name)
+            try:
+                await runtime.remove(sandbox_name)
+            except Exception:
+                pass
+
+        asyncio.run(_stop())
+
+    def _redacted_argv(self, argv: list[str]) -> list[str]:
+        redacted = []
+        skip_next = False
+        for index, arg in enumerate(argv):
+            if skip_next:
+                redacted.append("[REDACTED]")
+                skip_next = False
+                continue
+            redacted.append(arg)
+            if arg == "--admin-password" and index < len(argv) - 1:
+                skip_next = True
+        return redacted
+
+    def _emit_update(self) -> None:
+        if self.socketio:
+            self.socketio.emit("manager:updated", {"profiles": self.registry.profiles()})
+
+
+class InstanceRuntimeController:
+    """Dispatch profile lifecycle actions to runtime-specific controllers."""
+
+    def __init__(self, registry: ProfileRegistry, socketio: SocketIO | None = None):
+        self.registry = registry
+        self.local = LocalRuntimeController(registry, socketio=socketio)
+        self.microsandbox = MicrosandboxRuntimeController(registry, socketio=socketio)
+
+    def _controller_for(self, profile_id: str):
+        profile = self.registry.get(profile_id)
+        runtime = profile.get("runtime") or "local"
+        if runtime == "local":
+            return self.local
+        if runtime == "microsandbox":
+            return self.microsandbox
+        raise ManagerError(f"{runtime} profiles are specified but not implemented")
+
+    def start(self, profile_id: str) -> dict[str, Any]:
+        return self._controller_for(profile_id).start(profile_id)
+
+    def stop(self, profile_id: str) -> dict[str, Any]:
+        return self._controller_for(profile_id).stop(profile_id)
+
+    def restart(self, profile_id: str) -> dict[str, Any]:
+        return self._controller_for(profile_id).restart(profile_id)
+
+    def reconcile(self) -> list[dict[str, Any]]:
+        self.local.reconcile()
+        self.microsandbox.reconcile()
+        return self.registry.profiles()
+
+
+def _load_deploy_sandbox_module():
+    path = repo_root() / "deploy-sandbox.py"
+    spec = importlib.util.spec_from_file_location("bullpen_deploy_sandbox", path)
+    if spec is None or spec.loader is None:
+        raise ManagerError(f"Cannot load deploy-sandbox.py from {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def create_profile(registry: ProfileRegistry, payload: dict[str, Any]) -> dict[str, Any]:
     runtime = (payload.get("runtime") or "local").strip().lower()
     if runtime not in {"local", "microsandbox", "docker"}:
         raise ManagerError("runtime must be local, microsandbox, or docker")
-    if runtime != "local":
-        raise ManagerError(f"{runtime} profiles are specified but not implemented in Gen 1")
+    if runtime == "docker":
+        raise ManagerError("docker profiles are specified but deferred")
 
-    display_name = (payload.get("displayName") or payload.get("name") or "Local Bullpen").strip()
+    display_name = (payload.get("displayName") or payload.get("name") or f"{runtime.title()} Bullpen").strip()
     profile_id = slugify(payload.get("id") or display_name)
     existing_ids = {profile.get("id") for profile in registry.profiles()}
     if profile_id in existing_ids:
@@ -413,34 +664,81 @@ def create_profile(registry: ProfileRegistry, payload: dict[str, Any]) -> dict[s
     if not workspace.is_dir():
         raise ManagerError("workspaceRoot must be an existing directory")
     source = Path(payload.get("bullpenSource") or str(repo_root())).expanduser()
-    if not (source / "bullpen.py").is_file():
+    if runtime == "local" and not (source / "bullpen.py").is_file():
         raise ManagerError("bullpenSource must contain bullpen.py")
 
     allocator = PortAllocator(registry)
     ports = payload.get("ports") if isinstance(payload.get("ports"), dict) else allocator.allocate()
     now = now_ts()
     instance_home = registry.paths.home / "instances" / profile_id / "home"
+    profile = _base_profile(
+        profile_id=profile_id,
+        display_name=display_name,
+        runtime=runtime,
+        workspace=workspace,
+        instance_home=instance_home,
+        ports=ports,
+        auto_start=bool(payload.get("autoStartWhenManagerStarts", False)),
+        created_at=now,
+    )
+    if runtime == "local":
+        profile["process"] = {"python": sys.executable, "bullpenSource": str(source.resolve())}
+    elif runtime == "microsandbox":
+        admin_password = str(payload.get("adminPassword") or "").strip()
+        if not admin_password:
+            raise ManagerError("adminPassword is required for microsandbox profiles")
+        sandbox_name = slugify(payload.get("sandboxName") or f"bullpen-{profile_id}", fallback=f"bullpen-{profile_id}")
+        sandbox_home = Path(payload.get("sandboxHome") or instance_home).expanduser()
+        profile.update(
+            {
+                "sandboxName": sandbox_name,
+                "base": str(payload.get("base") or DEFAULT_MICROSANDBOX_BASE),
+                "sandboxHome": str(sandbox_home),
+                "auth": {
+                    "adminUser": str(payload.get("adminUser") or "admin"),
+                    "adminPassword": admin_password,
+                    "storage": "plaintext-mvp",
+                },
+                "resources": {
+                    "vcpus": int(payload.get("vcpus") or 4),
+                    "memoryMiB": int(payload.get("memoryMiB") or 4096),
+                },
+            }
+        )
+    registry.upsert(profile)
+    return profile
+
+
+def _base_profile(
+    *,
+    profile_id: str,
+    display_name: str,
+    runtime: str,
+    workspace: Path,
+    instance_home: Path,
+    ports: dict[str, Any],
+    auto_start: bool,
+    created_at: str,
+) -> dict[str, Any]:
     profile = {
         "schemaVersion": 1,
         "id": profile_id,
         "displayName": display_name,
-        "runtime": "local",
+        "runtime": runtime,
         "desiredState": "stopped",
         "workspaceRoot": str(workspace.resolve()),
         "instanceHome": str(instance_home),
         "ports": {"bullpen": int(ports["bullpen"]), "app": int(ports["app"])},
-        "portReservation": {"owner": profile_id, "updatedAt": now, "source": "auto"},
-        "process": {"python": sys.executable, "bullpenSource": str(source.resolve())},
+        "portReservation": {"owner": profile_id, "updatedAt": created_at, "source": "auto"},
         "startup": {
-            "autoStartWhenManagerStarts": bool(payload.get("autoStartWhenManagerStarts", False)),
+            "autoStartWhenManagerStarts": auto_start,
             "restartIfUnhealthy": True,
             "openBrowserOnManualStart": True,
         },
-        "observed": {"state": "stopped", "updatedAt": now},
-        "createdAt": now,
-        "updatedAt": now,
+        "observed": {"state": "stopped", "updatedAt": created_at},
+        "createdAt": created_at,
+        "updatedAt": created_at,
     }
-    registry.upsert(profile)
     return profile
 
 
@@ -451,7 +749,7 @@ def create_manager_app(
 ) -> tuple[Flask, SocketIO]:
     registry = ProfileRegistry(home)
     socketio = SocketIO(logger=websocket_debug, engineio_logger=websocket_debug, cors_allowed_origins=[])
-    runtime = LocalRuntimeController(registry, socketio=socketio)
+    runtime = InstanceRuntimeController(registry, socketio=socketio)
     app = Flask(__name__, static_folder=None)
     app.config["MANAGER_REGISTRY"] = registry
     app.config["MANAGER_RUNTIME"] = runtime

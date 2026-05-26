@@ -2,7 +2,9 @@ import pytest
 
 import server.manager as manager_mod
 from server.manager import (
+    DEFAULT_MICROSANDBOX_BASE,
     ManagerError,
+    MicrosandboxRuntimeController,
     PortAllocator,
     ProfileRegistry,
     create_manager_app,
@@ -55,12 +57,51 @@ def test_port_allocator_skips_reserved_and_listening_ports(tmp_path, monkeypatch
     assert allocated == {"bullpen": 8082, "app": 3002}
 
 
-def test_create_profile_rejects_unimplemented_runtime(tmp_path):
+def test_create_profile_rejects_deferred_docker_runtime(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    with pytest.raises(ManagerError, match="not implemented"):
+    with pytest.raises(ManagerError, match="deferred"):
+        create_profile(
+            registry,
+            {
+                "displayName": "Docker",
+                "runtime": "docker",
+                "workspaceRoot": str(workspace),
+            },
+        )
+
+
+def test_create_microsandbox_profile(tmp_path):
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+        },
+    )
+
+    assert profile["runtime"] == "microsandbox"
+    assert profile["sandboxName"] == "bullpen-sandbox"
+    assert profile["sandboxHome"] == profile["instanceHome"]
+    assert profile["base"] == DEFAULT_MICROSANDBOX_BASE
+    assert profile["auth"]["adminUser"] == "admin"
+    assert profile["auth"]["adminPassword"] == "secret-password"
+
+
+def test_create_microsandbox_profile_requires_admin_password(tmp_path):
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    with pytest.raises(ManagerError, match="adminPassword"):
         create_profile(
             registry,
             {
@@ -98,6 +139,64 @@ def test_manager_api_create_profile(tmp_path):
     list_response = client.get("/api/profiles")
     assert list_response.status_code == 200
     assert list_response.get_json()["profiles"][0]["id"] == "api-instance"
+
+
+def test_microsandbox_runtime_builds_deploy_command(tmp_path):
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+            "adminUser": "rootish",
+        },
+    )
+
+    argv = MicrosandboxRuntimeController(registry).build_argv(profile)
+
+    assert "deploy-sandbox.py" in argv[1]
+    assert "--workspace-root" in argv
+    assert str(workspace) in argv
+    assert "--sandbox-name" in argv
+    assert "bullpen-sandbox" in argv
+    assert "--admin-user" in argv
+    assert "rootish" in argv
+    assert "--admin-password" in argv
+    assert "secret-password" in argv
+    assert "--replace" in argv
+    assert "--no-open" in argv
+
+
+def test_microsandbox_start_runs_deploy_and_sets_state(tmp_path, monkeypatch):
+    class FakeResult:
+        returncode = 0
+
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+        },
+    )
+    calls = []
+    monkeypatch.setattr(manager_mod, "is_port_listening", lambda *args, **kwargs: False)
+    monkeypatch.setattr(manager_mod, "wait_for_http_health", lambda *args, **kwargs: True)
+    monkeypatch.setattr(manager_mod.subprocess, "run", lambda argv, **kwargs: calls.append(argv) or FakeResult())
+
+    started = MicrosandboxRuntimeController(registry).start(profile["id"])
+
+    assert calls
+    assert started["desiredState"] == "running"
+    assert started["observed"]["state"] == "healthy"
 
 
 def test_local_runtime_builds_bullpen_command(tmp_path):
