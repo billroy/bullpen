@@ -1,0 +1,552 @@
+"""Host-local Bullpen manager for launching named Bullpen instances."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+import uuid
+import webbrowser
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib.error import URLError
+from urllib.request import urlopen
+
+from flask import Flask, jsonify, request, send_from_directory
+from flask_socketio import SocketIO
+
+from server.persistence import read_json, write_json
+
+
+DEFAULT_MANAGER_PORT = 5757
+DEFAULT_BULLPEN_PORT = 8080
+DEFAULT_APP_PORT = 3000
+DEFAULT_BULLPEN_PORT_RANGE = (8081, 8180)
+DEFAULT_APP_PORT_RANGE = (3001, 3100)
+LOCALHOST = "127.0.0.1"
+PROFILE_ID_RE = re.compile(r"[^a-z0-9-]+")
+
+
+class ManagerError(Exception):
+    """Raised when a manager operation cannot be completed."""
+
+
+def default_manager_home() -> Path:
+    configured = os.environ.get("BULLPEN_MANAGER_HOME")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".bullpen" / "manager"
+
+
+def repo_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def now_ts() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def slugify(value: str, *, fallback: str = "instance") -> str:
+    slug = PROFILE_ID_RE.sub("-", (value or "").strip().lower()).strip("-")
+    return slug or fallback
+
+
+def is_port_listening(port: int, host: str = LOCALHOST, timeout: float = 0.2) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout)
+        return sock.connect_ex((host, int(port))) == 0
+
+
+def wait_for_http_health(port: int, *, timeout_seconds: float = 12.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    url = f"http://{LOCALHOST}:{port}/health"
+    while time.monotonic() < deadline:
+        try:
+            with urlopen(url, timeout=1.5) as response:
+                if response.status == 200:
+                    return True
+        except (OSError, URLError):
+            pass
+        time.sleep(0.25)
+    return False
+
+
+@dataclass
+class ManagerPaths:
+    home: Path
+
+    @property
+    def profiles_path(self) -> Path:
+        return self.home / "profiles.json"
+
+    @property
+    def static_dir(self) -> Path:
+        return repo_root() / "static" / "manager"
+
+
+class ProfileRegistry:
+    """Persistent registry for managed Bullpen instance profiles."""
+
+    def __init__(self, home: Path | None = None):
+        self.paths = ManagerPaths((home or default_manager_home()).expanduser())
+        self._lock = threading.RLock()
+
+    def load(self) -> dict[str, Any]:
+        with self._lock:
+            path = self.paths.profiles_path
+            if not path.exists():
+                return {"schemaVersion": 1, "profiles": []}
+            data = read_json(str(path))
+            if not isinstance(data, dict):
+                raise ManagerError("Manager registry is invalid")
+            profiles = data.get("profiles")
+            if not isinstance(profiles, list):
+                data["profiles"] = []
+            data.setdefault("schemaVersion", 1)
+            return data
+
+    def save(self, data: dict[str, Any]) -> None:
+        with self._lock:
+            self.paths.home.mkdir(parents=True, exist_ok=True)
+            write_json(str(self.paths.profiles_path), data)
+
+    def profiles(self) -> list[dict[str, Any]]:
+        return list(self.load().get("profiles", []))
+
+    def get(self, profile_id: str) -> dict[str, Any]:
+        for profile in self.profiles():
+            if profile.get("id") == profile_id:
+                return profile
+        raise ManagerError(f"Unknown profile: {profile_id}")
+
+    def upsert(self, profile: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            data = self.load()
+            profiles = data.get("profiles", [])
+            for index, existing in enumerate(profiles):
+                if existing.get("id") == profile.get("id"):
+                    profiles[index] = profile
+                    data["profiles"] = profiles
+                    self.save(data)
+                    return profile
+            profiles.append(profile)
+            data["profiles"] = profiles
+            self.save(data)
+            return profile
+
+    def delete(self, profile_id: str) -> dict[str, Any]:
+        with self._lock:
+            data = self.load()
+            profiles = data.get("profiles", [])
+            kept = [profile for profile in profiles if profile.get("id") != profile_id]
+            if len(kept) == len(profiles):
+                raise ManagerError(f"Unknown profile: {profile_id}")
+            data["profiles"] = kept
+            self.save(data)
+            return data
+
+
+class PortAllocator:
+    """Allocate Bullpen/app port pairs with registry and socket deconfliction."""
+
+    def __init__(
+        self,
+        registry: ProfileRegistry,
+        *,
+        bullpen_range: tuple[int, int] = DEFAULT_BULLPEN_PORT_RANGE,
+        app_range: tuple[int, int] = DEFAULT_APP_PORT_RANGE,
+    ):
+        self.registry = registry
+        self.bullpen_range = bullpen_range
+        self.app_range = app_range
+
+    def reserved_ports(self, *, exclude_profile_id: str | None = None) -> set[int]:
+        reserved: set[int] = set()
+        for profile in self.registry.profiles():
+            if exclude_profile_id and profile.get("id") == exclude_profile_id:
+                continue
+            ports = profile.get("ports") or {}
+            for value in ports.values():
+                try:
+                    reserved.add(int(value))
+                except (TypeError, ValueError):
+                    continue
+        return reserved
+
+    def allocate(self, *, exclude_profile_id: str | None = None) -> dict[str, int]:
+        reserved = self.reserved_ports(exclude_profile_id=exclude_profile_id)
+        candidates = [(DEFAULT_BULLPEN_PORT, DEFAULT_APP_PORT)]
+        start_bullpen, end_bullpen = self.bullpen_range
+        start_app, end_app = self.app_range
+        span = min(end_bullpen - start_bullpen, end_app - start_app)
+        candidates.extend((start_bullpen + offset, start_app + offset) for offset in range(span + 1))
+        for bullpen_port, app_port in candidates:
+            if bullpen_port == app_port:
+                continue
+            if bullpen_port in reserved or app_port in reserved:
+                continue
+            if is_port_listening(bullpen_port) or is_port_listening(app_port):
+                continue
+            return {"bullpen": bullpen_port, "app": app_port}
+        raise ManagerError("No free Bullpen/app port pair found in configured ranges")
+
+    def classify_profile_ports(self, profile: dict[str, Any]) -> dict[str, Any]:
+        ports = profile.get("ports") or {}
+        result = {}
+        for key in ("bullpen", "app"):
+            port = ports.get(key)
+            if port is None:
+                continue
+            listening = is_port_listening(int(port))
+            result[key] = {
+                "port": int(port),
+                "state": "listening-managed" if listening and profile.get("observed", {}).get("pid") else ("listening-unmanaged" if listening else "reserved"),
+            }
+        return result
+
+
+class LocalRuntimeController:
+    """Start and stop host-local Bullpen child processes."""
+
+    def __init__(self, registry: ProfileRegistry, socketio: SocketIO | None = None):
+        self.registry = registry
+        self.socketio = socketio
+        self._processes: dict[str, subprocess.Popen] = {}
+        self._lock = threading.RLock()
+
+    def build_argv(self, profile: dict[str, Any]) -> list[str]:
+        source = Path(profile.get("process", {}).get("bullpenSource") or str(repo_root())).expanduser()
+        script = source / "bullpen.py"
+        if not script.is_file():
+            raise ManagerError(f"Bullpen source does not contain bullpen.py: {source}")
+        workspace = Path(profile.get("workspaceRoot") or "").expanduser()
+        if not workspace.is_dir():
+            raise ManagerError(f"Workspace path does not exist: {workspace}")
+        port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
+        return [
+            sys.executable,
+            str(script),
+            "--workspace",
+            str(workspace),
+            "--host",
+            LOCALHOST,
+            "--port",
+            str(port),
+            "--no-browser",
+        ]
+
+    def start(self, profile_id: str) -> dict[str, Any]:
+        with self._lock:
+            profile = self.registry.get(profile_id)
+            if profile.get("runtime") != "local":
+                raise ManagerError("Only local profiles are implemented in Gen 1")
+            process = self._processes.get(profile_id)
+            if process and process.poll() is None:
+                return self._mark_observed(profile, state="running", pid=process.pid, desired_state="running")
+
+            ports = profile.get("ports") or {}
+            bullpen_port = int(ports.get("bullpen") or DEFAULT_BULLPEN_PORT)
+            if is_port_listening(bullpen_port):
+                observed = profile.get("observed") or {}
+                if wait_for_http_health(bullpen_port, timeout_seconds=1.0):
+                    return self._mark_observed(profile, state="running", pid=observed.get("pid"), desired_state="running")
+                raise ManagerError(f"Port {bullpen_port} is already occupied")
+
+            instance_home = Path(profile.get("instanceHome") or self.registry.paths.home / "instances" / profile_id / "home").expanduser()
+            logs_dir = instance_home / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = logs_dir / "bullpen.log"
+            argv = self.build_argv(profile)
+            env = os.environ.copy()
+            env["BULLPEN_DEPLOY_LABEL"] = f"(Manager:{profile_id})"
+            env["BULLPEN_MANAGER_PROFILE_ID"] = profile_id
+            log_file = open(log_path, "a", encoding="utf-8")
+            try:
+                process = subprocess.Popen(
+                    argv,
+                    cwd=str(Path(profile.get("process", {}).get("bullpenSource") or str(repo_root())).expanduser()),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+            finally:
+                log_file.close()
+            self._processes[profile_id] = process
+            profile = self._mark_observed(profile, state="starting", pid=process.pid, log_path=str(log_path), desired_state="running")
+            if wait_for_http_health(bullpen_port):
+                profile = self._mark_observed(profile, state="healthy", pid=process.pid, log_path=str(log_path), desired_state="running")
+            else:
+                profile = self._mark_observed(profile, state="needs-attention", pid=process.pid, log_path=str(log_path), desired_state="running")
+            self._emit_update()
+            return profile
+
+    def stop(self, profile_id: str) -> dict[str, Any]:
+        with self._lock:
+            profile = self.registry.get(profile_id)
+            process = self._processes.get(profile_id)
+            pid = (profile.get("observed") or {}).get("pid")
+            if process and process.poll() is None:
+                self._terminate_process(process)
+            elif pid:
+                self._terminate_pid(int(pid))
+            profile = self._mark_observed(profile, state="stopped", pid=None, desired_state="stopped")
+            self._processes.pop(profile_id, None)
+            self._emit_update()
+            return profile
+
+    def restart(self, profile_id: str) -> dict[str, Any]:
+        self.stop(profile_id)
+        return self.start(profile_id)
+
+    def reconcile(self) -> list[dict[str, Any]]:
+        updated = []
+        for profile in self.registry.profiles():
+            if profile.get("runtime") != "local":
+                updated.append(profile)
+                continue
+            observed = profile.get("observed") or {}
+            pid = observed.get("pid")
+            port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
+            state = "stopped"
+            if pid and self._pid_running(int(pid)):
+                state = "healthy" if wait_for_http_health(port, timeout_seconds=0.5) else "unhealthy"
+            profile = self._mark_observed(profile, state=state, pid=pid if state != "stopped" else None)
+            if profile.get("desiredState") == "running" and profile.get("startup", {}).get("autoStartWhenManagerStarts") and state == "stopped":
+                try:
+                    profile = self.start(profile["id"])
+                except ManagerError as exc:
+                    profile = self._mark_observed(profile, state="needs-attention", last_error=str(exc))
+            updated.append(profile)
+        self._emit_update()
+        return updated
+
+    def _mark_observed(
+        self,
+        profile: dict[str, Any],
+        *,
+        state: str,
+        pid: int | None = None,
+        log_path: str | None = None,
+        last_error: str | None = None,
+        desired_state: str | None = None,
+    ) -> dict[str, Any]:
+        updated = dict(profile)
+        if desired_state:
+            updated["desiredState"] = desired_state
+            updated["updatedAt"] = now_ts()
+        observed = dict(updated.get("observed") or {})
+        observed["state"] = state
+        observed["updatedAt"] = now_ts()
+        if pid:
+            observed["pid"] = pid
+        else:
+            observed.pop("pid", None)
+        if log_path:
+            observed["logPath"] = log_path
+        if last_error:
+            observed["lastError"] = last_error
+        elif state not in {"needs-attention", "unhealthy"}:
+            observed.pop("lastError", None)
+        updated["observed"] = observed
+        self.registry.upsert(updated)
+        return updated
+
+    def _emit_update(self) -> None:
+        if self.socketio:
+            self.socketio.emit("manager:updated", {"profiles": self.registry.profiles()})
+
+    def _terminate_process(self, process: subprocess.Popen) -> None:
+        if process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                return
+            time.sleep(0.1)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def _terminate_pid(self, pid: int) -> None:
+        if not self._pid_running(pid):
+            return
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+
+    def _pid_running(self, pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+
+def create_profile(registry: ProfileRegistry, payload: dict[str, Any]) -> dict[str, Any]:
+    runtime = (payload.get("runtime") or "local").strip().lower()
+    if runtime not in {"local", "microsandbox", "docker"}:
+        raise ManagerError("runtime must be local, microsandbox, or docker")
+    if runtime != "local":
+        raise ManagerError(f"{runtime} profiles are specified but not implemented in Gen 1")
+
+    display_name = (payload.get("displayName") or payload.get("name") or "Local Bullpen").strip()
+    profile_id = slugify(payload.get("id") or display_name)
+    existing_ids = {profile.get("id") for profile in registry.profiles()}
+    if profile_id in existing_ids:
+        profile_id = f"{profile_id}-{uuid.uuid4().hex[:6]}"
+
+    workspace = Path(payload.get("workspaceRoot") or "").expanduser()
+    if not workspace.is_dir():
+        raise ManagerError("workspaceRoot must be an existing directory")
+    source = Path(payload.get("bullpenSource") or str(repo_root())).expanduser()
+    if not (source / "bullpen.py").is_file():
+        raise ManagerError("bullpenSource must contain bullpen.py")
+
+    allocator = PortAllocator(registry)
+    ports = payload.get("ports") if isinstance(payload.get("ports"), dict) else allocator.allocate()
+    now = now_ts()
+    instance_home = registry.paths.home / "instances" / profile_id / "home"
+    profile = {
+        "schemaVersion": 1,
+        "id": profile_id,
+        "displayName": display_name,
+        "runtime": "local",
+        "desiredState": "stopped",
+        "workspaceRoot": str(workspace.resolve()),
+        "instanceHome": str(instance_home),
+        "ports": {"bullpen": int(ports["bullpen"]), "app": int(ports["app"])},
+        "portReservation": {"owner": profile_id, "updatedAt": now, "source": "auto"},
+        "process": {"python": sys.executable, "bullpenSource": str(source.resolve())},
+        "startup": {
+            "autoStartWhenManagerStarts": bool(payload.get("autoStartWhenManagerStarts", False)),
+            "restartIfUnhealthy": True,
+            "openBrowserOnManualStart": True,
+        },
+        "observed": {"state": "stopped", "updatedAt": now},
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    registry.upsert(profile)
+    return profile
+
+
+def create_manager_app(
+    *,
+    home: Path | None = None,
+    websocket_debug: bool = False,
+) -> tuple[Flask, SocketIO]:
+    registry = ProfileRegistry(home)
+    socketio = SocketIO(logger=websocket_debug, engineio_logger=websocket_debug, cors_allowed_origins=[])
+    runtime = LocalRuntimeController(registry, socketio=socketio)
+    app = Flask(__name__, static_folder=None)
+    app.config["MANAGER_REGISTRY"] = registry
+    app.config["MANAGER_RUNTIME"] = runtime
+
+    @app.route("/")
+    def index():
+        return send_from_directory(registry.paths.static_dir, "index.html")
+
+    @app.route("/manager.css")
+    def manager_css():
+        return send_from_directory(registry.paths.static_dir, "manager.css")
+
+    @app.route("/manager.js")
+    def manager_js():
+        return send_from_directory(registry.paths.static_dir, "manager.js")
+
+    @app.route("/health")
+    def health():
+        return jsonify({"ok": True})
+
+    @app.route("/api/profiles", methods=["GET"])
+    def api_profiles():
+        runtime.reconcile()
+        return jsonify({"profiles": registry.profiles()})
+
+    @app.route("/api/profiles", methods=["POST"])
+    def api_create_profile():
+        try:
+            profile = create_profile(registry, request.get_json(silent=True) or {})
+            socketio.emit("manager:updated", {"profiles": registry.profiles()})
+            return jsonify({"profile": profile}), 201
+        except ManagerError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/profiles/<profile_id>", methods=["DELETE"])
+    def api_delete_profile(profile_id):
+        try:
+            runtime.stop(profile_id)
+        except ManagerError:
+            pass
+        try:
+            registry.delete(profile_id)
+            socketio.emit("manager:updated", {"profiles": registry.profiles()})
+            return jsonify({"ok": True})
+        except ManagerError as exc:
+            return jsonify({"error": str(exc)}), 404
+
+    @app.route("/api/profiles/<profile_id>/<action>", methods=["POST"])
+    def api_profile_action(profile_id, action):
+        try:
+            if action == "start":
+                profile = runtime.start(profile_id)
+            elif action == "stop":
+                profile = runtime.stop(profile_id)
+            elif action == "restart":
+                profile = runtime.restart(profile_id)
+            elif action == "open":
+                profile = registry.get(profile_id)
+                port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
+                webbrowser.open(f"http://{LOCALHOST}:{port}")
+            else:
+                return jsonify({"error": f"Unknown action: {action}"}), 404
+            return jsonify({"profile": profile})
+        except ManagerError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/profiles/<profile_id>/logs")
+    def api_profile_logs(profile_id):
+        try:
+            profile = registry.get(profile_id)
+        except ManagerError as exc:
+            return jsonify({"error": str(exc)}), 404
+        log_path = (profile.get("observed") or {}).get("logPath")
+        if not log_path:
+            log_path = str(Path(profile.get("instanceHome") or "") / "logs" / "bullpen.log")
+        path = Path(log_path).expanduser()
+        if not path.exists():
+            return jsonify({"text": ""})
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return jsonify({"text": text[-20000:]})
+
+    @app.route("/api/ports")
+    def api_ports():
+        allocator = PortAllocator(registry)
+        return jsonify({
+            "profiles": [
+                {"id": profile.get("id"), "ports": allocator.classify_profile_ports(profile)}
+                for profile in registry.profiles()
+            ]
+        })
+
+    @socketio.on("connect")
+    def on_connect():
+        socketio.emit("manager:updated", {"profiles": registry.profiles()})
+
+    socketio.init_app(app)
+    runtime.reconcile()
+    return app, socketio
