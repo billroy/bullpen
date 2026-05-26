@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "bullpen": {
+      "type": "local",
+      "command": [
+        "python3",
+        "/Users/bill/aistuff/bullpen/bullpen.py",
+        "mcp",
+        "--workspace",
+        "/Users/bill/aistuff/bullpen"
+      ],
+      "enabled": true,
+      "env": {}
+    }
+  }
+}
