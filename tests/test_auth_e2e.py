@@ -10,6 +10,7 @@ we write a ``.env`` file into that patched directory *before* calling
 import os
 import tempfile
 import json
+from datetime import timedelta
 
 import pytest
 
@@ -98,6 +99,13 @@ def _csrf_token(client):
         return sess.get("csrf_token") or ""
 
 
+def _session_cookie_header(response):
+    for header in response.headers.getlist("Set-Cookie"):
+        if header.startswith("session="):
+            return header
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Auth ENABLED — HTTP
 # ---------------------------------------------------------------------------
@@ -144,6 +152,40 @@ class TestHttpAuthEnabled:
         with auth_client.session_transaction() as sess:
             assert sess.get("authenticated") is True
             assert sess.get("username") == USERNAME
+            assert sess.permanent is True
+
+    def test_login_sets_persistent_session_cookie(self, auth_client):
+        r = _login(auth_client)
+        cookie = _session_cookie_header(r)
+        assert cookie
+        assert "Expires=" in cookie
+        assert "HttpOnly" in cookie
+        assert "SameSite=Lax" in cookie
+
+    def test_authenticated_cookie_survives_app_restart(self):
+        _seed_credentials(wm.GLOBAL_DIR)
+        with tempfile.TemporaryDirectory(prefix="bullpen_auth_restart_") as ws:
+            first_app = create_app(ws, no_browser=True)
+            first_client = first_app.test_client()
+            _login(first_client)
+            cookie = first_client.get_cookie(first_app.config["SESSION_COOKIE_NAME"])
+            assert cookie is not None
+
+            second_app = create_app(ws, no_browser=True)
+            second_client = second_app.test_client()
+            second_client.set_cookie(second_app.config["SESSION_COOKIE_NAME"], cookie.value)
+
+            r = second_client.get("/")
+            assert r.status_code == 200
+        auth.reset_auth_cache()
+
+    def test_session_lifetime_uses_bounded_env_setting(self, monkeypatch):
+        monkeypatch.setenv("BULLPEN_SESSION_DAYS", "7")
+        _seed_credentials(wm.GLOBAL_DIR)
+        with tempfile.TemporaryDirectory(prefix="bullpen_auth_lifetime_") as ws:
+            app = create_app(ws, no_browser=True)
+            assert app.config["PERMANENT_SESSION_LIFETIME"] == timedelta(days=7)
+        auth.reset_auth_cache()
 
     def test_login_failure_wrong_password(self, auth_client):
         r = _login(auth_client, password="nope")

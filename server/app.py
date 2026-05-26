@@ -7,7 +7,7 @@ import sys
 import json
 import tempfile
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import shutil
 import atexit
@@ -75,6 +75,8 @@ _NESTED_ARCHIVE_SUFFIXES = (
 _LOGIN_THROTTLE_WINDOW_SECONDS = 5 * 60
 _LOGIN_THROTTLE_MAX_FAILURES = 5
 _LOGIN_THROTTLE_BLOCK_SECONDS = 60
+_DEFAULT_SESSION_DAYS = 30
+_MAX_SESSION_DAYS = 365
 _TEXTUAL_APPLICATION_MIME_PREFIXES = (
     "application/json",
     "application/ld+json",
@@ -135,6 +137,12 @@ def _safe_int(value, default=0):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _session_lifetime():
+    days = _safe_int(os.environ.get("BULLPEN_SESSION_DAYS"), _DEFAULT_SESSION_DAYS)
+    days = max(1, min(days, _MAX_SESSION_DAYS))
+    return timedelta(days=days)
 
 
 def _current_deploy_label():
@@ -301,7 +309,9 @@ def create_app(
     auth.load_credentials(manager.global_dir)
     app.config["SECRET_KEY"] = auth.load_or_create_secret_key(manager.global_dir)
     production = os.environ.get("BULLPEN_PRODUCTION") == "1"
+    session_lifetime = _session_lifetime()
     app.config.update(
+        PERMANENT_SESSION_LIFETIME=session_lifetime,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=production,
@@ -314,7 +324,8 @@ def create_app(
         user_count = len(users)
         primary = auth.get_username() or "unknown"
         print(
-            f"Bullpen auth: ENABLED ({user_count} user(s), primary={primary})",
+            f"Bullpen auth: ENABLED ({user_count} user(s), primary={primary}, "
+            f"session_days={session_lifetime.days})",
             file=sys.stderr,
         )
     else:
@@ -502,6 +513,7 @@ def create_app(
             return redirect(url_for("login") + f"?error={error}")
 
         session.clear()  # prevent session fixation
+        session.permanent = True
         session["authenticated"] = True
         session["username"] = username
         # Re-seed the CSRF token after login.

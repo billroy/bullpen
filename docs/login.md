@@ -71,6 +71,12 @@ required.
 absent and written back to the env file. It signs Flask session
 cookies, so persisting it means sessions survive restarts.
 
+Successful browser logins use persistent session cookies. By default,
+Bullpen keeps a browser signed in for 30 days. Set
+`BULLPEN_SESSION_DAYS` to a whole number of days to change that window
+(bounded to 1-365 days). Restarting Bullpen does not invalidate active
+sessions as long as `BULLPEN_SECRET_KEY` is unchanged.
+
 ## Changing passwords and deleting users
 
 Re-run `bullpen --set-password <username>` to update that user.

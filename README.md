@@ -395,6 +395,8 @@ python3 bullpen.py --set-password admin --delete-user old-admin
 
 When auth is enabled, unauthenticated browser requests are redirected to `/login`, XHR requests receive a 401, and Socket.IO connections without a valid session are rejected. Static assets needed by the login page (`login.html`, `style.css`, `favicon.ico`) remain public.
 
+Successful logins are persistent browser sessions. The default lifetime is 30 days; set `BULLPEN_SESSION_DAYS` to change it (bounded to 1-365 days). Server restarts do not force a new login as long as `~/.bullpen/.env` keeps the same `BULLPEN_SECRET_KEY`.
+
 ### Disabling auth
 
 Delete `~/.bullpen/.env` and restart. Bullpen will report auth disabled and all routes become open again.
