@@ -78,10 +78,15 @@ def classify_model_error(provider, text):
     ):
         return "not_found"
     if (
+        "permission_denied" in haystack
+        or "permission denied" in haystack
+        or "project has been denied access" in haystack
+        or "403" in haystack and "forbidden" in haystack
+    ):
+        return "permission_denied"
+    if (
         "authentication" in haystack
         or "unauthorized" in haystack
-        or "permission denied" in haystack
-        or "permission_denied" in haystack
         or "api key" in haystack
         or "log in" in haystack
         or "login" in haystack

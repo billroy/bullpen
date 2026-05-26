@@ -458,8 +458,8 @@ python3 deploy-sandbox.py --prepare-base
 
 During the run step, Bullpen prompts for the admin password if
 `--admin-password` is omitted. Provider setup is intentionally sandbox-native:
-Claude, Codex, Gemini, and GitHub login flows run inside the VM as the
-`bullpen` user and persist under `/home/bullpen`.
+Claude, Codex, and GitHub login flows run inside the VM as the `bullpen` user
+and persist under `/home/bullpen`.
 
 ### Microsandbox options
 
@@ -482,8 +482,6 @@ Claude, Codex, Gemini, and GitHub login flows run inside the VM as the
 | `--host-nofile N` | `12000` | Target host process `RLIMIT_NOFILE` before the Microsandbox runtime is created |
 | `--guest-nofile N` | `65536` | Target `RLIMIT_NOFILE` for the in-sandbox `bullpen` user |
 | `--network-max-connections N` | `8192` | Microsandbox network connection tracker cap |
-| `--setup-provider NAME` | off | Run sandbox-native provider setup before detach; repeatable |
-| `--verify-provider NAME` | off | Verify a provider inside the sandbox before detach; repeatable |
 | `--replace` | off | Replace an existing sandbox without prompting |
 | `--no-replace` | off | Abort if a sandbox with the same name already exists |
 | `--open` / `--no-open` | open | Open or suppress opening the Bullpen UI in a host browser |
@@ -499,11 +497,9 @@ Additional maintenance commands:
 ```bash
 python3 deploy-sandbox.py auth claude
 python3 deploy-sandbox.py auth codex
-python3 deploy-sandbox.py auth gemini
 python3 deploy-sandbox.py auth git
 python3 deploy-sandbox.py test-provider claude
 python3 deploy-sandbox.py test-provider codex
-python3 deploy-sandbox.py test-provider gemini
 python3 deploy-sandbox.py test-provider git
 python3 deploy-sandbox.py first-light claude
 ```

@@ -114,6 +114,13 @@ def test_classify_model_error_common_cases():
     assert classify_model_error("gemini", "[API Error: Requested entity was not found.]") == "not_found"
     assert classify_model_error("claude", "rate_limit_error: too many requests") == "quota"
     assert classify_model_error("codex", "Unauthorized: API key missing") == "auth"
+    assert (
+        classify_model_error(
+            "gemini",
+            '{"code":403,"message":"Your project has been denied access. Please contact support.","status":"PERMISSION_DENIED"}',
+        )
+        == "permission_denied"
+    )
 
 
 def test_model_catalog_cli_outputs_json(tmp_workspace, monkeypatch, capsys):

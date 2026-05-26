@@ -106,8 +106,6 @@ Options:
 --host-nofile N              Target host process RLIMIT_NOFILE before creating the runtime. Default: 12000
 --guest-nofile N             Target bullpen user RLIMIT_NOFILE inside the sandbox. Default: 65536
 --network-max-connections N  Microsandbox network connection tracker cap. Default: 8192
---setup-provider NAME        Run provider setup before detach; repeatable.
---verify-provider NAME       Verify a provider before detach; repeatable.
 --replace                    Replace an existing sandbox without prompting.
 --no-replace                 Abort if the sandbox already exists.
 --open                       Open the Bullpen UI in a host browser after startup. Default.
@@ -243,8 +241,6 @@ The installer owns a host-assisted, sandbox-native setup flow:
 
 - run `claude auth login` inside the sandbox as `bullpen`
 - run `codex login` inside the sandbox as `bullpen`
-- run `gemini` inside the sandbox as `bullpen` and complete one of Gemini
-  CLI's native authentication methods
 - run `gh auth login --hostname github.com --git-protocol https --web` inside
   the sandbox as `bullpen`
 - use the launcher only as browser and terminal assistance
@@ -286,17 +282,6 @@ timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen BULLPEN_CODEX
 Do not forward Claude auth override variables into the sandbox deploy
 environment. They can silently switch Claude Code away from VM-created OAuth
 state and obscure the failure mode being tested.
-
-Gemini auth is created inside the sandbox and persisted under
-`/home/bullpen/.gemini`. Gemini CLI supports interactive Google login, Gemini
-API key auth, and Vertex AI auth. For headless Bullpen workers and Live Agent
-chat, Gemini must have either cached interactive credentials or environment
-variables loaded by Gemini CLI, such as `GEMINI_API_KEY` in
-`/home/bullpen/.gemini/.env`. `deploy-sandbox.py auth gemini` and
-`--setup-provider gemini` run inside the VM and can either launch Gemini's
-interactive auth flow or write the documented headless environment values to
-that sandbox-local `.env`. The deployer verifies Gemini with a real
-Bullpen-adapter `flash` probe, including per-run MCP settings injection.
 
 For GitHub and git operations, support:
 
@@ -432,7 +417,7 @@ Then open `http://127.0.0.1:$BULLPEN_PORT` in the host browser unless `--no-open
 - Creating or editing files through Bullpen changes the matching host project directory
 - Bullpen and client app ports are both exposed on host localhost
 - Bullpen starts with authentication enabled using the requested admin credentials
-- Claude, Codex, Gemini, and GitHub credentials are available inside the sandbox after sandbox-native setup and verification
+- Claude, Codex, Gemini, and GitHub credentials are available inside the sandbox when current credentials are present on the host
 - The script refuses invalid ports and refuses to use the same port for Bullpen and the app
 - `--no-replace` exits nonzero without modifying an existing sandbox
 - Answering no to the replacement prompt exits successfully without modifying an existing sandbox
