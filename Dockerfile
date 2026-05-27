@@ -16,7 +16,7 @@ ENV HOME=/home/bullpen
 WORKDIR /opt/bullpen
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash ca-certificates curl gh git openssh-client ripgrep gnupg && \
+    bash bubblewrap ca-certificates curl gh git openssh-client ripgrep gnupg && \
     mkdir -p /etc/apt/keyrings && \
     curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | \
       gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \

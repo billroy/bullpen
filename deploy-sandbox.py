@@ -1826,6 +1826,7 @@ async def stop_prepare_sandbox(sandbox: Any) -> None:
 
 def codex_cli_integrity_command() -> str:
     return r'''
+command -v bwrap >/dev/null
 test -x /usr/local/bin/codex
 node --input-type=module - <<'NODE'
 import { createRequire } from "node:module";
@@ -1887,7 +1888,7 @@ async def prepare_base(runtime: MicrosandboxRuntime, config: DeployConfig, *, fo
             export DEBIAN_FRONTEND=noninteractive
             apt-get update
             apt-get install -y --no-install-recommends \
-              bash ca-certificates curl gh git iproute2 python3 python3-pip python3-venv ripgrep
+              bash bubblewrap ca-certificates curl gh git iproute2 python3 python3-pip python3-venv ripgrep
             rm -rf /var/lib/apt/lists/*
             """,
             label="Installing OS packages",
