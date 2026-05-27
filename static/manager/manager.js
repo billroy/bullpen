@@ -14,6 +14,8 @@ createApp({
       setupProfileId: '',
       setupOutput: '',
       setupExit: '',
+      createModalOpen: false,
+      deploymentMenuOpen: false,
     });
     const socketRef = ref(null);
     const terminalRef = ref(null);
@@ -29,6 +31,8 @@ createApp({
       adminPassword: '',
       sandboxName: '',
       base: 'bullpen-microsandbox-local',
+      vcpus: 4,
+      memoryMiB: 4096,
       autoStartWhenManagerStarts: false,
     });
 
@@ -115,6 +119,32 @@ createApp({
       }
     }
 
+    function resetCreateForm() {
+      form.displayName = 'Local Bullpen';
+      form.workspaceRoot = '';
+      form.runtime = 'local';
+      form.adminUser = 'admin';
+      form.adminPassword = '';
+      form.sandboxName = '';
+      form.base = 'bullpen-microsandbox-local';
+      form.vcpus = 4;
+      form.memoryMiB = 4096;
+      form.autoStartWhenManagerStarts = false;
+    }
+
+    function openCreateModal() {
+      state.deploymentMenuOpen = false;
+      state.createModalOpen = true;
+    }
+
+    function closeCreateModal() {
+      state.createModalOpen = false;
+    }
+
+    function toggleDeploymentMenu() {
+      state.deploymentMenuOpen = !state.deploymentMenuOpen;
+    }
+
     async function createProfile() {
       state.error = '';
       try {
@@ -123,13 +153,8 @@ createApp({
           body: JSON.stringify(form),
         });
         state.selectedId = data.profile.id;
-        form.displayName = 'Local Bullpen';
-        form.workspaceRoot = '';
-        form.adminUser = 'admin';
-        form.adminPassword = '';
-        form.sandboxName = '';
-        form.base = 'bullpen-microsandbox-local';
-        form.autoStartWhenManagerStarts = false;
+        resetCreateForm();
+        closeCreateModal();
         await refresh();
       } catch (err) {
         state.error = err.message;
@@ -392,6 +417,9 @@ createApp({
       urlFor,
       refresh,
       createProfile,
+      openCreateModal,
+      closeCreateModal,
+      toggleDeploymentMenu,
       action,
       setupProviders,
       syncSetupSession,
@@ -416,52 +444,17 @@ createApp({
       </header>
 
       <div class="content">
-        <aside class="sidebar">
-          <section class="panel">
-            <div class="panel-header">
-              <div class="panel-title">Create Instance</div>
+        <aside class="sidebar" @click="state.deploymentMenuOpen = false">
+          <section class="panel deployments-panel">
+            <div class="panel-header deployments-header">
+              <div class="panel-title">Deployments</div>
+              <div class="menu-anchor" @click.stop>
+                <button class="icon-button" type="button" aria-label="Deployment actions" @click.stop="toggleDeploymentMenu">...</button>
+                <div v-if="state.deploymentMenuOpen" class="menu">
+                  <button type="button" @click="openCreateModal">Create Deployment</button>
+                </div>
+              </div>
             </div>
-            <form class="create-form" @submit.prevent="createProfile">
-              <div class="field">
-                <label>Name</label>
-                <input v-model="form.displayName" required>
-              </div>
-              <div class="field">
-                <label>Runtime</label>
-                <select v-model="form.runtime">
-                  <option value="local">Local</option>
-                  <option value="microsandbox">Microsandbox</option>
-                  <option value="docker" disabled>Docker (later)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Workspace Root</label>
-                <input v-model="form.workspaceRoot" placeholder="/Users/bill/aistuff" required>
-              </div>
-              <template v-if="form.runtime === 'microsandbox'">
-                <div class="field">
-                  <label>Sandbox Name</label>
-                  <input v-model="form.sandboxName" placeholder="bullpen-personal">
-                </div>
-                <div class="field">
-                  <label>Base Snapshot</label>
-                  <input v-model="form.base">
-                </div>
-                <div class="field">
-                  <label>Admin User</label>
-                  <input v-model="form.adminUser">
-                </div>
-                <div class="field">
-                  <label>Admin Password</label>
-                  <input type="password" v-model="form.adminPassword" required>
-                </div>
-              </template>
-              <label class="status-line">
-                <input type="checkbox" v-model="form.autoStartWhenManagerStarts" style="width:auto">
-                Auto-start when manager starts
-              </label>
-              <button class="primary" type="submit">Create</button>
-            </form>
           </section>
 
           <div class="instance-list">
@@ -529,6 +522,7 @@ createApp({
                 <div class="kv"><strong>Home</strong><span>{{ selected.instanceHome }}</span></div>
                 <div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>
                 <div class="kv" v-if="selected.base"><strong>Base</strong><span>{{ selected.base }}</span></div>
+                <div class="kv" v-if="selected.resources"><strong>Resources</strong><span>{{ selected.resources.vcpus }} CPU / {{ selected.resources.memoryMiB }} MiB</span></div>
                 <div class="kv"><strong>Ports</strong><span>{{ portText(selected) }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.pid"><strong>PID</strong><span>{{ selected.observed.pid }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.lastError"><strong>Error</strong><span>{{ selected.observed.lastError }}</span></div>
@@ -557,9 +551,72 @@ createApp({
           </section>
 
           <div v-else class="empty">
-            Create a Bullpen instance to get started.
+            Create a deployment to get started.
           </div>
         </main>
+      </div>
+
+      <div v-if="state.createModalOpen" class="modal-backdrop" @click.self="closeCreateModal">
+        <section class="modal" role="dialog" aria-modal="true" aria-labelledby="create-deployment-title">
+          <div class="panel-header">
+            <div id="create-deployment-title" class="panel-title">Create Deployment</div>
+            <button type="button" class="icon-button" aria-label="Close" @click="closeCreateModal">x</button>
+          </div>
+          <form class="create-form" @submit.prevent="createProfile">
+            <div class="field">
+              <label>Name</label>
+              <input v-model="form.displayName" required>
+            </div>
+            <div class="field">
+              <label>Runtime</label>
+              <select v-model="form.runtime">
+                <option value="local">Local</option>
+                <option value="microsandbox">Microsandbox</option>
+                <option value="docker" disabled>Docker (later)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Workspace Root</label>
+              <input v-model="form.workspaceRoot" placeholder="/path/to/workspace-root" required>
+            </div>
+            <template v-if="form.runtime === 'microsandbox'">
+              <div class="field">
+                <label>Sandbox Name</label>
+                <input v-model="form.sandboxName" placeholder="bullpen-deployment">
+              </div>
+              <div class="field">
+                <label>Base Snapshot</label>
+                <input v-model="form.base">
+              </div>
+              <div class="resource-grid">
+                <div class="field">
+                  <label>CPU</label>
+                  <input type="number" min="1" step="1" v-model.number="form.vcpus" required>
+                </div>
+                <div class="field">
+                  <label>Memory MiB</label>
+                  <input type="number" min="1" step="512" v-model.number="form.memoryMiB" required>
+                </div>
+              </div>
+              <div class="field">
+                <label>Admin User</label>
+                <input v-model="form.adminUser">
+              </div>
+              <div class="field">
+                <label>Admin Password</label>
+                <input type="password" v-model="form.adminPassword" required>
+              </div>
+            </template>
+            <label class="status-line">
+              <input type="checkbox" v-model="form.autoStartWhenManagerStarts" style="width:auto">
+              Auto-start when manager starts
+            </label>
+            <div class="modal-actions">
+              <button type="button" @click="closeCreateModal">Cancel</button>
+              <button class="primary" type="submit">Create Deployment</button>
+            </div>
+          </form>
+        </section>
       </div>
     </div>
   `,

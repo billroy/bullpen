@@ -87,6 +87,8 @@ def test_create_microsandbox_profile(tmp_path):
             "runtime": "microsandbox",
             "workspaceRoot": str(workspace),
             "adminPassword": "secret-password",
+            "vcpus": 6,
+            "memoryMiB": 8192,
         },
     )
 
@@ -96,6 +98,7 @@ def test_create_microsandbox_profile(tmp_path):
     assert profile["base"] == DEFAULT_MICROSANDBOX_BASE
     assert profile["auth"]["adminUser"] == "admin"
     assert profile["auth"]["adminPassword"] == "secret-password"
+    assert profile["resources"] == {"vcpus": 6, "memoryMiB": 8192}
 
 
 def test_create_microsandbox_profile_requires_admin_password(tmp_path):
@@ -110,6 +113,24 @@ def test_create_microsandbox_profile_requires_admin_password(tmp_path):
                 "displayName": "Sandbox",
                 "runtime": "microsandbox",
                 "workspaceRoot": str(workspace),
+            },
+        )
+
+
+def test_create_microsandbox_profile_rejects_invalid_resources(tmp_path):
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    with pytest.raises(ManagerError, match="vcpus"):
+        create_profile(
+            registry,
+            {
+                "displayName": "Sandbox",
+                "runtime": "microsandbox",
+                "workspaceRoot": str(workspace),
+                "adminPassword": "secret-password",
+                "vcpus": 0,
             },
         )
 
@@ -209,6 +230,23 @@ def test_manager_renders_bullpen_and_app_links():
     assert ':href="appUrlFor(selected)" target="_blank" rel="noopener">{{ appUrlFor(selected) }}</a>' in manager_js
 
 
+def test_manager_create_deployment_lives_in_modal_menu_without_personal_placeholders():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+
+    assert '<div class="panel-title">Deployments</div>' in manager_js
+    assert 'aria-label="Deployment actions"' in manager_js
+    assert '@click="openCreateModal">Create Deployment</button>' in manager_js
+    assert 'class="modal-backdrop"' in manager_js
+    assert 'id="create-deployment-title" class="panel-title">Create Deployment</div>' in manager_js
+    assert 'placeholder="/path/to/workspace-root"' in manager_js
+    assert 'placeholder="/Users/bill/aistuff"' not in manager_js
+    assert 'placeholder="bullpen-personal"' not in manager_js
+    assert '<label>CPU</label>' in manager_js
+    assert '<label>Memory MiB</label>' in manager_js
+    assert 'v-model.number="form.vcpus"' in manager_js
+    assert 'v-model.number="form.memoryMiB"' in manager_js
+
+
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
@@ -221,6 +259,8 @@ def test_microsandbox_runtime_builds_deploy_command(tmp_path):
             "workspaceRoot": str(workspace),
             "adminPassword": "secret-password",
             "adminUser": "rootish",
+            "vcpus": 8,
+            "memoryMiB": 12288,
         },
     )
 
@@ -235,6 +275,10 @@ def test_microsandbox_runtime_builds_deploy_command(tmp_path):
     assert "rootish" in argv
     assert "--admin-password" in argv
     assert "secret-password" in argv
+    assert "--vcpus" in argv
+    assert argv[argv.index("--vcpus") + 1] == "8"
+    assert "--memory-mib" in argv
+    assert argv[argv.index("--memory-mib") + 1] == "12288"
     assert "--replace" in argv
     assert "--no-open" in argv
     assert argv[argv.index("--provider-setup") + 1] == "skip"

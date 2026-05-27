@@ -65,6 +65,19 @@ def slugify(value: str, *, fallback: str = "instance") -> str:
     return slug or fallback
 
 
+def positive_int_payload(payload: dict[str, Any], key: str, default: int) -> int:
+    raw_value = payload.get(key)
+    if raw_value in (None, ""):
+        raw_value = default
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ManagerError(f"{key} must be a positive integer") from exc
+    if value < 1:
+        raise ManagerError(f"{key} must be a positive integer")
+    return value
+
+
 def is_port_listening(port: int, host: str = LOCALHOST, timeout: float = 0.2) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout)
@@ -445,6 +458,7 @@ class MicrosandboxRuntimeController:
             raise ManagerError(f"deploy-sandbox.py not found: {deploy_script}")
         ports = profile.get("ports") or {}
         auth = profile.get("auth") or {}
+        resources = profile.get("resources") or {}
         admin_password = auth.get("adminPassword")
         if not admin_password:
             raise ManagerError("Microsandbox profiles require auth.adminPassword until secret storage is implemented")
@@ -465,6 +479,10 @@ class MicrosandboxRuntimeController:
             str(admin_password),
             "--base",
             str(profile.get("base") or DEFAULT_MICROSANDBOX_BASE),
+            "--vcpus",
+            str(int(resources.get("vcpus") or 4)),
+            "--memory-mib",
+            str(int(resources.get("memoryMiB") or 4096)),
             "--sandbox-home",
             str(Path(profile.get("sandboxHome") or profile.get("instanceHome")).expanduser()),
             "--replace",
@@ -995,8 +1013,8 @@ def create_profile(registry: ProfileRegistry, payload: dict[str, Any]) -> dict[s
                     "storage": "plaintext-mvp",
                 },
                 "resources": {
-                    "vcpus": int(payload.get("vcpus") or 4),
-                    "memoryMiB": int(payload.get("memoryMiB") or 4096),
+                    "vcpus": positive_int_payload(payload, "vcpus", 4),
+                    "memoryMiB": positive_int_payload(payload, "memoryMiB", 4096),
                 },
             }
         )
