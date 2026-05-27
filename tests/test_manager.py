@@ -201,6 +201,18 @@ def test_manager_provider_setup_uses_raw_xterm_input():
     assert "if (!state.setupSessionId && payload.sessionId) state.setupSessionId = payload.sessionId;" in manager_js
 
 
+def test_manager_provider_setup_terminal_fits_enclosing_pane():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+    manager_css = Path("static/manager/manager.css").read_text(encoding="utf-8")
+
+    assert "terminalResizeObserver.value = new ResizeObserver(() => scheduleTerminalFit())" in manager_js
+    assert "function fitTerminal()" in manager_js
+    assert "terminal.value.resize(cols, rows);" in manager_js
+    assert "syncTerminalPtySize();" in manager_js
+    assert "width: 100%;" in manager_css
+    assert "height: 100%;" in manager_css
+
+
 def test_manager_keeps_provider_setup_to_single_live_terminal():
     manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
 

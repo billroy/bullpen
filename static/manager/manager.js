@@ -22,6 +22,8 @@ createApp({
     const terminal = ref(null);
     const terminalDataDisposable = ref(null);
     const terminalResizeDisposable = ref(null);
+    const terminalResizeObserver = ref(null);
+    const terminalFitTimer = ref(null);
 
     const form = reactive({
       displayName: 'Local Bullpen',
@@ -203,6 +205,7 @@ createApp({
         const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
         state.setupSessionId = data.sessionId;
         state.setupProfileId = profile.id;
+        syncTerminalPtySize();
         if (data.profile) {
           const index = state.profiles.findIndex(item => item.id === data.profile.id);
           if (index >= 0) state.profiles[index] = data.profile;
@@ -228,6 +231,7 @@ createApp({
         state.setupSessionId = data.sessionId || '';
         state.setupProfileId = profile.id;
         state.setupExit = data.sessionId ? '' : 'Setup input channel unavailable';
+        syncTerminalPtySize();
         await syncSetupTranscript(profile);
         focusSetupInput();
       } catch (err) {
@@ -238,13 +242,12 @@ createApp({
     async function ensureTerminal() {
       if (!terminalRef.value || terminal.value || !window.Terminal) return;
       terminal.value = new window.Terminal({
-        cols: 120,
         convertEol: true,
         cursorBlink: true,
         disableStdin: false,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontSize: 12,
-        rows: 30,
+        lineHeight: 1.25,
         scrollback: 8000,
         theme: {
           background: '#090b10',
@@ -261,10 +264,25 @@ createApp({
       terminalResizeDisposable.value = terminal.value.onResize(({ cols, rows }) => {
         resizeSetupPty(cols, rows);
       });
-      resizeSetupPty(terminal.value.cols, terminal.value.rows);
+      if (typeof ResizeObserver !== 'undefined') {
+        terminalResizeObserver.value = new ResizeObserver(() => scheduleTerminalFit());
+        terminalResizeObserver.value.observe(terminalRef.value);
+      }
+      window.addEventListener('resize', scheduleTerminalFit);
+      await nextTick();
+      fitTerminal();
     }
 
     function disposeTerminal() {
+      if (terminalResizeObserver.value) {
+        terminalResizeObserver.value.disconnect();
+        terminalResizeObserver.value = null;
+      }
+      window.removeEventListener('resize', scheduleTerminalFit);
+      if (terminalFitTimer.value) {
+        clearTimeout(terminalFitTimer.value);
+        terminalFitTimer.value = null;
+      }
       if (terminalDataDisposable.value) {
         terminalDataDisposable.value.dispose();
         terminalDataDisposable.value = null;
@@ -279,6 +297,43 @@ createApp({
       }
     }
 
+    function scheduleTerminalFit() {
+      if (terminalFitTimer.value) clearTimeout(terminalFitTimer.value);
+      terminalFitTimer.value = setTimeout(() => fitTerminal(), 50);
+    }
+
+    function terminalCellSize() {
+      if (!terminalRef.value) return null;
+      const probe = document.createElement('span');
+      probe.textContent = 'W';
+      probe.style.position = 'absolute';
+      probe.style.visibility = 'hidden';
+      probe.style.whiteSpace = 'pre';
+      probe.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+      probe.style.fontSize = '12px';
+      probe.style.lineHeight = '15px';
+      terminalRef.value.appendChild(probe);
+      const rect = probe.getBoundingClientRect();
+      probe.remove();
+      if (!rect.width || !rect.height) return null;
+      return { width: rect.width, height: rect.height };
+    }
+
+    function fitTerminal() {
+      terminalFitTimer.value = null;
+      if (!terminal.value || !terminalRef.value) return;
+      const cell = terminalCellSize();
+      if (!cell) return;
+      const styles = getComputedStyle(terminalRef.value);
+      const width = terminalRef.value.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+      const height = terminalRef.value.clientHeight - parseFloat(styles.paddingTop) - parseFloat(styles.paddingBottom);
+      const cols = Math.max(2, Math.floor(width / cell.width));
+      const rows = Math.max(2, Math.floor(height / cell.height));
+      if (terminal.value.cols !== cols || terminal.value.rows !== rows) {
+        terminal.value.resize(cols, rows);
+      }
+    }
+
     function resetTerminal() {
       if (!terminal.value) return;
       terminal.value.reset();
@@ -288,6 +343,7 @@ createApp({
     async function replayTerminal() {
       await nextTick();
       await ensureTerminal();
+      fitTerminal();
       resetTerminal();
       if (terminal.value && state.setupOutput) terminal.value.write(restorePseudoAnsi(state.setupOutput));
     }
@@ -295,6 +351,11 @@ createApp({
     function resizeSetupPty(cols, rows) {
       if (!state.setupSessionId || !socketRef.value || state.setupExit) return;
       socketRef.value.emit('manager:pty-resize', { sessionId: state.setupSessionId, cols, rows });
+    }
+
+    function syncTerminalPtySize() {
+      if (!terminal.value) return;
+      resizeSetupPty(terminal.value.cols, terminal.value.rows);
     }
 
     async function replaceSetupOutput(text) {
