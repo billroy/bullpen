@@ -789,7 +789,7 @@ createApp({
                 </div>
                 <div class="field">
                   <label>Memory MiB</label>
-                  <input type="number" min="1" step="512" v-model.number="form.memoryMiB" required>
+                  <input type="number" min="1" step="1" v-model.number="form.memoryMiB" required>
                 </div>
               </div>
               <div class="field">

@@ -396,6 +396,7 @@ def test_manager_create_deployment_lives_in_modal_menu_without_personal_placehol
     assert '<label>Memory MiB</label>' in manager_js
     assert 'v-model.number="form.vcpus"' in manager_js
     assert 'v-model.number="form.memoryMiB"' in manager_js
+    assert '<input type="number" min="1" step="1" v-model.number="form.memoryMiB" required>' in manager_js
 
 
 def test_manager_create_deployment_uses_base_snapshot_dropdown():
