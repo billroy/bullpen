@@ -151,6 +151,12 @@ def test_manager_serves_empty_favicon(tmp_path):
     assert response.status_code == 204
 
 
+def test_manager_socketio_uses_threading_mode(tmp_path):
+    _app, socketio = create_manager_app(home=tmp_path / "manager")
+
+    assert socketio.server.eio.async_mode == "threading"
+
+
 def test_manager_serves_vendored_xterm_assets(tmp_path):
     app, _socketio = create_manager_app(home=tmp_path / "manager")
 
@@ -161,24 +167,30 @@ def test_manager_serves_vendored_xterm_assets(tmp_path):
     assert len(response.data) > 100000
 
 
-def test_manager_filters_xterm_protocol_replies_before_pty_input():
+def test_manager_provider_setup_uses_raw_xterm_input():
     manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
 
-    assert "function filterTerminalProtocolReplies" in manager_js
-    assert r"\x1b\[\d+;\d+R" in manager_js
-    assert "Those are terminal protocol replies, not human input" in manager_js
-    assert "if (input) socketRef.value.emit('manager:pty-input'" in manager_js
+    assert "terminal.value.onData" in manager_js
+    assert "disableStdin: false" in manager_js
+    assert "socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data })" in manager_js
+    assert "terminal.value.onResize" in manager_js
+    assert "manager:pty-resize" in manager_js
+    assert 'class="terminal-input-row"' not in manager_js
+    assert "const matchesStartingProfile = !state.setupSessionId && payload.profileId === state.setupProfileId;" in manager_js
+    assert "if (!state.setupSessionId && payload.sessionId) state.setupSessionId = payload.sessionId;" in manager_js
 
 
 def test_manager_keeps_provider_setup_to_single_live_terminal():
     manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
 
     assert "function startSetupLogPolling" not in manager_js
-    assert "function catchUpSetupOutput" in manager_js
-    assert "appendSetupOutput(nextOutput.slice(state.setupOutput.length))" in manager_js
-    assert "await replayTerminal();" not in manager_js[
-        manager_js.index("async function syncSetupLog") : manager_js.index("function sendSetupResponse")
-    ]
+    assert "function catchUpSetupOutput" not in manager_js
+    assert "setupCatchupPoll" not in manager_js
+    assert "function syncSetupTranscript" in manager_js
+    assert "appendSetupOutput(text.slice(state.setupOutput.length))" in manager_js
+    assert "terminal.value.clear();" in manager_js
+    assert "terminal-auth" not in manager_js
+    assert "terminal-prompt" not in manager_js
     assert '<div class="panel" v-if="showLogPanel(selected)">' in manager_js
     assert "return Boolean(profile && profile.runtime !== 'microsandbox');" in manager_js
 
@@ -326,6 +338,42 @@ def test_microsandbox_active_setup_session_reconnects_to_running_pty(tmp_path):
     assert active["sessionId"] == "session-1"
     assert active["profile"]["id"] == profile["id"]
     assert active["logPath"].endswith("provider-setup.log")
+
+
+def test_microsandbox_resize_pty_clamps_and_applies_winsize(tmp_path, monkeypatch):
+    class FakeProcess:
+        def poll(self):
+            return None
+
+    calls = []
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+        },
+    )
+    controller = MicrosandboxRuntimeController(registry)
+    controller._pty_sessions["session-1"] = {
+        "profile_id": profile["id"],
+        "master_fd": 123,
+        "process": FakeProcess(),
+        "log_path": str(tmp_path / "provider-setup.log"),
+        "bullpen_port": 8080,
+    }
+    monkeypatch.setattr(manager_mod.fcntl, "ioctl", lambda fd, request, winsize: calls.append((fd, request, winsize)))
+
+    controller.resize_pty("session-1", cols=999, rows=1)
+
+    assert calls
+    assert calls[0][0] == 123
+    assert calls[0][1] == manager_mod.termios.TIOCSWINSZ
+    assert manager_mod.struct.unpack("HHHH", calls[0][2])[:2] == (5, 300)
 
 
 def test_microsandbox_reconcile_marks_interrupted_setup_needs_attention(tmp_path, monkeypatch):

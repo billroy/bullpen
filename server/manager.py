@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import fcntl
 import importlib.util
 import os
 import pty
@@ -11,7 +12,9 @@ import re
 import signal
 import socket
 import subprocess
+import struct
 import sys
+import termios
 import threading
 import time
 import uuid
@@ -526,6 +529,7 @@ class MicrosandboxRuntimeController:
             env["BULLPEN_MANAGER_PROFILE_ID"] = profile_id
             session_id = uuid.uuid4().hex
             master_fd, slave_fd = pty.openpty()
+            self._resize_pty_fd(slave_fd, cols=120, rows=30)
             log_file = open(log_path, "w", encoding="utf-8")
             try:
                 log_file.write(f"\n[{now_ts()}] {' '.join(self._redacted_argv(argv))}\n")
@@ -596,6 +600,24 @@ class MicrosandboxRuntimeController:
             master_fd = int(session["master_fd"])
         if data:
             os.write(master_fd, data.encode("utf-8"))
+
+    def resize_pty(self, session_id: str, cols: int, rows: int) -> None:
+        cols = max(20, min(int(cols or 120), 300))
+        rows = max(5, min(int(rows or 30), 120))
+        with self._lock:
+            session = self._pty_sessions.get(session_id)
+            if not session:
+                raise ManagerError("Unknown or completed provider setup session")
+            process = session.get("process")
+            if process and process.poll() is not None:
+                raise ManagerError("Provider setup session is no longer running")
+            master_fd = int(session["master_fd"])
+        self._resize_pty_fd(master_fd, cols=cols, rows=rows)
+
+    @staticmethod
+    def _resize_pty_fd(fd: int, *, cols: int, rows: int) -> None:
+        winsize = struct.pack("HHHH", int(rows), int(cols), 0, 0)
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
 
     def stop(self, profile_id: str) -> dict[str, Any]:
         with self._lock:
@@ -900,6 +922,9 @@ class InstanceRuntimeController:
     def write_pty(self, session_id: str, data: str) -> None:
         self.microsandbox.write_pty(session_id, data)
 
+    def resize_pty(self, session_id: str, cols: int, rows: int) -> None:
+        self.microsandbox.resize_pty(session_id, cols=cols, rows=rows)
+
     def reconcile(self) -> list[dict[str, Any]]:
         self.local.reconcile()
         self.microsandbox.reconcile()
@@ -1018,7 +1043,12 @@ def create_manager_app(
     websocket_debug: bool = False,
 ) -> tuple[Flask, SocketIO]:
     registry = ProfileRegistry(home)
-    socketio = SocketIO(logger=websocket_debug, engineio_logger=websocket_debug, cors_allowed_origins=[])
+    socketio = SocketIO(
+        async_mode="threading",
+        logger=websocket_debug,
+        engineio_logger=websocket_debug,
+        cors_allowed_origins=[],
+    )
     runtime = InstanceRuntimeController(registry, socketio=socketio)
     app = Flask(__name__, static_folder=None)
     app.config["MANAGER_REGISTRY"] = registry
@@ -1145,6 +1175,18 @@ def create_manager_app(
             data = payload or {}
             runtime.write_pty(str(data.get("sessionId") or ""), str(data.get("data") or ""))
         except ManagerError as exc:
+            socketio.emit("manager:error", {"error": str(exc)})
+
+    @socketio.on("manager:pty-resize")
+    def on_pty_resize(payload):
+        try:
+            data = payload or {}
+            runtime.resize_pty(
+                str(data.get("sessionId") or ""),
+                int(data.get("cols") or 120),
+                int(data.get("rows") or 30),
+            )
+        except (ManagerError, TypeError, ValueError) as exc:
             socketio.emit("manager:error", {"error": str(exc)})
 
     socketio.init_app(app)

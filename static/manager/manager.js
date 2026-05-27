@@ -14,14 +14,12 @@ createApp({
       setupProfileId: '',
       setupOutput: '',
       setupExit: '',
-      copyNotice: '',
     });
     const socketRef = ref(null);
     const terminalRef = ref(null);
     const terminal = ref(null);
     const terminalDataDisposable = ref(null);
-    const terminalProtocolReplyBuffer = ref('');
-    const setupCatchupPoll = ref(null);
+    const terminalResizeDisposable = ref(null);
 
     const form = reactive({
       displayName: 'Local Bullpen',
@@ -35,8 +33,6 @@ createApp({
     });
 
     const selected = computed(() => state.profiles.find(profile => profile.id === state.selectedId) || state.profiles[0] || null);
-    const setupAuth = computed(() => extractSetupAuth(state.setupOutput));
-    const setupPrompt = computed(() => extractSetupPrompt(state.setupOutput));
 
     function stateLabel(profile) {
       return (profile && profile.observed && profile.observed.state) || 'unknown';
@@ -57,9 +53,7 @@ createApp({
       state.setupProfileId = '';
       state.setupOutput = '';
       state.setupExit = '';
-      state.copyNotice = '';
-      resetTerminal();
-      stopSetupCatchupPolling();
+      disposeTerminal();
     }
 
     function hasActiveSetupSession(profile) {
@@ -76,50 +70,8 @@ createApp({
       return Boolean(profile && profile.runtime !== 'microsandbox');
     }
 
-    function stripTerminalControlCodes(text) {
-      return String(text || '')
-        .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-        .replace(/\[(?:\d{1,3}(?:;\d{1,3})*)m/g, '')
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n');
-    }
-
     function restorePseudoAnsi(text) {
       return String(text || '').replace(/(^|[^\x1b])\[([0-9;]*)m/g, (_match, prefix, codes) => `${prefix}\x1b[${codes}m`);
-    }
-
-    function filterTerminalProtocolReplies(data) {
-      let text = `${terminalProtocolReplyBuffer.value}${String(data || '')}`;
-      terminalProtocolReplyBuffer.value = '';
-      const pendingReply = text.match(/\x1b(?:\[(?:[0-9;?]|>)*)?$/);
-      if (pendingReply) {
-        terminalProtocolReplyBuffer.value = pendingReply[0];
-        text = text.slice(0, -pendingReply[0].length);
-      }
-
-      return text
-        // xterm answers cursor-position/status/device-attribute probes onData.
-        // Those are terminal protocol replies, not human input for setup prompts.
-        .replace(/\x1b\[\d+;\d+R/g, '')
-        .replace(/\x1b\[(?:[?>]?[\d;]*)[cn]/g, '');
-    }
-
-    function extractSetupAuth(text) {
-      const clean = stripTerminalControlCodes(text);
-      const urls = [...clean.matchAll(/https:\/\/auth\.openai\.com\/codex\/device\b/g)].map(match => match[0]);
-      const contextualCodes = [...clean.matchAll(/one-time code[\s\S]{0,220}?\b([A-Z0-9]{4}-[A-Z0-9]{5})\b/gi)].map(match => match[1]);
-      const codes = contextualCodes.length ? contextualCodes : [...clean.matchAll(/\b[A-Z0-9]{4}-[A-Z0-9]{5}\b/g)].map(match => match[0]);
-      const url = urls[urls.length - 1] || '';
-      const code = codes[codes.length - 1] || '';
-      return { url, code };
-    }
-
-    function extractSetupPrompt(text) {
-      const clean = stripTerminalControlCodes(text);
-      const matches = [...clean.matchAll(/(Set up ([^?\n]+) in this sandbox\? \[(?:Y\/n|y\/N)\]:)\s*$/gim)];
-      const match = matches[matches.length - 1];
-      if (!match) return null;
-      return { text: match[1], item: match[2] };
     }
 
     async function api(path, options = {}) {
@@ -211,10 +163,9 @@ createApp({
       state.setupProfileId = profile.id;
       state.setupOutput = '';
       state.setupExit = '';
-      state.copyNotice = '';
       disposeTerminal();
-      stopSetupCatchupPolling();
       try {
+        await ensureTerminal();
         const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
         state.setupSessionId = data.sessionId;
         state.setupProfileId = profile.id;
@@ -222,10 +173,7 @@ createApp({
           const index = state.profiles.findIndex(item => item.id === data.profile.id);
           if (index >= 0) state.profiles[index] = data.profile;
         }
-        const logData = await api(`/api/profiles/${profile.id}/logs`);
-        await replaceSetupOutput(logData.text || state.setupOutput);
-        startSetupCatchupPolling();
-        await catchUpSetupOutput(profile);
+        await syncSetupTranscript(profile);
         focusSetupInput();
       } catch (err) {
         state.error = err.message;
@@ -238,23 +186,15 @@ createApp({
       if (!profile || profile.runtime !== 'microsandbox') return;
       if (stateLabel(profile) !== 'setup-running') {
         if (state.setupProfileId === profile.id) resetSetupState();
-        stopSetupCatchupPolling();
         return;
       }
-      if (state.setupProfileId === profile.id && state.setupSessionId) {
-        startSetupCatchupPolling();
-        await catchUpSetupOutput(profile);
-        return;
-      }
+      if (state.setupProfileId === profile.id && state.setupSessionId) return;
       try {
         const data = await api(`/api/profiles/${profile.id}/setup-providers/session`);
         state.setupSessionId = data.sessionId || '';
         state.setupProfileId = profile.id;
         state.setupExit = data.sessionId ? '' : 'Setup input channel unavailable';
-        const logData = await api(`/api/profiles/${profile.id}/logs`);
-        await replaceSetupOutput(logData.text || state.setupOutput);
-        startSetupCatchupPolling();
-        await catchUpSetupOutput(profile);
+        await syncSetupTranscript(profile);
         focusSetupInput();
       } catch (err) {
         state.error = err.message;
@@ -264,6 +204,7 @@ createApp({
     async function ensureTerminal() {
       if (!terminalRef.value || terminal.value || !window.Terminal) return;
       terminal.value = new window.Terminal({
+        cols: 120,
         convertEol: true,
         cursorBlink: true,
         disableStdin: false,
@@ -281,9 +222,12 @@ createApp({
       terminal.value.open(terminalRef.value);
       terminalDataDisposable.value = terminal.value.onData((data) => {
         if (!state.setupSessionId || !socketRef.value || state.setupExit) return;
-        const input = filterTerminalProtocolReplies(data);
-        if (input) socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data: input });
+        socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data });
       });
+      terminalResizeDisposable.value = terminal.value.onResize(({ cols, rows }) => {
+        resizeSetupPty(cols, rows);
+      });
+      resizeSetupPty(terminal.value.cols, terminal.value.rows);
     }
 
     function disposeTerminal() {
@@ -291,15 +235,20 @@ createApp({
         terminalDataDisposable.value.dispose();
         terminalDataDisposable.value = null;
       }
+      if (terminalResizeDisposable.value) {
+        terminalResizeDisposable.value.dispose();
+        terminalResizeDisposable.value = null;
+      }
       if (terminal.value) {
         terminal.value.dispose();
         terminal.value = null;
       }
-      terminalProtocolReplyBuffer.value = '';
     }
 
     function resetTerminal() {
-      if (terminal.value) terminal.value.reset();
+      if (!terminal.value) return;
+      terminal.value.reset();
+      terminal.value.clear();
     }
 
     async function replayTerminal() {
@@ -307,6 +256,11 @@ createApp({
       await ensureTerminal();
       resetTerminal();
       if (terminal.value && state.setupOutput) terminal.value.write(restorePseudoAnsi(state.setupOutput));
+    }
+
+    function resizeSetupPty(cols, rows) {
+      if (!state.setupSessionId || !socketRef.value || state.setupExit) return;
+      socketRef.value.emit('manager:pty-resize', { sessionId: state.setupSessionId, cols, rows });
     }
 
     async function replaceSetupOutput(text) {
@@ -328,17 +282,17 @@ createApp({
       });
     }
 
-    async function catchUpSetupOutput(profile = selected.value) {
-      if (!profile || profile.runtime !== 'microsandbox' || stateLabel(profile) !== 'setup-running') return;
+    async function syncSetupTranscript(profile = selected.value) {
+      if (!profile || profile.runtime !== 'microsandbox') return;
       try {
         const data = await api(`/api/profiles/${profile.id}/logs`);
-        const nextOutput = data.text || '';
-        if (!nextOutput || nextOutput === state.setupOutput) return;
-        if (nextOutput.startsWith(state.setupOutput)) {
-          appendSetupOutput(nextOutput.slice(state.setupOutput.length));
+        const text = data.text || '';
+        if (!text || text === state.setupOutput) return;
+        if (text.startsWith(state.setupOutput)) {
+          appendSetupOutput(text.slice(state.setupOutput.length));
           return;
         }
-        await replaceSetupOutput(nextOutput);
+        await replaceSetupOutput(text);
       } catch (_err) {
         // The regular profile refresh path surfaces connection errors.
       }
@@ -351,54 +305,6 @@ createApp({
         state.logs = data.text || '';
       } catch (_err) {
         // The regular profile refresh path surfaces connection errors.
-      }
-    }
-
-    function startSetupCatchupPolling() {
-      if (setupCatchupPoll.value) return;
-      setupCatchupPoll.value = window.setInterval(() => {
-        const profile = selected.value;
-        if (!profile || stateLabel(profile) !== 'setup-running') {
-          stopSetupCatchupPolling();
-          return;
-        }
-        catchUpSetupOutput(profile);
-      }, 1000);
-    }
-
-    function stopSetupCatchupPolling() {
-      if (!setupCatchupPoll.value) return;
-      window.clearInterval(setupCatchupPoll.value);
-      setupCatchupPoll.value = null;
-    }
-
-    function sendSetupResponse(response) {
-      if (!state.setupSessionId || !socketRef.value || state.setupExit) return;
-      socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data: `${response}\r` });
-      focusSetupInput();
-    }
-
-    async function copyText(text, label) {
-      if (!text) return;
-      try {
-        await navigator.clipboard.writeText(text);
-        state.copyNotice = `${label} copied`;
-      } catch (_err) {
-        state.copyNotice = 'Copy failed';
-      }
-    }
-
-    function openAuthUrl(url) {
-      if (!url) return;
-      window.open(url, '_blank', 'noopener');
-    }
-
-    function pasteIntoSetupInput(event) {
-      if (!event || !event.clipboardData) return;
-      const text = event.clipboardData.getData('text');
-      if (!text) return;
-      if (state.setupSessionId && socketRef.value && !state.setupExit) {
-        socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data: text });
       }
     }
 
@@ -438,14 +344,17 @@ createApp({
         }
       });
       socket.on('manager:pty-output', (payload) => {
-        if (!payload || payload.sessionId !== state.setupSessionId) return;
+        if (!payload) return;
+        const matchesSession = payload.sessionId && payload.sessionId === state.setupSessionId;
+        const matchesStartingProfile = !state.setupSessionId && payload.profileId === state.setupProfileId;
+        if (!matchesSession && !matchesStartingProfile) return;
+        if (!state.setupSessionId && payload.sessionId) state.setupSessionId = payload.sessionId;
         const text = payload.text || '';
         appendSetupOutput(text);
       });
       socket.on('manager:pty-exit', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
         state.setupExit = `Provider setup exited with ${payload.returncode}`;
-        stopSetupCatchupPolling();
         if (selected.value && showLogPanel(selected.value)) loadLogs(selected.value.id);
       });
       socket.on('manager:error', (payload) => {
@@ -466,8 +375,6 @@ createApp({
       state,
       form,
       selected,
-      setupAuth,
-      setupPrompt,
       stateLabel,
       showLogPanel,
       portText,
@@ -478,13 +385,9 @@ createApp({
       setupProviders,
       syncSetupSession,
       syncSetupLog,
-      copyText,
-      sendSetupResponse,
-      pasteIntoSetupInput,
       focusSetupInput,
       setupStatusText,
       hasActiveSetupSession,
-      openAuthUrl,
       terminalRef,
       deleteProfile,
       loadLogs,
@@ -613,26 +516,7 @@ createApp({
                 </div>
               </div>
               <div class="terminal-panel">
-                <div class="terminal-auth" v-if="setupAuth.url || setupAuth.code">
-                  <div class="terminal-auth-item" v-if="setupAuth.url">
-                    <strong>Auth URL</strong>
-                    <span>{{ setupAuth.url }}</span>
-                    <button type="button" @click="openAuthUrl(setupAuth.url)">Open</button>
-                    <button type="button" @click="copyText(setupAuth.url, 'URL')">Copy</button>
-                  </div>
-                  <div class="terminal-auth-item" v-if="setupAuth.code">
-                    <strong>Device Code</strong>
-                    <span>{{ setupAuth.code }}</span>
-                    <button type="button" @click="copyText(setupAuth.code, 'Code')">Copy</button>
-                  </div>
-                  <div class="instance-meta" v-if="state.copyNotice">{{ state.copyNotice }}</div>
-                </div>
-                <div class="terminal-prompt" v-if="setupPrompt">
-                  <strong>{{ setupPrompt.text }}</strong>
-                  <button type="button" class="primary" @click="sendSetupResponse('y')">Yes</button>
-                  <button type="button" @click="sendSetupResponse('n')">No</button>
-                </div>
-                <div ref="terminalRef" class="terminal-box" @paste.prevent="pasteIntoSetupInput"></div>
+                <div ref="terminalRef" class="terminal-box"></div>
               </div>
             </div>
 
