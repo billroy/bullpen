@@ -80,6 +80,7 @@ const app = createApp({
     const bullpenTabRef = ref(null);
     const projects = reactive([]);  // [{id, name, available}]
     const projectsLoaded = ref(false);  // true once server has delivered initial projects:updated
+    const projectSettings = reactive({ projectsRoot: '' });
 
     function _defaultWsData() {
       return {
@@ -794,6 +795,9 @@ const app = createApp({
       projects.splice(0, projects.length, ...list);
       projectsLoaded.value = true;
       _restoreWorkspaceAfterProjectsUpdate();
+    });
+    socket.on('project:settings', (settings) => {
+      projectSettings.projectsRoot = typeof settings?.projectsRoot === 'string' ? settings.projectsRoot : '';
     });
     socket.on('project:removed', (data) => {
       const removedId = data.workspaceId;
@@ -1734,7 +1738,7 @@ const app = createApp({
     });
 
     return {
-      state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded,
+      state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded, projectSettings,
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
@@ -1815,6 +1819,7 @@ const app = createApp({
           :visible="leftPaneVisible"
           :projects="projects"
           :projects-loaded="projectsLoaded"
+          :projects-root="projectSettings.projectsRoot"
           :active-workspace-id="activeWorkspaceId"
           :workspaces="workspaces"
           @new-task="showCreateModal = true"

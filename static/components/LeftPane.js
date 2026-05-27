@@ -1,5 +1,5 @@
 const LeftPane = {
-  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'activeWorkspaceId', 'workspaces'],
+  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'projectsRoot', 'activeWorkspaceId', 'workspaces'],
   emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible, resizing: !!resizing }" :style="leftPaneStyle">
@@ -376,6 +376,10 @@ const LeftPane = {
       const parent = parts.join('/') || (workspace.startsWith('/') ? '/' : '');
       return parent || '';
     },
+    projectEntryRoot() {
+      const root = String(this.projectsRoot || '').trim();
+      return root || this.defaultCloneParent();
+    },
     repoNameFromUrl(url) {
       const trimmed = String(url || '').trim().replace(/\/+$/, '');
       const name = trimmed.split('/').filter(Boolean).pop() || '';
@@ -392,7 +396,11 @@ const LeftPane = {
     promptAddProject() {
       this.showProjectMenu = false;
       this.showEmptyProjectHint = false;
-      const path = prompt('Enter absolute path to project directory:');
+      const root = this.projectEntryRoot();
+      const promptText = root
+        ? `Enter project directory under ${root} (name or absolute path):`
+        : 'Enter absolute path to project directory:';
+      const path = prompt(promptText);
       if (path && path.trim()) {
         this.$emit('add-project', path.trim());
       }
@@ -400,7 +408,11 @@ const LeftPane = {
     promptNewProject() {
       this.showProjectMenu = false;
       this.showEmptyProjectHint = false;
-      const path = prompt('Enter absolute path for new project directory:');
+      const root = this.projectEntryRoot();
+      const promptText = root
+        ? `Enter new project directory under ${root} (name or absolute path):`
+        : 'Enter absolute path for new project directory:';
+      const path = prompt(promptText);
       if (path && path.trim()) {
         this.$emit('new-project', path.trim());
       }

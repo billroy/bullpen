@@ -52,6 +52,19 @@ def test_app_tracks_projects_loaded_and_passes_to_leftpane():
     assert ':projects-loaded="projectsLoaded"' in text
 
 
+def test_add_project_prompt_shows_projects_root_and_accepts_name():
+    left_pane = _read("static/components/LeftPane.js")
+    app = _read("static/app.js")
+
+    assert "'projectsRoot'" in left_pane
+    assert "projectEntryRoot()" in left_pane
+    assert "Enter project directory under ${root} (name or absolute path):" in left_pane
+    assert "Enter new project directory under ${root} (name or absolute path):" in left_pane
+    assert "socket.on('project:settings'" in app
+    assert "projectSettings.projectsRoot" in app
+    assert ':projects-root="projectSettings.projectsRoot"' in app
+
+
 def test_leftpane_projects_header_and_list_conditions_support_single_project():
     text = _read("static/components/LeftPane.js")
     assert "v-if=\"projects\" class=\"left-pane-section\" :class=\"{ 'project-add-only': projects.length === 0 }\"" in text

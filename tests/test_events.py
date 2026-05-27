@@ -125,6 +125,30 @@ def test_project_add_from_startupless_mode_activates_project(tmp_path, monkeypat
     assert not os.path.exists(workspace_root / ".bullpen")
 
 
+def test_project_add_accepts_name_under_configured_projects_root(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    project = workspace_root / "project-a"
+    project.mkdir(parents=True)
+    global_dir = tmp_path / "home" / ".bullpen"
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    initial_events = client.get_received()
+    settings = [evt["args"][0] for evt in initial_events if evt["name"] == "project:settings"]
+
+    client.emit("project:add", {"path": "project-a"})
+    events = client.get_received()
+    client.disconnect()
+
+    assert settings and settings[-1] == {"projectsRoot": str(workspace_root.resolve())}
+    state_events = [evt["args"][0] for evt in events if evt["name"] == "state:init"]
+    assert state_events
+    ws_id = state_events[-1]["workspaceId"]
+    assert app.config["manager"].get_workspace_path(ws_id) == str(project.resolve())
+
+
 def test_start_without_project_refresh_requires_join_for_registered_project(tmp_path, monkeypatch):
     workspace_root = tmp_path / "workspace"
     project = workspace_root / "project-a"

@@ -36,7 +36,7 @@ from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
 from server.worker_types import ViewerContext, get_worker_type, normalize_layout, normalize_worker_slot, serialize_layout
-from server.workspace_manager import WorkspaceManager
+from server.workspace_manager import WorkspaceManager, projects_root
 from server import service_worker as service_worker_mod
 from server import mcp_auth
 from server import worktrees as worktree_mod
@@ -1190,6 +1190,7 @@ def create_app(
             return
 
         join_room("authenticated")
+        socketio.emit("project:settings", {"projectsRoot": projects_root() or ""}, to=request.sid)
         ws = manager.get_or_activate(startup_id)
         if ws:
             join_room(ws.id)

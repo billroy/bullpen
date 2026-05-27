@@ -23,9 +23,24 @@ def projects_root():
     return os.path.realpath(os.path.abspath(root))
 
 
+def resolve_project_path(path):
+    """Resolve a user-entered project path.
+
+    In constrained runtimes, relative inputs are project names/paths under
+    BULLPEN_PROJECTS_ROOT. Absolute inputs are still accepted, then validated
+    by ensure_within_projects_root().
+    """
+    raw_path = (path or "").strip()
+    expanded_path = os.path.expanduser(raw_path)
+    root = projects_root()
+    if root and expanded_path and not os.path.isabs(expanded_path):
+        expanded_path = os.path.join(root, expanded_path)
+    return os.path.abspath(expanded_path)
+
+
 def ensure_within_projects_root(path):
     """Resolve and validate a project path against BULLPEN_PROJECTS_ROOT."""
-    real_path = os.path.realpath(os.path.abspath(path))
+    real_path = os.path.realpath(resolve_project_path(path))
     root = projects_root()
     if not root:
         return real_path
@@ -154,7 +169,7 @@ class WorkspaceManager:
         If the path was previously registered, reuses its ID.
         Initializes the workspace and creates a WorkspaceState.
         """
-        path = os.path.abspath(path)
+        path = resolve_project_path(path)
         real_path = ensure_within_projects_root(path)
         if not os.path.isdir(real_path):
             raise ValueError(f"Not a directory: {path}")

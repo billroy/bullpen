@@ -28,7 +28,7 @@ from server import service_worker as service_worker_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server import mcp_auth
-from server.workspace_manager import ensure_within_projects_root
+from server.workspace_manager import ensure_within_projects_root, projects_root, resolve_project_path
 from server.prompt_hardening import (
     TRUST_MODE_UNTRUSTED,
     harden_agent_argv,
@@ -1345,10 +1345,11 @@ def register_events(socketio, app):
         if _forbid_mcp_project_admin("project:add"):
             return
         manager = app.config["manager"]
-        path = data.get("path", "").strip()
-        if not path:
+        raw_path = data.get("path", "").strip()
+        if not raw_path:
             emit("error", {"message": "project:add requires path"})
             return
+        path = resolve_project_path(raw_path)
         try:
             ws_id = manager.register_project(path)
         except ValueError as e:
@@ -1364,10 +1365,10 @@ def register_events(socketio, app):
             return
         manager = app.config["manager"]
         raw_path = data.get("path", "")
-        path = os.path.abspath(raw_path.strip())
-        if not path:
+        if not raw_path.strip():
             emit("error", {"message": "project:new requires path"})
             return
+        path = resolve_project_path(raw_path)
 
         # Match register_project traversal hardening.
         if ".." in path.split(os.sep):
@@ -1414,7 +1415,7 @@ def register_events(socketio, app):
 
         raw_path = (data.get("path") or "").strip()
         if raw_path:
-            path = os.path.abspath(raw_path)
+            path = resolve_project_path(raw_path)
         else:
             repo_name = url.rstrip("/").rsplit("/", 1)[-1]
             if repo_name.endswith(".git"):
@@ -1494,6 +1495,7 @@ def register_events(socketio, app):
     @socketio.on("project:list")
     def on_project_list(data=None):
         manager = app.config["manager"]
+        emit("project:settings", {"projectsRoot": projects_root() or ""})
         bound_ws_id = _bound_mcp_workspace()
         if bound_ws_id:
             ws = manager.get_or_activate(bound_ws_id)

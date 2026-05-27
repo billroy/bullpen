@@ -5,7 +5,7 @@ import os
 import shutil
 
 from server.persistence import read_json, write_json
-from server.workspace_manager import REGISTRY_VERSION, WorkspaceManager
+from server.workspace_manager import REGISTRY_VERSION, WorkspaceManager, resolve_project_path
 
 
 def test_remove_then_readd_path_preserves_workspace_data(tmp_path):
@@ -283,3 +283,17 @@ def test_list_visible_projects_can_hide_unavailable_entries(tmp_path, monkeypatc
     assert len(projects) == 1
     assert projects[0]["name"] == "available"
     assert projects[0]["available"] is True
+
+
+def test_register_project_resolves_name_under_configured_projects_root(tmp_path, monkeypatch):
+    global_dir = tmp_path / "global"
+    projects_root = tmp_path / "projects"
+    project = projects_root / "alpha"
+    project.mkdir(parents=True)
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(projects_root))
+
+    m = WorkspaceManager(global_dir=str(global_dir))
+    ws_id = m.register_project("alpha")
+
+    assert resolve_project_path("alpha") == str(project)
+    assert m.get_workspace_path(ws_id) == str(project.resolve())
