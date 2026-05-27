@@ -2,6 +2,7 @@ const { createApp, computed, nextTick, onMounted, reactive, ref, watch } = Vue;
 
 createApp({
   setup() {
+    const defaultMicrosandboxBase = 'bullpen-microsandbox-local';
     const state = reactive({
       profiles: [],
       selectedId: null,
@@ -16,6 +17,9 @@ createApp({
       setupExit: '',
       createModalOpen: false,
       deploymentMenuOpen: false,
+      baseSnapshots: [],
+      baseSnapshotsLoading: false,
+      baseSnapshotsError: '',
     });
     const socketRef = ref(null);
     const terminalRef = ref(null);
@@ -32,13 +36,24 @@ createApp({
       adminUser: 'admin',
       adminPassword: '',
       sandboxName: '',
-      base: 'bullpen-microsandbox-local',
+      base: defaultMicrosandboxBase,
       vcpus: 4,
       memoryMiB: 4096,
       autoStartWhenManagerStarts: false,
     });
 
     const selected = computed(() => state.profiles.find(profile => profile.id === state.selectedId) || state.profiles[0] || null);
+    const baseSnapshotOptions = computed(() => {
+      const byName = new Map();
+      (state.baseSnapshots || []).forEach((snapshot) => {
+        if (snapshot && snapshot.name) byName.set(snapshot.name, snapshot);
+      });
+      const selectedBase = form.base || defaultMicrosandboxBase;
+      if (selectedBase && !byName.has(selectedBase)) {
+        byName.set(selectedBase, { name: selectedBase, unavailable: true });
+      }
+      return Array.from(byName.values());
+    });
 
     function stateLabel(profile) {
       return (profile && profile.observed && profile.observed.state) || 'unknown';
@@ -180,6 +195,30 @@ createApp({
       }
     }
 
+    function baseSnapshotLabel(snapshot) {
+      if (!snapshot) return '';
+      const source = snapshot.imageRef ? ` / ${snapshot.imageRef}` : '';
+      const suffix = snapshot.unavailable ? ' (not listed)' : '';
+      return `${snapshot.name}${source}${suffix}`;
+    }
+
+    async function loadBaseSnapshots() {
+      state.baseSnapshotsLoading = true;
+      state.baseSnapshotsError = '';
+      try {
+        const data = await api('/api/microsandbox/base-snapshots');
+        state.baseSnapshots = data.snapshots || [];
+        if (form.runtime === 'microsandbox' && !form.base && state.baseSnapshots.length) {
+          form.base = state.baseSnapshots[0].name;
+        }
+      } catch (err) {
+        state.baseSnapshotsError = err.message;
+        if (!form.base) form.base = defaultMicrosandboxBase;
+      } finally {
+        state.baseSnapshotsLoading = false;
+      }
+    }
+
     function resetCreateForm() {
       form.displayName = 'Local Bullpen';
       form.workspaceRoot = '';
@@ -187,7 +226,7 @@ createApp({
       form.adminUser = 'admin';
       form.adminPassword = '';
       form.sandboxName = '';
-      form.base = 'bullpen-microsandbox-local';
+      form.base = defaultMicrosandboxBase;
       form.vcpus = 4;
       form.memoryMiB = 4096;
       form.autoStartWhenManagerStarts = false;
@@ -196,6 +235,7 @@ createApp({
     function openCreateModal() {
       state.deploymentMenuOpen = false;
       state.createModalOpen = true;
+      if (form.runtime === 'microsandbox') loadBaseSnapshots();
     }
 
     function closeCreateModal() {
@@ -526,10 +566,15 @@ createApp({
       }
     });
 
+    watch(() => form.runtime, (runtime) => {
+      if (runtime === 'microsandbox') loadBaseSnapshots();
+    });
+
     return {
       state,
       form,
       selected,
+      baseSnapshotOptions,
       stateLabel,
       showLogPanel,
       showSetupPanel,
@@ -538,6 +583,7 @@ createApp({
       memoryText,
       aiProvidersText,
       gitText,
+      baseSnapshotLabel,
       bullpenUrlFor,
       appUrlFor,
       urlFor,
@@ -715,7 +761,16 @@ createApp({
               </div>
               <div class="field">
                 <label>Base Snapshot</label>
-                <input v-model="form.base">
+                <select v-model="form.base" :disabled="state.baseSnapshotsLoading">
+                  <option
+                    v-for="snapshot in baseSnapshotOptions"
+                    :key="snapshot.name"
+                    :value="snapshot.name"
+                  >
+                    {{ baseSnapshotLabel(snapshot) }}
+                  </option>
+                </select>
+                <div v-if="state.baseSnapshotsError" class="field-error">{{ state.baseSnapshotsError }}</div>
               </div>
               <div class="resource-grid">
                 <div class="field">

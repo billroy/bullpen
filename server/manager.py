@@ -6,6 +6,7 @@ import json
 import asyncio
 import fcntl
 import importlib.util
+import inspect
 import os
 import pty
 import re
@@ -112,6 +113,41 @@ def profile_payload(profile: dict[str, Any]) -> dict[str, Any]:
     payload = dict(profile)
     payload["deploymentInfo"] = deployment_info(profile)
     return payload
+
+
+def microsandbox_base_snapshots_payload() -> list[dict[str, Any]]:
+    """Return local Microsandbox snapshots that can be used as sandbox bases."""
+
+    async def _list_snapshots() -> list[dict[str, Any]]:
+        module = _load_deploy_sandbox_module()
+        runtime = module.MicrosandboxRuntime()
+        list_snapshots = getattr(runtime.Snapshot, "list", None)
+        if not callable(list_snapshots):
+            return []
+        result = list_snapshots()
+        if inspect.isawaitable(result):
+            result = await result
+        snapshots = []
+        for snapshot in result or []:
+            name = str(getattr(snapshot, "name", "") or "").strip()
+            if not name:
+                continue
+            snapshots.append(
+                {
+                    "name": name,
+                    "digest": str(getattr(snapshot, "digest", "") or ""),
+                    "imageRef": str(getattr(snapshot, "image_ref", "") or ""),
+                    "createdAt": getattr(snapshot, "created_at", None),
+                    "sizeBytes": getattr(snapshot, "size_bytes", None),
+                }
+            )
+        snapshots.sort(key=lambda item: (item["name"] != DEFAULT_MICROSANDBOX_BASE, item["name"]))
+        return snapshots
+
+    try:
+        return asyncio.run(_list_snapshots())
+    except Exception as exc:
+        raise ManagerError(f"Unable to list Microsandbox base snapshots: {exc}") from exc
 
 
 def deployment_info(profile: dict[str, Any]) -> dict[str, Any]:
@@ -1296,6 +1332,13 @@ def create_manager_app(
     def api_profiles():
         runtime.reconcile()
         return jsonify({"profiles": profiles_payload(registry)})
+
+    @app.route("/api/microsandbox/base-snapshots")
+    def api_microsandbox_base_snapshots():
+        try:
+            return jsonify({"snapshots": microsandbox_base_snapshots_payload()})
+        except ManagerError as exc:
+            return jsonify({"error": str(exc), "snapshots": []}), 503
 
     @app.route("/api/profiles", methods=["POST"])
     def api_create_profile():

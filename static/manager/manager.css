@@ -201,6 +201,13 @@ textarea {
   font-size: 12px;
 }
 
+.field-error {
+  margin-top: 5px;
+  color: #fecaca;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .resource-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -105,6 +105,25 @@ def test_create_microsandbox_profile(tmp_path):
     assert profile["resources"] == {"vcpus": 6, "memoryMiB": 8192}
 
 
+def test_create_microsandbox_profile_uses_selected_base_snapshot(tmp_path):
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+            "base": "bullpen-microsandbox-local-v2",
+        },
+    )
+
+    assert profile["base"] == "bullpen-microsandbox-local-v2"
+
+
 def test_create_microsandbox_profile_requires_admin_password(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
@@ -217,6 +236,43 @@ def test_manager_api_profiles_include_deployment_info(tmp_path):
     assert codex["workspaces"] == ["project-a"]
     assert info["git"]["repositories"][0]["name"] == "project-a"
     assert info["git"]["repositories"][0]["dirty"] is True
+
+
+def test_manager_api_lists_microsandbox_base_snapshots(tmp_path, monkeypatch):
+    class Snapshot:
+        def __init__(self, name, image_ref):
+            self.name = name
+            self.digest = f"sha256:{name}"
+            self.image_ref = image_ref
+            self.created_at = 1234
+            self.size_bytes = 4096
+
+    class SnapshotApi:
+        @staticmethod
+        async def list():
+            return [
+                Snapshot("bullpen-microsandbox-local-v2", "node:22-bookworm"),
+                Snapshot(DEFAULT_MICROSANDBOX_BASE, "node:22-bookworm"),
+            ]
+
+    class FakeRuntime:
+        Snapshot = SnapshotApi
+
+    class FakeModule:
+        MicrosandboxRuntime = FakeRuntime
+
+    monkeypatch.setattr(manager_mod, "_load_deploy_sandbox_module", lambda: FakeModule)
+    app, _socketio = create_manager_app(home=tmp_path / "manager")
+
+    response = app.test_client().get("/api/microsandbox/base-snapshots")
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert [snapshot["name"] for snapshot in data["snapshots"]] == [
+        DEFAULT_MICROSANDBOX_BASE,
+        "bullpen-microsandbox-local-v2",
+    ]
+    assert data["snapshots"][0]["imageRef"] == "node:22-bookworm"
 
 
 def test_manager_serves_empty_favicon(tmp_path):
@@ -340,6 +396,20 @@ def test_manager_create_deployment_lives_in_modal_menu_without_personal_placehol
     assert '<label>Memory MiB</label>' in manager_js
     assert 'v-model.number="form.vcpus"' in manager_js
     assert 'v-model.number="form.memoryMiB"' in manager_js
+
+
+def test_manager_create_deployment_uses_base_snapshot_dropdown():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+    manager_css = Path("static/manager/manager.css").read_text(encoding="utf-8")
+
+    assert "baseSnapshots: []" in manager_js
+    assert "api('/api/microsandbox/base-snapshots')" in manager_js
+    assert "const baseSnapshotOptions = computed(() => {" in manager_js
+    assert '<select v-model="form.base" :disabled="state.baseSnapshotsLoading">' in manager_js
+    assert 'v-for="snapshot in baseSnapshotOptions"' in manager_js
+    assert "{{ baseSnapshotLabel(snapshot) }}" in manager_js
+    assert '<input v-model="form.base">' not in manager_js
+    assert ".field-error" in manager_css
 
 
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):
