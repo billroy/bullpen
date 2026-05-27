@@ -85,6 +85,21 @@ createApp({
       return Boolean(profile && profile.runtime !== 'microsandbox');
     }
 
+    function showSetupPanel(profile) {
+      return Boolean(
+        profile
+        && profile.runtime === 'microsandbox'
+        && (
+          (state.setupBusy && state.setupProfileId === profile.id)
+          || stateLabel(profile) === 'setup-running'
+          || (
+            state.setupProfileId === profile.id
+            && (state.setupSessionId || state.setupOutput || state.setupExit)
+          )
+        )
+      );
+    }
+
     function restorePseudoAnsi(text) {
       return String(text || '').replace(/(^|[^\x1b])\[([0-9;]*)m/g, (_match, prefix, codes) => `${prefix}\x1b[${codes}m`);
     }
@@ -201,6 +216,7 @@ createApp({
       state.setupExit = '';
       disposeTerminal();
       try {
+        await nextTick();
         await ensureTerminal();
         const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
         state.setupSessionId = data.sessionId;
@@ -472,6 +488,7 @@ createApp({
       selected,
       stateLabel,
       showLogPanel,
+      showSetupPanel,
       portText,
       bullpenUrlFor,
       appUrlFor,
@@ -590,7 +607,7 @@ createApp({
               </div>
             </div>
 
-            <div class="panel" v-if="selected.runtime === 'microsandbox'">
+            <div class="panel" v-if="showSetupPanel(selected)">
               <div class="panel-header">
                 <div>
                   <div class="panel-title">Provider Setup</div>

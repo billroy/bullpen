@@ -228,6 +228,18 @@ def test_manager_keeps_provider_setup_to_single_live_terminal():
     assert "return Boolean(profile && profile.runtime !== 'microsandbox');" in manager_js
 
 
+def test_manager_hides_provider_setup_terminal_until_used():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+
+    assert "function showSetupPanel(profile)" in manager_js
+    assert "(state.setupBusy && state.setupProfileId === profile.id)" in manager_js
+    assert "stateLabel(profile) === 'setup-running'" in manager_js
+    assert "state.setupProfileId === profile.id" in manager_js
+    assert "&& (state.setupSessionId || state.setupOutput || state.setupExit)" in manager_js
+    assert '<div class="panel" v-if="showSetupPanel(selected)">' in manager_js
+    assert '<div class="panel" v-if="selected.runtime === \'microsandbox\'">' not in manager_js
+
+
 def test_manager_renders_bullpen_and_app_links():
     manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
 
