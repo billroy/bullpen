@@ -246,6 +246,15 @@ createApp({
       state.deploymentMenuOpen = !state.deploymentMenuOpen;
     }
 
+    function openDropdownOnEnter(event) {
+      const select = event && event.currentTarget;
+      if (!select || select.disabled) return;
+      if (typeof select.showPicker === 'function') {
+        event.preventDefault();
+        select.showPicker();
+      }
+    }
+
     async function createProfile() {
       state.error = '';
       try {
@@ -592,6 +601,7 @@ createApp({
       openCreateModal,
       closeCreateModal,
       toggleDeploymentMenu,
+      openDropdownOnEnter,
       action,
       setupProviders,
       syncSetupSession,
@@ -744,7 +754,7 @@ createApp({
             </div>
             <div class="field">
               <label>Runtime</label>
-              <select v-model="form.runtime">
+              <select v-model="form.runtime" @keydown.enter="openDropdownOnEnter">
                 <option value="local">Local</option>
                 <option value="microsandbox">Microsandbox</option>
                 <option value="docker" disabled>Docker (later)</option>
@@ -761,7 +771,7 @@ createApp({
               </div>
               <div class="field">
                 <label>Base Snapshot</label>
-                <select v-model="form.base" :disabled="state.baseSnapshotsLoading">
+                <select v-model="form.base" :disabled="state.baseSnapshotsLoading" @keydown.enter="openDropdownOnEnter">
                   <option
                     v-for="snapshot in baseSnapshotOptions"
                     :key="snapshot.name"

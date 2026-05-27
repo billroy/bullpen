@@ -405,11 +405,22 @@ def test_manager_create_deployment_uses_base_snapshot_dropdown():
     assert "baseSnapshots: []" in manager_js
     assert "api('/api/microsandbox/base-snapshots')" in manager_js
     assert "const baseSnapshotOptions = computed(() => {" in manager_js
-    assert '<select v-model="form.base" :disabled="state.baseSnapshotsLoading">' in manager_js
+    assert '<select v-model="form.base" :disabled="state.baseSnapshotsLoading" @keydown.enter="openDropdownOnEnter">' in manager_js
     assert 'v-for="snapshot in baseSnapshotOptions"' in manager_js
     assert "{{ baseSnapshotLabel(snapshot) }}" in manager_js
     assert '<input v-model="form.base">' not in manager_js
     assert ".field-error" in manager_css
+
+
+def test_manager_dropdowns_open_on_enter_key():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+
+    assert "function openDropdownOnEnter(event)" in manager_js
+    assert "typeof select.showPicker === 'function'" in manager_js
+    assert "event.preventDefault();" in manager_js
+    assert "select.showPicker();" in manager_js
+    assert '<select v-model="form.runtime" @keydown.enter="openDropdownOnEnter">' in manager_js
+    assert '<select v-model="form.base" :disabled="state.baseSnapshotsLoading" @keydown.enter="openDropdownOnEnter">' in manager_js
 
 
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):
