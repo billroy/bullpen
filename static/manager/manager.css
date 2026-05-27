@@ -201,20 +201,13 @@ textarea {
   font-size: 12px;
 }
 
-.instance-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: 12px;
-}
-
-.instance-links a,
+.instance-meta a,
 .kv a {
   color: var(--accent-hover);
   text-decoration: none;
 }
 
-.instance-links a:hover,
+.instance-meta a:hover,
 .kv a:hover {
   text-decoration: underline;
 }

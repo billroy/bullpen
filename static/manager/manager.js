@@ -477,10 +477,11 @@ createApp({
               @keydown.space.prevent="state.selectedId = profile.id; if (showLogPanel(profile)) loadLogs(profile.id); syncSetupSession(profile)"
             >
               <span class="instance-name">{{ profile.displayName }}</span>
-              <span class="instance-meta">{{ profile.runtime }} / {{ portText(profile) }}</span>
-              <span class="instance-links">
-                <a :href="bullpenUrlFor(profile)" target="_blank" rel="noopener" @click.stop>Bullpen</a>
-                <a :href="appUrlFor(profile)" target="_blank" rel="noopener" @click.stop>App</a>
+              <span class="instance-meta">
+                {{ profile.runtime }} /
+                <a :href="bullpenUrlFor(profile)" target="_blank" rel="noopener" @click.stop>Bullpen {{ profile.ports.bullpen }}</a>
+                /
+                <a :href="appUrlFor(profile)" target="_blank" rel="noopener" @click.stop>App {{ profile.ports.app }}</a>
               </span>
               <span class="status-line"><span class="dot" :class="stateLabel(profile)"></span>{{ stateLabel(profile) }}</span>
             </div>

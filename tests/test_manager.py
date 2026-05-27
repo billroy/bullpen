@@ -202,8 +202,9 @@ def test_manager_renders_bullpen_and_app_links():
     assert "function appUrlFor(profile)" in manager_js
     assert '`http://127.0.0.1:${profile.ports.bullpen}`' in manager_js
     assert '`http://127.0.0.1:${profile.ports.app}`' in manager_js
-    assert ':href="bullpenUrlFor(profile)" target="_blank" rel="noopener" @click.stop>Bullpen</a>' in manager_js
-    assert ':href="appUrlFor(profile)" target="_blank" rel="noopener" @click.stop>App</a>' in manager_js
+    assert 'class="instance-links"' not in manager_js
+    assert ':href="bullpenUrlFor(profile)" target="_blank" rel="noopener" @click.stop>Bullpen {{ profile.ports.bullpen }}</a>' in manager_js
+    assert ':href="appUrlFor(profile)" target="_blank" rel="noopener" @click.stop>App {{ profile.ports.app }}</a>' in manager_js
     assert ':href="bullpenUrlFor(selected)" target="_blank" rel="noopener">{{ bullpenUrlFor(selected) }}</a>' in manager_js
     assert ':href="appUrlFor(selected)" target="_blank" rel="noopener">{{ appUrlFor(selected) }}</a>' in manager_js
 
