@@ -259,9 +259,37 @@ textarea {
   padding: 12px;
 }
 
+.terminal-auth {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0b0d12;
+}
+
+.terminal-auth-item {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.terminal-auth-item strong {
+  color: var(--text-primary);
+}
+
+.terminal-auth-item span {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-primary);
+}
+
 .terminal-box {
   min-height: 340px;
   margin: 0;
+  user-select: text;
 }
 
 .terminal-input {

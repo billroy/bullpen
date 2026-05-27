@@ -1240,11 +1240,12 @@ def test_auth_codex_uses_device_auth(sb, monkeypatch):
     asyncio.run(sb.auth_codex(FakeRuntime(), object(), config))
 
     assert cleared == [True]
-    assert attached[0][0] == '"$BULLPEN_CODEX_PATH" login --device-auth'
+    assert attached[0][0] == 'NO_COLOR=1 CLICOLOR=0 TERM=dumb "$BULLPEN_CODEX_PATH" login --device-auth'
     assert attached[0][1] == "authenticate Codex"
     assert attached[0][2]["bridge_localhost_callback"] is False
     assert attached[0][2]["prefer_exec_stream"] is False
     assert "--device-auth" in attached[0][0]
+    assert "NO_COLOR=1" in attached[0][0]
     assert "BROWSER=echo" not in attached[0][0]
 
 

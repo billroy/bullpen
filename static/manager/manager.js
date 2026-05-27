@@ -15,6 +15,7 @@ createApp({
       setupOutput: '',
       setupInput: '',
       setupExit: '',
+      copyNotice: '',
     });
     const socketRef = ref(null);
     const setupInputRef = ref(null);
@@ -31,6 +32,7 @@ createApp({
     });
 
     const selected = computed(() => state.profiles.find(profile => profile.id === state.selectedId) || state.profiles[0] || null);
+    const setupAuth = computed(() => extractSetupAuth(state.setupOutput));
 
     function stateLabel(profile) {
       return (profile && profile.observed && profile.observed.state) || 'unknown';
@@ -52,6 +54,7 @@ createApp({
       state.setupOutput = '';
       state.setupInput = '';
       state.setupExit = '';
+      state.copyNotice = '';
     }
 
     function hasActiveSetupSession(profile) {
@@ -62,6 +65,22 @@ createApp({
         && state.setupProfileId === profile.id
         && !state.setupExit
       );
+    }
+
+    function stripTerminalControlCodes(text) {
+      return String(text || '')
+        .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+        .replace(/\[(?:\d{1,3}(?:;\d{1,3})*)m/g, '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n');
+    }
+
+    function extractSetupAuth(text) {
+      const clean = stripTerminalControlCodes(text);
+      const url = (clean.match(/https:\/\/auth\.openai\.com\/codex\/device\b/) || [])[0] || '';
+      const contextualCode = clean.match(/one-time code[\s\S]{0,160}\b([A-Z0-9]{4}-[A-Z0-9]{5})\b/i);
+      const code = (contextualCode && contextualCode[1]) || ((clean.match(/\b[A-Z0-9]{4}-[A-Z0-9]{5}\b/) || [])[0] || '');
+      return { url, code };
     }
 
     async function api(path, options = {}) {
@@ -154,6 +173,7 @@ createApp({
       state.setupOutput = '';
       state.setupInput = '';
       state.setupExit = '';
+      state.copyNotice = '';
       try {
         const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
         state.setupSessionId = data.sessionId;
@@ -163,7 +183,7 @@ createApp({
           if (index >= 0) state.profiles[index] = data.profile;
         }
         const logData = await api(`/api/profiles/${profile.id}/logs`);
-        state.setupOutput = logData.text || state.setupOutput;
+        state.setupOutput = stripTerminalControlCodes(logData.text || state.setupOutput);
       } catch (err) {
         state.error = err.message;
       } finally {
@@ -184,7 +204,7 @@ createApp({
         state.setupProfileId = profile.id;
         state.setupExit = data.sessionId ? '' : 'Setup input channel unavailable';
         const logData = await api(`/api/profiles/${profile.id}/logs`);
-        state.setupOutput = logData.text || state.setupOutput;
+        state.setupOutput = stripTerminalControlCodes(logData.text || state.setupOutput);
       } catch (err) {
         state.error = err.message;
       }
@@ -197,6 +217,21 @@ createApp({
         data: `${state.setupInput}\n`,
       });
       state.setupInput = '';
+    }
+
+    async function copyText(text, label) {
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        state.copyNotice = `${label} copied`;
+      } catch (_err) {
+        state.copyNotice = 'Copy failed';
+      }
+    }
+
+    function openAuthUrl(url) {
+      if (!url) return;
+      window.open(url, '_blank', 'noopener');
     }
 
     function pasteIntoSetupInput(event) {
@@ -249,7 +284,7 @@ createApp({
       });
       socket.on('manager:pty-output', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
-        state.setupOutput += payload.text || '';
+        state.setupOutput += stripTerminalControlCodes(payload.text || '');
       });
       socket.on('manager:pty-exit', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
@@ -271,6 +306,7 @@ createApp({
       state,
       form,
       selected,
+      setupAuth,
       stateLabel,
       portText,
       urlFor,
@@ -280,10 +316,12 @@ createApp({
       setupProviders,
       syncSetupSession,
       sendSetupInput,
+      copyText,
       pasteIntoSetupInput,
       focusSetupInput,
       setupStatusText,
       hasActiveSetupSession,
+      openAuthUrl,
       setupInputRef,
       deleteProfile,
       loadLogs,
@@ -412,10 +450,23 @@ createApp({
                 </div>
               </div>
               <div class="terminal-panel">
+                <div class="terminal-auth" v-if="setupAuth.url || setupAuth.code">
+                  <div class="terminal-auth-item" v-if="setupAuth.url">
+                    <strong>Auth URL</strong>
+                    <span>{{ setupAuth.url }}</span>
+                    <button type="button" @click="openAuthUrl(setupAuth.url)">Open</button>
+                    <button type="button" @click="copyText(setupAuth.url, 'URL')">Copy</button>
+                  </div>
+                  <div class="terminal-auth-item" v-if="setupAuth.code">
+                    <strong>Device Code</strong>
+                    <span>{{ setupAuth.code }}</span>
+                    <button type="button" @click="copyText(setupAuth.code, 'Code')">Copy</button>
+                  </div>
+                  <div class="instance-meta" v-if="state.copyNotice">{{ state.copyNotice }}</div>
+                </div>
                 <pre
                   class="log-box terminal-box"
                   tabindex="0"
-                  @click="focusSetupInput"
                   @paste.prevent="pasteIntoSetupInput"
                 >{{ state.setupOutput || 'Press Setup Providers to run Claude, Codex, and Git setup in an interactive sandbox terminal.' }}</pre>
                 <form class="terminal-input" @submit.prevent="sendSetupInput">
