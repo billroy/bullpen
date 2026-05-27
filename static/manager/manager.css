@@ -288,22 +288,16 @@ textarea {
 
 .terminal-box {
   min-height: 340px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #090b10;
   margin: 0;
   user-select: text;
 }
 
-.terminal-input {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.terminal-input textarea {
-  min-height: 44px;
-  resize: vertical;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+.terminal-box .xterm {
+  padding: 12px;
 }
 
 .empty {

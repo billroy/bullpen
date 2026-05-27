@@ -149,6 +149,16 @@ def test_manager_serves_empty_favicon(tmp_path):
     assert response.status_code == 204
 
 
+def test_manager_serves_vendored_xterm_assets(tmp_path):
+    app, _socketio = create_manager_app(home=tmp_path / "manager")
+
+    response = app.test_client().get("/vendor/xterm/xterm.js")
+
+    assert response.status_code == 200
+    assert response.content_type.startswith("text/javascript")
+    assert len(response.data) > 100000
+
+
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"

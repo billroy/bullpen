@@ -1538,7 +1538,7 @@ async def auth_codex(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployC
         runtime,
         sandbox,
         config,
-        'NO_COLOR=1 CLICOLOR=0 TERM=dumb "$BULLPEN_CODEX_PATH" login --device-auth',
+        '"$BULLPEN_CODEX_PATH" login --device-auth',
         label="authenticate Codex",
         bridge_localhost_callback=False,
         prefer_exec_stream=False,

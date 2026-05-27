@@ -526,7 +526,7 @@ class MicrosandboxRuntimeController:
             env["BULLPEN_MANAGER_PROFILE_ID"] = profile_id
             session_id = uuid.uuid4().hex
             master_fd, slave_fd = pty.openpty()
-            log_file = open(log_path, "a", encoding="utf-8")
+            log_file = open(log_path, "w", encoding="utf-8")
             try:
                 log_file.write(f"\n[{now_ts()}] {' '.join(self._redacted_argv(argv))}\n")
                 log_file.flush()
@@ -1035,6 +1035,10 @@ def create_manager_app(
     @app.route("/manager.js")
     def manager_js():
         return send_from_directory(registry.paths.static_dir, "manager.js")
+
+    @app.route("/vendor/xterm/<path:filename>")
+    def xterm_vendor(filename):
+        return send_from_directory(str(registry.paths.static_dir / "vendor" / "xterm"), filename)
 
     @app.route("/health")
     def health():

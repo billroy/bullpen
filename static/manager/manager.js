@@ -1,4 +1,4 @@
-const { createApp, computed, onMounted, reactive, ref, watch } = Vue;
+const { createApp, computed, nextTick, onMounted, reactive, ref, watch } = Vue;
 
 createApp({
   setup() {
@@ -13,12 +13,13 @@ createApp({
       setupSessionId: '',
       setupProfileId: '',
       setupOutput: '',
-      setupInput: '',
       setupExit: '',
       copyNotice: '',
     });
     const socketRef = ref(null);
-    const setupInputRef = ref(null);
+    const terminalRef = ref(null);
+    const terminal = ref(null);
+    const terminalDataDisposable = ref(null);
 
     const form = reactive({
       displayName: 'Local Bullpen',
@@ -52,9 +53,9 @@ createApp({
       state.setupSessionId = '';
       state.setupProfileId = '';
       state.setupOutput = '';
-      state.setupInput = '';
       state.setupExit = '';
       state.copyNotice = '';
+      resetTerminal();
     }
 
     function hasActiveSetupSession(profile) {
@@ -75,11 +76,17 @@ createApp({
         .replace(/\r/g, '\n');
     }
 
+    function restorePseudoAnsi(text) {
+      return String(text || '').replace(/(^|[^\x1b])\[([0-9;]*)m/g, (_match, prefix, codes) => `${prefix}\x1b[${codes}m`);
+    }
+
     function extractSetupAuth(text) {
       const clean = stripTerminalControlCodes(text);
-      const url = (clean.match(/https:\/\/auth\.openai\.com\/codex\/device\b/) || [])[0] || '';
-      const contextualCode = clean.match(/one-time code[\s\S]{0,160}\b([A-Z0-9]{4}-[A-Z0-9]{5})\b/i);
-      const code = (contextualCode && contextualCode[1]) || ((clean.match(/\b[A-Z0-9]{4}-[A-Z0-9]{5}\b/) || [])[0] || '');
+      const urls = [...clean.matchAll(/https:\/\/auth\.openai\.com\/codex\/device\b/g)].map(match => match[0]);
+      const contextualCodes = [...clean.matchAll(/one-time code[\s\S]{0,220}?\b([A-Z0-9]{4}-[A-Z0-9]{5})\b/gi)].map(match => match[1]);
+      const codes = contextualCodes.length ? contextualCodes : [...clean.matchAll(/\b[A-Z0-9]{4}-[A-Z0-9]{5}\b/g)].map(match => match[0]);
+      const url = urls[urls.length - 1] || '';
+      const code = codes[codes.length - 1] || '';
       return { url, code };
     }
 
@@ -171,9 +178,9 @@ createApp({
       state.setupSessionId = '';
       state.setupProfileId = profile.id;
       state.setupOutput = '';
-      state.setupInput = '';
       state.setupExit = '';
       state.copyNotice = '';
+      disposeTerminal();
       try {
         const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
         state.setupSessionId = data.sessionId;
@@ -183,7 +190,8 @@ createApp({
           if (index >= 0) state.profiles[index] = data.profile;
         }
         const logData = await api(`/api/profiles/${profile.id}/logs`);
-        state.setupOutput = stripTerminalControlCodes(logData.text || state.setupOutput);
+        state.setupOutput = logData.text || state.setupOutput;
+        await replayTerminal();
       } catch (err) {
         state.error = err.message;
       } finally {
@@ -204,19 +212,64 @@ createApp({
         state.setupProfileId = profile.id;
         state.setupExit = data.sessionId ? '' : 'Setup input channel unavailable';
         const logData = await api(`/api/profiles/${profile.id}/logs`);
-        state.setupOutput = stripTerminalControlCodes(logData.text || state.setupOutput);
+        state.setupOutput = logData.text || state.setupOutput;
+        await replayTerminal();
       } catch (err) {
         state.error = err.message;
       }
     }
 
-    function sendSetupInput() {
-      if (!state.setupSessionId || !socketRef.value) return;
-      socketRef.value.emit('manager:pty-input', {
-        sessionId: state.setupSessionId,
-        data: `${state.setupInput}\n`,
+    async function ensureTerminal() {
+      if (!terminalRef.value || terminal.value || !window.Terminal) return;
+      terminal.value = new window.Terminal({
+        convertEol: true,
+        cursorBlink: true,
+        disableStdin: false,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        fontSize: 12,
+        rows: 22,
+        scrollback: 4000,
+        theme: {
+          background: '#090b10',
+          foreground: '#c8ccd4',
+          cursor: '#e1e4ed',
+          selectionBackground: '#3b4765',
+        },
       });
-      state.setupInput = '';
+      terminal.value.open(terminalRef.value);
+      terminalDataDisposable.value = terminal.value.onData((data) => {
+        if (!state.setupSessionId || !socketRef.value || state.setupExit) return;
+        socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data });
+      });
+    }
+
+    function disposeTerminal() {
+      if (terminalDataDisposable.value) {
+        terminalDataDisposable.value.dispose();
+        terminalDataDisposable.value = null;
+      }
+      if (terminal.value) {
+        terminal.value.dispose();
+        terminal.value = null;
+      }
+    }
+
+    function resetTerminal() {
+      if (terminal.value) terminal.value.reset();
+    }
+
+    async function replayTerminal() {
+      await nextTick();
+      await ensureTerminal();
+      resetTerminal();
+      if (terminal.value && state.setupOutput) terminal.value.write(restorePseudoAnsi(state.setupOutput));
+    }
+
+    function writeTerminal(text) {
+      if (!text) return;
+      ensureTerminal().then(() => {
+        if (terminal.value) terminal.value.write(restorePseudoAnsi(text));
+      });
     }
 
     async function copyText(text, label) {
@@ -238,16 +291,13 @@ createApp({
       if (!event || !event.clipboardData) return;
       const text = event.clipboardData.getData('text');
       if (!text) return;
-      state.setupInput += text;
-      setTimeout(() => {
-        if (setupInputRef.value) setupInputRef.value.focus();
-      }, 0);
+      if (state.setupSessionId && socketRef.value && !state.setupExit) {
+        socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data: text });
+      }
     }
 
     function focusSetupInput() {
-      if (setupInputRef.value && state.setupSessionId && !state.setupExit) {
-        setupInputRef.value.focus();
-      }
+      if (terminal.value && state.setupSessionId && !state.setupExit) terminal.value.focus();
     }
 
     function setupStatusText(profile) {
@@ -284,7 +334,9 @@ createApp({
       });
       socket.on('manager:pty-output', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
-        state.setupOutput += stripTerminalControlCodes(payload.text || '');
+        const text = payload.text || '';
+        state.setupOutput += text;
+        writeTerminal(text);
       });
       socket.on('manager:pty-exit', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
@@ -300,6 +352,7 @@ createApp({
       if (!profile) return;
       loadLogs(profile.id);
       syncSetupSession(profile);
+      nextTick(() => replayTerminal());
     });
 
     return {
@@ -315,14 +368,13 @@ createApp({
       action,
       setupProviders,
       syncSetupSession,
-      sendSetupInput,
       copyText,
       pasteIntoSetupInput,
       focusSetupInput,
       setupStatusText,
       hasActiveSetupSession,
       openAuthUrl,
-      setupInputRef,
+      terminalRef,
       deleteProfile,
       loadLogs,
       openInstance,
@@ -464,22 +516,7 @@ createApp({
                   </div>
                   <div class="instance-meta" v-if="state.copyNotice">{{ state.copyNotice }}</div>
                 </div>
-                <pre
-                  class="log-box terminal-box"
-                  tabindex="0"
-                  @paste.prevent="pasteIntoSetupInput"
-                >{{ state.setupOutput || 'Press Setup Providers to run Claude, Codex, and Git setup in an interactive sandbox terminal.' }}</pre>
-                <form class="terminal-input" @submit.prevent="sendSetupInput">
-                  <textarea
-                    ref="setupInputRef"
-                    v-model="state.setupInput"
-                    :disabled="!state.setupSessionId || !!state.setupExit"
-                    placeholder="Paste code or type a response"
-                    rows="2"
-                    @keydown.enter.exact.prevent="sendSetupInput"
-                  ></textarea>
-                  <button type="submit" :disabled="!state.setupSessionId || !!state.setupExit">Send</button>
-                </form>
+                <div ref="terminalRef" class="terminal-box" @paste.prevent="pasteIntoSetupInput"></div>
               </div>
             </div>
 
