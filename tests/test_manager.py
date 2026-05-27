@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 import server.manager as manager_mod
@@ -157,6 +159,15 @@ def test_manager_serves_vendored_xterm_assets(tmp_path):
     assert response.status_code == 200
     assert response.content_type.startswith("text/javascript")
     assert len(response.data) > 100000
+
+
+def test_manager_filters_xterm_protocol_replies_before_pty_input():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+
+    assert "function filterTerminalProtocolReplies" in manager_js
+    assert r"\x1b\[\d+;\d+R" in manager_js
+    assert "Those are terminal protocol replies, not human input" in manager_js
+    assert "if (input) socketRef.value.emit('manager:pty-input'" in manager_js
 
 
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):

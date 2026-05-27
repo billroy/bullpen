@@ -20,6 +20,7 @@ createApp({
     const terminalRef = ref(null);
     const terminal = ref(null);
     const terminalDataDisposable = ref(null);
+    const terminalProtocolReplyBuffer = ref('');
     const setupLogPoll = ref(null);
 
     const form = reactive({
@@ -81,6 +82,22 @@ createApp({
 
     function restorePseudoAnsi(text) {
       return String(text || '').replace(/(^|[^\x1b])\[([0-9;]*)m/g, (_match, prefix, codes) => `${prefix}\x1b[${codes}m`);
+    }
+
+    function filterTerminalProtocolReplies(data) {
+      let text = `${terminalProtocolReplyBuffer.value}${String(data || '')}`;
+      terminalProtocolReplyBuffer.value = '';
+      const pendingReply = text.match(/\x1b(?:\[(?:[0-9;?]|>)*)?$/);
+      if (pendingReply) {
+        terminalProtocolReplyBuffer.value = pendingReply[0];
+        text = text.slice(0, -pendingReply[0].length);
+      }
+
+      return text
+        // xterm answers cursor-position/status/device-attribute probes onData.
+        // Those are terminal protocol replies, not human input for setup prompts.
+        .replace(/\x1b\[\d+;\d+R/g, '')
+        .replace(/\x1b\[(?:[?>]?[\d;]*)[cn]/g, '');
     }
 
     function extractSetupAuth(text) {
@@ -255,7 +272,8 @@ createApp({
       terminal.value.open(terminalRef.value);
       terminalDataDisposable.value = terminal.value.onData((data) => {
         if (!state.setupSessionId || !socketRef.value || state.setupExit) return;
-        socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data });
+        const input = filterTerminalProtocolReplies(data);
+        if (input) socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data: input });
       });
     }
 
@@ -268,6 +286,7 @@ createApp({
         terminal.value.dispose();
         terminal.value = null;
       }
+      terminalProtocolReplyBuffer.value = '';
     }
 
     function resetTerminal() {
