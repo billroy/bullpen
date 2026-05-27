@@ -59,6 +59,50 @@ createApp({
       return `http://127.0.0.1:${profile.ports.app}`;
     }
 
+    function deploymentInfo(profile) {
+      return (profile && profile.deploymentInfo) || {};
+    }
+
+    function cpuText(profile) {
+      const resources = deploymentInfo(profile).resources || {};
+      const value = Number(resources.vcpus);
+      if (!Number.isFinite(value) || value <= 0) return 'Not configured';
+      const suffix = resources.source === 'host' ? ' detected on host' : '';
+      return `${value} CPU${value === 1 ? '' : 's'}${suffix}`;
+    }
+
+    function memoryText(profile) {
+      const resources = deploymentInfo(profile).resources || {};
+      const value = Number(resources.memoryMiB);
+      if (!Number.isFinite(value) || value <= 0) return 'Not configured';
+      const amount = value >= 1024 ? `${(value / 1024).toFixed(value % 1024 === 0 ? 0 : 1)} GiB` : `${value} MiB`;
+      const suffix = resources.source === 'host' ? ' detected on host' : '';
+      return `${amount}${suffix}`;
+    }
+
+    function aiProvidersText(profile) {
+      const providers = deploymentInfo(profile).aiProviders || [];
+      if (!providers.length) return 'No AI workers configured';
+      return providers.map((provider) => {
+        const model = provider.model ? ` / ${provider.model}` : '';
+        const count = Number(provider.count) || 0;
+        return `${provider.label || provider.agent}${model} (${count})`;
+      }).join(', ');
+    }
+
+    function gitText(profile) {
+      const git = deploymentInfo(profile).git || {};
+      if (git.error) return git.error;
+      const repositories = git.repositories || [];
+      if (!repositories.length) return 'No git repositories found';
+      return repositories.map((repo) => {
+        const branch = repo.branch || 'detached';
+        const hash = repo.shortHash ? ` @ ${repo.shortHash}` : '';
+        const status = repo.dirty ? 'dirty' : 'clean';
+        return `${repo.name}: ${branch}${hash} (${status})`;
+      }).join('; ');
+    }
+
     function urlFor(profile) {
       return bullpenUrlFor(profile);
     }
@@ -490,6 +534,10 @@ createApp({
       showLogPanel,
       showSetupPanel,
       portText,
+      cpuText,
+      memoryText,
+      aiProvidersText,
+      gitText,
       bullpenUrlFor,
       appUrlFor,
       urlFor,
@@ -600,7 +648,10 @@ createApp({
                 <div class="kv"><strong>Home</strong><span>{{ selected.instanceHome }}</span></div>
                 <div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>
                 <div class="kv" v-if="selected.base"><strong>Base</strong><span>{{ selected.base }}</span></div>
-                <div class="kv" v-if="selected.resources"><strong>Resources</strong><span>{{ selected.resources.vcpus }} CPU / {{ selected.resources.memoryMiB }} MiB</span></div>
+                <div class="kv"><strong>CPU</strong><span>{{ cpuText(selected) }}</span></div>
+                <div class="kv"><strong>Memory</strong><span>{{ memoryText(selected) }}</span></div>
+                <div class="kv"><strong>Configured AI</strong><span>{{ aiProvidersText(selected) }}</span></div>
+                <div class="kv"><strong>Git</strong><span>{{ gitText(selected) }}</span></div>
                 <div class="kv"><strong>Ports</strong><span>{{ portText(selected) }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.pid"><strong>PID</strong><span>{{ selected.observed.pid }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.lastError"><strong>Error</strong><span>{{ selected.observed.lastError }}</span></div>

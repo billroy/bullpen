@@ -1,8 +1,11 @@
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
 import server.manager as manager_mod
+from server.init import init_workspace
 from server.manager import (
     DEFAULT_MICROSANDBOX_BASE,
     ManagerError,
@@ -12,6 +15,7 @@ from server.manager import (
     create_manager_app,
     create_profile,
 )
+from server.persistence import write_json
 
 
 def test_create_profile_allocates_ports_and_persists(tmp_path):
@@ -164,6 +168,57 @@ def test_manager_api_create_profile(tmp_path):
     assert list_response.get_json()["profiles"][0]["id"] == "api-instance"
 
 
+def test_manager_api_profiles_include_deployment_info(tmp_path):
+    if shutil.which("git") is None:
+        pytest.skip("git is not installed")
+    home = tmp_path / "manager"
+    workspace_root = tmp_path / "workspace-root"
+    project = workspace_root / "project-a"
+    project.mkdir(parents=True)
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "bullpen.py").write_text("", encoding="utf-8")
+    bp_dir = Path(init_workspace(str(project)))
+    write_json(
+        str(bp_dir / "layout.json"),
+        {
+            "slots": [
+                {"type": "ai", "agent": "codex", "model": "gpt-5.3-codex"},
+                {"type": "ai", "agent": "claude", "model": "claude-sonnet-4-6"},
+                {"type": "shell", "command": "pytest"},
+            ]
+        },
+    )
+    subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True, text=True)
+    (project / "README.md").write_text("hello\n", encoding="utf-8")
+    app, _socketio = create_manager_app(home=home)
+
+    client = app.test_client()
+    create_response = client.post(
+        "/api/profiles",
+        json={
+            "displayName": "Deployment Info",
+            "workspaceRoot": str(workspace_root),
+            "bullpenSource": str(source),
+        },
+    )
+    assert create_response.status_code == 201
+
+    response = client.get("/api/profiles")
+
+    assert response.status_code == 200
+    [profile] = response.get_json()["profiles"]
+    info = profile["deploymentInfo"]
+    assert info["resources"]["source"] == "host"
+    assert {provider["agent"] for provider in info["aiProviders"]} == {"claude", "codex"}
+    codex = next(provider for provider in info["aiProviders"] if provider["agent"] == "codex")
+    assert codex["model"] == "gpt-5.3-codex"
+    assert codex["count"] == 1
+    assert codex["workspaces"] == ["project-a"]
+    assert info["git"]["repositories"][0]["name"] == "project-a"
+    assert info["git"]["repositories"][0]["dirty"] is True
+
+
 def test_manager_serves_empty_favicon(tmp_path):
     app, _socketio = create_manager_app(home=tmp_path / "manager")
 
@@ -252,6 +307,22 @@ def test_manager_renders_bullpen_and_app_links():
     assert ':href="appUrlFor(profile)" target="_blank" rel="noopener" @click.stop>App {{ profile.ports.app }}</a>' in manager_js
     assert ':href="bullpenUrlFor(selected)" target="_blank" rel="noopener">{{ bullpenUrlFor(selected) }}</a>' in manager_js
     assert ':href="appUrlFor(selected)" target="_blank" rel="noopener">{{ appUrlFor(selected) }}</a>' in manager_js
+
+
+def test_manager_renders_selected_deployment_info_rows():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+    manager_css = Path("static/manager/manager.css").read_text(encoding="utf-8")
+
+    assert "function cpuText(profile)" in manager_js
+    assert "function memoryText(profile)" in manager_js
+    assert "function aiProvidersText(profile)" in manager_js
+    assert "function gitText(profile)" in manager_js
+    assert '<div class="kv"><strong>CPU</strong><span>{{ cpuText(selected) }}</span></div>' in manager_js
+    assert '<div class="kv"><strong>Memory</strong><span>{{ memoryText(selected) }}</span></div>' in manager_js
+    assert '<div class="kv"><strong>Configured AI</strong><span>{{ aiProvidersText(selected) }}</span></div>' in manager_js
+    assert '<div class="kv"><strong>Git</strong><span>{{ gitText(selected) }}</span></div>' in manager_js
+    assert ".kv span" in manager_css
+    assert "overflow-wrap: anywhere;" in manager_css
 
 
 def test_manager_create_deployment_lives_in_modal_menu_without_personal_placeholders():

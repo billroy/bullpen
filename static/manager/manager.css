@@ -308,10 +308,16 @@ textarea {
   grid-template-columns: 150px 1fr;
   gap: 8px;
   color: var(--text-secondary);
+  min-width: 0;
 }
 
 .kv strong {
   color: var(--text-primary);
+}
+
+.kv span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .log-box {

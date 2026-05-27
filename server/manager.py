@@ -10,6 +10,7 @@ import os
 import pty
 import re
 import signal
+import shutil
 import socket
 import subprocess
 import struct
@@ -39,6 +40,11 @@ DEFAULT_APP_PORT_RANGE = (3001, 3100)
 DEFAULT_MICROSANDBOX_BASE = "bullpen-microsandbox-local"
 LOCALHOST = "127.0.0.1"
 PROFILE_ID_RE = re.compile(r"[^a-z0-9-]+")
+AI_PROVIDER_LABELS = {
+    "claude": "Claude",
+    "codex": "Codex",
+    "gemini": "Gemini",
+}
 
 
 class ManagerError(Exception):
@@ -96,6 +102,196 @@ def wait_for_http_health(port: int, *, timeout_seconds: float = 12.0) -> bool:
             pass
         time.sleep(0.25)
     return False
+
+
+def profiles_payload(registry: "ProfileRegistry") -> list[dict[str, Any]]:
+    return [profile_payload(profile) for profile in registry.profiles()]
+
+
+def profile_payload(profile: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(profile)
+    payload["deploymentInfo"] = deployment_info(profile)
+    return payload
+
+
+def deployment_info(profile: dict[str, Any]) -> dict[str, Any]:
+    workspace = Path(profile.get("workspaceRoot") or "").expanduser()
+    return {
+        "resources": resource_info(profile),
+        "aiProviders": configured_ai_providers(workspace),
+        "git": git_info(workspace),
+    }
+
+
+def resource_info(profile: dict[str, Any]) -> dict[str, Any]:
+    resources = profile.get("resources") if isinstance(profile.get("resources"), dict) else {}
+    if resources:
+        return {
+            "source": "configured",
+            "vcpus": _safe_positive_int(resources.get("vcpus")),
+            "memoryMiB": _safe_positive_int(resources.get("memoryMiB")),
+        }
+    return {
+        "source": "host",
+        "vcpus": os.cpu_count(),
+        "memoryMiB": _host_memory_mib(),
+    }
+
+
+def configured_ai_providers(workspace_root: Path) -> list[dict[str, Any]]:
+    provider_models: dict[tuple[str, str], dict[str, Any]] = {}
+    for bp_dir in _candidate_bp_dirs(workspace_root):
+        layout_path = bp_dir / "layout.json"
+        try:
+            layout = read_json(str(layout_path))
+        except Exception:
+            continue
+        slots = layout.get("slots") if isinstance(layout, dict) else []
+        if not isinstance(slots, list):
+            continue
+        workspace_name = bp_dir.parent.name
+        for slot in slots:
+            if not isinstance(slot, dict):
+                continue
+            if str(slot.get("type") or "ai").strip() != "ai":
+                continue
+            agent = str(slot.get("agent") or "claude").strip().lower() or "claude"
+            model = str(slot.get("model") or "").strip()
+            key = (agent, model)
+            item = provider_models.setdefault(
+                key,
+                {
+                    "agent": agent,
+                    "label": AI_PROVIDER_LABELS.get(agent, agent.title()),
+                    "model": model,
+                    "count": 0,
+                    "workspaces": [],
+                },
+            )
+            item["count"] += 1
+            if workspace_name not in item["workspaces"]:
+                item["workspaces"].append(workspace_name)
+    return sorted(provider_models.values(), key=lambda item: (item["agent"], item["model"]))
+
+
+def git_info(workspace_root: Path) -> dict[str, Any]:
+    if not workspace_root.is_dir():
+        return {"repositories": [], "error": "Workspace path is unavailable"}
+    if shutil.which("git") is None:
+        return {"repositories": [], "error": "git is not installed"}
+    repositories = []
+    seen: set[str] = set()
+    for candidate in _candidate_repo_dirs(workspace_root):
+        repo = _git_repository_info(candidate, workspace_root)
+        top_level = repo.get("topLevel")
+        if not top_level or top_level in seen:
+            continue
+        seen.add(top_level)
+        repositories.append(repo)
+    return {"repositories": repositories}
+
+
+def _safe_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _host_memory_mib() -> int | None:
+    if sys.platform == "darwin":
+        try:
+            result = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode == 0:
+                return int(result.stdout.strip()) // (1024 * 1024)
+        except Exception:
+            return None
+    if hasattr(os, "sysconf"):
+        try:
+            pages = os.sysconf("SC_PHYS_PAGES")
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            return int(pages * page_size) // (1024 * 1024)
+        except (OSError, ValueError, TypeError):
+            return None
+    return None
+
+
+def _candidate_bp_dirs(workspace_root: Path, *, limit: int = 50) -> list[Path]:
+    if not workspace_root.is_dir():
+        return []
+    candidates: list[Path] = []
+    root_bp = workspace_root / ".bullpen"
+    if (root_bp / "layout.json").is_file():
+        candidates.append(root_bp)
+    try:
+        children = sorted(workspace_root.iterdir(), key=lambda path: path.name.lower())
+    except OSError:
+        return candidates
+    for child in children:
+        if len(candidates) >= limit:
+            break
+        child_bp = child / ".bullpen"
+        if child.is_dir() and (child_bp / "layout.json").is_file():
+            candidates.append(child_bp)
+    return candidates
+
+
+def _candidate_repo_dirs(workspace_root: Path, *, limit: int = 50) -> list[Path]:
+    candidates = [workspace_root]
+    try:
+        children = sorted(workspace_root.iterdir(), key=lambda path: path.name.lower())
+    except OSError:
+        return candidates
+    for child in children:
+        if len(candidates) >= limit:
+            break
+        if child.is_dir():
+            candidates.append(child)
+    return candidates
+
+
+def _git_repository_info(candidate: Path, workspace_root: Path) -> dict[str, Any]:
+    top_level = _git_output(candidate, "rev-parse", "--show-toplevel")
+    if not top_level:
+        return {}
+    branch = _git_output(candidate, "branch", "--show-current")
+    short_hash = _git_output(candidate, "rev-parse", "--short", "HEAD")
+    dirty_output = _git_output(candidate, "status", "--porcelain", allow_empty=True)
+    try:
+        name = Path(top_level).resolve().relative_to(workspace_root.resolve()).as_posix()
+    except ValueError:
+        name = Path(top_level).name
+    if name in ("", "."):
+        name = Path(top_level).name
+    return {
+        "name": name,
+        "topLevel": top_level,
+        "branch": branch,
+        "shortHash": short_hash,
+        "dirty": bool(dirty_output),
+    }
+
+
+def _git_output(cwd: Path, *args: str, allow_empty: bool = False) -> str:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            cwd=str(cwd),
+            timeout=3,
+        )
+    except Exception:
+        return ""
+    if result.returncode != 0:
+        return "" if allow_empty else ""
+    return result.stdout.strip()
 
 
 @dataclass
@@ -404,7 +600,7 @@ class LocalRuntimeController:
 
     def _emit_update(self) -> None:
         if self.socketio:
-            self.socketio.emit("manager:updated", {"profiles": self.registry.profiles()})
+            self.socketio.emit("manager:updated", {"profiles": profiles_payload(self.registry)})
 
     def _terminate_process(self, process: subprocess.Popen) -> None:
         if process.poll() is not None:
@@ -896,7 +1092,7 @@ class MicrosandboxRuntimeController:
 
     def _emit_update(self) -> None:
         if self.socketio:
-            self.socketio.emit("manager:updated", {"profiles": self.registry.profiles()})
+            self.socketio.emit("manager:updated", {"profiles": profiles_payload(self.registry)})
 
 
 class InstanceRuntimeController:
@@ -1099,14 +1295,14 @@ def create_manager_app(
     @app.route("/api/profiles", methods=["GET"])
     def api_profiles():
         runtime.reconcile()
-        return jsonify({"profiles": registry.profiles()})
+        return jsonify({"profiles": profiles_payload(registry)})
 
     @app.route("/api/profiles", methods=["POST"])
     def api_create_profile():
         try:
             profile = create_profile(registry, request.get_json(silent=True) or {})
-            socketio.emit("manager:updated", {"profiles": registry.profiles()})
-            return jsonify({"profile": profile}), 201
+            socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
+            return jsonify({"profile": profile_payload(profile)}), 201
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -1118,7 +1314,7 @@ def create_manager_app(
             pass
         try:
             registry.delete(profile_id)
-            socketio.emit("manager:updated", {"profiles": registry.profiles()})
+            socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
             return jsonify({"ok": True})
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -1138,7 +1334,7 @@ def create_manager_app(
                 webbrowser.open(f"http://{LOCALHOST}:{port}")
             else:
                 return jsonify({"error": f"Unknown action: {action}"}), 404
-            return jsonify({"profile": profile})
+            return jsonify({"profile": profile_payload(profile)})
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -1146,6 +1342,9 @@ def create_manager_app(
     def api_setup_providers(profile_id):
         try:
             result = runtime.setup_providers(profile_id)
+            if isinstance(result.get("profile"), dict):
+                result = dict(result)
+                result["profile"] = profile_payload(result["profile"])
             return jsonify(result)
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -1154,6 +1353,9 @@ def create_manager_app(
     def api_setup_provider_session(profile_id):
         try:
             result = runtime.active_setup_session(profile_id)
+            if isinstance(result.get("profile"), dict):
+                result = dict(result)
+                result["profile"] = profile_payload(result["profile"])
             return jsonify(result)
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -1185,7 +1387,7 @@ def create_manager_app(
 
     @socketio.on("connect")
     def on_connect():
-        socketio.emit("manager:updated", {"profiles": registry.profiles()})
+        socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
 
     @socketio.on("manager:pty-input")
     def on_pty_input(payload):
