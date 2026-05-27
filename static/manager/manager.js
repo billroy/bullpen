@@ -59,11 +59,6 @@ createApp({
       return (profile && profile.observed && profile.observed.state) || 'unknown';
     }
 
-    function portText(profile) {
-      if (!profile || !profile.ports) return '';
-      return `Bullpen ${profile.ports.bullpen} / App ${profile.ports.app}`;
-    }
-
     function bullpenUrlFor(profile) {
       if (!profile || !profile.ports) return '';
       return `http://127.0.0.1:${profile.ports.bullpen}`;
@@ -90,32 +85,42 @@ createApp({
       const resources = deploymentInfo(profile).resources || {};
       const value = Number(resources.memoryMiB);
       if (!Number.isFinite(value) || value <= 0) return 'Not configured';
-      const amount = value >= 1024 ? `${(value / 1024).toFixed(value % 1024 === 0 ? 0 : 1)} GiB` : `${value} MiB`;
       const suffix = resources.source === 'host' ? ' detected on host' : '';
-      return `${amount}${suffix}`;
+      return `${value} MiB${suffix}`;
     }
 
-    function aiProvidersText(profile) {
-      const providers = deploymentInfo(profile).aiProviders || [];
-      if (!providers.length) return 'No AI workers configured';
-      return providers.map((provider) => {
-        const model = provider.model ? ` / ${provider.model}` : '';
-        const count = Number(provider.count) || 0;
-        return `${provider.label || provider.agent}${model} (${count})`;
-      }).join(', ');
+    function providerLabel(provider) {
+      const key = String(provider || '').trim().toLowerCase();
+      const labels = { claude: 'Claude', codex: 'Codex', git: 'Git' };
+      return labels[key] || key.replace(/(^|-)([a-z])/g, (_match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
     }
 
-    function gitText(profile) {
+    function providersText(profile) {
+      const providers = new Map();
+      const configured = profile && profile.auth && profile.auth.providers;
+      if (configured && typeof configured === 'object') {
+        Object.entries(configured).forEach(([provider, config]) => {
+          if (!config || config.enabled !== false) providers.set(provider.toLowerCase(), providerLabel(provider));
+        });
+      }
+      (deploymentInfo(profile).aiProviders || []).forEach((provider) => {
+        const agent = String(provider.agent || '').trim().toLowerCase();
+        if (agent) providers.set(agent, provider.label || providerLabel(agent));
+      });
       const git = deploymentInfo(profile).git || {};
-      if (git.error) return git.error;
-      const repositories = git.repositories || [];
-      if (!repositories.length) return 'No git repositories found';
-      return repositories.map((repo) => {
-        const branch = repo.branch || 'detached';
-        const hash = repo.shortHash ? ` @ ${repo.shortHash}` : '';
-        const status = repo.dirty ? 'dirty' : 'clean';
-        return `${repo.name}: ${branch}${hash} (${status})`;
-      }).join('; ');
+      if (!git.error && Array.isArray(git.repositories) && git.repositories.length) {
+        providers.set('git', 'Git');
+      }
+      if (!providers.size) return 'None configured';
+      const order = ['claude', 'codex', 'git'];
+      return Array.from(providers.entries())
+        .sort(([left], [right]) => {
+          const leftIndex = order.includes(left) ? order.indexOf(left) : order.length;
+          const rightIndex = order.includes(right) ? order.indexOf(right) : order.length;
+          return leftIndex - rightIndex || providers.get(left).localeCompare(providers.get(right));
+        })
+        .map(([, label]) => label)
+        .join(', ');
     }
 
     function urlFor(profile) {
@@ -587,11 +592,9 @@ createApp({
       stateLabel,
       showLogPanel,
       showSetupPanel,
-      portText,
       cpuText,
       memoryText,
-      aiProvidersText,
-      gitText,
+      providersText,
       baseSnapshotLabel,
       bullpenUrlFor,
       appUrlFor,
@@ -692,6 +695,7 @@ createApp({
                   </button>
                   <button class="danger" @click="deleteProfile(selected)">Delete</button>
                 </div>
+                <div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>
                 <div class="kv">
                   <strong>Bullpen</strong>
                   <a :href="bullpenUrlFor(selected)" target="_blank" rel="noopener">{{ bullpenUrlFor(selected) }}</a>
@@ -702,13 +706,10 @@ createApp({
                 </div>
                 <div class="kv"><strong>Workspace</strong><span>{{ selected.workspaceRoot }}</span></div>
                 <div class="kv"><strong>Home</strong><span>{{ selected.instanceHome }}</span></div>
-                <div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>
                 <div class="kv" v-if="selected.base"><strong>Base</strong><span>{{ selected.base }}</span></div>
                 <div class="kv"><strong>CPU</strong><span>{{ cpuText(selected) }}</span></div>
                 <div class="kv"><strong>Memory</strong><span>{{ memoryText(selected) }}</span></div>
-                <div class="kv"><strong>Configured AI</strong><span>{{ aiProvidersText(selected) }}</span></div>
-                <div class="kv"><strong>Git</strong><span>{{ gitText(selected) }}</span></div>
-                <div class="kv"><strong>Ports</strong><span>{{ portText(selected) }}</span></div>
+                <div class="kv"><strong>Providers</strong><span>{{ providersText(selected) }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.pid"><strong>PID</strong><span>{{ selected.observed.pid }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.lastError"><strong>Error</strong><span>{{ selected.observed.lastError }}</span></div>
               </div>

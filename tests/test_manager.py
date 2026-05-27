@@ -371,12 +371,19 @@ def test_manager_renders_selected_deployment_info_rows():
 
     assert "function cpuText(profile)" in manager_js
     assert "function memoryText(profile)" in manager_js
-    assert "function aiProvidersText(profile)" in manager_js
-    assert "function gitText(profile)" in manager_js
+    assert "function providersText(profile)" in manager_js
+    assert "`${value} MiB${suffix}`" in manager_js
+    assert "(deploymentInfo(profile).aiProviders || []).forEach" in manager_js
+    assert "providers.set('git', 'Git')" in manager_js
+    sandbox_index = manager_js.index('<div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>')
+    bullpen_index = manager_js.index('<strong>Bullpen</strong>')
+    assert sandbox_index < bullpen_index
     assert '<div class="kv"><strong>CPU</strong><span>{{ cpuText(selected) }}</span></div>' in manager_js
     assert '<div class="kv"><strong>Memory</strong><span>{{ memoryText(selected) }}</span></div>' in manager_js
-    assert '<div class="kv"><strong>Configured AI</strong><span>{{ aiProvidersText(selected) }}</span></div>' in manager_js
-    assert '<div class="kv"><strong>Git</strong><span>{{ gitText(selected) }}</span></div>' in manager_js
+    assert '<div class="kv"><strong>Providers</strong><span>{{ providersText(selected) }}</span></div>' in manager_js
+    assert '<strong>Configured AI</strong>' not in manager_js
+    assert '<div class="kv"><strong>Git</strong>' not in manager_js
+    assert '<div class="kv"><strong>Ports</strong>' not in manager_js
     assert ".kv span" in manager_css
     assert "overflow-wrap: anywhere;" in manager_css
 
