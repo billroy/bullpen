@@ -170,6 +170,19 @@ def test_manager_filters_xterm_protocol_replies_before_pty_input():
     assert "if (input) socketRef.value.emit('manager:pty-input'" in manager_js
 
 
+def test_manager_keeps_provider_setup_to_single_live_terminal():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+
+    assert "function startSetupLogPolling" not in manager_js
+    assert "function catchUpSetupOutput" in manager_js
+    assert "appendSetupOutput(nextOutput.slice(state.setupOutput.length))" in manager_js
+    assert "await replayTerminal();" not in manager_js[
+        manager_js.index("async function syncSetupLog") : manager_js.index("function sendSetupResponse")
+    ]
+    assert '<div class="panel" v-if="showLogPanel(selected)">' in manager_js
+    assert "return Boolean(profile && profile.runtime !== 'microsandbox');" in manager_js
+
+
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"

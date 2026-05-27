@@ -21,7 +21,7 @@ createApp({
     const terminal = ref(null);
     const terminalDataDisposable = ref(null);
     const terminalProtocolReplyBuffer = ref('');
-    const setupLogPoll = ref(null);
+    const setupCatchupPoll = ref(null);
 
     const form = reactive({
       displayName: 'Local Bullpen',
@@ -59,7 +59,7 @@ createApp({
       state.setupExit = '';
       state.copyNotice = '';
       resetTerminal();
-      stopSetupLogPolling();
+      stopSetupCatchupPolling();
     }
 
     function hasActiveSetupSession(profile) {
@@ -70,6 +70,10 @@ createApp({
         && state.setupProfileId === profile.id
         && !state.setupExit
       );
+    }
+
+    function showLogPanel(profile) {
+      return Boolean(profile && profile.runtime !== 'microsandbox');
     }
 
     function stripTerminalControlCodes(text) {
@@ -140,7 +144,7 @@ createApp({
           state.selectedId = state.profiles[0].id;
         }
         if (selected.value) {
-          await loadLogs(selected.value.id);
+          if (showLogPanel(selected.value)) await loadLogs(selected.value.id);
           await syncSetupSession(selected.value);
         }
       } catch (err) {
@@ -209,7 +213,7 @@ createApp({
       state.setupExit = '';
       state.copyNotice = '';
       disposeTerminal();
-      stopSetupLogPolling();
+      stopSetupCatchupPolling();
       try {
         const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
         state.setupSessionId = data.sessionId;
@@ -219,9 +223,9 @@ createApp({
           if (index >= 0) state.profiles[index] = data.profile;
         }
         const logData = await api(`/api/profiles/${profile.id}/logs`);
-        state.setupOutput = logData.text || state.setupOutput;
-        await replayTerminal();
-        startSetupLogPolling();
+        await replaceSetupOutput(logData.text || state.setupOutput);
+        startSetupCatchupPolling();
+        await catchUpSetupOutput(profile);
         focusSetupInput();
       } catch (err) {
         state.error = err.message;
@@ -234,19 +238,24 @@ createApp({
       if (!profile || profile.runtime !== 'microsandbox') return;
       if (stateLabel(profile) !== 'setup-running') {
         if (state.setupProfileId === profile.id) resetSetupState();
-        stopSetupLogPolling();
+        stopSetupCatchupPolling();
         return;
       }
-      if (state.setupProfileId === profile.id && state.setupSessionId) return;
+      if (state.setupProfileId === profile.id && state.setupSessionId) {
+        startSetupCatchupPolling();
+        await catchUpSetupOutput(profile);
+        return;
+      }
       try {
         const data = await api(`/api/profiles/${profile.id}/setup-providers/session`);
         state.setupSessionId = data.sessionId || '';
         state.setupProfileId = profile.id;
         state.setupExit = data.sessionId ? '' : 'Setup input channel unavailable';
         const logData = await api(`/api/profiles/${profile.id}/logs`);
-        state.setupOutput = logData.text || state.setupOutput;
-        await replayTerminal();
-        startSetupLogPolling();
+        await replaceSetupOutput(logData.text || state.setupOutput);
+        startSetupCatchupPolling();
+        await catchUpSetupOutput(profile);
+        focusSetupInput();
       } catch (err) {
         state.error = err.message;
       }
@@ -260,8 +269,8 @@ createApp({
         disableStdin: false,
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
         fontSize: 12,
-        rows: 22,
-        scrollback: 4000,
+        rows: 30,
+        scrollback: 8000,
         theme: {
           background: '#090b10',
           foreground: '#c8ccd4',
@@ -300,6 +309,18 @@ createApp({
       if (terminal.value && state.setupOutput) terminal.value.write(restorePseudoAnsi(state.setupOutput));
     }
 
+    async function replaceSetupOutput(text) {
+      state.setupOutput = text || '';
+      await replayTerminal();
+    }
+
+    function appendSetupOutput(text) {
+      if (!text) return;
+      if (text.length > 16 && state.setupOutput.endsWith(text)) return;
+      state.setupOutput += text;
+      writeTerminal(text);
+    }
+
     function writeTerminal(text) {
       if (!text) return;
       ensureTerminal().then(() => {
@@ -307,39 +328,48 @@ createApp({
       });
     }
 
-    async function syncSetupLog(profile = selected.value) {
-      if (!profile || profile.runtime !== 'microsandbox') return;
+    async function catchUpSetupOutput(profile = selected.value) {
+      if (!profile || profile.runtime !== 'microsandbox' || stateLabel(profile) !== 'setup-running') return;
       try {
         const data = await api(`/api/profiles/${profile.id}/logs`);
-        state.logs = data.text || '';
-        if (stateLabel(profile) === 'setup-running') {
-          const nextOutput = data.text || '';
-          if (nextOutput && nextOutput !== state.setupOutput) {
-            state.setupOutput = nextOutput;
-            await replayTerminal();
-          }
+        const nextOutput = data.text || '';
+        if (!nextOutput || nextOutput === state.setupOutput) return;
+        if (nextOutput.startsWith(state.setupOutput)) {
+          appendSetupOutput(nextOutput.slice(state.setupOutput.length));
+          return;
         }
+        await replaceSetupOutput(nextOutput);
       } catch (_err) {
         // The regular profile refresh path surfaces connection errors.
       }
     }
 
-    function startSetupLogPolling() {
-      if (setupLogPoll.value) return;
-      setupLogPoll.value = window.setInterval(() => {
-        const profile = selected.value;
-        if (!profile || stateLabel(profile) !== 'setup-running') {
-          stopSetupLogPolling();
-          return;
-        }
-        syncSetupLog(profile);
-      }, 1500);
+    async function syncSetupLog(profile = selected.value) {
+      if (!profile || !showLogPanel(profile)) return;
+      try {
+        const data = await api(`/api/profiles/${profile.id}/logs`);
+        state.logs = data.text || '';
+      } catch (_err) {
+        // The regular profile refresh path surfaces connection errors.
+      }
     }
 
-    function stopSetupLogPolling() {
-      if (!setupLogPoll.value) return;
-      window.clearInterval(setupLogPoll.value);
-      setupLogPoll.value = null;
+    function startSetupCatchupPolling() {
+      if (setupCatchupPoll.value) return;
+      setupCatchupPoll.value = window.setInterval(() => {
+        const profile = selected.value;
+        if (!profile || stateLabel(profile) !== 'setup-running') {
+          stopSetupCatchupPolling();
+          return;
+        }
+        catchUpSetupOutput(profile);
+      }, 1000);
+    }
+
+    function stopSetupCatchupPolling() {
+      if (!setupCatchupPoll.value) return;
+      window.clearInterval(setupCatchupPoll.value);
+      setupCatchupPoll.value = null;
     }
 
     function sendSetupResponse(response) {
@@ -404,21 +434,19 @@ createApp({
       socket.on('manager:updated', (payload) => {
         state.profiles = payload.profiles || [];
         if (selected.value) {
-          syncSetupLog(selected.value);
           syncSetupSession(selected.value);
         }
       });
       socket.on('manager:pty-output', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
         const text = payload.text || '';
-        state.setupOutput += text;
-        writeTerminal(text);
+        appendSetupOutput(text);
       });
       socket.on('manager:pty-exit', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
         state.setupExit = `Provider setup exited with ${payload.returncode}`;
-        stopSetupLogPolling();
-        if (selected.value) loadLogs(selected.value.id);
+        stopSetupCatchupPolling();
+        if (selected.value && showLogPanel(selected.value)) loadLogs(selected.value.id);
       });
       socket.on('manager:error', (payload) => {
         state.error = (payload && payload.error) || 'Manager error';
@@ -429,7 +457,9 @@ createApp({
       if (!profile) return;
       syncSetupLog(profile);
       syncSetupSession(profile);
-      nextTick(() => replayTerminal());
+      if (profile.runtime === 'microsandbox' && !hasActiveSetupSession(profile)) {
+        nextTick(() => replayTerminal());
+      }
     });
 
     return {
@@ -439,6 +469,7 @@ createApp({
       setupAuth,
       setupPrompt,
       stateLabel,
+      showLogPanel,
       portText,
       urlFor,
       refresh,
@@ -525,7 +556,7 @@ createApp({
               :key="profile.id"
               class="instance-row"
               :class="{ active: selected && selected.id === profile.id }"
-              @click="state.selectedId = profile.id; loadLogs(profile.id); syncSetupSession(profile)"
+              @click="state.selectedId = profile.id; if (showLogPanel(profile)) loadLogs(profile.id); syncSetupSession(profile)"
             >
               <span class="instance-name">{{ profile.displayName }}</span>
               <span class="instance-meta">{{ profile.runtime }} / {{ portText(profile) }}</span>
@@ -605,7 +636,7 @@ createApp({
               </div>
             </div>
 
-            <div class="panel">
+            <div class="panel" v-if="showLogPanel(selected)">
               <div class="panel-header">
                 <div class="panel-title">Logs</div>
                 <button @click="loadLogs(selected.id); syncSetupLog(selected)">Reload Logs</button>
