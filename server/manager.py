@@ -429,6 +429,7 @@ class MicrosandboxRuntimeController:
         self.registry = registry
         self.socketio = socketio
         self._lock = threading.RLock()
+        self._processes: dict[str, subprocess.Popen] = {}
 
     def build_argv(self, profile: dict[str, Any]) -> list[str]:
         workspace = Path(profile.get("workspaceRoot") or "").expanduser()
@@ -470,6 +471,9 @@ class MicrosandboxRuntimeController:
             profile = self.registry.get(profile_id)
             if profile.get("runtime") != "microsandbox":
                 raise ManagerError("Microsandbox controller can only start microsandbox profiles")
+            process = self._processes.get(profile_id)
+            if process and process.poll() is None:
+                return _mark_profile_observed(self.registry, profile, state="starting", desired_state="running")
             ports = profile.get("ports") or {}
             bullpen_port = int(ports.get("bullpen") or DEFAULT_BULLPEN_PORT)
             if is_port_listening(bullpen_port) and not wait_for_http_health(bullpen_port, timeout_seconds=1.0):
@@ -490,36 +494,12 @@ class MicrosandboxRuntimeController:
             self._emit_update()
             env = os.environ.copy()
             env["BULLPEN_MANAGER_PROFILE_ID"] = profile_id
-            with open(log_path, "a", encoding="utf-8") as log_file:
-                log_file.write(f"\n[{now_ts()}] {' '.join(self._redacted_argv(argv))}\n")
-                result = subprocess.run(
-                    argv,
-                    cwd=str(repo_root()),
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                    check=False,
-                )
-            if result.returncode != 0:
-                profile = _mark_profile_observed(
-                    self.registry,
-                    profile,
-                    state="needs-attention",
-                    log_path=str(log_path),
-                    last_error=f"deploy-sandbox.py exited with {result.returncode}",
-                    desired_state="running",
-                )
-                self._emit_update()
-                raise ManagerError(f"Microsandbox deploy failed; see {log_path}")
-            state = "healthy" if wait_for_http_health(bullpen_port, timeout_seconds=8) else "unhealthy"
-            profile = _mark_profile_observed(
-                self.registry,
-                profile,
-                state=state,
-                log_path=str(log_path),
-                desired_state="running",
+            thread = threading.Thread(
+                target=self._deploy_background,
+                args=(profile_id, argv, env, log_path, bullpen_port),
+                daemon=True,
             )
-            self._emit_update()
+            thread.start()
             return profile
 
     def stop(self, profile_id: str) -> dict[str, Any]:
@@ -527,6 +507,9 @@ class MicrosandboxRuntimeController:
             profile = self.registry.get(profile_id)
             if profile.get("runtime") != "microsandbox":
                 raise ManagerError("Microsandbox controller can only stop microsandbox profiles")
+            process = self._processes.pop(profile_id, None)
+            if process and process.poll() is None:
+                self._terminate_process(process)
             try:
                 self._stop_sandbox(str(profile.get("sandboxName") or profile_id))
             except Exception as exc:
@@ -571,6 +554,91 @@ class MicrosandboxRuntimeController:
             updated.append(profile)
         self._emit_update()
         return updated
+
+    def _deploy_background(
+        self,
+        profile_id: str,
+        argv: list[str],
+        env: dict[str, str],
+        log_path: Path,
+        bullpen_port: int,
+    ) -> None:
+        try:
+            with open(log_path, "a", encoding="utf-8") as log_file:
+                log_file.write(f"\n[{now_ts()}] {' '.join(self._redacted_argv(argv))}\n")
+                process = subprocess.Popen(
+                    argv,
+                    cwd=str(repo_root()),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    start_new_session=True,
+                )
+                self._processes[profile_id] = process
+                returncode = process.wait()
+            profile = self.registry.get(profile_id)
+            self._processes.pop(profile_id, None)
+            if profile.get("desiredState") == "stopped":
+                _mark_profile_observed(
+                    self.registry,
+                    profile,
+                    state="stopped",
+                    log_path=str(log_path),
+                    desired_state="stopped",
+                )
+                self._emit_update()
+                return
+            if returncode != 0:
+                _mark_profile_observed(
+                    self.registry,
+                    profile,
+                    state="needs-attention",
+                    log_path=str(log_path),
+                    last_error=f"deploy-sandbox.py exited with {returncode}",
+                    desired_state="running",
+                )
+                self._emit_update()
+                return
+            state = "healthy" if wait_for_http_health(bullpen_port, timeout_seconds=8) else "unhealthy"
+            _mark_profile_observed(
+                self.registry,
+                profile,
+                state=state,
+                log_path=str(log_path),
+                desired_state="running",
+            )
+            self._emit_update()
+        except Exception as exc:
+            try:
+                profile = self.registry.get(profile_id)
+                _mark_profile_observed(
+                    self.registry,
+                    profile,
+                    state="needs-attention",
+                    log_path=str(log_path),
+                    last_error=str(exc),
+                    desired_state="running",
+                )
+                self._emit_update()
+            except Exception:
+                pass
+
+    def _terminate_process(self, process: subprocess.Popen) -> None:
+        if process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                return
+            time.sleep(0.1)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
     def _stop_sandbox(self, sandbox_name: str) -> None:
         module = _load_deploy_sandbox_module()
@@ -769,6 +837,10 @@ def create_manager_app(
     @app.route("/health")
     def health():
         return jsonify({"ok": True})
+
+    @app.route("/favicon.ico")
+    def favicon():
+        return ("", 204)
 
     @app.route("/api/profiles", methods=["GET"])
     def api_profiles():

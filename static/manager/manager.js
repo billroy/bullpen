@@ -8,6 +8,7 @@ createApp({
       loading: false,
       error: '',
       logs: '',
+      actionBusy: '',
     });
 
     const form = reactive({
@@ -92,11 +93,14 @@ createApp({
     async function action(profile, name) {
       if (!profile) return;
       state.error = '';
+      state.actionBusy = `${profile.id}:${name}`;
       try {
         await api(`/api/profiles/${profile.id}/${name}`, { method: 'POST', body: '{}' });
         await refresh();
       } catch (err) {
         state.error = err.message;
+      } finally {
+        state.actionBusy = '';
       }
     }
 
@@ -239,9 +243,11 @@ createApp({
               </div>
               <div class="create-form">
                 <div class="actions">
-                  <button class="primary" @click="action(selected, 'start')">Start</button>
-                  <button @click="action(selected, 'stop')">Stop</button>
-                  <button @click="action(selected, 'restart')">Restart</button>
+                  <button class="primary" @click="action(selected, 'start')" :disabled="state.actionBusy === selected.id + ':start'">
+                    {{ state.actionBusy === selected.id + ':start' ? 'Starting...' : 'Start' }}
+                  </button>
+                  <button @click="action(selected, 'stop')" :disabled="state.actionBusy === selected.id + ':stop'">Stop</button>
+                  <button @click="action(selected, 'restart')" :disabled="state.actionBusy === selected.id + ':restart'">Restart</button>
                   <button @click="openInstance(selected)">Open</button>
                   <button class="danger" @click="deleteProfile(selected)">Delete</button>
                 </div>

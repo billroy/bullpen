@@ -141,6 +141,14 @@ def test_manager_api_create_profile(tmp_path):
     assert list_response.get_json()["profiles"][0]["id"] == "api-instance"
 
 
+def test_manager_serves_empty_favicon(tmp_path):
+    app, _socketio = create_manager_app(home=tmp_path / "manager")
+
+    response = app.test_client().get("/favicon.ico")
+
+    assert response.status_code == 204
+
+
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
@@ -172,8 +180,23 @@ def test_microsandbox_runtime_builds_deploy_command(tmp_path):
 
 
 def test_microsandbox_start_runs_deploy_and_sets_state(tmp_path, monkeypatch):
-    class FakeResult:
-        returncode = 0
+    class FakeProcess:
+        pid = 4343
+
+        def wait(self):
+            return 0
+
+        def poll(self):
+            return 0
+
+    class ImmediateThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
 
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
@@ -190,13 +213,45 @@ def test_microsandbox_start_runs_deploy_and_sets_state(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(manager_mod, "is_port_listening", lambda *args, **kwargs: False)
     monkeypatch.setattr(manager_mod, "wait_for_http_health", lambda *args, **kwargs: True)
-    monkeypatch.setattr(manager_mod.subprocess, "run", lambda argv, **kwargs: calls.append(argv) or FakeResult())
+    monkeypatch.setattr(manager_mod.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(manager_mod.subprocess, "Popen", lambda argv, **kwargs: calls.append(argv) or FakeProcess())
 
     started = MicrosandboxRuntimeController(registry).start(profile["id"])
 
     assert calls
     assert started["desiredState"] == "running"
-    assert started["observed"]["state"] == "healthy"
+    assert registry.get(profile["id"])["observed"]["state"] == "healthy"
+
+
+def test_microsandbox_start_returns_starting_before_background_finishes(tmp_path, monkeypatch):
+    class DeferredThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            return None
+
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+        },
+    )
+    monkeypatch.setattr(manager_mod, "is_port_listening", lambda *args, **kwargs: False)
+    monkeypatch.setattr(manager_mod.threading, "Thread", DeferredThread)
+
+    started = MicrosandboxRuntimeController(registry).start(profile["id"])
+
+    assert started["desiredState"] == "running"
+    assert started["observed"]["state"] == "starting"
 
 
 def test_local_runtime_builds_bullpen_command(tmp_path):
