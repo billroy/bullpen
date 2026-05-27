@@ -155,6 +155,7 @@ def deployment_info(profile: dict[str, Any]) -> dict[str, Any]:
     return {
         "resources": resource_info(profile),
         "aiProviders": configured_ai_providers(workspace),
+        "providerAuth": provider_auth_info(profile),
         "git": git_info(workspace),
     }
 
@@ -208,6 +209,63 @@ def configured_ai_providers(workspace_root: Path) -> list[dict[str, Any]]:
             if workspace_name not in item["workspaces"]:
                 item["workspaces"].append(workspace_name)
     return sorted(provider_models.values(), key=lambda item: (item["agent"], item["model"]))
+
+
+def provider_auth_info(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    home = provider_home(profile)
+    return {
+        "claude": {
+            "label": "Claude",
+            "authenticated": claude_credentials_authenticated(home),
+        },
+        "codex": {
+            "label": "Codex",
+            "authenticated": codex_credentials_authenticated(home),
+        },
+        "git": {
+            "label": "Git",
+            "authenticated": git_credentials_authenticated(home),
+        },
+    }
+
+
+def provider_home(profile: dict[str, Any]) -> Path:
+    if profile.get("runtime") == "local":
+        return Path.home()
+    return Path(profile.get("sandboxHome") or profile.get("instanceHome") or "").expanduser()
+
+
+def claude_credentials_authenticated(home: Path) -> bool:
+    try:
+        data = read_json(str(home / ".claude" / ".credentials.json"))
+    except Exception:
+        return False
+    oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
+    return isinstance(oauth, dict) and bool(oauth.get("accessToken") or oauth.get("refreshToken"))
+
+
+def codex_credentials_authenticated(home: Path) -> bool:
+    try:
+        data = read_json(str(home / ".codex" / "auth.json"))
+    except Exception:
+        return False
+    return isinstance(data, dict) and bool(data)
+
+
+def git_credentials_authenticated(home: Path) -> bool:
+    gh_hosts = home / ".config" / "gh" / "hosts.yml"
+    git_config = home / ".gitconfig"
+    try:
+        hosts_text = gh_hosts.read_text(encoding="utf-8")
+        git_config_text = git_config.read_text(encoding="utf-8")
+    except Exception:
+        return False
+    return (
+        "github.com" in hosts_text
+        and "oauth_token:" in hosts_text
+        and "name =" in git_config_text
+        and "email =" in git_config_text
+    )
 
 
 def git_info(workspace_root: Path) -> dict[str, Any]:

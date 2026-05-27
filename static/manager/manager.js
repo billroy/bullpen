@@ -97,20 +97,27 @@ createApp({
 
     function providersText(profile) {
       const providers = new Map();
+      const allowed = new Set(['claude', 'codex', 'git']);
+      const auth = deploymentInfo(profile).providerAuth || {};
       const configured = profile && profile.auth && profile.auth.providers;
       if (configured && typeof configured === 'object') {
         Object.entries(configured).forEach(([provider, config]) => {
-          if (!config || config.enabled !== false) providers.set(provider.toLowerCase(), providerLabel(provider));
+          const key = String(provider || '').trim().toLowerCase();
+          if (allowed.has(key) && (!config || config.enabled !== false)) providers.set(key, providerLabel(key));
         });
       }
       (deploymentInfo(profile).aiProviders || []).forEach((provider) => {
         const agent = String(provider.agent || '').trim().toLowerCase();
-        if (agent) providers.set(agent, provider.label || providerLabel(agent));
+        if (allowed.has(agent)) providers.set(agent, provider.label || providerLabel(agent));
       });
       const git = deploymentInfo(profile).git || {};
       if (!git.error && Array.isArray(git.repositories) && git.repositories.length) {
         providers.set('git', 'Git');
       }
+      Object.entries(auth).forEach(([provider, status]) => {
+        const key = String(provider || '').trim().toLowerCase();
+        if (allowed.has(key)) providers.set(key, (status && status.label) || providerLabel(key));
+      });
       if (!providers.size) return 'None configured';
       const order = ['claude', 'codex', 'git'];
       return Array.from(providers.entries())
@@ -119,7 +126,10 @@ createApp({
           const rightIndex = order.includes(right) ? order.indexOf(right) : order.length;
           return leftIndex - rightIndex || providers.get(left).localeCompare(providers.get(right));
         })
-        .map(([, label]) => label)
+        .map(([key, label]) => {
+          const authenticated = Boolean(auth[key] && auth[key].authenticated);
+          return `${label}: ${authenticated ? 'authenticated' : 'not authenticated'}`;
+        })
         .join(', ');
     }
 

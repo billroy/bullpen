@@ -105,6 +105,39 @@ def test_create_microsandbox_profile(tmp_path):
     assert profile["resources"] == {"vcpus": 6, "memoryMiB": 8192}
 
 
+def test_microsandbox_deployment_info_reports_provider_auth_status(tmp_path):
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+        },
+    )
+
+    info = manager_mod.deployment_info(profile)
+    assert info["providerAuth"]["claude"]["authenticated"] is False
+    assert info["providerAuth"]["codex"]["authenticated"] is False
+    assert info["providerAuth"]["git"]["authenticated"] is False
+
+    home = Path(profile["sandboxHome"])
+    write_json(str(home / ".claude" / ".credentials.json"), {"claudeAiOauth": {"refreshToken": "token"}})
+    write_json(str(home / ".codex" / "auth.json"), {"OPENAI_API_KEY": "token"})
+    (home / ".config" / "gh").mkdir(parents=True)
+    (home / ".config" / "gh" / "hosts.yml").write_text("github.com:\n  oauth_token: token\n", encoding="utf-8")
+    (home / ".gitconfig").write_text("[user]\n\tname = Bullpen\n\temail = bullpen@example.test\n", encoding="utf-8")
+
+    info = manager_mod.deployment_info(profile)
+    assert info["providerAuth"]["claude"]["authenticated"] is True
+    assert info["providerAuth"]["codex"]["authenticated"] is True
+    assert info["providerAuth"]["git"]["authenticated"] is True
+
+
 def test_create_microsandbox_profile_uses_selected_base_snapshot(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
@@ -373,8 +406,13 @@ def test_manager_renders_selected_deployment_info_rows():
     assert "function memoryText(profile)" in manager_js
     assert "function providersText(profile)" in manager_js
     assert "`${value} MiB${suffix}`" in manager_js
+    assert "const allowed = new Set(['claude', 'codex', 'git']);" in manager_js
+    assert "deploymentInfo(profile).providerAuth || {}" in manager_js
     assert "(deploymentInfo(profile).aiProviders || []).forEach" in manager_js
+    assert "if (allowed.has(agent)) providers.set(agent, provider.label || providerLabel(agent));" in manager_js
     assert "providers.set('git', 'Git')" in manager_js
+    assert "${authenticated ? 'authenticated' : 'not authenticated'}" in manager_js
+    assert "Gemini" not in manager_js
     sandbox_index = manager_js.index('<div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>')
     bullpen_index = manager_js.index('<strong>Bullpen</strong>')
     assert sandbox_index < bullpen_index
