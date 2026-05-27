@@ -46,6 +46,24 @@ createApp({
       return `http://127.0.0.1:${profile.ports.bullpen}`;
     }
 
+    function resetSetupState() {
+      state.setupSessionId = '';
+      state.setupProfileId = '';
+      state.setupOutput = '';
+      state.setupInput = '';
+      state.setupExit = '';
+    }
+
+    function hasActiveSetupSession(profile) {
+      return Boolean(
+        profile
+        && stateLabel(profile) === 'setup-running'
+        && state.setupSessionId
+        && state.setupProfileId === profile.id
+        && !state.setupExit
+      );
+    }
+
     async function api(path, options = {}) {
       const response = await fetch(path, {
         headers: { 'Content-Type': 'application/json' },
@@ -120,6 +138,7 @@ createApp({
       try {
         await api(`/api/profiles/${profile.id}`, { method: 'DELETE' });
         state.selectedId = null;
+        resetSetupState();
         await refresh();
       } catch (err) {
         state.error = err.message;
@@ -155,10 +174,7 @@ createApp({
     async function syncSetupSession(profile) {
       if (!profile || profile.runtime !== 'microsandbox') return;
       if (stateLabel(profile) !== 'setup-running') {
-        if (state.setupProfileId === profile.id && !state.setupExit) {
-          state.setupSessionId = '';
-          state.setupProfileId = '';
-        }
+        if (state.setupProfileId === profile.id) resetSetupState();
         return;
       }
       if (state.setupProfileId === profile.id && state.setupSessionId) return;
@@ -201,7 +217,7 @@ createApp({
 
     function setupStatusText(profile) {
       if (state.setupExit && state.setupProfileId === profile.id) return state.setupExit;
-      if (state.setupSessionId && state.setupProfileId === profile.id) return 'Interactive session active';
+      if (hasActiveSetupSession(profile)) return 'Interactive session active';
       if (stateLabel(profile) === 'setup-running') return 'Reconnecting to setup session';
       return 'No setup session active';
     }
@@ -267,6 +283,7 @@ createApp({
       pasteIntoSetupInput,
       focusSetupInput,
       setupStatusText,
+      hasActiveSetupSession,
       setupInputRef,
       deleteProfile,
       loadLogs,
@@ -370,9 +387,9 @@ createApp({
                   <button
                     v-if="selected.runtime === 'microsandbox'"
                     @click="setupProviders(selected)"
-                    :disabled="state.setupBusy || (state.setupSessionId && state.setupProfileId === selected.id && !state.setupExit)"
+                    :disabled="state.setupBusy || hasActiveSetupSession(selected)"
                   >
-                    {{ state.setupBusy || (state.setupSessionId && state.setupProfileId === selected.id && !state.setupExit) ? 'Setting Up...' : 'Setup Providers' }}
+                    {{ state.setupBusy || hasActiveSetupSession(selected) ? 'Setting Up...' : 'Setup Providers' }}
                   </button>
                   <button class="danger" @click="deleteProfile(selected)">Delete</button>
                 </div>
