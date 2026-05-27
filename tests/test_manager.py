@@ -259,6 +259,41 @@ def test_microsandbox_start_returns_starting_before_background_finishes(tmp_path
     assert started["observed"]["state"] == "starting"
 
 
+def test_microsandbox_active_setup_session_reconnects_to_running_pty(tmp_path):
+    class FakeProcess:
+        pid = 5151
+
+        def poll(self):
+            return None
+
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+        },
+    )
+    controller = MicrosandboxRuntimeController(registry)
+    controller._pty_sessions["session-1"] = {
+        "profile_id": profile["id"],
+        "master_fd": 123,
+        "process": FakeProcess(),
+        "log_path": str(tmp_path / "provider-setup.log"),
+        "bullpen_port": 8080,
+    }
+
+    active = controller.active_setup_session(profile["id"])
+
+    assert active["sessionId"] == "session-1"
+    assert active["profile"]["id"] == profile["id"]
+    assert active["logPath"].endswith("provider-setup.log")
+
+
 def test_local_runtime_builds_bullpen_command(tmp_path):
     from server.manager import LocalRuntimeController
 

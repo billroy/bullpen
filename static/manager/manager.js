@@ -1,4 +1,4 @@
-const { createApp, computed, onMounted, reactive, ref } = Vue;
+const { createApp, computed, onMounted, reactive, ref, watch } = Vue;
 
 createApp({
   setup() {
@@ -17,6 +17,7 @@ createApp({
       setupExit: '',
     });
     const socketRef = ref(null);
+    const setupInputRef = ref(null);
 
     const form = reactive({
       displayName: 'Local Bullpen',
@@ -68,6 +69,7 @@ createApp({
         }
         if (selected.value) {
           await loadLogs(selected.value.id);
+          await syncSetupSession(selected.value);
         }
       } catch (err) {
         state.error = err.message;
@@ -150,6 +152,28 @@ createApp({
       }
     }
 
+    async function syncSetupSession(profile) {
+      if (!profile || profile.runtime !== 'microsandbox') return;
+      if (stateLabel(profile) !== 'setup-running') {
+        if (state.setupProfileId === profile.id && !state.setupExit) {
+          state.setupSessionId = '';
+          state.setupProfileId = '';
+        }
+        return;
+      }
+      if (state.setupProfileId === profile.id && state.setupSessionId) return;
+      try {
+        const data = await api(`/api/profiles/${profile.id}/setup-providers/session`);
+        state.setupSessionId = data.sessionId || '';
+        state.setupProfileId = profile.id;
+        state.setupExit = data.sessionId ? '' : 'Setup input channel unavailable';
+        const logData = await api(`/api/profiles/${profile.id}/logs`);
+        state.setupOutput = logData.text || state.setupOutput;
+      } catch (err) {
+        state.error = err.message;
+      }
+    }
+
     function sendSetupInput() {
       if (!state.setupSessionId || !socketRef.value) return;
       socketRef.value.emit('manager:pty-input', {
@@ -157,6 +181,29 @@ createApp({
         data: `${state.setupInput}\n`,
       });
       state.setupInput = '';
+    }
+
+    function pasteIntoSetupInput(event) {
+      if (!event || !event.clipboardData) return;
+      const text = event.clipboardData.getData('text');
+      if (!text) return;
+      state.setupInput += text;
+      setTimeout(() => {
+        if (setupInputRef.value) setupInputRef.value.focus();
+      }, 0);
+    }
+
+    function focusSetupInput() {
+      if (setupInputRef.value && state.setupSessionId && !state.setupExit) {
+        setupInputRef.value.focus();
+      }
+    }
+
+    function setupStatusText(profile) {
+      if (state.setupExit && state.setupProfileId === profile.id) return state.setupExit;
+      if (state.setupSessionId && state.setupProfileId === profile.id) return 'Interactive session active';
+      if (stateLabel(profile) === 'setup-running') return 'Reconnecting to setup session';
+      return 'No setup session active';
     }
 
     async function loadLogs(profileId) {
@@ -179,7 +226,10 @@ createApp({
       socketRef.value = socket;
       socket.on('manager:updated', (payload) => {
         state.profiles = payload.profiles || [];
-        if (selected.value) loadLogs(selected.value.id);
+        if (selected.value) {
+          loadLogs(selected.value.id);
+          syncSetupSession(selected.value);
+        }
       });
       socket.on('manager:pty-output', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
@@ -195,6 +245,12 @@ createApp({
       });
     });
 
+    watch(selected, (profile) => {
+      if (!profile) return;
+      loadLogs(profile.id);
+      syncSetupSession(profile);
+    });
+
     return {
       state,
       form,
@@ -206,7 +262,12 @@ createApp({
       createProfile,
       action,
       setupProviders,
+      syncSetupSession,
       sendSetupInput,
+      pasteIntoSetupInput,
+      focusSetupInput,
+      setupStatusText,
+      setupInputRef,
       deleteProfile,
       loadLogs,
       openInstance,
@@ -277,7 +338,7 @@ createApp({
               :key="profile.id"
               class="instance-row"
               :class="{ active: selected && selected.id === profile.id }"
-              @click="state.selectedId = profile.id; loadLogs(profile.id)"
+              @click="state.selectedId = profile.id; loadLogs(profile.id); syncSetupSession(profile)"
             >
               <span class="instance-name">{{ profile.displayName }}</span>
               <span class="instance-meta">{{ profile.runtime }} / {{ portText(profile) }}</span>
@@ -309,9 +370,9 @@ createApp({
                   <button
                     v-if="selected.runtime === 'microsandbox'"
                     @click="setupProviders(selected)"
-                    :disabled="state.setupBusy || stateLabel(selected) === 'setup-running'"
+                    :disabled="state.setupBusy || (state.setupSessionId && state.setupProfileId === selected.id && !state.setupExit)"
                   >
-                    {{ state.setupBusy || stateLabel(selected) === 'setup-running' ? 'Setting Up...' : 'Setup Providers' }}
+                    {{ state.setupBusy || (state.setupSessionId && state.setupProfileId === selected.id && !state.setupExit) ? 'Setting Up...' : 'Setup Providers' }}
                   </button>
                   <button class="danger" @click="deleteProfile(selected)">Delete</button>
                 </div>
@@ -330,17 +391,25 @@ createApp({
               <div class="panel-header">
                 <div>
                   <div class="panel-title">Provider Setup</div>
-                  <div class="instance-meta">{{ state.setupExit || (state.setupSessionId ? 'Interactive session active' : 'No setup session active') }}</div>
+                  <div class="instance-meta">{{ setupStatusText(selected) }}</div>
                 </div>
               </div>
               <div class="terminal-panel">
-                <pre class="log-box terminal-box">{{ state.setupOutput || 'Press Setup Providers to run Claude, Codex, and Git setup in an interactive sandbox terminal.' }}</pre>
+                <pre
+                  class="log-box terminal-box"
+                  tabindex="0"
+                  @click="focusSetupInput"
+                  @paste.prevent="pasteIntoSetupInput"
+                >{{ state.setupOutput || 'Press Setup Providers to run Claude, Codex, and Git setup in an interactive sandbox terminal.' }}</pre>
                 <form class="terminal-input" @submit.prevent="sendSetupInput">
-                  <input
+                  <textarea
+                    ref="setupInputRef"
                     v-model="state.setupInput"
                     :disabled="!state.setupSessionId || !!state.setupExit"
-                    placeholder="Type a response and press Enter"
-                  >
+                    placeholder="Paste code or type a response"
+                    rows="2"
+                    @keydown.enter.exact.prevent="sendSetupInput"
+                  ></textarea>
                   <button type="submit" :disabled="!state.setupSessionId || !!state.setupExit">Send</button>
                 </form>
               </div>

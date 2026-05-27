@@ -29,7 +29,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -67,7 +68,8 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -266,6 +268,14 @@ select {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
+  align-items: stretch;
+}
+
+.terminal-input textarea {
+  min-height: 44px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
 }
 
 .empty {

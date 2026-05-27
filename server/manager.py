@@ -511,10 +511,9 @@ class MicrosandboxRuntimeController:
             profile = self.registry.get(profile_id)
             if profile.get("runtime") != "microsandbox":
                 raise ManagerError("Provider setup is only available for microsandbox profiles")
-            for session_id, session in self._pty_sessions.items():
-                process = session.get("process")
-                if session.get("profile_id") == profile_id and process and process.poll() is None:
-                    return {"sessionId": session_id, "profile": profile}
+            active = self.active_setup_session(profile_id)
+            if active.get("sessionId"):
+                return active
 
             ports = profile.get("ports") or {}
             bullpen_port = int(ports.get("bullpen") or DEFAULT_BULLPEN_PORT)
@@ -570,6 +569,21 @@ class MicrosandboxRuntimeController:
             )
             thread.start()
             return {"sessionId": session_id, "profile": profile}
+
+    def active_setup_session(self, profile_id: str) -> dict[str, Any]:
+        profile = self.registry.get(profile_id)
+        if profile.get("runtime") != "microsandbox":
+            raise ManagerError("Provider setup is only available for microsandbox profiles")
+        with self._lock:
+            for session_id, session in self._pty_sessions.items():
+                process = session.get("process")
+                if session.get("profile_id") == profile_id and process and process.poll() is None:
+                    return {
+                        "sessionId": session_id,
+                        "profile": profile,
+                        "logPath": session.get("log_path"),
+                    }
+        return {"sessionId": "", "profile": profile}
 
     def write_pty(self, session_id: str, data: str) -> None:
         with self._lock:
@@ -864,6 +878,12 @@ class InstanceRuntimeController:
             raise ManagerError("Provider setup is only available for microsandbox profiles")
         return self.microsandbox.setup_providers(profile_id)
 
+    def active_setup_session(self, profile_id: str) -> dict[str, Any]:
+        profile = self.registry.get(profile_id)
+        if profile.get("runtime") != "microsandbox":
+            raise ManagerError("Provider setup is only available for microsandbox profiles")
+        return self.microsandbox.active_setup_session(profile_id)
+
     def write_pty(self, session_id: str, data: str) -> None:
         self.microsandbox.write_pty(session_id, data)
 
@@ -1061,6 +1081,14 @@ def create_manager_app(
     def api_setup_providers(profile_id):
         try:
             result = runtime.setup_providers(profile_id)
+            return jsonify(result)
+        except ManagerError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/profiles/<profile_id>/setup-providers/session")
+    def api_setup_provider_session(profile_id):
+        try:
+            result = runtime.active_setup_session(profile_id)
             return jsonify(result)
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
