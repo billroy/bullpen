@@ -286,6 +286,21 @@ textarea {
   color: var(--text-primary);
 }
 
+.terminal-prompt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  border-radius: var(--radius);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.terminal-prompt strong {
+  margin-right: auto;
+}
+
 .terminal-box {
   min-height: 340px;
   overflow: hidden;

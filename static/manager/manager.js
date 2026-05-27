@@ -20,6 +20,7 @@ createApp({
     const terminalRef = ref(null);
     const terminal = ref(null);
     const terminalDataDisposable = ref(null);
+    const setupLogPoll = ref(null);
 
     const form = reactive({
       displayName: 'Local Bullpen',
@@ -34,6 +35,7 @@ createApp({
 
     const selected = computed(() => state.profiles.find(profile => profile.id === state.selectedId) || state.profiles[0] || null);
     const setupAuth = computed(() => extractSetupAuth(state.setupOutput));
+    const setupPrompt = computed(() => extractSetupPrompt(state.setupOutput));
 
     function stateLabel(profile) {
       return (profile && profile.observed && profile.observed.state) || 'unknown';
@@ -56,6 +58,7 @@ createApp({
       state.setupExit = '';
       state.copyNotice = '';
       resetTerminal();
+      stopSetupLogPolling();
     }
 
     function hasActiveSetupSession(profile) {
@@ -88,6 +91,14 @@ createApp({
       const url = urls[urls.length - 1] || '';
       const code = codes[codes.length - 1] || '';
       return { url, code };
+    }
+
+    function extractSetupPrompt(text) {
+      const clean = stripTerminalControlCodes(text);
+      const matches = [...clean.matchAll(/(Set up ([^?\n]+) in this sandbox\? \[(?:Y\/n|y\/N)\]:)\s*$/gim)];
+      const match = matches[matches.length - 1];
+      if (!match) return null;
+      return { text: match[1], item: match[2] };
     }
 
     async function api(path, options = {}) {
@@ -181,6 +192,7 @@ createApp({
       state.setupExit = '';
       state.copyNotice = '';
       disposeTerminal();
+      stopSetupLogPolling();
       try {
         const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
         state.setupSessionId = data.sessionId;
@@ -192,6 +204,8 @@ createApp({
         const logData = await api(`/api/profiles/${profile.id}/logs`);
         state.setupOutput = logData.text || state.setupOutput;
         await replayTerminal();
+        startSetupLogPolling();
+        focusSetupInput();
       } catch (err) {
         state.error = err.message;
       } finally {
@@ -203,6 +217,7 @@ createApp({
       if (!profile || profile.runtime !== 'microsandbox') return;
       if (stateLabel(profile) !== 'setup-running') {
         if (state.setupProfileId === profile.id) resetSetupState();
+        stopSetupLogPolling();
         return;
       }
       if (state.setupProfileId === profile.id && state.setupSessionId) return;
@@ -214,6 +229,7 @@ createApp({
         const logData = await api(`/api/profiles/${profile.id}/logs`);
         state.setupOutput = logData.text || state.setupOutput;
         await replayTerminal();
+        startSetupLogPolling();
       } catch (err) {
         state.error = err.message;
       }
@@ -272,6 +288,47 @@ createApp({
       });
     }
 
+    async function syncSetupLog(profile = selected.value) {
+      if (!profile || profile.runtime !== 'microsandbox') return;
+      try {
+        const data = await api(`/api/profiles/${profile.id}/logs`);
+        state.logs = data.text || '';
+        if (stateLabel(profile) === 'setup-running') {
+          const nextOutput = data.text || '';
+          if (nextOutput && nextOutput !== state.setupOutput) {
+            state.setupOutput = nextOutput;
+            await replayTerminal();
+          }
+        }
+      } catch (_err) {
+        // The regular profile refresh path surfaces connection errors.
+      }
+    }
+
+    function startSetupLogPolling() {
+      if (setupLogPoll.value) return;
+      setupLogPoll.value = window.setInterval(() => {
+        const profile = selected.value;
+        if (!profile || stateLabel(profile) !== 'setup-running') {
+          stopSetupLogPolling();
+          return;
+        }
+        syncSetupLog(profile);
+      }, 1500);
+    }
+
+    function stopSetupLogPolling() {
+      if (!setupLogPoll.value) return;
+      window.clearInterval(setupLogPoll.value);
+      setupLogPoll.value = null;
+    }
+
+    function sendSetupResponse(response) {
+      if (!state.setupSessionId || !socketRef.value || state.setupExit) return;
+      socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data: `${response}\r` });
+      focusSetupInput();
+    }
+
     async function copyText(text, label) {
       if (!text) return;
       try {
@@ -328,7 +385,7 @@ createApp({
       socket.on('manager:updated', (payload) => {
         state.profiles = payload.profiles || [];
         if (selected.value) {
-          loadLogs(selected.value.id);
+          syncSetupLog(selected.value);
           syncSetupSession(selected.value);
         }
       });
@@ -341,6 +398,7 @@ createApp({
       socket.on('manager:pty-exit', (payload) => {
         if (!payload || payload.sessionId !== state.setupSessionId) return;
         state.setupExit = `Provider setup exited with ${payload.returncode}`;
+        stopSetupLogPolling();
         if (selected.value) loadLogs(selected.value.id);
       });
       socket.on('manager:error', (payload) => {
@@ -350,7 +408,7 @@ createApp({
 
     watch(selected, (profile) => {
       if (!profile) return;
-      loadLogs(profile.id);
+      syncSetupLog(profile);
       syncSetupSession(profile);
       nextTick(() => replayTerminal());
     });
@@ -360,6 +418,7 @@ createApp({
       form,
       selected,
       setupAuth,
+      setupPrompt,
       stateLabel,
       portText,
       urlFor,
@@ -368,7 +427,9 @@ createApp({
       action,
       setupProviders,
       syncSetupSession,
+      syncSetupLog,
       copyText,
+      sendSetupResponse,
       pasteIntoSetupInput,
       focusSetupInput,
       setupStatusText,
@@ -516,6 +577,11 @@ createApp({
                   </div>
                   <div class="instance-meta" v-if="state.copyNotice">{{ state.copyNotice }}</div>
                 </div>
+                <div class="terminal-prompt" v-if="setupPrompt">
+                  <strong>{{ setupPrompt.text }}</strong>
+                  <button type="button" class="primary" @click="sendSetupResponse('y')">Yes</button>
+                  <button type="button" @click="sendSetupResponse('n')">No</button>
+                </div>
                 <div ref="terminalRef" class="terminal-box" @paste.prevent="pasteIntoSetupInput"></div>
               </div>
             </div>
@@ -523,7 +589,7 @@ createApp({
             <div class="panel">
               <div class="panel-header">
                 <div class="panel-title">Logs</div>
-                <button @click="loadLogs(selected.id)">Reload Logs</button>
+                <button @click="loadLogs(selected.id); syncSetupLog(selected)">Reload Logs</button>
               </div>
               <pre class="log-box">{{ state.logs || 'No logs yet.' }}</pre>
             </div>
