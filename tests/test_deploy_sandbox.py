@@ -441,14 +441,20 @@ def test_run_provider_setup_require_existing_verifies_all_items(sb, monkeypatch)
     assert summary.selected_items == ["claude"]
 
 
-def test_auth_git_skips_browser_login_when_gh_is_already_authenticated(sb, monkeypatch):
+def test_auth_git_clears_stale_auth_and_requires_fresh_login(sb, monkeypatch):
     captured = {}
+    calls = []
 
     async def fake_attach(runtime, sandbox, config, command, **kwargs):
+        calls.append("attach")
         captured["command"] = command
         captured["kwargs"] = kwargs
 
+    async def fake_clear(sandbox, config):
+        calls.append("clear")
+
     monkeypatch.setattr(sb, "resolve_git_identity", lambda: ("Test User", "test@example.com"))
+    monkeypatch.setattr(sb, "clear_git_auth", fake_clear)
     monkeypatch.setattr(sb, "attach_as_bullpen", fake_attach)
 
     config = sb.DeployConfig(
@@ -472,13 +478,49 @@ def test_auth_git_skips_browser_login_when_gh_is_already_authenticated(sb, monke
     asyncio.run(sb.auth_git(object(), object(), config))
 
     command = captured["command"]
+    assert calls == ["clear", "attach"]
     assert "git config --global user.name 'Test User'" in command
     assert "git config --global user.email test@example.com" in command
-    assert "if gh auth status --hostname github.com >/dev/null 2>&1; then" in command
-    assert "GitHub CLI already authenticated; skipping browser login." in command
-    assert "else gh auth login --hostname github.com --git-protocol https --web; fi" in command
+    assert "gh auth login --hostname github.com --git-protocol https --web" in command
+    assert "gh auth status --hostname github.com" in command
+    assert "GitHub CLI already authenticated" not in command
     assert command.endswith("gh auth setup-git --hostname github.com")
     assert captured["kwargs"]["label"] == "authenticate GitHub CLI"
+
+
+def test_clear_git_auth_moves_stale_github_cli_files(sb):
+    commands = []
+
+    class FakeSandbox:
+        async def shell(self, command):
+            commands.append(command)
+            return types.SimpleNamespace(returncode=0)
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        install_bullpen_project=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        local_project_path_default=ROOT / "project",
+    )
+
+    asyncio.run(sb.clear_git_auth(FakeSandbox(), config))
+
+    command = "\n".join(commands)
+    assert "gh auth logout --hostname github.com" in command
+    assert "/home/bullpen/.config/gh/hosts.yml" in command
+    assert "/home/bullpen/.config/gh/config.yml" in command
+    assert ".stale-$timestamp" in command
 
 
 def test_deploy_applies_claude_network_mitigation_before_setup(sb, monkeypatch):

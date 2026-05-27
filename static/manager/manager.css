@@ -171,6 +171,21 @@ textarea {
   display: grid;
   gap: 4px;
   padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.instance-row:hover,
+.instance-row:focus-visible {
+  background: var(--bg-hover);
+}
+
+.instance-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .instance-row.active {
@@ -184,6 +199,24 @@ textarea {
 .instance-meta {
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.instance-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.instance-links a,
+.kv a {
+  color: var(--accent-hover);
+  text-decoration: none;
+}
+
+.instance-links a:hover,
+.kv a:hover {
+  text-decoration: underline;
 }
 
 .detail {

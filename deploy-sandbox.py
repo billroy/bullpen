@@ -1515,6 +1515,26 @@ fi
     await run_as_bullpen(sandbox, config, command, label="verify Git auth")
 
 
+async def clear_git_auth(sandbox: Any, config: DeployConfig) -> None:
+    command = r'''set -e
+timestamp="$(date +%Y%m%d%H%M%S)"
+if command -v gh >/dev/null 2>&1; then
+  gh auth logout --hostname github.com --user "$(gh api user --jq .login 2>/dev/null || true)" >/dev/null 2>&1 || true
+  gh auth logout --hostname github.com >/dev/null 2>&1 || true
+fi
+mkdir -p /home/bullpen/.config/gh
+for path in \
+  /home/bullpen/.config/gh/hosts.yml \
+  /home/bullpen/.config/gh/config.yml
+do
+  if [ -e "$path" ]; then
+    mv "$path" "$path.stale-$timestamp"
+  fi
+done
+'''
+    await run_as_bullpen(sandbox, config, command, label="clear stale GitHub CLI auth")
+
+
 async def auth_claude(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
     print("Claude setup runs inside the sandbox. If localhost callback delivery fails, complete the terminal fallback.", flush=True)
     await disable_guest_ipv6_for_claude(sandbox)
@@ -1550,14 +1570,12 @@ async def auth_git(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployCon
     setup_command = (
         f"git config --global user.name {shlex.quote(name)}; "
         f"git config --global user.email {shlex.quote(email)}; "
-        "if gh auth status --hostname github.com >/dev/null 2>&1; then "
-        "echo 'GitHub CLI already authenticated; skipping browser login.'; "
-        "else "
         "gh auth login --hostname github.com --git-protocol https --web; "
-        "fi; "
+        "gh auth status --hostname github.com; "
         "gh auth setup-git --hostname github.com"
     )
     print("Git setup runs inside the sandbox using GitHub CLI over HTTPS.", flush=True)
+    await clear_git_auth(sandbox, config)
     await attach_as_bullpen(runtime, sandbox, config, setup_command, label="authenticate GitHub CLI")
 
 

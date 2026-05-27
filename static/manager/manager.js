@@ -43,9 +43,18 @@ createApp({
       return `Bullpen ${profile.ports.bullpen} / App ${profile.ports.app}`;
     }
 
-    function urlFor(profile) {
+    function bullpenUrlFor(profile) {
       if (!profile || !profile.ports) return '';
       return `http://127.0.0.1:${profile.ports.bullpen}`;
+    }
+
+    function appUrlFor(profile) {
+      if (!profile || !profile.ports) return '';
+      return `http://127.0.0.1:${profile.ports.app}`;
+    }
+
+    function urlFor(profile) {
+      return bullpenUrlFor(profile);
     }
 
     function resetSetupState() {
@@ -378,6 +387,8 @@ createApp({
       stateLabel,
       showLogPanel,
       portText,
+      bullpenUrlFor,
+      appUrlFor,
       urlFor,
       refresh,
       createProfile,
@@ -454,17 +465,25 @@ createApp({
           </section>
 
           <div class="instance-list">
-            <button
+            <div
               v-for="profile in state.profiles"
               :key="profile.id"
               class="instance-row"
               :class="{ active: selected && selected.id === profile.id }"
+              role="button"
+              tabindex="0"
               @click="state.selectedId = profile.id; if (showLogPanel(profile)) loadLogs(profile.id); syncSetupSession(profile)"
+              @keydown.enter.prevent="state.selectedId = profile.id; if (showLogPanel(profile)) loadLogs(profile.id); syncSetupSession(profile)"
+              @keydown.space.prevent="state.selectedId = profile.id; if (showLogPanel(profile)) loadLogs(profile.id); syncSetupSession(profile)"
             >
               <span class="instance-name">{{ profile.displayName }}</span>
               <span class="instance-meta">{{ profile.runtime }} / {{ portText(profile) }}</span>
+              <span class="instance-links">
+                <a :href="bullpenUrlFor(profile)" target="_blank" rel="noopener" @click.stop>Bullpen</a>
+                <a :href="appUrlFor(profile)" target="_blank" rel="noopener" @click.stop>App</a>
+              </span>
               <span class="status-line"><span class="dot" :class="stateLabel(profile)"></span>{{ stateLabel(profile) }}</span>
-            </button>
+            </div>
           </div>
         </aside>
 
@@ -497,7 +516,14 @@ createApp({
                   </button>
                   <button class="danger" @click="deleteProfile(selected)">Delete</button>
                 </div>
-                <div class="kv"><strong>URL</strong><span>{{ urlFor(selected) }}</span></div>
+                <div class="kv">
+                  <strong>Bullpen</strong>
+                  <a :href="bullpenUrlFor(selected)" target="_blank" rel="noopener">{{ bullpenUrlFor(selected) }}</a>
+                </div>
+                <div class="kv">
+                  <strong>App</strong>
+                  <a :href="appUrlFor(selected)" target="_blank" rel="noopener">{{ appUrlFor(selected) }}</a>
+                </div>
                 <div class="kv"><strong>Workspace</strong><span>{{ selected.workspaceRoot }}</span></div>
                 <div class="kv"><strong>Home</strong><span>{{ selected.instanceHome }}</span></div>
                 <div class="kv" v-if="selected.sandboxName"><strong>Sandbox</strong><span>{{ selected.sandboxName }}</span></div>
