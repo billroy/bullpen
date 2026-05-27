@@ -52,7 +52,7 @@ const WorkerCard = {
         </div>
         <div class="worker-card-actions">
           <span class="worker-card-header-status">
-            <span v-if="(workerState !== 'idle' || isPaused) && !pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
+            <span v-if="(workerState !== 'idle' || isPaused || isHeldQueue) && !pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
               {{ statusLabel }}
             </span>
           </span>
@@ -176,6 +176,7 @@ const WorkerCard = {
     },
     statusLabel() {
       if (this.isPaused) return 'PAUSED';
+      if (this.isHeldQueue) return 'WAITING FOR RUN';
       if (this.workerState === 'retrying') {
         return `RETRY${this.retryAttemptLabel}${this.retryCountdownLabel}`;
       }
@@ -223,7 +224,7 @@ const WorkerCard = {
       return this.workerState === 'idle' && !this.isDisabledType;
     },
     runMenuLabel() {
-      if (!this.isService) return 'Run';
+      if (!this.isService) return this.taskQueueCount > 0 ? `Run next (${this.taskQueueCount})` : 'Run';
       return this.taskQueueCount > 0 ? 'Run queued order' : 'Start';
     },
     canStop() {
@@ -244,6 +245,9 @@ const WorkerCard = {
     },
     isPaused() {
       return this.worker.paused === true;
+    },
+    isHeldQueue() {
+      return this.workerState === 'idle' && this.worker?.activation === 'manual' && this.taskQueueCount > 0;
     },
     automationPausedForWorker() {
       const paused = this.$root?.state?.config?.worker_automation_paused === true;
@@ -334,6 +338,7 @@ const WorkerCard = {
     emptyLabel() {
       if (this.isMarker) return 'Marker';
       if (this.isService) return this.workerState === 'idle' ? 'Stopped' : this.workerState;
+      if (this.isHeldQueue) return 'Waiting for Run';
       return 'Idle';
     },
     markerNote() {

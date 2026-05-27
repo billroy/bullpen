@@ -78,7 +78,6 @@ workspace pause and Stop The Line on top of the same execution gates.
 
 - `assign_task()` can still auto-start a paused `on_drop` / `on_queue` worker.
 - `start_worker()` can be called directly against a paused worker.
-- Shell handoff auto-start can bypass pause through `trigger_handoff_start`.
 - Pause UI is hidden for non-scheduled workers even though the field exists.
 - There is no workspace automation pause state.
 - There is no emergency Stop The Line action.

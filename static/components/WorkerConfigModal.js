@@ -333,9 +333,9 @@ const WorkerConfigModal = {
               <label class="form-label">
                 Input Trigger
                 <select class="form-select" v-model="form.activation">
-                  <option value="on_drop">On Drop</option>
+                  <option value="on_drop">Auto on Assignment</option>
                   <option value="on_queue">On Queue (Watch Column)</option>
-                  <option value="manual">Manual</option>
+                  <option value="manual">Hold for Run</option>
                   <option value="at_time">At Time</option>
                   <option value="on_interval">On Interval</option>
                 </select>
@@ -512,9 +512,9 @@ const WorkerConfigModal = {
             <label class="form-label">
               Input Trigger
               <select class="form-select" v-model="form.activation">
-                <option value="on_drop">On Drop</option>
+                <option value="on_drop">Auto on Assignment</option>
                 <option value="on_queue">On Queue (Watch Column)</option>
-                <option value="manual">Manual</option>
+                <option value="manual">Hold for Run</option>
                 <option value="at_time">At Time</option>
                 <option value="on_interval">On Interval</option>
               </select>

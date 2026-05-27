@@ -157,7 +157,7 @@ def test_shell_json_stdout_overrides_disposition_and_updates_ticket(bp_dir):
     assert "shell appended" in updated["body"]
 
 
-def test_shell_pass_to_manual_worker_starts_handoff_target(bp_dir):
+def test_shell_pass_to_manual_worker_queues_until_run(bp_dir):
     layout = read_json(os.path.join(bp_dir, "layout.json"))
     base = {
         "type": "shell",
@@ -195,12 +195,19 @@ def test_shell_pass_to_manual_worker_starts_handoff_target(bp_dir):
     assign_task(bp_dir, 0, task["id"])
 
     start_worker(bp_dir, 0)
-    updated = _wait_for_task_status(bp_dir, task["id"], "review")
+    updated = _wait_for_task_status(bp_dir, task["id"], "assigned")
 
     final_layout = _load_layout(bp_dir)
     assert final_layout["slots"][0]["state"] == "idle"
     assert final_layout["slots"][1]["state"] == "idle"
     assert final_layout["slots"][0]["task_queue"] == []
+    assert final_layout["slots"][1]["task_queue"] == [task["id"]]
+    assert str(updated["assigned_to"]) == "1"
+    assert len(_shell_run_history(updated)) == 1
+
+    start_worker(bp_dir, 1)
+    updated = _wait_for_task_status(bp_dir, task["id"], "review")
+    final_layout = _load_layout(bp_dir)
     assert final_layout["slots"][1]["task_queue"] == []
     assert updated["assigned_to"] == ""
     assert len(_shell_run_history(updated)) == 2

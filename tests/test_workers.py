@@ -1829,8 +1829,8 @@ class TestHandoff:
         updated = read_task(bp_dir, task["id"])
         assert updated.get("handoff_depth", 0) == 1
 
-    def test_handoff_depth_limit_disabled_by_default(self, bp_dir):
-        """Default mode does not block handoff chains at max depth."""
+    def test_handoff_depth_limit_enabled_by_default(self, bp_dir):
+        """Default mode blocks handoff chains at max depth."""
         max_depth = workers_mod.MAX_HANDOFF_DEPTH
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{
@@ -1850,12 +1850,11 @@ class TestHandoff:
         time.sleep(0.5)
 
         updated = read_task(bp_dir, task["id"])
-        assert updated["status"] == "assigned"
-        assert updated.get("handoff_depth", 0) == max_depth + 1
+        assert updated["status"] == "blocked"
+        assert "max depth" in updated["body"].lower()
 
-    def test_handoff_depth_exceeded(self, bp_dir, monkeypatch):
-        """When enabled, task with handoff_depth at max moves to blocked."""
-        monkeypatch.setattr(workers_mod, "ENFORCE_HANDOFF_CHAIN_LIMIT", True)
+    def test_handoff_depth_exceeded(self, bp_dir):
+        """Task with handoff_depth at max moves to blocked."""
         max_depth = workers_mod.MAX_HANDOFF_DEPTH
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{

@@ -42,8 +42,8 @@ from server.worker_types import get_worker_type, normalize_layout
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
 MAX_HANDOFF_DEPTH = 10
-# Feature switch: keep depth-limit logic available, but disable enforcement by default.
-ENFORCE_HANDOFF_CHAIN_LIMIT = False
+# Feature switch kept for tests and emergency rollback; enforcement is on by default.
+ENFORCE_HANDOFF_CHAIN_LIMIT = True
 SHELL_WORKER_EXIT_BLOCKED = 78
 SHELL_OUTPUT_ARTIFACT_LIMIT = 1_048_576
 TASK_BODY_LIMIT = 1_048_576
@@ -605,7 +605,6 @@ def assign_task(
     ws_id=None,
     preserve_handoff_depth=False,
     suppress_auto_start=False,
-    trigger_handoff_start=False,
 ):
     """Add task to worker's queue, update ticket status.
 
@@ -617,16 +616,8 @@ def assign_task(
         worker = layout["slots"][slot_index]
         if not worker:
             raise ValueError(f"No worker in slot {slot_index}")
-        queue_before = list(worker.get("task_queue", []))
-        # Shell pass chains are script pipelines: a handoff into an idle empty
-        # manual shell worker should run the next script instead of parking there.
-        should_start_handoff = (
-            trigger_handoff_start
-            and worker.get("type") == "shell"
-            and worker.get("state") == "idle"
-            and not queue_before
-            and not worker_start_blocked(bp_dir, worker)[0]
-        )
+        # Handoffs follow the target worker's normal assignment policy. Auto
+        # workers start on assignment; held/manual workers queue until Run.
 
         # Update task ticket
         updates = {
@@ -652,7 +643,7 @@ def assign_task(
             not suppress_auto_start
             and worker.get("state") == "idle"
             and not worker_start_blocked(bp_dir, worker)[0]
-            and (activation in ("on_drop", "on_queue") or should_start_handoff)
+            and activation in ("on_drop", "on_queue")
         )
         expected_task_id = (worker.get("task_queue") or [task_id])[0]
         manual_worker_name = worker.get("name", "worker")
@@ -2683,7 +2674,6 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
         socketio,
         ws_id,
         preserve_handoff_depth=True,
-        trigger_handoff_start=True,
     )
 
 
@@ -2929,7 +2919,6 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
         socketio,
         ws_id,
         preserve_handoff_depth=True,
-        trigger_handoff_start=True,
     )
 
 
@@ -2999,7 +2988,6 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
         socketio,
         ws_id,
         preserve_handoff_depth=True,
-        trigger_handoff_start=True,
     )
 
 

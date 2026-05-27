@@ -24,6 +24,12 @@ def test_worker_config_modal_exposes_service_procfile_controls():
     assert "activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop')" in text
 
 
+def test_worker_config_modal_uses_assignment_policy_labels():
+    text = _read("static/components/WorkerConfigModal.js")
+    assert 'option value="on_drop">Auto on Assignment' in text
+    assert 'option value="manual">Hold for Run' in text
+
+
 def test_service_start_action_runs_queued_orders_through_worker_start():
     app = _read("static/app.js")
     card = _read("static/components/WorkerCard.js")

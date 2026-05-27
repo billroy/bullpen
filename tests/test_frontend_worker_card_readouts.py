@@ -22,6 +22,13 @@ def test_worker_card_shows_elapsed_and_tokens_for_current_task():
     assert 'updateElapsed()' in text
 
 
+def test_worker_card_explains_held_manual_queues():
+    text = _read("static/components/WorkerCard.js")
+    assert "isHeldQueue()" in text
+    assert "WAITING FOR RUN" in text
+    assert "Run next (${this.taskQueueCount})" in text
+
+
 def test_worker_card_readouts_have_styles():
     text = _read("static/style.css")
     assert '.worker-card-output {' in text
