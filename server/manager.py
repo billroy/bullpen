@@ -642,6 +642,19 @@ class MicrosandboxRuntimeController:
                 profile = _mark_profile_observed(self.registry, profile, state="setup-running", pid=setup_pid)
                 updated.append(profile)
                 continue
+            observed_state = (profile.get("observed") or {}).get("state")
+            if observed_state == "setup-running":
+                profile = _mark_profile_observed(
+                    self.registry,
+                    profile,
+                    state="needs-attention",
+                    last_error=(
+                        "Provider setup was interrupted while Bullpen Manager was not connected. "
+                        "Use Setup Providers to retry, or Stop to clean up the sandbox."
+                    ),
+                )
+                updated.append(profile)
+                continue
             port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
             if wait_for_http_health(port, timeout_seconds=0.5):
                 state = "healthy"

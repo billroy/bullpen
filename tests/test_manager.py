@@ -294,6 +294,31 @@ def test_microsandbox_active_setup_session_reconnects_to_running_pty(tmp_path):
     assert active["logPath"].endswith("provider-setup.log")
 
 
+def test_microsandbox_reconcile_marks_interrupted_setup_needs_attention(tmp_path, monkeypatch):
+    registry = ProfileRegistry(tmp_path / "manager")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    profile = create_profile(
+        registry,
+        {
+            "displayName": "Sandbox",
+            "runtime": "microsandbox",
+            "workspaceRoot": str(workspace),
+            "adminPassword": "secret-password",
+        },
+    )
+    profile["observed"]["state"] = "setup-running"
+    profile["observed"]["pid"] = 5151
+    registry.upsert(profile)
+    monkeypatch.setattr(manager_mod, "wait_for_http_health", lambda *args, **kwargs: True)
+
+    [reconciled] = MicrosandboxRuntimeController(registry).reconcile()
+
+    assert reconciled["observed"]["state"] == "needs-attention"
+    assert "Provider setup was interrupted" in reconciled["observed"]["lastError"]
+    assert "pid" not in reconciled["observed"]
+
+
 def test_local_runtime_builds_bullpen_command(tmp_path):
     from server.manager import LocalRuntimeController
 
