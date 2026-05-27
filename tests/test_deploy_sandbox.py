@@ -99,8 +99,29 @@ def test_cli_accepts_noninteractive_options(sb, tmp_path, monkeypatch):
     assert config.host_nofile == 16000
     assert config.guest_nofile == 70000
     assert config.network_max_connections == 16384
+    assert config.provider_setup == "auto"
     assert config.replace is True
     assert config.open_browser is False
+
+
+def test_cli_accepts_provider_setup_mode(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    config = sb.config_from_args(
+        [
+            "--workspace-root",
+            str(workspace),
+            "--admin-password",
+            "pw",
+            "--provider-setup",
+            "require-existing",
+            "--no-open",
+        ]
+    )
+
+    assert config.provider_setup == "require-existing"
 
 
 def test_cli_resource_options_default_to_larger_final_sandbox(sb, tmp_path, monkeypatch):
@@ -353,6 +374,71 @@ def test_run_install_tui_skips_interactive_auth_when_provider_already_verifies(s
     assert order == ["verify-claude"]
     assert summary.selected_items == ["claude"]
     assert summary.skipped_items == []
+
+
+def test_run_provider_setup_skip_never_prompts(sb, monkeypatch):
+    async def fail_install_tui(*_args):
+        raise AssertionError("provider setup should not run in skip mode")
+
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        provider_setup="skip",
+    )
+    monkeypatch.setattr(sb, "run_install_tui", fail_install_tui)
+
+    summary = asyncio.run(sb.run_provider_setup(object(), object(), config))
+
+    assert summary.selected_items == []
+    assert summary.skipped_items == []
+
+
+def test_run_provider_setup_require_existing_verifies_all_items(sb, monkeypatch):
+    calls = []
+
+    async def auth_one(runtime, sandbox, config):
+        calls.append("auth")
+
+    async def verify_one(sandbox, config):
+        calls.append("verify")
+
+    monkeypatch.setattr(
+        sb,
+        "setup_items",
+        lambda: [sb.SetupItem("claude", "Claude", auth_one, verify_one)],
+    )
+    config = sb.DeployConfig(
+        sandbox_name="bullpen",
+        workspace=ROOT,
+        bullpen_port=8080,
+        app_port=3000,
+        admin_user="admin",
+        admin_password="pw",
+        base="bullpen-microsandbox-local",
+        sandbox_home=ROOT,
+        replace=True,
+        open_browser=False,
+        root=ROOT,
+        bullpen_source=ROOT,
+        github_repo_url="https://example.test/repo.git",
+        provider_setup="require-existing",
+    )
+
+    summary = asyncio.run(sb.run_provider_setup(object(), object(), config))
+
+    assert calls == ["verify"]
+    assert summary.selected_items == ["claude"]
 
 
 def test_auth_git_skips_browser_login_when_gh_is_already_authenticated(sb, monkeypatch):

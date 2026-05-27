@@ -212,6 +212,10 @@ select {
   background: var(--orange);
 }
 
+.dot.setup-running {
+  background: var(--orange);
+}
+
 .dot.unhealthy,
 .dot.needs-attention {
   background: var(--red);
@@ -245,6 +249,23 @@ select {
   color: #c8ccd4;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
+}
+
+.terminal-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.terminal-box {
+  min-height: 340px;
+  margin: 0;
+}
+
+.terminal-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
 }
 
 .empty {

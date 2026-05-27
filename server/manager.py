@@ -6,6 +6,7 @@ import json
 import asyncio
 import importlib.util
 import os
+import pty
 import re
 import signal
 import socket
@@ -430,8 +431,9 @@ class MicrosandboxRuntimeController:
         self.socketio = socketio
         self._lock = threading.RLock()
         self._processes: dict[str, subprocess.Popen] = {}
+        self._pty_sessions: dict[str, dict[str, Any]] = {}
 
-    def build_argv(self, profile: dict[str, Any]) -> list[str]:
+    def build_argv(self, profile: dict[str, Any], *, provider_setup: str = "skip") -> list[str]:
         workspace = Path(profile.get("workspaceRoot") or "").expanduser()
         if not workspace.is_dir():
             raise ManagerError(f"Workspace path does not exist: {workspace}")
@@ -464,6 +466,8 @@ class MicrosandboxRuntimeController:
             str(Path(profile.get("sandboxHome") or profile.get("instanceHome")).expanduser()),
             "--replace",
             "--no-open",
+            "--provider-setup",
+            provider_setup,
         ]
 
     def start(self, profile_id: str) -> dict[str, Any]:
@@ -502,11 +506,92 @@ class MicrosandboxRuntimeController:
             thread.start()
             return profile
 
+    def setup_providers(self, profile_id: str) -> dict[str, Any]:
+        with self._lock:
+            profile = self.registry.get(profile_id)
+            if profile.get("runtime") != "microsandbox":
+                raise ManagerError("Provider setup is only available for microsandbox profiles")
+            for session_id, session in self._pty_sessions.items():
+                process = session.get("process")
+                if session.get("profile_id") == profile_id and process and process.poll() is None:
+                    return {"sessionId": session_id, "profile": profile}
+
+            ports = profile.get("ports") or {}
+            bullpen_port = int(ports.get("bullpen") or DEFAULT_BULLPEN_PORT)
+            instance_home = Path(profile.get("instanceHome") or self.registry.paths.home / "instances" / profile_id / "home").expanduser()
+            logs_dir = instance_home / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            log_path = logs_dir / "provider-setup.log"
+            argv = self.build_argv(profile, provider_setup="interactive")
+            env = os.environ.copy()
+            env["BULLPEN_MANAGER_PROFILE_ID"] = profile_id
+            session_id = uuid.uuid4().hex
+            master_fd, slave_fd = pty.openpty()
+            log_file = open(log_path, "a", encoding="utf-8")
+            try:
+                log_file.write(f"\n[{now_ts()}] {' '.join(self._redacted_argv(argv))}\n")
+                log_file.flush()
+                process = subprocess.Popen(
+                    argv,
+                    cwd=str(repo_root()),
+                    stdin=slave_fd,
+                    stdout=slave_fd,
+                    stderr=slave_fd,
+                    env=env,
+                    start_new_session=True,
+                    close_fds=True,
+                )
+            except Exception:
+                log_file.close()
+                os.close(master_fd)
+                os.close(slave_fd)
+                raise
+            os.close(slave_fd)
+            self._pty_sessions[session_id] = {
+                "profile_id": profile_id,
+                "master_fd": master_fd,
+                "process": process,
+                "log_path": str(log_path),
+                "bullpen_port": bullpen_port,
+            }
+            profile = _mark_profile_observed(
+                self.registry,
+                profile,
+                state="setup-running",
+                pid=process.pid,
+                log_path=str(log_path),
+                desired_state="running",
+            )
+            self._emit_update()
+            thread = threading.Thread(
+                target=self._read_pty_session,
+                args=(session_id, log_file),
+                daemon=True,
+            )
+            thread.start()
+            return {"sessionId": session_id, "profile": profile}
+
+    def write_pty(self, session_id: str, data: str) -> None:
+        with self._lock:
+            session = self._pty_sessions.get(session_id)
+            if not session:
+                raise ManagerError("Unknown or completed provider setup session")
+            process = session.get("process")
+            if process and process.poll() is not None:
+                raise ManagerError("Provider setup session is no longer running")
+            master_fd = int(session["master_fd"])
+        if data:
+            os.write(master_fd, data.encode("utf-8"))
+
     def stop(self, profile_id: str) -> dict[str, Any]:
         with self._lock:
             profile = self.registry.get(profile_id)
             if profile.get("runtime") != "microsandbox":
                 raise ManagerError("Microsandbox controller can only stop microsandbox profiles")
+            for session in list(self._pty_sessions.values()):
+                process = session.get("process")
+                if session.get("profile_id") == profile_id and process and process.poll() is None:
+                    self._terminate_process(process)
             process = self._processes.pop(profile_id, None)
             if process and process.poll() is None:
                 self._terminate_process(process)
@@ -536,6 +621,11 @@ class MicrosandboxRuntimeController:
         updated = []
         for profile in self.registry.profiles():
             if profile.get("runtime") != "microsandbox":
+                updated.append(profile)
+                continue
+            setup_pid = self._profile_setup_pid(profile.get("id"))
+            if setup_pid:
+                profile = _mark_profile_observed(self.registry, profile, state="setup-running", pid=setup_pid)
                 updated.append(profile)
                 continue
             port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
@@ -623,6 +713,76 @@ class MicrosandboxRuntimeController:
             except Exception:
                 pass
 
+    def _profile_setup_pid(self, profile_id: str | None) -> int | None:
+        for session in self._pty_sessions.values():
+            process = session.get("process")
+            if session.get("profile_id") == profile_id and process and process.poll() is None:
+                return int(process.pid)
+        return None
+
+    def _read_pty_session(self, session_id: str, log_file: Any) -> None:
+        session = self._pty_sessions.get(session_id)
+        if not session:
+            log_file.close()
+            return
+        master_fd = int(session["master_fd"])
+        process = session["process"]
+        profile_id = str(session["profile_id"])
+        bullpen_port = int(session["bullpen_port"])
+        log_path = str(session["log_path"])
+        try:
+            while True:
+                try:
+                    chunk = os.read(master_fd, 4096)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", errors="replace")
+                log_file.write(text)
+                log_file.flush()
+                if self.socketio:
+                    self.socketio.emit(
+                        "manager:pty-output",
+                        {"sessionId": session_id, "profileId": profile_id, "text": text},
+                    )
+            returncode = process.wait()
+            try:
+                profile = self.registry.get(profile_id)
+                if profile.get("desiredState") == "stopped":
+                    state = "stopped"
+                    last_error = None
+                elif returncode == 0:
+                    state = "healthy" if wait_for_http_health(bullpen_port, timeout_seconds=8) else "unhealthy"
+                    last_error = None
+                else:
+                    state = "needs-attention"
+                    last_error = f"Provider setup exited with {returncode}"
+                _mark_profile_observed(
+                    self.registry,
+                    profile,
+                    state=state,
+                    log_path=log_path,
+                    last_error=last_error,
+                    desired_state=profile.get("desiredState"),
+                )
+            except Exception:
+                pass
+            if self.socketio:
+                self.socketio.emit(
+                    "manager:pty-exit",
+                    {"sessionId": session_id, "profileId": profile_id, "returncode": returncode},
+                )
+                self._emit_update()
+        finally:
+            with self._lock:
+                self._pty_sessions.pop(session_id, None)
+            try:
+                os.close(master_fd)
+            except OSError:
+                pass
+            log_file.close()
+
     def _terminate_process(self, process: subprocess.Popen) -> None:
         if process.poll() is not None:
             return
@@ -697,6 +857,15 @@ class InstanceRuntimeController:
 
     def restart(self, profile_id: str) -> dict[str, Any]:
         return self._controller_for(profile_id).restart(profile_id)
+
+    def setup_providers(self, profile_id: str) -> dict[str, Any]:
+        profile = self.registry.get(profile_id)
+        if profile.get("runtime") != "microsandbox":
+            raise ManagerError("Provider setup is only available for microsandbox profiles")
+        return self.microsandbox.setup_providers(profile_id)
+
+    def write_pty(self, session_id: str, data: str) -> None:
+        self.microsandbox.write_pty(session_id, data)
 
     def reconcile(self) -> list[dict[str, Any]]:
         self.local.reconcile()
@@ -888,6 +1057,14 @@ def create_manager_app(
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.route("/api/profiles/<profile_id>/setup-providers/start", methods=["POST"])
+    def api_setup_providers(profile_id):
+        try:
+            result = runtime.setup_providers(profile_id)
+            return jsonify(result)
+        except ManagerError as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.route("/api/profiles/<profile_id>/logs")
     def api_profile_logs(profile_id):
         try:
@@ -916,6 +1093,14 @@ def create_manager_app(
     @socketio.on("connect")
     def on_connect():
         socketio.emit("manager:updated", {"profiles": registry.profiles()})
+
+    @socketio.on("manager:pty-input")
+    def on_pty_input(payload):
+        try:
+            data = payload or {}
+            runtime.write_pty(str(data.get("sessionId") or ""), str(data.get("data") or ""))
+        except ManagerError as exc:
+            socketio.emit("manager:error", {"error": str(exc)})
 
     socketio.init_app(app)
     runtime.reconcile()

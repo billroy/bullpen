@@ -177,6 +177,10 @@ def test_microsandbox_runtime_builds_deploy_command(tmp_path):
     assert "secret-password" in argv
     assert "--replace" in argv
     assert "--no-open" in argv
+    assert argv[argv.index("--provider-setup") + 1] == "skip"
+
+    interactive_argv = MicrosandboxRuntimeController(registry).build_argv(profile, provider_setup="interactive")
+    assert interactive_argv[interactive_argv.index("--provider-setup") + 1] == "interactive"
 
 
 def test_microsandbox_start_runs_deploy_and_sets_state(tmp_path, monkeypatch):
@@ -219,6 +223,7 @@ def test_microsandbox_start_runs_deploy_and_sets_state(tmp_path, monkeypatch):
     started = MicrosandboxRuntimeController(registry).start(profile["id"])
 
     assert calls
+    assert calls[0][calls[0].index("--provider-setup") + 1] == "skip"
     assert started["desiredState"] == "running"
     assert registry.get(profile["id"])["observed"]["state"] == "healthy"
 

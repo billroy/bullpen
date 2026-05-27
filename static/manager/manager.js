@@ -9,7 +9,14 @@ createApp({
       error: '',
       logs: '',
       actionBusy: '',
+      setupBusy: false,
+      setupSessionId: '',
+      setupProfileId: '',
+      setupOutput: '',
+      setupInput: '',
+      setupExit: '',
     });
+    const socketRef = ref(null);
 
     const form = reactive({
       displayName: 'Local Bullpen',
@@ -117,6 +124,41 @@ createApp({
       }
     }
 
+    async function setupProviders(profile) {
+      if (!profile || profile.runtime !== 'microsandbox') return;
+      state.error = '';
+      state.setupBusy = true;
+      state.setupSessionId = '';
+      state.setupProfileId = profile.id;
+      state.setupOutput = '';
+      state.setupInput = '';
+      state.setupExit = '';
+      try {
+        const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
+        state.setupSessionId = data.sessionId;
+        state.setupProfileId = profile.id;
+        if (data.profile) {
+          const index = state.profiles.findIndex(item => item.id === data.profile.id);
+          if (index >= 0) state.profiles[index] = data.profile;
+        }
+        const logData = await api(`/api/profiles/${profile.id}/logs`);
+        state.setupOutput = logData.text || state.setupOutput;
+      } catch (err) {
+        state.error = err.message;
+      } finally {
+        state.setupBusy = false;
+      }
+    }
+
+    function sendSetupInput() {
+      if (!state.setupSessionId || !socketRef.value) return;
+      socketRef.value.emit('manager:pty-input', {
+        sessionId: state.setupSessionId,
+        data: `${state.setupInput}\n`,
+      });
+      state.setupInput = '';
+    }
+
     async function loadLogs(profileId) {
       try {
         const data = await api(`/api/profiles/${profileId}/logs`);
@@ -134,9 +176,22 @@ createApp({
     onMounted(() => {
       refresh();
       const socket = io();
+      socketRef.value = socket;
       socket.on('manager:updated', (payload) => {
         state.profiles = payload.profiles || [];
         if (selected.value) loadLogs(selected.value.id);
+      });
+      socket.on('manager:pty-output', (payload) => {
+        if (!payload || payload.sessionId !== state.setupSessionId) return;
+        state.setupOutput += payload.text || '';
+      });
+      socket.on('manager:pty-exit', (payload) => {
+        if (!payload || payload.sessionId !== state.setupSessionId) return;
+        state.setupExit = `Provider setup exited with ${payload.returncode}`;
+        if (selected.value) loadLogs(selected.value.id);
+      });
+      socket.on('manager:error', (payload) => {
+        state.error = (payload && payload.error) || 'Manager error';
       });
     });
 
@@ -150,6 +205,8 @@ createApp({
       refresh,
       createProfile,
       action,
+      setupProviders,
+      sendSetupInput,
       deleteProfile,
       loadLogs,
       openInstance,
@@ -249,6 +306,13 @@ createApp({
                   <button @click="action(selected, 'stop')" :disabled="state.actionBusy === selected.id + ':stop'">Stop</button>
                   <button @click="action(selected, 'restart')" :disabled="state.actionBusy === selected.id + ':restart'">Restart</button>
                   <button @click="openInstance(selected)">Open</button>
+                  <button
+                    v-if="selected.runtime === 'microsandbox'"
+                    @click="setupProviders(selected)"
+                    :disabled="state.setupBusy || stateLabel(selected) === 'setup-running'"
+                  >
+                    {{ state.setupBusy || stateLabel(selected) === 'setup-running' ? 'Setting Up...' : 'Setup Providers' }}
+                  </button>
                   <button class="danger" @click="deleteProfile(selected)">Delete</button>
                 </div>
                 <div class="kv"><strong>URL</strong><span>{{ urlFor(selected) }}</span></div>
@@ -259,6 +323,26 @@ createApp({
                 <div class="kv"><strong>Ports</strong><span>{{ portText(selected) }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.pid"><strong>PID</strong><span>{{ selected.observed.pid }}</span></div>
                 <div class="kv" v-if="selected.observed && selected.observed.lastError"><strong>Error</strong><span>{{ selected.observed.lastError }}</span></div>
+              </div>
+            </div>
+
+            <div class="panel" v-if="selected.runtime === 'microsandbox'">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title">Provider Setup</div>
+                  <div class="instance-meta">{{ state.setupExit || (state.setupSessionId ? 'Interactive session active' : 'No setup session active') }}</div>
+                </div>
+              </div>
+              <div class="terminal-panel">
+                <pre class="log-box terminal-box">{{ state.setupOutput || 'Press Setup Providers to run Claude, Codex, and Git setup in an interactive sandbox terminal.' }}</pre>
+                <form class="terminal-input" @submit.prevent="sendSetupInput">
+                  <input
+                    v-model="state.setupInput"
+                    :disabled="!state.setupSessionId || !!state.setupExit"
+                    placeholder="Type a response and press Enter"
+                  >
+                  <button type="submit" :disabled="!state.setupSessionId || !!state.setupExit">Send</button>
+                </form>
               </div>
             </div>
 

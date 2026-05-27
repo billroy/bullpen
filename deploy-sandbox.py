@@ -88,6 +88,7 @@ class DeployConfig:
     target: str | None = None
     runtime_env: dict[str, str] = field(default_factory=dict)
     prepare_base_policy: str = "auto"
+    provider_setup: str = "auto"
     source_image: str = SOURCE_IMAGE_DEFAULT
     prepare_source: Path | None = None
     install_bullpen_project: bool = False
@@ -369,6 +370,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-replace", action="store_true", default=False)
     parser.add_argument("--open", dest="open_browser", action="store_true", default=True)
     parser.add_argument("--no-open", dest="open_browser", action="store_false")
+    parser.add_argument(
+        "--provider-setup",
+        choices=("auto", "skip", "interactive", "require-existing"),
+        default="auto",
+        help=(
+            "Provider credential setup mode during deploy: auto uses interactive setup only "
+            "when stdin is a TTY, skip never prompts, interactive requires a TTY, and "
+            "require-existing verifies configured providers without prompting."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command")
     auth_parser = subparsers.add_parser("auth", help="Run sandbox-native setup/auth for one item")
     auth_parser.add_argument("target", choices=("claude", "codex", "git"))
@@ -646,6 +657,7 @@ def config_from_args(argv: list[str] | None = None) -> DeployConfig:
         action=action,
         target=target,
         prepare_base_policy=prepare_base_policy,
+        provider_setup=args.provider_setup,
         source_image=args.source_image,
         prepare_source=abs_path(args.source_dir) if args.source_dir else None,
     )
@@ -1610,6 +1622,32 @@ def can_run_install_tui() -> bool:
     return sys.stdin.isatty()
 
 
+async def verify_existing_provider_auth(sandbox: Any, config: DeployConfig) -> CredentialSummary:
+    summary = CredentialSummary()
+    for item in setup_items():
+        log_step(f"Verifying existing {item.label} auth")
+        await item.verify_func(sandbox, config)
+        summary.selected_items.append(item.key)
+    return summary
+
+
+async def run_provider_setup(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> CredentialSummary:
+    mode = config.provider_setup
+    if mode == "skip":
+        print("Skipping provider setup because --provider-setup skip was requested.", flush=True)
+        return CredentialSummary()
+    if mode == "require-existing":
+        return await verify_existing_provider_auth(sandbox, config)
+    if mode == "interactive":
+        log_step("Running provider setup")
+        return await run_install_tui(runtime, sandbox, config)
+    if can_run_install_tui():
+        log_step("Running provider setup")
+        return await run_install_tui(runtime, sandbox, config)
+    print("Skipping provider setup because no interactive terminal is available.", flush=True)
+    return CredentialSummary()
+
+
 async def detach_sandbox(sandbox: Any) -> None:
     detach = getattr(sandbox, "detach", None)
     if not callable(detach):
@@ -1952,12 +1990,7 @@ async def deploy(config: DeployConfig) -> CredentialSummary | None:
         wait_for_health(config.bullpen_port)
         log_step("Verifying Bullpen credentials")
         await verify_admin_credentials(sandbox, config)
-        if can_run_install_tui():
-            log_step("Running install setup")
-            summary = await run_install_tui(runtime, sandbox, config)
-        else:
-            summary = CredentialSummary()
-            print("Skipping install setup because no interactive terminal is available.", flush=True)
+        summary = await run_provider_setup(runtime, sandbox, config)
         log_step("Detaching Microsandbox")
         await detach_sandbox(sandbox)
         log_step("Verifying detached Bullpen health")
