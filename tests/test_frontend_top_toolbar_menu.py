@@ -79,6 +79,8 @@ def test_toolbar_exposes_worker_pause_and_stop_line_controls():
     assert "'stop-all-lines'," in text
     assert "toggleSafetyMenu" in text
     assert "Automation safety controls" in text
+    assert "toolbar-stop-sign-icon" in text
+    assert "safety-menu-status" not in text
     assert "Resume current workspace" in text
     assert "Pause current workspace" in text
     assert "Pause all workspaces..." in text

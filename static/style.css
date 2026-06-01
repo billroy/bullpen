@@ -652,13 +652,49 @@ body {
   position: relative;
 }
 
-.toolbar-safety-btn {
+.btn-icon.toolbar-safety-btn {
   width: 32px;
+  height: 32px;
+  padding: 4px 2px;
   justify-content: center;
 }
 
-.toolbar-safety-btn.active {
+.btn-icon.toolbar-safety-btn.active {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.24);
+}
+
+.toolbar-stop-sign-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  position: relative;
+  background: #fff;
+  color: #fff;
+  clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.toolbar-stop-sign-icon::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  background: #dc2626;
+  clip-path: inherit;
+}
+
+.toolbar-stop-sign-icon {
+  z-index: 0;
+}
+
+.toolbar-stop-sign-icon::after {
+  content: "STOP";
+  position: relative;
+  z-index: 1;
 }
 
 .toolbar-btn-icon {
@@ -1226,31 +1262,37 @@ body {
   flex: 1;
 }
 
+.menu-stop-sign-icon {
+  width: 15px;
+  height: 15px;
+  position: relative;
+  background: #fff;
+  color: #fff;
+  clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+  font-size: 4px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.menu-stop-sign-icon::before {
+  content: "";
+  position: absolute;
+  inset: 1.5px;
+  background: #dc2626;
+  clip-path: inherit;
+}
+
+.menu-stop-sign-icon::after {
+  content: "STOP";
+  position: relative;
+  z-index: 1;
+}
+
 .toolbar-safety-menu {
   right: 0;
   left: auto;
   min-width: 238px;
-}
-
-.safety-menu-status {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px 8px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
-}
-
-.safety-menu-eyebrow {
-  color: var(--text-secondary);
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.safety-menu-state {
-  color: var(--text-primary);
-  font-size: 12px;
 }
 
 .safety-menu-section-label {
