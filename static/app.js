@@ -1249,6 +1249,15 @@ const app = createApp({
     function stopTheLine() {
       socket.emit('workers:stop_line', _wsData({}));
     }
+    function pauseAllAutomation() {
+      socket.emit('workers:pause_all_automation', {});
+    }
+    function resumeAllAutomation() {
+      socket.emit('workers:resume_all_automation', {});
+    }
+    function stopAllLines() {
+      socket.emit('workers:stop_all_lines', {});
+    }
     function openServiceSite(slot) {
       const worker = _workerAt(slot);
       const url = window.getServiceSiteUrl ? window.getServiceSiteUrl(worker, window.location) : '';
@@ -1746,7 +1755,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, multipleWorkspaces, taskById,
       transferSlot, transferMode, openTransfer, transferWorker,
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
@@ -1806,6 +1815,9 @@ const app = createApp({
         @pause-automation="pauseAutomation"
         @resume-automation="resumeAutomation"
         @stop-the-line="stopTheLine"
+        @pause-all-automation="pauseAllAutomation"
+        @resume-all-automation="resumeAllAutomation"
+        @stop-all-lines="stopAllLines"
         @set-worker-minimap-collapsed="setWorkerMinimapCollapsed"
         @quick-create-task="quickCreateTask"
         @run-palette-command="runPaletteCommand"

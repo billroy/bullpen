@@ -967,6 +967,23 @@ def register_events(socketio, app):
             worker_mod.check_watch_columns(bp_dir, column, socketio, ws_id)
         worker_mod.drain_runnable_queues(bp_dir, socketio, ws_id)
 
+    def _available_workspace_targets():
+        manager = app.config["manager"]
+        targets = []
+        for project in manager.list_visible_projects(include_path=False):
+            if project.get("available") is False:
+                continue
+            ws = manager.get_or_activate(project.get("id"))
+            if ws:
+                targets.append(ws)
+        return targets
+
+    def _forbid_mcp_all_workspace_control(event_name):
+        if not _bound_mcp_workspace():
+            return False
+        emit("error", {"message": f"{event_name} unavailable for MCP-authenticated clients"})
+        return True
+
     @socketio.on("workers:pause_automation")
     @with_lock
     def on_workers_pause_automation(data):
@@ -1001,6 +1018,63 @@ def register_events(socketio, app):
             ),
             "level": "warning",
         }, ws_id)
+
+    @socketio.on("workers:pause_all_automation")
+    @with_lock
+    def on_workers_pause_all_automation(data):
+        if _forbid_mcp_all_workspace_control("workers:pause_all_automation"):
+            return
+        targets = _available_workspace_targets()
+        if not targets:
+            emit("error", {"message": "No available workspaces to pause."})
+            return
+        for ws in targets:
+            _set_worker_automation_paused(ws.bp_dir, ws.id, True)
+        emit("toast", {
+            "message": f"Worker automation paused in {len(targets)} workspace{'' if len(targets) == 1 else 's'}.",
+            "level": "info",
+        })
+
+    @socketio.on("workers:resume_all_automation")
+    @with_lock
+    def on_workers_resume_all_automation(data):
+        if _forbid_mcp_all_workspace_control("workers:resume_all_automation"):
+            return
+        targets = _available_workspace_targets()
+        if not targets:
+            emit("error", {"message": "No available workspaces to resume."})
+            return
+        for ws in targets:
+            _set_worker_automation_paused(ws.bp_dir, ws.id, False)
+        for ws in targets:
+            _resume_worker_automation(ws.bp_dir, socketio, ws.id)
+        emit("toast", {
+            "message": f"Worker automation resumed in {len(targets)} workspace{'' if len(targets) == 1 else 's'}.",
+            "level": "info",
+        })
+
+    @socketio.on("workers:stop_all_lines")
+    @with_lock
+    def on_workers_stop_all_lines(data):
+        if _forbid_mcp_all_workspace_control("workers:stop_all_lines"):
+            return
+        targets = _available_workspace_targets()
+        if not targets:
+            emit("error", {"message": "No available workspaces to stop."})
+            return
+        for ws in targets:
+            _set_worker_automation_paused(ws.bp_dir, ws.id, True)
+        stopped = 0
+        for ws in targets:
+            stopped += worker_mod.stop_line_workers(ws.bp_dir, socketio, ws.id)
+        emit("toast", {
+            "message": (
+                f"Stop All Workspaces: stopped {stopped} active worker"
+                f"{'' if stopped == 1 else 's'} and paused automation in "
+                f"{len(targets)} workspace{'' if len(targets) == 1 else 's'}."
+            ),
+            "level": "warning",
+        })
 
     @socketio.on("prompt:update")
     @with_lock

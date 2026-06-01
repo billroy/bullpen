@@ -74,9 +74,17 @@ def test_toolbar_exposes_worker_pause_and_stop_line_controls():
     assert "'pause-automation'," in text
     assert "'resume-automation'," in text
     assert "'stop-the-line'," in text
-    assert "workerAutomationPaused ? 'Resume automation' : 'Pause automation'" in text
+    assert "'pause-all-automation'," in text
+    assert "'resume-all-automation'," in text
+    assert "'stop-all-lines'," in text
+    assert "toggleSafetyMenu" in text
+    assert "Automation safety controls" in text
+    assert "Resume current workspace" in text
+    assert "Pause current workspace" in text
+    assert "Pause all workspaces..." in text
+    assert "Resume all workspaces..." in text
+    assert "Stop all workspaces..." in text
     assert "AUTOMATION PAUSED" in text
-    assert "Stop The Line" in text
     assert "window.confirm(" in text
 
 
@@ -86,9 +94,15 @@ def test_app_wires_toolbar_worker_pause_events():
     assert "@pause-automation=\"pauseAutomation\"" in text
     assert "@resume-automation=\"resumeAutomation\"" in text
     assert "@stop-the-line=\"stopTheLine\"" in text
+    assert "@pause-all-automation=\"pauseAllAutomation\"" in text
+    assert "@resume-all-automation=\"resumeAllAutomation\"" in text
+    assert "@stop-all-lines=\"stopAllLines\"" in text
     assert "socket.emit('workers:pause_automation'" in text
     assert "socket.emit('workers:resume_automation'" in text
     assert "socket.emit('workers:stop_line'" in text
+    assert "socket.emit('workers:pause_all_automation'" in text
+    assert "socket.emit('workers:resume_all_automation'" in text
+    assert "socket.emit('workers:stop_all_lines'" in text
 
 
 def test_toolbar_audio_and_worker_color_menus_are_mutually_exclusive():

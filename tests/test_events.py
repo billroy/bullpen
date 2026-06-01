@@ -1546,6 +1546,33 @@ class TestConfigEvents:
         assert config is not None
         assert config["worker_automation_paused"] is True
 
+    def test_pause_and_resume_all_worker_automation_events_clear_every_workspace(self, client, tmp_path):
+        c, app = client
+        other = tmp_path / "other-project"
+        other.mkdir()
+        other_ws_id = app.config["manager"].register_project(str(other), name="Other")
+        startup_ws_id = app.config["startup_workspace_id"]
+
+        c.emit("workers:pause_all_automation", {})
+        assert read_json(os.path.join(app.config["manager"].get_bp_dir(startup_ws_id), "config.json"))["worker_automation_paused"] is True
+        assert read_json(os.path.join(app.config["manager"].get_bp_dir(other_ws_id), "config.json"))["worker_automation_paused"] is True
+
+        c.emit("workers:resume_all_automation", {})
+        assert read_json(os.path.join(app.config["manager"].get_bp_dir(startup_ws_id), "config.json"))["worker_automation_paused"] is False
+        assert read_json(os.path.join(app.config["manager"].get_bp_dir(other_ws_id), "config.json"))["worker_automation_paused"] is False
+
+    def test_stop_all_lines_pauses_every_workspace(self, client, tmp_path):
+        c, app = client
+        other = tmp_path / "other-project"
+        other.mkdir()
+        other_ws_id = app.config["manager"].register_project(str(other), name="Other")
+        startup_ws_id = app.config["startup_workspace_id"]
+
+        c.emit("workers:stop_all_lines", {})
+
+        assert read_json(os.path.join(app.config["manager"].get_bp_dir(startup_ws_id), "config.json"))["worker_automation_paused"] is True
+        assert read_json(os.path.join(app.config["manager"].get_bp_dir(other_ws_id), "config.json"))["worker_automation_paused"] is True
+
     def test_prompt_update(self, client):
         c, app = client
         c.emit("prompt:update", {"type": "workspace", "content": "This is a Flask project."})

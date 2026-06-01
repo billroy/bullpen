@@ -11,6 +11,9 @@ const TopToolbar = {
     'pause-automation',
     'resume-automation',
     'stop-the-line',
+    'pause-all-automation',
+    'resume-all-automation',
+    'stop-all-lines',
     'set-worker-minimap-collapsed',
     'export-workspace',
     'export-all',
@@ -24,6 +27,7 @@ const TopToolbar = {
   data() {
     return {
       showMainMenu: false,
+      showSafetyMenu: false,
       quickCreateText: '',
       showPalette: false,
       paletteOverlayOpen: false,
@@ -134,6 +138,9 @@ const TopToolbar = {
     showMainMenu(next) {
       if (next) this.$nextTick(() => renderLucideIcons(this.$el));
     },
+    showSafetyMenu(next) {
+      if (next) this.$nextTick(() => renderLucideIcons(this.$el));
+    },
     showEventSoundsMenu(next) {
       if (next) this.$nextTick(() => renderLucideIcons(this.$el));
     },
@@ -171,12 +178,23 @@ const TopToolbar = {
     toggleMainMenu() {
       this.showMainMenu = !this.showMainMenu;
       if (this.showMainMenu) {
+        this.showSafetyMenu = false;
         this.showEventSoundsMenu = false;
+        window.dispatchEvent(new Event('bullpen:menu:close-projects'));
+      }
+    },
+    toggleSafetyMenu() {
+      this.showSafetyMenu = !this.showSafetyMenu;
+      if (this.showSafetyMenu) {
+        this.showMainMenu = false;
+        this.showEventSoundsMenu = false;
+        this.showProviderColorsMenu = false;
         window.dispatchEvent(new Event('bullpen:menu:close-projects'));
       }
     },
     onGlobalClick() {
       this.showMainMenu = false;
+      this.showSafetyMenu = false;
       this.showEventSoundsMenu = false;
       this.showProviderColorsMenu = false;
       if (!this.paletteOverlayOpen) this.showPalette = false;
@@ -185,6 +203,7 @@ const TopToolbar = {
       this.showProviderColorsMenu = !this.showProviderColorsMenu;
       if (this.showProviderColorsMenu) {
         this.showMainMenu = false;
+        this.showSafetyMenu = false;
         this.showEventSoundsMenu = false;
       }
     },
@@ -206,8 +225,25 @@ const TopToolbar = {
     onResetProviderColors() {
       this.$emit('reset-provider-colors');
     },
-    onToggleAutomationPause() {
-      this.$emit(this.workerAutomationPaused ? 'resume-automation' : 'pause-automation');
+    onPauseCurrentAutomation() {
+      this.showSafetyMenu = false;
+      this.$emit('pause-automation');
+    },
+    onResumeCurrentAutomation() {
+      this.showSafetyMenu = false;
+      this.$emit('resume-automation');
+    },
+    onPauseAllAutomation() {
+      const ok = window.confirm('Pause automation in all workspaces?');
+      if (!ok) return;
+      this.showSafetyMenu = false;
+      this.$emit('pause-all-automation');
+    },
+    onResumeAllAutomation() {
+      const ok = window.confirm('Resume automation in all workspaces? This clears workspace pauses everywhere.');
+      if (!ok) return;
+      this.showSafetyMenu = false;
+      this.$emit('resume-all-automation');
     },
     onToggleWorkerMinimap() {
       this.showMainMenu = false;
@@ -215,10 +251,19 @@ const TopToolbar = {
     },
     onStopTheLine() {
       const ok = window.confirm(
-        'Stop The Line will stop active AI and Shell runs, keep services running, and pause automation until you resume it.'
+        'Stop active AI/Shell runs in this workspace and pause automation? Services will keep running.'
       );
       if (!ok) return;
+      this.showSafetyMenu = false;
       this.$emit('stop-the-line');
+    },
+    onStopAllLines() {
+      const ok = window.confirm(
+        'Stop active AI/Shell runs in all workspaces and pause automation everywhere? Services will keep running.'
+      );
+      if (!ok) return;
+      this.showSafetyMenu = false;
+      this.$emit('stop-all-lines');
     },
     onGlobalKeydown(event) {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') return;
@@ -246,6 +291,7 @@ const TopToolbar = {
       this.showEventSoundsMenu = !this.showEventSoundsMenu;
       if (this.showEventSoundsMenu) {
         this.showMainMenu = false;
+        this.showSafetyMenu = false;
         this.showProviderColorsMenu = false;
       }
     },
@@ -263,6 +309,7 @@ const TopToolbar = {
     },
     onExternalCloseMainMenu() {
       this.showMainMenu = false;
+      this.showSafetyMenu = false;
     },
     onToggleLeftPane() {
       this.showMainMenu = false;
@@ -516,23 +563,33 @@ const TopToolbar = {
         <div class="toolbar-right">
           <div class="toolbar-worker-controls">
             <span v-if="workerAutomationPaused" class="toolbar-status-pill">AUTOMATION PAUSED</span>
-            <button
-              class="btn btn-sm"
-              :class="workerAutomationPaused ? 'btn-primary' : ''"
-              @click="onToggleAutomationPause"
-              :title="workerAutomationPaused ? 'Allow queued and scheduled AI and Shell workers to run again.' : 'Prevent new AI and Shell worker runs in this workspace.'"
-            >
-              <i class="toolbar-btn-icon" :data-lucide="workerAutomationPaused ? 'play' : 'pause'" aria-hidden="true"></i>
-              <span>{{ workerAutomationPaused ? 'Resume automation' : 'Pause automation' }}</span>
-            </button>
-            <button
-              class="btn btn-sm btn-danger"
-              @click="onStopTheLine"
-              title="Stop active AI and Shell runs now and pause automation."
-            >
-              <i class="toolbar-btn-icon" data-lucide="octagon-alert" aria-hidden="true"></i>
-              <span>Stop The Line</span>
-            </button>
+            <div class="toolbar-safety-menu-wrap" @click.stop>
+              <button
+                class="btn btn-sm btn-danger toolbar-safety-btn"
+                :class="{ active: showSafetyMenu || workerAutomationPaused }"
+                @click="toggleSafetyMenu"
+                :aria-expanded="showSafetyMenu ? 'true' : 'false'"
+                aria-label="Automation safety controls"
+                title="Automation safety controls"
+              >
+                <i class="toolbar-btn-icon" data-lucide="octagon-alert" aria-hidden="true"></i>
+              </button>
+              <div v-if="showSafetyMenu" class="project-menu toolbar-safety-menu">
+                <div class="safety-menu-status">
+                  <span class="safety-menu-eyebrow">Safety</span>
+                  <span class="safety-menu-state">{{ workerAutomationPaused ? 'Current workspace paused' : 'Automation running' }}</span>
+                </div>
+                <div class="safety-menu-section-label">Current workspace</div>
+                <button v-if="workerAutomationPaused" class="project-menu-item" @click="onResumeCurrentAutomation"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Resume current workspace</span></button>
+                <button v-else class="project-menu-item" @click="onPauseCurrentAutomation"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause current workspace</span></button>
+                <button class="project-menu-item project-menu-item-danger" @click="onStopTheLine"><i class="menu-item-icon" data-lucide="octagon-alert" aria-hidden="true"></i><span class="menu-item-label">Stop current workspace...</span></button>
+                <div class="safety-menu-divider"></div>
+                <div class="safety-menu-section-label">All workspaces</div>
+                <button class="project-menu-item" @click="onPauseAllAutomation"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause all workspaces...</span></button>
+                <button class="project-menu-item" @click="onResumeAllAutomation"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Resume all workspaces...</span></button>
+                <button class="project-menu-item project-menu-item-danger" @click="onStopAllLines"><i class="menu-item-icon" data-lucide="octagon-alert" aria-hidden="true"></i><span class="menu-item-label">Stop all workspaces...</span></button>
+              </div>
+            </div>
           </div>
           <div class="toolbar-audio">
             <label class="toolbar-audio-label" for="ambient-preset">Ambient</label>
