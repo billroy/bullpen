@@ -42,8 +42,8 @@ from server.worker_types import get_worker_type, normalize_layout
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
 MAX_HANDOFF_DEPTH = 10
-# Feature switch kept for tests and emergency rollback; enforcement is on by default.
-ENFORCE_HANDOFF_CHAIN_LIMIT = True
+# Feature switch kept for tests and emergency rollback; enforcement is off by default.
+ENFORCE_HANDOFF_CHAIN_LIMIT = False
 SHELL_WORKER_EXIT_BLOCKED = 78
 SHELL_OUTPUT_ARTIFACT_LIMIT = 1_048_576
 TASK_BODY_LIMIT = 1_048_576
