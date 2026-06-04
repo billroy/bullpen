@@ -57,6 +57,21 @@ def test_parse_args_websocket_debug_defaults_false():
     assert args.websocket_debug is False
 
 
+def test_parse_args_max_handoff_depth_defaults_disabled():
+    args = bullpen.parse_args([])
+    assert args.max_handoff_depth == 0
+
+
+def test_parse_args_supports_max_handoff_depth():
+    args = bullpen.parse_args(["--max-handoff-depth=12"])
+    assert args.max_handoff_depth == 12
+
+
+def test_parse_args_rejects_negative_max_handoff_depth():
+    with pytest.raises(SystemExit):
+        bullpen.parse_args(["--max-handoff-depth", "-1"])
+
+
 def test_parse_args_supports_websocket_debug():
     args = bullpen.parse_args(["--websocket-debug"])
     assert args.websocket_debug is True

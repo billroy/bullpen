@@ -1830,15 +1830,14 @@ class TestHandoff:
         assert updated.get("handoff_depth", 0) == 1
 
     def test_handoff_depth_limit_disabled_by_default(self, bp_dir):
-        """Default mode does not block handoff chains at max depth."""
-        assert workers_mod.ENFORCE_HANDOFF_CHAIN_LIMIT is False
-        max_depth = workers_mod.MAX_HANDOFF_DEPTH
-        assert not workers_mod._handoff_depth_limit_reached(max_depth)
+        """Default mode does not block handoff chains."""
+        assert workers_mod.MAX_HANDOFF_DEPTH == 0
+        assert not workers_mod._handoff_depth_limit_reached(10)
 
-    def test_handoff_depth_limit_enabled_by_flag(self, bp_dir, monkeypatch):
-        """Enabled mode blocks handoff chains at max depth."""
-        monkeypatch.setattr(workers_mod, "ENFORCE_HANDOFF_CHAIN_LIMIT", True)
-        max_depth = workers_mod.MAX_HANDOFF_DEPTH
+    def test_handoff_depth_limit_enabled_by_positive_limit(self, bp_dir, monkeypatch):
+        """Positive max depth blocks handoff chains at that depth."""
+        max_depth = 10
+        monkeypatch.setattr(workers_mod, "MAX_HANDOFF_DEPTH", max_depth)
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{
             "row": 0, "col": 0, "profile": "test",
@@ -1862,8 +1861,8 @@ class TestHandoff:
 
     def test_handoff_depth_exceeded(self, bp_dir, monkeypatch):
         """Task with handoff_depth at max moves to blocked."""
-        monkeypatch.setattr(workers_mod, "ENFORCE_HANDOFF_CHAIN_LIMIT", True)
-        max_depth = workers_mod.MAX_HANDOFF_DEPTH
+        max_depth = 10
+        monkeypatch.setattr(workers_mod, "MAX_HANDOFF_DEPTH", max_depth)
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{
             "row": 0, "col": 0, "profile": "test",
@@ -1886,8 +1885,8 @@ class TestHandoff:
 
     def test_handoff_depth_exceeded_task_can_run_again(self, bp_dir, monkeypatch):
         """A task that hit max handoff depth can be reassigned and run again."""
-        monkeypatch.setattr(workers_mod, "ENFORCE_HANDOFF_CHAIN_LIMIT", True)
-        max_depth = workers_mod.MAX_HANDOFF_DEPTH
+        max_depth = 10
+        monkeypatch.setattr(workers_mod, "MAX_HANDOFF_DEPTH", max_depth)
 
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{

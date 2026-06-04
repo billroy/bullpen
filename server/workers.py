@@ -41,9 +41,7 @@ from server.prompt_hardening import (
 from server.worker_types import get_worker_type, normalize_layout
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
-MAX_HANDOFF_DEPTH = 10
-# Feature switch kept for tests and emergency rollback; enforcement is off by default.
-ENFORCE_HANDOFF_CHAIN_LIMIT = False
+MAX_HANDOFF_DEPTH = 0
 SHELL_WORKER_EXIT_BLOCKED = 78
 SHELL_OUTPUT_ARTIFACT_LIMIT = 1_048_576
 TASK_BODY_LIMIT = 1_048_576
@@ -53,9 +51,27 @@ SHELL_SECRET_ENV_MARKERS = (
 )
 
 
+def _normalize_handoff_depth_limit(value):
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def configure_handoff_depth_limit(max_depth):
+    """Set the process-wide handoff depth limit. Zero disables enforcement."""
+    global MAX_HANDOFF_DEPTH
+    MAX_HANDOFF_DEPTH = _normalize_handoff_depth_limit(max_depth)
+    return MAX_HANDOFF_DEPTH
+
+
 def _handoff_depth_limit_reached(depth):
     """Return True when handoff depth should be blocked."""
-    return ENFORCE_HANDOFF_CHAIN_LIMIT and depth >= MAX_HANDOFF_DEPTH
+    return MAX_HANDOFF_DEPTH > 0 and depth >= MAX_HANDOFF_DEPTH
+
+
+def _handoff_depth_block_message():
+    return f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
 
 
 def _normalize_worker_name(name):
@@ -2650,7 +2666,7 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
     # Hand off to the target worker
     depth = task.get("handoff_depth", 0) if task else 0
     if _handoff_depth_limit_reached(depth):
-        msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
+        msg = _handoff_depth_block_message()
         body = (task.get("body", "") if task else "") + msg
         task_mod.update_task(bp_dir, task_id, {
             "status": "blocked",
@@ -2869,7 +2885,7 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
     depth = task.get("handoff_depth", 0) if task else 0
 
     if _handoff_depth_limit_reached(depth):
-        msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
+        msg = _handoff_depth_block_message()
         body = (task.get("body", "") if task else "") + msg
         task_mod.update_task(bp_dir, task_id, {
             "status": "blocked",
@@ -2932,7 +2948,7 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
     depth = task.get("handoff_depth", 0) if task else 0
 
     if _handoff_depth_limit_reached(depth):
-        msg = f"\n\n**Handoff chain exceeded max depth ({MAX_HANDOFF_DEPTH}).** Task moved to blocked.\n"
+        msg = _handoff_depth_block_message()
         body = (task.get("body", "") if task else "") + msg
         task_mod.update_task(bp_dir, task_id, {
             "status": "blocked",

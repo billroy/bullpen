@@ -89,10 +89,9 @@ old manual-shell handoff exception started an idle, empty target. Once slot 48
 had queued work, later handoffs parked behind it because manual queues do not
 auto-drain.
 
-There is also a loop-control smell here. `MAX_HANDOFF_DEPTH` is 10, but
-`ENFORCE_HANDOFF_CHAIN_LIMIT` was `False`, so a pass loop could continue well
-beyond the nominal depth cap. The first queued ticket reached depth 23. The
-depth cap is now enabled by default.
+There is also a loop-control smell here. `--max-handoff-depth` defaults to `0`,
+which disables enforcement, so a pass loop can continue until a positive limit
+is supplied. The first queued ticket reached depth 23.
 
 ## What is useful
 
@@ -182,10 +181,10 @@ make it a visible policy such as `Run handoffs immediately`, or use
 
 ### 4. Re-enable or replace handoff loop protection
 
-`ENFORCE_HANDOFF_CHAIN_LIMIT` is now on. A more explicit cycle detector may
-still be worth adding later. At minimum, two neighboring workers with reciprocal
-`pass:*` dispositions should not generate dozens of runs without a visible stop
-condition.
+`--max-handoff-depth=N` now provides an opt-in stop condition. A more explicit
+cycle detector may still be worth adding later. At minimum, two neighboring
+workers with reciprocal `pass:*` dispositions should not generate dozens of runs
+without a visible stop condition.
 
 When a loop is detected, block the ticket or move it to a configured failure
 column with a clear output note naming the pass chain.

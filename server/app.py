@@ -271,6 +271,7 @@ def create_app(
     port=5000,
     websocket_debug=False,
     start_without_project=False,
+    max_handoff_depth=0,
 ):
     """Create and configure the Flask + SocketIO app."""
     workspace = os.path.abspath(workspace)
@@ -343,6 +344,8 @@ def create_app(
     app.config["bp_dir"] = bp_dir
     app.config["start_without_project"] = start_without_project
     app.config["no_browser"] = no_browser
+    from server import workers as worker_mod
+    app.config["MAX_HANDOFF_DEPTH"] = worker_mod.configure_handoff_depth_limit(max_handoff_depth)
 
     login_failures = {}
 

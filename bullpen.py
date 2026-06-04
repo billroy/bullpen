@@ -9,6 +9,16 @@ import sys
 LOCALHOST_BINDS = {"127.0.0.1", "localhost", "::1"}
 
 
+def non_negative_int(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
+    return parsed
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="bullpen",
@@ -224,6 +234,15 @@ def parse_args(argv=None):
         help=(
             "Enable Socket.IO / Engine.IO websocket activity logging "
             "(default: disabled)"
+        ),
+    )
+    parser.add_argument(
+        "--max-handoff-depth",
+        type=non_negative_int,
+        default=0,
+        help=(
+            "Maximum worker-to-worker handoffs before blocking a task; "
+            "0 disables enforcement (default: 0)"
         ),
     )
     parser.add_argument(
@@ -631,6 +650,7 @@ def main():
         port=args.port,
         websocket_debug=args.websocket_debug,
         start_without_project=args.start_without_project,
+        max_handoff_depth=args.max_handoff_depth,
     )
 
     if not args.no_browser:
