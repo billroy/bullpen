@@ -1,6 +1,6 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
-  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
+  props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
+  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'worker-scope-action', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
          :style="effectiveLayoutMode === 'small' ? { background: agentColor } : null"
@@ -61,20 +61,39 @@ const WorkerCard = {
       </div>
       <Teleport to="body">
         <div v-if="showMenu" ref="menu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
+          <div class="worker-menu-section-label">This Worker</div>
           <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
           <button v-if="canStart && !isPaused && !automationPausedForWorker" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
           <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
           <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
           <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
           <button v-if="canStop" class="worker-menu-item" @click="menuStop"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
-          <button v-if="canPauseWorker && !isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause</span></button>
-          <button v-if="canPauseWorker && isPaused" class="worker-menu-item" :disabled="multipleSelectionActive" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause</span></button>
+          <button v-if="canPauseWorker && !isPaused" class="worker-menu-item" @click="menuPause"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause Worker</span></button>
+          <button v-if="canPauseWorker && isPaused" class="worker-menu-item" @click="menuUnpause"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause Worker</span></button>
           <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
           <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
           <button class="worker-menu-item" @click="menuExportWorker"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Worker</span></button>
           <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
           <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
-          <button class="worker-menu-item worker-menu-danger" :disabled="multipleSelectionActive" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete</span></button>
+          <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Worker&hellip;</span></button>
+          <template v-if="hasConnectedGroup">
+            <div class="worker-menu-divider"></div>
+            <div class="worker-menu-section-label">Connected Group: {{ connectedGroupCount }} Workers</div>
+            <button class="worker-menu-item" @click="menuScoped('pause', 'connected-group')"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause Group</span></button>
+            <button class="worker-menu-item" @click="menuScoped('unpause', 'connected-group')"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause Group</span></button>
+            <button class="worker-menu-item" @click="menuScoped('stop', 'connected-group')"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop Running Workers</span></button>
+            <button class="worker-menu-item" @click="menuScoped('copy', 'connected-group')"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Group</span></button>
+            <button class="worker-menu-item worker-menu-danger" @click="menuScoped('delete', 'connected-group')"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Group&hellip;</span></button>
+          </template>
+          <template v-if="hasSelection">
+            <div class="worker-menu-divider"></div>
+            <div class="worker-menu-section-label">Selected Workers: {{ selectionCount }}</div>
+            <button class="worker-menu-item" @click="menuScoped('pause', 'selection')"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause Selected</span></button>
+            <button class="worker-menu-item" @click="menuScoped('unpause', 'selection')"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause Selected</span></button>
+            <button class="worker-menu-item" @click="menuScoped('stop', 'selection')"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop Running Workers</span></button>
+            <button class="worker-menu-item" @click="menuScoped('copy', 'selection')"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Selected</span></button>
+            <button class="worker-menu-item worker-menu-danger" @click="menuScoped('delete', 'selection')"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Selected&hellip;</span></button>
+          </template>
         </div>
       </Teleport>
       <div v-if="effectiveLayoutMode !== 'small'" class="worker-card-body" @click.stop="onBodyClick" @dblclick.stop="onBodyDblClick">
@@ -255,6 +274,18 @@ const WorkerCard = {
     },
     canPauseWorker() {
       return !this.isMarker && !this.isEval && !this.isUnknownType;
+    },
+    connectedGroupCount() {
+      return Array.isArray(this.menuContext?.connectedGroupSlots) ? this.menuContext.connectedGroupSlots.length : 0;
+    },
+    selectionCount() {
+      return Array.isArray(this.menuContext?.selectionSlots) ? this.menuContext.selectionSlots.length : 0;
+    },
+    hasConnectedGroup() {
+      return this.menuContext?.hasConnectedGroup === true && this.connectedGroupCount > 1;
+    },
+    hasSelection() {
+      return this.menuContext?.hasSelection === true && this.selectionCount > 1;
     },
     canMove() {
       return this.workerState === 'idle' || (this.isService && ['stopped', 'crashed'].includes(this.workerState));
@@ -810,12 +841,10 @@ const WorkerCard = {
       this.$root.restartServiceSlot(this.slotIndex);
     },
     menuPause() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: true } });
     },
     menuUnpause() {
-      if (this.multipleSelectionActive) return;
       this.closeMenuAndRestoreFocus();
       this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { paused: false } });
     },
@@ -850,6 +879,10 @@ const WorkerCard = {
     menuDelete() {
       this.closeMenuAndRestoreFocus();
       this.$emit('delete-worker', this.slotIndex);
+    },
+    menuScoped(action, scope) {
+      this.closeMenuAndRestoreFocus();
+      this.$emit('worker-scope-action', { action, scope, slot: this.slotIndex });
     },
     removeDragImage() {
       if (this._dragImageEl && this._dragImageEl.parentNode) {

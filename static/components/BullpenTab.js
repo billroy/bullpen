@@ -124,6 +124,7 @@ const BullpenTab = {
             :card-height="cardHeightForSlot(item.slotIndex)"
             :is-selected="isSelected(item.coord)"
             :multiple-selection-active="isMultipleSelectionActive"
+            :menu-context="workerMenuContext(item.slotIndex)"
             :is-vertical-resizing="cardVerticalResize && cardVerticalResize.slotIndex === item.slotIndex"
             :workspace-id="workspaceId"
             :request-output-catchup="$root.requestOutputCatchup"
@@ -144,6 +145,7 @@ const BullpenTab = {
             @transfer="$emit('transfer-worker', $event)"
             @copy-worker="copyWorker"
             @delete-worker="deleteWorkerFromMenu"
+            @worker-scope-action="handleWorkerScopeAction"
             @vertical-resize-start="onCardVerticalResizeStart(item, $event)"
             @menu-opened="selectWorker(item, { preserveMultiple: true })"
             @menu-closed="focusViewport"
@@ -1742,12 +1744,37 @@ const BullpenTab = {
       this.selectedWorkerScope = plan.slots.length > 1 ? 'connected-group' : 'item';
       return true;
     },
-    copyWorker(slot) {
+    handleWorkerScopeAction(payload) {
+      const slot = Number(payload?.slot);
+      const scope = payload?.scope || 'item';
+      const action = payload?.action || '';
+      const slots = this.slotsForMenuScope(slot, scope);
+      if (!slots.length) return;
+      if (action === 'pause' || action === 'unpause') {
+        const paused = action === 'pause';
+        for (const memberSlot of slots) {
+          this.$root.saveWorkerConfig({ slot: memberSlot, fields: { paused } });
+        }
+        this.liveMessage = `${paused ? 'Paused' : 'Unpaused'} ${scope === 'item' ? 'worker' : `${slots.length} workers`}`;
+        return;
+      }
+      if (action === 'stop') {
+        for (const memberSlot of slots) this.$root.stopWorkerSlot(memberSlot);
+        this.liveMessage = `Stop requested for ${slots.length} worker${slots.length === 1 ? '' : 's'}`;
+        return;
+      }
+      if (action === 'copy') {
+        this.copyWorker(slot, scope);
+        return;
+      }
+      if (action === 'delete') {
+        this.deleteWorkerFromMenu(slot, scope);
+      }
+    },
+    copyWorker(slot, scope = 'item') {
       const source = this.workerItemBySlot[slot];
       if (!source) return;
-      const slots = this.selectedWorkerSlots.includes(Number(slot)) && this.selectedWorkerSlots.length
-        ? this.expandSelectionSlots(this.selectedWorkerSlots)
-        : this.workerGroupSlots(slot);
+      const slots = this.slotsForMenuScope(slot, scope);
       const workers = slots.map(memberSlot => {
         const item = this.workerItemBySlot[memberSlot];
         if (!item) return null;
@@ -1768,12 +1795,10 @@ const BullpenTab = {
         ? `Copied worker group (${workers.length}) from ${source.worker.name}`
         : `Copied worker ${source.worker.name}`;
     },
-    deleteWorkerFromMenu(slot) {
+    deleteWorkerFromMenu(slot, scope = 'item') {
       const source = Number(slot);
       if (!Number.isInteger(source) || !this.workerItemBySlot[source]) return;
-      const slots = this.selectedWorkerSlots.includes(source) && this.selectedWorkerSlots.length > 1
-        ? this.expandSelectionSlots(this.selectedWorkerSlots)
-        : [source];
+      const slots = this.slotsForMenuScope(source, scope);
       if (slots.length > 1 && typeof this.$root.removeWorkers === 'function') {
         this.$root.removeWorkers(slots);
       } else {
