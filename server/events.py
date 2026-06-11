@@ -40,7 +40,7 @@ from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_coord, validate_worker_configure,
     validate_payload_size, validate_config_update, validate_worker_move,
-    validate_worker_move_group, validate_worker_paste_group,
+    validate_worker_move_group, validate_worker_paste_group, validate_worker_slots,
     validate_layout_update, validate_team_name, validate_terminal_id,
     validate_terminal_input, validate_terminal_size,
 )
@@ -699,6 +699,23 @@ def register_events(socketio, app):
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
 
+    @socketio.on("worker:remove_many")
+    @with_lock
+    def on_worker_remove_many(data):
+        ws_id, bp_dir = _resolve(data)
+        slots = validate_worker_slots(data)
+        layout = _load_layout(bp_dir)
+
+        for slot in slots:
+            if slot >= len(layout["slots"]) or not layout["slots"][slot]:
+                emit("error", {"message": "worker:remove_many requires occupied slots"})
+                return
+
+        for slot in slots:
+            layout["slots"][slot] = None
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+
     @socketio.on("worker:move")
     @with_lock
     def on_worker_move(data):
@@ -830,6 +847,78 @@ def register_events(socketio, app):
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
 
+    @socketio.on("worker:duplicate_group")
+    @with_lock
+    def on_worker_duplicate_group(data):
+        ws_id, bp_dir = _resolve(data)
+        slots = validate_worker_slots(data)
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+
+        for slot in slots:
+            if slot >= len(layout["slots"]) or not layout["slots"][slot]:
+                emit("error", {"message": "worker:duplicate_group requires occupied slots"})
+                return
+
+        anchor_slot = slots[0]
+        anchor_worker = layout["slots"][anchor_slot]
+        anchor_col, anchor_row = _slot_coord(anchor_worker, anchor_slot, cols)
+        members = []
+        for slot in slots:
+            worker = layout["slots"][slot]
+            col, row = _slot_coord(worker, slot, cols)
+            members.append({
+                "slot": slot,
+                "worker": worker,
+                "offset_col": col - anchor_col,
+                "offset_row": row - anchor_row,
+            })
+
+        target_col = anchor_col + 1
+        target_row = anchor_row
+        while True:
+            candidate_coords = [
+                {"col": target_col + m["offset_col"], "row": target_row + m["offset_row"]}
+                for m in members
+            ]
+            if all(coord["col"] >= 0 and coord["row"] >= 0 for coord in candidate_coords):
+                occupied = [
+                    _coord_occupied(layout, coord, cols=cols)
+                    for coord in candidate_coords
+                ]
+                if all(slot is None for slot in occupied):
+                    break
+            target_col += 1
+
+        existing_names = {s["name"] for s in layout["slots"] if s and s.get("name")}
+
+        def unique_copy_name(base_name):
+            base = str(base_name or "Worker")
+            candidate = f"{base} copy"
+            suffix = 2
+            while candidate in existing_names:
+                candidate = f"{base} copy {suffix}"
+                suffix += 1
+            existing_names.add(candidate)
+            return candidate
+
+        for member, coord in zip(members, candidate_coords):
+            source = member["worker"]
+            if str(source.get("type") or "ai") == "ai":
+                clone_source = {k: v for k, v in source.items() if k in _AI_COPY_FIELDS}
+            else:
+                clone_source = source
+            clone = copy_worker_slot(clone_source, reset_runtime=True)
+            clone["row"] = coord["row"]
+            clone["col"] = coord["col"]
+            clone["name"] = unique_copy_name(source.get("name"))
+            target = _first_empty_slot(layout)
+            layout["slots"][target] = clone
+
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+
     @socketio.on("worker:paste")
     @with_lock
     def on_worker_paste(data):
@@ -917,6 +1006,41 @@ def register_events(socketio, app):
                 worker_mod.check_watch_columns(
                     bp_dir, worker["watch_column"], socketio, ws_id,
                 )
+
+    @socketio.on("worker:configure_many")
+    @with_lock
+    def on_worker_configure_many(data):
+        ws_id, bp_dir = _resolve(data)
+        slots = validate_worker_slots(data)
+        _, fields = validate_worker_configure({"slot": slots[0], "fields": data.get("fields")}, max_slots=200)
+        layout = _load_layout(bp_dir)
+
+        for slot in slots:
+            if slot >= len(layout["slots"]) or not layout["slots"][slot]:
+                emit("error", {"message": "worker:configure_many requires occupied slots"})
+                return
+
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        changed_watch_columns = []
+        for slot in slots:
+            worker = layout["slots"][slot]
+            for k, v in fields.items():
+                if k not in ("task_queue", "state"):
+                    worker[k] = v
+            layout["slots"][slot] = normalize_worker_slot(worker, index=slot, config=config)
+            worker = layout["slots"][slot]
+            if ("activation" in fields or "watch_column" in fields):
+                if (worker.get("activation") == "on_queue"
+                        and worker.get("watch_column")
+                        and worker.get("state") == "idle"
+                        and not worker.get("paused")):
+                    changed_watch_columns.append(worker["watch_column"])
+
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+
+        for watch_column in changed_watch_columns:
+            worker_mod.check_watch_columns(bp_dir, watch_column, socketio, ws_id)
 
     @socketio.on("layout:update")
     @with_lock
@@ -1155,6 +1279,19 @@ def register_events(socketio, app):
             emit("error", {"message": "worker:stop requires slot"})
             return
         worker_mod.stop_worker(bp_dir, slot, socketio, ws_id)
+
+    @socketio.on("worker:stop_many")
+    @with_lock
+    def on_worker_stop_many(data):
+        ws_id, bp_dir = _resolve(data)
+        slots = validate_worker_slots(data)
+        layout = _load_layout(bp_dir)
+        for slot in slots:
+            if slot >= len(layout["slots"]) or not layout["slots"][slot]:
+                emit("error", {"message": "worker:stop_many requires occupied slots"})
+                return
+        for slot in slots:
+            worker_mod.stop_worker(bp_dir, slot, socketio, ws_id)
 
     # --- Output streaming events ---
 

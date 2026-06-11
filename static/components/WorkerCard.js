@@ -83,6 +83,10 @@ const WorkerCard = {
             <button class="worker-menu-item" @click="menuScoped('unpause', 'connected-group')"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause Group</span></button>
             <button class="worker-menu-item" @click="menuScoped('stop', 'connected-group')"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop Running Workers</span></button>
             <button class="worker-menu-item" @click="menuScoped('copy', 'connected-group')"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Group</span></button>
+            <button class="worker-menu-item" @click="menuScoped('duplicate', 'connected-group')"><i class="menu-item-icon" data-lucide="copy-plus" aria-hidden="true"></i><span class="menu-item-label">Duplicate Group</span></button>
+            <button class="worker-menu-item" @click="menuScoped('export', 'connected-group')"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Group</span></button>
+            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuScoped('copy-to', 'connected-group')"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy Group to workspace&hellip;</span></button>
+            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuScoped('move-to', 'connected-group')"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move Group to workspace&hellip;</span></button>
             <button class="worker-menu-item worker-menu-danger" @click="menuScoped('delete', 'connected-group')"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Group&hellip;</span></button>
           </template>
           <template v-if="hasSelection">
@@ -92,6 +96,10 @@ const WorkerCard = {
             <button class="worker-menu-item" @click="menuScoped('unpause', 'selection')"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause Selected</span></button>
             <button class="worker-menu-item" @click="menuScoped('stop', 'selection')"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop Running Workers</span></button>
             <button class="worker-menu-item" @click="menuScoped('copy', 'selection')"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Selected</span></button>
+            <button class="worker-menu-item" @click="menuScoped('duplicate', 'selection')"><i class="menu-item-icon" data-lucide="copy-plus" aria-hidden="true"></i><span class="menu-item-label">Duplicate Selected</span></button>
+            <button class="worker-menu-item" @click="menuScoped('export', 'selection')"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Selected</span></button>
+            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuScoped('copy-to', 'selection')"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy Selected to workspace&hellip;</span></button>
+            <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuScoped('move-to', 'selection')"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move Selected to workspace&hellip;</span></button>
             <button class="worker-menu-item worker-menu-danger" @click="menuScoped('delete', 'selection')"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Selected&hellip;</span></button>
           </template>
         </div>

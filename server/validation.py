@@ -380,6 +380,29 @@ def validate_worker_move(data, max_slots=200):
     return from_slot, to_slot, to_coord
 
 
+def validate_worker_slots(data, field="slots", max_slots=200, max_count=200):
+    """Validate a list of worker slot indices."""
+    validate_payload_size(data)
+    slots = data.get(field)
+    if not isinstance(slots, list) or not slots:
+        raise ValidationError(f"{field} must be a non-empty list")
+    if len(slots) > max_count:
+        raise ValidationError(f"{field} exceeds max length ({len(slots)} > {max_count})")
+    seen = set()
+    sanitized = []
+    for idx, raw in enumerate(slots):
+        slot = _int(raw, f"{field}[{idx}]", min_val=0, max_val=max_slots - 1)
+        if slot is None:
+            raise ValidationError(f"{field}[{idx}] must be a slot")
+        if slot in seen:
+            continue
+        seen.add(slot)
+        sanitized.append(slot)
+    if not sanitized:
+        raise ValidationError(f"{field} must include at least one slot")
+    return sanitized
+
+
 def validate_worker_move_group(data, max_slots=200, max_moves=200):
     """Validate worker:move_group payload. Returns sanitized move list."""
     validate_payload_size(data)

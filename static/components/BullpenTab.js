@@ -1752,19 +1752,36 @@ const BullpenTab = {
       if (!slots.length) return;
       if (action === 'pause' || action === 'unpause') {
         const paused = action === 'pause';
-        for (const memberSlot of slots) {
-          this.$root.saveWorkerConfig({ slot: memberSlot, fields: { paused } });
-        }
+        if (slots.length === 1) this.$root.saveWorkerConfig({ slot: slots[0], fields: { paused } });
+        else this.$root.saveWorkersConfig({ slots, fields: { paused } });
         this.liveMessage = `${paused ? 'Paused' : 'Unpaused'} ${scope === 'item' ? 'worker' : `${slots.length} workers`}`;
         return;
       }
       if (action === 'stop') {
-        for (const memberSlot of slots) this.$root.stopWorkerSlot(memberSlot);
+        if (slots.length === 1) this.$root.stopWorkerSlot(slots[0]);
+        else this.$root.stopWorkerSlots(slots);
         this.liveMessage = `Stop requested for ${slots.length} worker${slots.length === 1 ? '' : 's'}`;
         return;
       }
       if (action === 'copy') {
         this.copyWorker(slot, scope);
+        return;
+      }
+      if (action === 'duplicate') {
+        if (slots.length === 1) this.$root.duplicateWorker(slots[0]);
+        else this.$root.duplicateWorkers(slots);
+        return;
+      }
+      if (action === 'export') {
+        this.$root.exportWorkerGroup(slots);
+        return;
+      }
+      if (action === 'copy-to' || action === 'move-to') {
+        this.$emit('transfer-worker', {
+          slot,
+          slots,
+          mode: action === 'move-to' ? 'move' : 'copy',
+        });
         return;
       }
       if (action === 'delete') {

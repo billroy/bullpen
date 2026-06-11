@@ -16,6 +16,13 @@ def test_app_exposes_group_worker_socket_events():
     assert "socket.emit('worker:move_group'" in text
     assert "function pasteWorkerGroup(items)" in text
     assert "socket.emit('worker:paste_group'" in text
+    assert "function saveWorkersConfig({ slots, fields })" in text
+    assert "socket.emit('worker:configure_many'" in text
+    assert "function stopWorkerSlots(slots)" in text
+    assert "socket.emit('worker:stop_many'" in text
+    assert "function duplicateWorkers(slots)" in text
+    assert "socket.emit('worker:duplicate_group'" in text
+    assert "function exportWorkerGroup(slots)" in text
 
 
 def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
@@ -205,9 +212,15 @@ def test_worker_card_exposes_explicit_group_and_selection_menu_items():
     assert "Selected Workers: {{ selectionCount }}" in text
     assert "menuScoped('pause', 'connected-group')" in text
     assert "menuScoped('copy', 'connected-group')" in text
+    assert "menuScoped('duplicate', 'connected-group')" in text
+    assert "menuScoped('export', 'connected-group')" in text
+    assert "menuScoped('copy-to', 'connected-group')" in text
     assert "menuScoped('delete', 'connected-group')" in text
     assert "menuScoped('pause', 'selection')" in text
     assert "menuScoped('copy', 'selection')" in text
+    assert "menuScoped('duplicate', 'selection')" in text
+    assert "menuScoped('export', 'selection')" in text
+    assert "menuScoped('copy-to', 'selection')" in text
     assert "menuScoped(action, scope)" in text
     assert "if (this.multipleSelectionActive) return;" not in text
     assert "this.$emit('delete-worker', this.slotIndex);" in text
@@ -224,10 +237,26 @@ def test_bullpen_tab_deletes_selected_worker_group_from_menu():
     text = _read("static/components/BullpenTab.js")
     assert "@delete-worker=\"deleteWorkerFromMenu\"" in text
     assert "@worker-scope-action=\"handleWorkerScopeAction\"" in text
+    assert "handleWorkerScopeAction(payload)" in text
+    assert "this.$root.saveWorkersConfig({ slots, fields: { paused } });" in text
+    assert "this.$root.stopWorkerSlots(slots);" in text
+    assert "this.$root.duplicateWorkers(slots);" in text
+    assert "this.$root.exportWorkerGroup(slots);" in text
     assert "deleteWorkerFromMenu(slot, scope = 'item')" in text
     assert "const slots = this.slotsForMenuScope(source, scope);" in text
     assert "this.$root.removeWorkers(slots)" in text
     assert "this.$root.removeWorker(source)" in text
+
+
+def test_worker_transfer_modal_supports_group_payloads():
+    app_text = _read("static/app.js")
+    modal_text = _read("static/components/WorkerTransferModal.js")
+    assert "const transferSlots = ref([]);" in app_text
+    assert ":slot-indices=\"transferSlots\"" in app_text
+    assert "fetch(groupTransfer ? '/api/worker/transfer_group' : '/api/worker/transfer'" in app_text
+    assert "props: ['visible', 'worker', 'slotIndex', 'slotIndices'" in modal_text
+    assert "source_slots: this.resolvedSlots" in modal_text
+    assert "transferSubject()" in modal_text
 
 
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():

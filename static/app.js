@@ -322,6 +322,7 @@ const app = createApp({
     const selectedTaskMode = ref('edit'); // 'edit' | 'read'
     const configureSlot = ref(null);
     const transferSlot = ref(null);
+    const transferSlots = ref([]);
     const transferMode = ref('copy');
     const quickCreateClearToken = ref(0);
     const pendingQuickCreates = reactive([]);
@@ -1161,9 +1162,7 @@ const app = createApp({
         return;
       }
       if (!confirm(workerDeleteMessage(workers))) return;
-      for (const { slot } of workers) {
-        socket.emit('worker:remove', _wsData({ slot }));
-      }
+      socket.emit('worker:remove_many', _wsData({ slots: workers.map(({ slot }) => slot) }));
     }
     function moveWorker(from, to) {
       const payload = { from };
@@ -1179,8 +1178,11 @@ const app = createApp({
       socket.emit('worker:paste_group', _wsData({ items }));
     }
     function duplicateWorker(slot) { socket.emit('worker:duplicate', _wsData({ slot })); }
-    function openTransfer({ slot, mode }) {
-      transferSlot.value = slot;
+    function duplicateWorkers(slots) { socket.emit('worker:duplicate_group', _wsData({ slots })); }
+    function openTransfer({ slot, slots, mode }) {
+      const resolvedSlots = Array.isArray(slots) && slots.length ? slots.map(Number).filter(Number.isInteger) : [];
+      transferSlot.value = Number.isInteger(Number(slot)) ? Number(slot) : (resolvedSlots[0] ?? null);
+      transferSlots.value = resolvedSlots.length ? resolvedSlots : (transferSlot.value !== null ? [transferSlot.value] : []);
       transferMode.value = mode;
     }
     function closeCreateModal() {
@@ -1197,11 +1199,13 @@ const app = createApp({
     }
     function closeTransferModal() {
       transferSlot.value = null;
+      transferSlots.value = [];
       focusWorkerGridSoon();
     }
     async function transferWorker(payload) {
       try {
-        const resp = await fetch('/api/worker/transfer', {
+        const groupTransfer = Array.isArray(payload.source_slots) && payload.source_slots.length > 1;
+        const resp = await fetch(groupTransfer ? '/api/worker/transfer_group' : '/api/worker/transfer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -1212,7 +1216,8 @@ const app = createApp({
           return;
         }
         const destName = projects.find(p => p.id === payload.dest_workspace_id)?.name || 'workspace';
-        addToast(`Worker ${payload.mode === 'move' ? 'moved' : 'copied'} to ${destName}`);
+        const subject = groupTransfer ? `${payload.source_slots.length} workers` : 'Worker';
+        addToast(`${subject} ${payload.mode === 'move' ? 'moved' : 'copied'} to ${destName}`);
         if (data.warnings?.length) {
           for (const w of data.warnings) addToast(w, 'error');
         }
@@ -1222,6 +1227,7 @@ const app = createApp({
       closeTransferModal();
     }
     function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', _wsData({ slot, fields })); }
+    function saveWorkersConfig({ slots, fields }) { socket.emit('worker:configure_many', _wsData({ slots, fields })); }
 
     // Execution actions
     function assignTask(taskId, slot) { socket.emit('task:assign', _wsData({ task_id: taskId, slot })); }
@@ -1237,6 +1243,7 @@ const app = createApp({
       const worker = _workerAt(slot);
       socket.emit(worker?.type === 'service' ? 'service:stop' : 'worker:stop', _wsData({ slot }));
     }
+    function stopWorkerSlots(slots) { socket.emit('worker:stop_many', _wsData({ slots })); }
     function restartServiceSlot(slot) {
       socket.emit('service:restart', _wsData({ slot }));
     }
@@ -1448,6 +1455,18 @@ const app = createApp({
         const url = `/api/export/worker?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}&slot=${encodeURIComponent(slot)}`;
         await _downloadZip(url, 'bullpen-worker.zip');
         addToast('Worker export ready');
+      } catch (e) {
+        addToast('Worker export failed: ' + e.message, 'error');
+      }
+    }
+    async function exportWorkerGroup(slots) {
+      const validSlots = (slots || []).map(Number).filter(Number.isInteger);
+      if (!activeWorkspaceId.value || !validSlots.length) return;
+      try {
+        const slotParam = validSlots.map(slot => encodeURIComponent(slot)).join(',');
+        const url = `/api/export/workers?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}&slots=${slotParam}`;
+        await _downloadZip(url, 'bullpen-worker-group.zip');
+        addToast(validSlots.length === 1 ? 'Worker export ready' : 'Worker group export ready');
       } catch (e) {
         addToast('Worker export failed: ' + e.message, 'error');
       }
@@ -1754,15 +1773,15 @@ const app = createApp({
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
-      saveWorkerConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
-      duplicateWorker, multipleWorkspaces, taskById,
-      transferSlot, transferMode, openTransfer, transferWorker,
+      saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
+      transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       terminalTabs, addTerminalTab, closeTerminalTab, restartTerminal, sendTerminalInput, resizeTerminal, setTerminalRef, onTerminalReady,
-      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportWorker, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
+      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportWorker, exportWorkerGroup, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
       bullpenTabRef,
     };
   },
@@ -1998,6 +2017,7 @@ const app = createApp({
         :visible="transferSlot !== null"
         :worker="transferSlot !== null ? state.layout.slots?.[transferSlot] : null"
         :slot-index="transferSlot"
+        :slot-indices="transferSlots"
         :mode="transferMode"
         :projects="projects"
         :active-workspace-id="activeWorkspaceId"
