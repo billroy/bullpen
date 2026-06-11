@@ -259,6 +259,14 @@ def test_worker_transfer_modal_supports_group_payloads():
     assert "transferSubject()" in modal_text
 
 
+def test_keyboard_worker_commands_use_explicit_selection_scope_only():
+    text = _read("static/components/BullpenTab.js")
+    assert "this.copyWorker(item.slotIndex, this.isExplicitSelectionActive ? 'selection' : 'item');" in text
+    assert "this.$root.removeWorkers(this.selectedWorkerSlots);" in text
+    assert "if (this.isExplicitSelectionActive) {" in text
+    assert "this.copyWorker(item.slotIndex, 'connected-group');" not in text
+
+
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():
     text = _read("static/components/BullpenTab.js")
     assert ":build-worker-drag-image=\"buildWorkerDragImage\"" in text

@@ -1069,12 +1069,12 @@ const BullpenTab = {
         return;
       }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'c') {
-        const item = this.selectedWorkerSlots.length
+        const item = this.isExplicitSelectionActive
           ? this.workerItemBySlot[this.selectedWorkerSlots[0]]
           : this.itemAtCoord(this.selectedCell);
         if (!item) return;
         e.preventDefault();
-        this.copyWorker(item.slotIndex);
+        this.copyWorker(item.slotIndex, this.isExplicitSelectionActive ? 'selection' : 'item');
         return;
       }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'v') {
@@ -1084,7 +1084,11 @@ const BullpenTab = {
         return;
       }
       if (!inTextInput && !e.metaKey && !e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
-        if (this.isMultipleSelectionActive) return;
+        if (this.isExplicitSelectionActive) {
+          e.preventDefault();
+          this.$root.removeWorkers(this.selectedWorkerSlots);
+          return;
+        }
         if (!this.selectedCell) return;
         const item = this.itemAtCoord(this.selectedCell);
         if (!item) return;
