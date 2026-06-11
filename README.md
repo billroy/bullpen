@@ -75,7 +75,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Kanban board** -- drag-and-drop ticket management with user-configurable columns (add, remove, rename, reorder); drag tickets between columns or onto workers
 - **List view** -- switchable list view for the Tickets tab with sortable columns, full-text search, priority/status/type filters, timestamped Created column, and token-consumption display
 - **Worker grid** -- configurable grid of AI agent slots; drag tickets onto workers to assign them
-- **Worker grid selection** -- select multiple workers, move or delete groups, and use context-menu actions on selected worker groups
+- **Worker grid selection** -- select multiple workers, move or delete groups, and use scoped context-menu actions for one worker, a pass-connected group, or the explicit selection
 - **Agent execution** -- workers invoke Claude, Codex, or Gemini CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (structured stream parsing for Claude/Codex)
 - **Shell / Script workers** -- run a configured shell command against a ticket, pass ticket data as JSON/env/argv, capture output, and route or update the ticket from script output
 - **Service workers** -- supervise long-running workspace processes, stream logs, run health checks, and accept ticket-triggered start/restart orders
@@ -87,7 +87,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
 - **Commit diff viewer** -- click a commit row to open its full patch in a modal
 - **Multi-project** -- register multiple project directories, switch between them, with per-workspace state and activity badges; clone new projects directly from a Git URL via the Projects menu
-- **Inter-project worker transfer** -- copy or move workers (optionally with profile copy) between registered workspaces
+- **Inter-project worker transfer** -- copy or move individual workers or selected worker groups (optionally with profile copy) between registered workspaces
 - **Scheduling** -- workers can activate on a time schedule (at a specific time, or on an interval) or on queue events; pause/unpause individual workers
 - **Priority-aware queues** -- worker queues and watched-column claims prefer higher-priority tickets while preserving stable ordering within a priority
 - **Auto-commit & auto-PR** -- optionally commit agent output on success and open a pull request automatically
@@ -102,7 +102,7 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Worker roster queue count** -- left-pane worker roster shows queued workload while workers are in `WORKING` state
 - **Ambient sounds** -- 18 synthesized ambient soundscapes (Server Room, Forest Rain, Deep Space, War Room, etc.) generated via the Web Audio API with per-workspace volume control
 - **Light/dark theme** -- toggle between dark and light themes
-- **Context menu** -- right-click worker cards for actions (configure, start, stop, duplicate, remove)
+- **Context menu** -- right-click worker cards for scoped actions: this worker, connected group, or selected workers
 - **Real-time sync** -- Socket.IO keeps all connected clients in sync, scoped per workspace, with origin checks that allow localhost/same-origin and trusted tunnel domains (including `.sprites.app`)
 - **Persistence** -- tickets stored as frontmatter markdown files in `.bullpen/tasks/`, layout and config as JSON
 - **Ticket archiving** -- archive completed tickets to keep the board clean

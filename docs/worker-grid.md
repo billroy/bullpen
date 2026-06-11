@@ -189,15 +189,17 @@ layouts. Move status into the header as part of this work so Small layout remain
 Panning and selection are separate interaction modes. Arrow keys always navigate worker selection;
 they never pan the canvas.
 
-### Single-card selection
+### Selection scopes
 
 - Click a card to select it unless the click is on a drag handle or interactive control.
 - Interactive controls that suppress selection on click include: the four directional drag handles,
   the status pill, the elapsed-time indicator, the `...` menu trigger, and any button or form
   control inside the card header. A click anywhere else on the card selects it.
-- Only one card is actively selected in v1.
-- Store selection internally as an array of coordinates from the start so multi-select can be added
-  without replacing the state shape.
+- Workers connected through `pass:LEFT`, `pass:RIGHT`, `pass:UP`, `pass:DOWN`, or `pass:RANDOM`
+  form a connected group for selection and drag operations. Clicking one member can visually select
+  the connected group, but the clicked card still remains the menu's "this worker" target.
+- Shift+Click creates an explicit range selection. Ctrl/Cmd+Click toggles an explicit additive
+  selection. Explicit selections are separate from implicit pass-connected group selection.
 - Clicking empty canvas clears selection unless the click begins an empty-canvas pan (see the
   click/drag threshold in Viewport And Panning).
 - Escape closes the active menu if one is open; otherwise it clears selection.
@@ -235,9 +237,18 @@ This avoids the previous mode split where arrow keys sometimes panned and someti
 
 ### Menus
 
-Occupied worker cards keep their current `...` menu behavior and add Copy Worker. This grid spec does
-not define or rename pre-existing occupied-card menu items; implementers should preserve the menu
-items already exposed by `WorkerCard` and add only the Copy Worker item required by this work.
+Occupied worker cards expose scoped menu sections. The first section always applies to the clicked
+card, even when that card belongs to a pass-connected group. Additional sections appear only when
+they have a real target:
+
+- **This Worker**: edit, run/start, stop, watch, pause/unpause, duplicate, copy, export, transfer,
+  and delete the clicked worker.
+- **Connected Group**: pause/unpause, stop running workers, copy, duplicate, export, transfer, or
+  delete the pass-connected component containing the clicked worker.
+- **Selected Workers**: the same bulk actions for an explicit Shift/Ctrl/Cmd multi-selection.
+
+Command labels must include the scope, for example `Copy Worker`, `Copy Group`, and `Copy Selected`.
+Do not infer a destructive or bulk scope from selection alone.
 
 Unoccupied slots should no longer show always-visible Add/Paste inline UI. Empty slots materialize
 only when hovered, focused, or opened through a targeted add action, using the same `...` menu visual
@@ -256,16 +267,19 @@ When a menu is open:
 - Enter activates the highlighted item.
 - Escape closes the menu and returns focus to the card or cell without clearing selection.
 
-### Multi-select deferred
+### Bulk actions and keyboard behavior
 
-Multi-select is not implemented in v1, but the design must preserve the path:
+Bulk menu actions resolve their target slots before dispatching to the server. Batch pause/unpause,
+stop, remove, duplicate, export, and transfer use server-backed endpoints so all clients receive the
+same layout updates.
 
-- `selectedCells` is an array.
-- Shift+Click is reserved for range selection.
-- Ctrl/Cmd+Click is reserved for additive selection.
-- Selected cells should all show a focus ring when multi-select lands.
-- Future bulk operations should act on the full selection. No bulk Copy, Delete, or Move commands
-  are part of v1.
+Keyboard copy/delete follow the explicit-selection rule:
+
+- Ctrl/Cmd+C copies the clicked/active worker unless the user has an explicit multi-selection.
+- Ctrl/Cmd+C with an explicit multi-selection copies the selected workers.
+- Delete/Backspace deletes the clicked/active worker unless the user has an explicit multi-selection.
+- Delete/Backspace with an explicit multi-selection deletes the selected workers after confirmation.
+- Copying a pass-connected group is a menu command, not an implicit keyboard shortcut.
 
 ---
 
