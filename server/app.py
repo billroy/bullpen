@@ -766,6 +766,72 @@ def create_app(
 
         return jsonify(result)
 
+    @app.route("/api/worker/transfer_group", methods=["POST"])
+    @auth.require_auth
+    def worker_transfer_group():
+        """Copy or move multiple workers between workspaces."""
+        data = request.get_json(silent=True)
+        if not data or not isinstance(data, dict):
+            return jsonify({"error": "invalid JSON body"}), 400
+
+        source_slots = data.get("source_slots")
+        if not isinstance(source_slots, list) or not source_slots:
+            return jsonify({"error": "source_slots must be a non-empty list"}), 400
+
+        seen = set()
+        slots = []
+        for raw in source_slots:
+            try:
+                slot = int(raw)
+            except (TypeError, ValueError):
+                return jsonify({"error": "source_slots must contain integers"}), 400
+            if slot in seen:
+                continue
+            seen.add(slot)
+            slots.append(slot)
+
+        results = []
+        warnings = []
+        try:
+            for slot in slots:
+                result = transfer_worker(
+                    manager,
+                    source_workspace_id=data.get("source_workspace_id"),
+                    source_slot=slot,
+                    dest_workspace_id=data.get("dest_workspace_id"),
+                    dest_slot=None,
+                    mode=data.get("mode", "copy"),
+                    copy_profile=bool(data.get("copy_profile", False)),
+                )
+                results.append(result)
+                warnings.extend(result.get("warnings") or [])
+        except TransferError as e:
+            return jsonify({"error": str(e), "results": results}), e.status
+
+        dst_ws = manager.get(data.get("dest_workspace_id"))
+        if dst_ws:
+            dst_layout = read_json(os.path.join(dst_ws.bp_dir, "layout.json"))
+            dst_config = read_json(os.path.join(dst_ws.bp_dir, "config.json"))
+            dst_layout = serialize_layout(dst_layout, viewer=ViewerContext(can_edit=True), config=dst_config)
+            dst_layout["workspaceId"] = dst_ws.id
+            socketio.emit("layout:updated", dst_layout, to=dst_ws.id)
+
+        if data.get("mode") == "move":
+            src_ws = manager.get(data.get("source_workspace_id"))
+            if src_ws:
+                src_layout = read_json(os.path.join(src_ws.bp_dir, "layout.json"))
+                src_config = read_json(os.path.join(src_ws.bp_dir, "config.json"))
+                src_layout = serialize_layout(src_layout, viewer=ViewerContext(can_edit=True), config=src_config)
+                src_layout["workspaceId"] = src_ws.id
+                socketio.emit("layout:updated", src_layout, to=src_ws.id)
+
+        return jsonify({
+            "ok": True,
+            "count": len(results),
+            "results": results,
+            "warnings": warnings,
+        })
+
     def _export_workspace_zip_bytes(ws):
         mem = BytesIO()
         with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
@@ -829,6 +895,10 @@ def create_app(
             if selected_slot is not None:
                 manifest["selection"] = {
                     "slot": int(selected_slot),
+                    "count": len(workers_layout["slots"]),
+                }
+            elif selected_slots is not None:
+                manifest["selection"] = {
                     "count": len(workers_layout["slots"]),
                 }
             zf.writestr("bullpen-workers-export.json", json.dumps(manifest, indent=2))
@@ -993,9 +1063,28 @@ def create_app(
         ws, error = _workspace_from_id(_workspace_id_from_args())
         if error:
             return error
+        selected_slots = None
+        raw_slots = request.args.get("slots", "").strip()
+        if raw_slots:
+            slots = _normalized_worker_slots(ws)
+            selected_slots = []
+            seen = set()
+            for raw in raw_slots.split(","):
+                try:
+                    slot = int(raw)
+                except (TypeError, ValueError):
+                    return jsonify({"error": "slots must be comma-separated integers"}), 400
+                if slot in seen:
+                    continue
+                seen.add(slot)
+                if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
+                    return jsonify({"error": f"Unknown worker slot: {slot}"}), 404
+                selected_slots.append(slots[slot])
+            if not selected_slots:
+                return jsonify({"error": "slots must include at least one worker"}), 400
         export_name = f"bullpen-workers-{ws.name}-{ws.id[:8]}.zip"
         return send_file(
-            _export_workers_zip_bytes(ws),
+            _export_workers_zip_bytes(ws, selected_slots=selected_slots),
             mimetype="application/zip",
             as_attachment=True,
             download_name=export_name,

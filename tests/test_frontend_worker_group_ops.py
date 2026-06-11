@@ -16,12 +16,23 @@ def test_app_exposes_group_worker_socket_events():
     assert "socket.emit('worker:move_group'" in text
     assert "function pasteWorkerGroup(items)" in text
     assert "socket.emit('worker:paste_group'" in text
+    assert "function saveWorkersConfig({ slots, fields })" in text
+    assert "socket.emit('worker:configure_many'" in text
+    assert "function stopWorkerSlots(slots)" in text
+    assert "socket.emit('worker:stop_many'" in text
+    assert "function duplicateWorkers(slots)" in text
+    assert "socket.emit('worker:duplicate_group'" in text
+    assert "function exportWorkerGroup(slots)" in text
 
 
 def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
     text = _read("static/components/BullpenTab.js")
     assert "workerGroupSlots(startSlot)" in text
     assert "selectedWorkerSlots: []" in text
+    assert "selectedWorkerScope: 'none'" in text
+    assert "isExplicitSelectionActive()" in text
+    assert "workerMenuContext(slotIndex)" in text
+    assert "slotsForMenuScope(slotIndex, scope)" in text
     assert "expandSelectionSlots(slots)" in text
     assert "passTargetsForSlot(slotIndex)" in text
     assert "buildGroupMovePlan(sourceSlot, destinationCoord," in text
@@ -177,6 +188,7 @@ def test_worker_card_keeps_per_worker_menu_items_enabled_during_group_selection(
     text = _read("static/components/WorkerCard.js")
     assert "'multipleSelectionActive'" in text
     assert "'delete-worker'" in text
+    assert "This Worker" in text
     assert "class=\"worker-menu-item\" @click=\"menuEdit\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuRun\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuRestart\"" in text
@@ -187,18 +199,30 @@ def test_worker_card_keeps_per_worker_menu_items_enabled_during_group_selection(
     assert "if (this.multipleSelectionActive) return;\n      this.closeMenuAndRestoreFocus();\n      this.$root.startWorkerSlot(this.slotIndex);" not in text
 
 
-def test_worker_card_still_disables_group_ambiguous_menu_items():
+def test_worker_card_exposes_explicit_group_and_selection_menu_items():
     text = _read("static/components/WorkerCard.js")
     assert "v-if=\"canPauseWorker && !isPaused\"" in text
     assert "v-if=\"canPauseWorker && isPaused\"" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuPause\"" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuUnpause\"" in text
+    assert "Pause Worker" in text
+    assert "Unpause Worker" in text
     assert "class=\"worker-menu-item\" @click=\"menuDuplicate\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuCopyWorker\"" in text
     assert "class=\"worker-menu-item\" @click=\"menuExportWorker\"" in text
-    assert "class=\"worker-menu-item worker-menu-danger\" :disabled=\"multipleSelectionActive\" @click=\"menuDelete\"" in text
-    assert ":disabled=\"multipleSelectionActive\" @click=\"menuDelete\"" in text
-    assert "if (this.multipleSelectionActive) return;" in text
+    assert "Connected Group: {{ connectedGroupCount }} Workers" in text
+    assert "Selected Workers: {{ selectionCount }}" in text
+    assert "menuScoped('pause', 'connected-group')" in text
+    assert "menuScoped('copy', 'connected-group')" in text
+    assert "menuScoped('duplicate', 'connected-group')" in text
+    assert "menuScoped('export', 'connected-group')" in text
+    assert "menuScoped('copy-to', 'connected-group')" in text
+    assert "menuScoped('delete', 'connected-group')" in text
+    assert "menuScoped('pause', 'selection')" in text
+    assert "menuScoped('copy', 'selection')" in text
+    assert "menuScoped('duplicate', 'selection')" in text
+    assert "menuScoped('export', 'selection')" in text
+    assert "menuScoped('copy-to', 'selection')" in text
+    assert "menuScoped(action, scope)" in text
+    assert "if (this.multipleSelectionActive) return;" not in text
     assert "this.$emit('delete-worker', this.slotIndex);" in text
 
 
@@ -212,10 +236,35 @@ def test_worker_card_blocks_run_during_automation_pause():
 def test_bullpen_tab_deletes_selected_worker_group_from_menu():
     text = _read("static/components/BullpenTab.js")
     assert "@delete-worker=\"deleteWorkerFromMenu\"" in text
-    assert "deleteWorkerFromMenu(slot)" in text
-    assert "this.selectedWorkerSlots.includes(source) && this.selectedWorkerSlots.length > 1" in text
+    assert "@worker-scope-action=\"handleWorkerScopeAction\"" in text
+    assert "handleWorkerScopeAction(payload)" in text
+    assert "this.$root.saveWorkersConfig({ slots, fields: { paused } });" in text
+    assert "this.$root.stopWorkerSlots(slots);" in text
+    assert "this.$root.duplicateWorkers(slots);" in text
+    assert "this.$root.exportWorkerGroup(slots);" in text
+    assert "deleteWorkerFromMenu(slot, scope = 'item')" in text
+    assert "const slots = this.slotsForMenuScope(source, scope);" in text
     assert "this.$root.removeWorkers(slots)" in text
     assert "this.$root.removeWorker(source)" in text
+
+
+def test_worker_transfer_modal_supports_group_payloads():
+    app_text = _read("static/app.js")
+    modal_text = _read("static/components/WorkerTransferModal.js")
+    assert "const transferSlots = ref([]);" in app_text
+    assert ":slot-indices=\"transferSlots\"" in app_text
+    assert "fetch(groupTransfer ? '/api/worker/transfer_group' : '/api/worker/transfer'" in app_text
+    assert "props: ['visible', 'worker', 'slotIndex', 'slotIndices'" in modal_text
+    assert "source_slots: this.resolvedSlots" in modal_text
+    assert "transferSubject()" in modal_text
+
+
+def test_keyboard_worker_commands_use_explicit_selection_scope_only():
+    text = _read("static/components/BullpenTab.js")
+    assert "this.copyWorker(item.slotIndex, this.isExplicitSelectionActive ? 'selection' : 'item');" in text
+    assert "this.$root.removeWorkers(this.selectedWorkerSlots);" in text
+    assert "if (this.isExplicitSelectionActive) {" in text
+    assert "this.copyWorker(item.slotIndex, 'connected-group');" not in text
 
 
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():

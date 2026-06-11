@@ -3259,6 +3259,20 @@ body.worker-singleton-dragging * {
   padding: 4px 0;
 }
 
+.worker-menu-section-label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 6px 12px 3px;
+  text-transform: uppercase;
+}
+
+.worker-menu-divider {
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
 .worker-menu-item {
   display: flex;
   align-items: center;

@@ -22,6 +22,7 @@ const BullpenTab = {
       selectedCell: null,
       selectionAnchor: null,
       selectedWorkerSlots: [],
+      selectedWorkerScope: 'none',
       dragOverCoord: null,
       dropTargetCoords: [],
       emptyMenuCoord: null,
@@ -123,6 +124,7 @@ const BullpenTab = {
             :card-height="cardHeightForSlot(item.slotIndex)"
             :is-selected="isSelected(item.coord)"
             :multiple-selection-active="isMultipleSelectionActive"
+            :menu-context="workerMenuContext(item.slotIndex)"
             :is-vertical-resizing="cardVerticalResize && cardVerticalResize.slotIndex === item.slotIndex"
             :workspace-id="workspaceId"
             :request-output-catchup="$root.requestOutputCatchup"
@@ -143,6 +145,7 @@ const BullpenTab = {
             @transfer="$emit('transfer-worker', $event)"
             @copy-worker="copyWorker"
             @delete-worker="deleteWorkerFromMenu"
+            @worker-scope-action="handleWorkerScopeAction"
             @vertical-resize-start="onCardVerticalResizeStart(item, $event)"
             @menu-opened="selectWorker(item, { preserveMultiple: true })"
             @menu-closed="focusViewport"
@@ -624,6 +627,9 @@ const BullpenTab = {
     isMultipleSelectionActive() {
       return Array.isArray(this.selectedWorkerSlots) && this.selectedWorkerSlots.length > 1;
     },
+    isExplicitSelectionActive() {
+      return this.isMultipleSelectionActive && this.selectedWorkerScope === 'selection';
+    },
     occupiedBounds() {
       return GridGeometry.occupiedBounds(this.workerItems.map(item => item.coord));
     },
@@ -931,6 +937,7 @@ const BullpenTab = {
       this.selectionAnchor = { ...item.coord };
       if (!(options && options.preserveMultiple && this.selectedWorkerSlots.includes(item.slotIndex))) {
         this.selectedWorkerSlots = this.expandSelectionSlots([item.slotIndex]);
+        this.selectedWorkerScope = this.selectedWorkerSlots.length > 1 ? 'connected-group' : 'item';
       }
       this.emptyMenuCoord = null;
       this.liveMessage = `Selected worker ${item.worker.name} at column ${item.coord.col}, row ${item.coord.row}`;
@@ -940,6 +947,7 @@ const BullpenTab = {
       this.selectionAnchor = { ...coord };
       const item = this.itemAtCoord(coord);
       this.selectedWorkerSlots = item ? this.expandSelectionSlots([item.slotIndex]) : [];
+      this.selectedWorkerScope = this.selectedWorkerSlots.length > 1 ? 'connected-group' : (this.selectedWorkerSlots.length === 1 ? 'item' : 'none');
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
       this.liveMessage = item
@@ -950,6 +958,7 @@ const BullpenTab = {
       this.selectedCell = { col: 0, row: 0 };
       this.selectionAnchor = { col: 0, row: 0 };
       this.selectedWorkerSlots = [];
+      this.selectedWorkerScope = 'none';
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
       this.focusViewport();
@@ -1011,6 +1020,7 @@ const BullpenTab = {
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
       this.selectedWorkerSlots = this.expandSelectionSlots(this.slotsInRange(anchor, active));
+      this.selectedWorkerScope = this.selectedWorkerSlots.length > 1 ? 'selection' : (this.selectedWorkerSlots.length === 1 ? 'item' : 'none');
       const count = this.selectedWorkerSlots.length;
       this.liveMessage = count > 1
         ? `Selected ${count} workers`
@@ -1027,6 +1037,7 @@ const BullpenTab = {
       this.selectedCell = { ...item.coord };
       this.selectionAnchor = { ...item.coord };
       this.selectedWorkerSlots = Array.from(current);
+      this.selectedWorkerScope = this.selectedWorkerSlots.length > 1 ? 'selection' : (this.selectedWorkerSlots.length === 1 ? 'item' : 'none');
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
       this.liveMessage = this.selectedWorkerSlots.length > 1
@@ -1058,12 +1069,12 @@ const BullpenTab = {
         return;
       }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'c') {
-        const item = this.selectedWorkerSlots.length
+        const item = this.isExplicitSelectionActive
           ? this.workerItemBySlot[this.selectedWorkerSlots[0]]
           : this.itemAtCoord(this.selectedCell);
         if (!item) return;
         e.preventDefault();
-        this.copyWorker(item.slotIndex);
+        this.copyWorker(item.slotIndex, this.isExplicitSelectionActive ? 'selection' : 'item');
         return;
       }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'v') {
@@ -1073,7 +1084,11 @@ const BullpenTab = {
         return;
       }
       if (!inTextInput && !e.metaKey && !e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
-        if (this.isMultipleSelectionActive) return;
+        if (this.isExplicitSelectionActive) {
+          e.preventDefault();
+          this.$root.removeWorkers(this.selectedWorkerSlots);
+          return;
+        }
         if (!this.selectedCell) return;
         const item = this.itemAtCoord(this.selectedCell);
         if (!item) return;
@@ -1465,6 +1480,35 @@ const BullpenTab = {
       }
       return group;
     },
+    workerMenuContext(slotIndex) {
+      const slot = Number(slotIndex);
+      if (!Number.isInteger(slot) || !this.workerItemBySlot[slot]) {
+        return {
+          itemSlot: null,
+          connectedGroupSlots: [],
+          selectionSlots: [],
+          hasConnectedGroup: false,
+          hasSelection: false,
+        };
+      }
+      const connectedGroupSlots = this.workerGroupSlots(slot);
+      const selectionSlots = this.isExplicitSelectionActive && this.selectedWorkerSlots.includes(slot)
+        ? this.expandSelectionSlots(this.selectedWorkerSlots)
+        : [];
+      return {
+        itemSlot: slot,
+        connectedGroupSlots,
+        selectionSlots,
+        hasConnectedGroup: connectedGroupSlots.length > 1,
+        hasSelection: selectionSlots.length > 1,
+      };
+    },
+    slotsForMenuScope(slotIndex, scope) {
+      const ctx = this.workerMenuContext(slotIndex);
+      if (scope === 'connected-group') return ctx.connectedGroupSlots.slice();
+      if (scope === 'selection') return ctx.selectionSlots.slice();
+      return Number.isInteger(ctx.itemSlot) ? [ctx.itemSlot] : [];
+    },
     buildWorkerDragPayload(slotIndex, options = {}) {
       const source = Number(slotIndex);
       const pointerOffset = this._workerDragPointerOffset(source, options);
@@ -1673,6 +1717,7 @@ const BullpenTab = {
       this.selectedCell = { ...coord };
       this.selectionAnchor = { ...coord };
       this.selectedWorkerSlots = [source];
+      this.selectedWorkerScope = 'item';
       return true;
     },
     moveWorkerGroupToCoord(sourceSlot, coord) {
@@ -1700,14 +1745,57 @@ const BullpenTab = {
       }
       this.selectionAnchor = { ...this.selectedCell };
       this.selectedWorkerSlots = plan.slots.slice();
+      this.selectedWorkerScope = plan.slots.length > 1 ? 'connected-group' : 'item';
       return true;
     },
-    copyWorker(slot) {
+    handleWorkerScopeAction(payload) {
+      const slot = Number(payload?.slot);
+      const scope = payload?.scope || 'item';
+      const action = payload?.action || '';
+      const slots = this.slotsForMenuScope(slot, scope);
+      if (!slots.length) return;
+      if (action === 'pause' || action === 'unpause') {
+        const paused = action === 'pause';
+        if (slots.length === 1) this.$root.saveWorkerConfig({ slot: slots[0], fields: { paused } });
+        else this.$root.saveWorkersConfig({ slots, fields: { paused } });
+        this.liveMessage = `${paused ? 'Paused' : 'Unpaused'} ${scope === 'item' ? 'worker' : `${slots.length} workers`}`;
+        return;
+      }
+      if (action === 'stop') {
+        if (slots.length === 1) this.$root.stopWorkerSlot(slots[0]);
+        else this.$root.stopWorkerSlots(slots);
+        this.liveMessage = `Stop requested for ${slots.length} worker${slots.length === 1 ? '' : 's'}`;
+        return;
+      }
+      if (action === 'copy') {
+        this.copyWorker(slot, scope);
+        return;
+      }
+      if (action === 'duplicate') {
+        if (slots.length === 1) this.$root.duplicateWorker(slots[0]);
+        else this.$root.duplicateWorkers(slots);
+        return;
+      }
+      if (action === 'export') {
+        this.$root.exportWorkerGroup(slots);
+        return;
+      }
+      if (action === 'copy-to' || action === 'move-to') {
+        this.$emit('transfer-worker', {
+          slot,
+          slots,
+          mode: action === 'move-to' ? 'move' : 'copy',
+        });
+        return;
+      }
+      if (action === 'delete') {
+        this.deleteWorkerFromMenu(slot, scope);
+      }
+    },
+    copyWorker(slot, scope = 'item') {
       const source = this.workerItemBySlot[slot];
       if (!source) return;
-      const slots = this.selectedWorkerSlots.includes(Number(slot)) && this.selectedWorkerSlots.length
-        ? this.expandSelectionSlots(this.selectedWorkerSlots)
-        : this.workerGroupSlots(slot);
+      const slots = this.slotsForMenuScope(slot, scope);
       const workers = slots.map(memberSlot => {
         const item = this.workerItemBySlot[memberSlot];
         if (!item) return null;
@@ -1728,12 +1816,10 @@ const BullpenTab = {
         ? `Copied worker group (${workers.length}) from ${source.worker.name}`
         : `Copied worker ${source.worker.name}`;
     },
-    deleteWorkerFromMenu(slot) {
+    deleteWorkerFromMenu(slot, scope = 'item') {
       const source = Number(slot);
       if (!Number.isInteger(source) || !this.workerItemBySlot[source]) return;
-      const slots = this.selectedWorkerSlots.includes(source) && this.selectedWorkerSlots.length > 1
-        ? this.expandSelectionSlots(this.selectedWorkerSlots)
-        : [source];
+      const slots = this.slotsForMenuScope(source, scope);
       if (slots.length > 1 && typeof this.$root.removeWorkers === 'function') {
         this.$root.removeWorkers(slots);
       } else {

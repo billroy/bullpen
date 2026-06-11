@@ -953,6 +953,47 @@ class TestWorkerEvents:
         assert err is not None
         assert err["code"] == "coordinate_collision"
 
+    def test_configure_many_updates_all_workers(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:add", {"coord": {"col": 1, "row": 0}, "profile": "code-reviewer"})
+        c.get_received()
+
+        c.emit("worker:configure_many", {"slots": [0, 1], "fields": {"paused": True}})
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        assert layout["slots"][0]["paused"] is True
+        assert layout["slots"][1]["paused"] is True
+
+    def test_remove_many_removes_all_requested_workers(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:add", {"coord": {"col": 1, "row": 0}, "profile": "code-reviewer"})
+        c.get_received()
+
+        c.emit("worker:remove_many", {"slots": [0, 1]})
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        assert layout["slots"] == []
+
+    def test_duplicate_group_preserves_relative_coordinates(self, client):
+        c, _ = client
+        c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
+        c.get_received()
+        c.emit("worker:add", {"coord": {"col": 1, "row": 1}, "profile": "code-reviewer"})
+        c.get_received()
+
+        c.emit("worker:duplicate_group", {"slots": [0, 1]})
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        clones = [slot for slot in layout["slots"] if slot and str(slot.get("name", "")).endswith("copy")]
+        assert len(clones) == 2
+        coords = sorted((clone["col"], clone["row"]) for clone in clones)
+        assert coords[1][0] - coords[0][0] == 1
+        assert coords[1][1] - coords[0][1] == 1
+
     def test_paste_worker_rejects_occupied_coord_without_replace(self, client):
         c, _ = client
         c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})

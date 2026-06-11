@@ -27,7 +27,7 @@ def test_root_remove_workers_confirms_once_for_multiple_delete():
     assert "Delete ${workers.length} workers?" in text
     assert "These workers have ${queued} queued task(s)." in text
     assert "if (!confirm(workerDeleteMessage(workers))) return;" in text
-    assert "for (const { slot } of workers) {" in text
+    assert "socket.emit('worker:remove_many', _wsData({ slots: workers.map(({ slot }) => slot) }));" in text
     assert "removeWorkers," in text
 
 

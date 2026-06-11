@@ -1,5 +1,5 @@
 const WorkerTransferModal = {
-  props: ['visible', 'worker', 'slotIndex', 'mode', 'projects', 'activeWorkspaceId'],
+  props: ['visible', 'worker', 'slotIndex', 'slotIndices', 'mode', 'projects', 'activeWorkspaceId'],
   emits: ['close', 'transfer'],
   data() {
     return {
@@ -11,13 +11,13 @@ const WorkerTransferModal = {
     <div v-if="visible && worker" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" tabindex="0" ref="overlay">
       <div class="modal" style="max-width: 420px;">
         <div class="modal-header">
-          <h2>{{ mode === 'move' ? 'Move' : 'Copy' }} Worker</h2>
+          <h2>{{ mode === 'move' ? 'Move' : 'Copy' }} {{ isGroup ? 'Workers' : 'Worker' }}</h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
         </div>
         <div class="modal-body">
           <p style="margin: 0 0 12px;">
             {{ mode === 'move' ? 'Move' : 'Copy' }}
-            <strong>{{ worker.name }}</strong> to another workspace.
+            <strong>{{ transferSubject }}</strong> to another workspace.
           </p>
           <label class="form-label">
             Destination Workspace
@@ -50,6 +50,17 @@ const WorkerTransferModal = {
     otherProjects() {
       return (this.projects || []).filter(p => p.id !== this.activeWorkspaceId);
     },
+    resolvedSlots() {
+      const slots = Array.isArray(this.slotIndices) ? this.slotIndices.map(Number).filter(Number.isInteger) : [];
+      if (slots.length) return slots;
+      return Number.isInteger(Number(this.slotIndex)) ? [Number(this.slotIndex)] : [];
+    },
+    isGroup() {
+      return this.resolvedSlots.length > 1;
+    },
+    transferSubject() {
+      return this.isGroup ? `${this.resolvedSlots.length} workers` : (this.worker?.name || 'Worker');
+    },
   },
   watch: {
     visible(v) {
@@ -68,6 +79,7 @@ const WorkerTransferModal = {
       this.$emit('transfer', {
         source_workspace_id: this.activeWorkspaceId,
         source_slot: this.slotIndex,
+        source_slots: this.resolvedSlots,
         dest_workspace_id: this.selectedWorkspaceId,
         dest_slot: null,
         mode: this.mode,

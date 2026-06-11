@@ -236,6 +236,31 @@ def test_export_single_worker_returns_selected_worker_payload(tmp_workspace):
     assert manifest["selection"] == {"slot": 1, "count": 1}
 
 
+def test_export_workers_can_limit_to_selected_slots(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = app.test_client()
+
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {"name": "One", "state": "idle", "task_queue": []},
+                {"name": "Two", "state": "idle", "task_queue": []},
+                {"name": "Three", "state": "idle", "task_queue": []},
+            ]
+        },
+    )
+
+    resp = client.get("/api/export/workers?slots=0,2")
+    assert resp.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+        exported_layout = json.loads(zf.read(".bullpen/layout.json"))
+        manifest = json.loads(zf.read("bullpen-workers-export.json"))
+    assert [slot["name"] for slot in exported_layout["slots"]] == ["One", "Three"]
+    assert manifest["selection"] == {"count": 2}
+
+
 def test_export_single_worker_rejects_unknown_slot(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
