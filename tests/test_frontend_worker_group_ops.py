@@ -22,6 +22,10 @@ def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
     text = _read("static/components/BullpenTab.js")
     assert "workerGroupSlots(startSlot)" in text
     assert "selectedWorkerSlots: []" in text
+    assert "selectedWorkerScope: 'none'" in text
+    assert "isExplicitSelectionActive()" in text
+    assert "workerMenuContext(slotIndex)" in text
+    assert "slotsForMenuScope(slotIndex, scope)" in text
     assert "expandSelectionSlots(slots)" in text
     assert "passTargetsForSlot(slotIndex)" in text
     assert "buildGroupMovePlan(sourceSlot, destinationCoord," in text
