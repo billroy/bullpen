@@ -1,0 +1,59 @@
+opencode/north-mini-code-free
+{
+  "id": "north-mini-code-free",
+  "providerID": "opencode",
+  "name": "North Mini Code Free",
+  "family": "north-free",
+  "api": {
+    "id": "north-mini-code-free",
+    "url": "https://opencode.ai/zen/v1",
+    "npm": "@ai-sdk/openai-compatible"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 256000,
+    "output": 64000
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": {
+      "field": "reasoning_content"
+    }
+  },
+  "release_date": "2026-06-09",
+  "variants": {
+    "none": {
+      "reasoningEffort": "none"
+    },
+    "high": {
+      "reasoningEffort": "high"
+    }
+  }
+}
