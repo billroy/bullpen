@@ -32,7 +32,7 @@ const TopToolbar = {
       showPalette: false,
       paletteOverlayOpen: false,
       selectedPaletteIndex: 0,
-      showEventSoundsMenu: false,
+      showAudioMenu: false,
       showProviderColorsMenu: false,
       eventSoundFlags: (window.EventSounds && window.EventSounds.getFlags())
         || { ...(window.EVENT_SOUND_FLAGS_DEFAULTS || {}) },
@@ -123,6 +123,15 @@ const TopToolbar = {
         },
       ];
     },
+    ambientPresetLabel() {
+      if (!this.ambientPreset) return 'Off';
+      const preset = (this.ambientPresets || []).find(item => item.key === this.ambientPreset);
+      return preset ? preset.label : this.ambientPreset;
+    },
+    audioButtonTitle() {
+      const eventState = this.eventSoundFlags.enabled ? 'event sounds on' : 'event sounds off';
+      return `Audio: ${this.ambientPresetLabel}, ${this.ambientVolume}%, ${eventState}`;
+    },
   },
   watch: {
     quickCreateClearToken() {
@@ -141,7 +150,7 @@ const TopToolbar = {
     showSafetyMenu(next) {
       if (next) this.$nextTick(() => renderLucideIcons(this.$el));
     },
-    showEventSoundsMenu(next) {
+    showAudioMenu(next) {
       if (next) this.$nextTick(() => renderLucideIcons(this.$el));
     },
     showProviderColorsMenu(next) {
@@ -179,7 +188,7 @@ const TopToolbar = {
       this.showMainMenu = !this.showMainMenu;
       if (this.showMainMenu) {
         this.showSafetyMenu = false;
-        this.showEventSoundsMenu = false;
+        this.showAudioMenu = false;
         window.dispatchEvent(new Event('bullpen:menu:close-projects'));
       }
     },
@@ -187,7 +196,7 @@ const TopToolbar = {
       this.showSafetyMenu = !this.showSafetyMenu;
       if (this.showSafetyMenu) {
         this.showMainMenu = false;
-        this.showEventSoundsMenu = false;
+        this.showAudioMenu = false;
         this.showProviderColorsMenu = false;
         window.dispatchEvent(new Event('bullpen:menu:close-projects'));
       }
@@ -195,7 +204,7 @@ const TopToolbar = {
     onGlobalClick() {
       this.showMainMenu = false;
       this.showSafetyMenu = false;
-      this.showEventSoundsMenu = false;
+      this.showAudioMenu = false;
       this.showProviderColorsMenu = false;
       if (!this.paletteOverlayOpen) this.showPalette = false;
     },
@@ -204,7 +213,7 @@ const TopToolbar = {
       if (this.showProviderColorsMenu) {
         this.showMainMenu = false;
         this.showSafetyMenu = false;
-        this.showEventSoundsMenu = false;
+        this.showAudioMenu = false;
       }
     },
     providerColorValue(agent) {
@@ -287,13 +296,19 @@ const TopToolbar = {
       this.paletteOverlayOpen = false;
       this.showPalette = false;
     },
-    toggleEventSoundsMenu() {
-      this.showEventSoundsMenu = !this.showEventSoundsMenu;
-      if (this.showEventSoundsMenu) {
+    toggleAudioMenu() {
+      this.showAudioMenu = !this.showAudioMenu;
+      if (this.showAudioMenu) {
         this.showMainMenu = false;
         this.showSafetyMenu = false;
         this.showProviderColorsMenu = false;
       }
+    },
+    onAmbientPresetChange(event) {
+      this.$emit('set-ambient-preset', event?.target?.value || '');
+    },
+    onAmbientVolumeInput(event) {
+      this.$emit('set-ambient-volume', Number(event?.target?.value || 0));
     },
     onToggleEventSoundFlag(key) {
       if (!window.EventSounds) return;
@@ -587,64 +602,73 @@ const TopToolbar = {
               </div>
             </div>
           </div>
-          <div class="toolbar-audio">
-            <label class="toolbar-audio-label" for="ambient-preset">Ambient</label>
-            <select id="ambient-preset" class="form-select toolbar-audio-select" :value="ambientPreset || ''" @change="$emit('set-ambient-preset', $event.target.value)" title="Ambient sound">
-              <option value="">Off</option>
-              <option v-for="p in ambientPresets || []" :key="p.key" :value="p.key">{{ p.label }}</option>
-            </select>
-            <label class="toolbar-audio-label" for="ambient-volume">Vol</label>
-            <input
-              id="ambient-volume"
-              class="toolbar-audio-volume"
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              :value="ambientVolume"
-              @input="$emit('set-ambient-volume', Number($event.target.value))"
-              title="Ambient volume"
-            >
-            <span class="toolbar-audio-value">{{ ambientVolume }}%</span>
-          </div>
-          <div class="toolbar-menu-wrap event-sounds-menu-wrap" @click.stop>
+          <div class="toolbar-menu-wrap toolbar-audio-menu-wrap" @click.stop>
             <button
-              class="btn btn-icon event-sounds-btn"
-              :class="{ 'is-disabled': !eventSoundFlags.enabled }"
-              @click="toggleEventSoundsMenu"
-              title="Event sounds"
+              class="btn btn-icon toolbar-audio-btn"
+              :class="{ 'is-disabled': !eventSoundFlags.enabled && !ambientPreset }"
+              @click="toggleAudioMenu"
+              :title="audioButtonTitle"
+              :aria-label="audioButtonTitle"
+              :aria-expanded="showAudioMenu ? 'true' : 'false'"
             >
-              <i data-lucide="bell" aria-hidden="true"></i>
+              <i data-lucide="volume-2" aria-hidden="true"></i>
             </button>
-            <div v-if="showEventSoundsMenu" class="project-menu toolbar-menu event-sounds-menu">
-              <label class="event-sounds-row event-sounds-master">
-                <input
-                  type="checkbox"
-                  :checked="eventSoundFlags.enabled"
-                  @change="onToggleEventSoundFlag('enabled')"
-                >
-                <span class="event-sounds-row-label">All event sounds</span>
-              </label>
+            <div v-if="showAudioMenu" class="project-menu toolbar-menu toolbar-audio-panel">
+              <div class="toolbar-audio-panel-section">
+                <div class="toolbar-audio-panel-title">Ambient</div>
+                <label class="toolbar-audio-control">
+                  <span class="toolbar-audio-control-label">Sound</span>
+                  <select class="form-select toolbar-audio-select" :value="ambientPreset || ''" @change="onAmbientPresetChange" title="Ambient sound">
+                    <option value="">Off</option>
+                    <option v-for="p in ambientPresets || []" :key="p.key" :value="p.key">{{ p.label }}</option>
+                  </select>
+                </label>
+                <label class="toolbar-audio-control">
+                  <span class="toolbar-audio-control-label">Volume</span>
+                  <input
+                    class="toolbar-audio-volume"
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    :value="ambientVolume"
+                    @input="onAmbientVolumeInput"
+                    title="Ambient volume"
+                  >
+                  <span class="toolbar-audio-value">{{ ambientVolume }}%</span>
+                </label>
+              </div>
               <div class="event-sounds-divider"></div>
-              <div
-                v-for="item in eventSoundLabels"
-                :key="item.key"
-                class="event-sounds-row"
-              >
-                <label class="event-sounds-row-main">
+              <div class="toolbar-audio-panel-section">
+                <div class="toolbar-audio-panel-title">Event sounds</div>
+                <label class="event-sounds-row event-sounds-master">
                   <input
                     type="checkbox"
-                    :checked="!!eventSoundFlags[item.key]"
-                    :disabled="!eventSoundFlags.enabled"
-                    @change="onToggleEventSoundFlag(item.key)"
+                    :checked="eventSoundFlags.enabled"
+                    @change="onToggleEventSoundFlag('enabled')"
                   >
-                  <span class="event-sounds-row-label">{{ item.label }}</span>
+                  <span class="event-sounds-row-label">All event sounds</span>
                 </label>
-                <button
-                  class="btn btn-sm event-sounds-preview"
-                  @click="onPreviewEventSound(item.preview)"
-                  title="Preview"
-                >▶</button>
+                <div
+                  v-for="item in eventSoundLabels"
+                  :key="item.key"
+                  class="event-sounds-row"
+                >
+                  <label class="event-sounds-row-main">
+                    <input
+                      type="checkbox"
+                      :checked="!!eventSoundFlags[item.key]"
+                      :disabled="!eventSoundFlags.enabled"
+                      @change="onToggleEventSoundFlag(item.key)"
+                    >
+                    <span class="event-sounds-row-label">{{ item.label }}</span>
+                  </label>
+                  <button
+                    class="btn btn-sm event-sounds-preview"
+                    @click="onPreviewEventSound(item.preview)"
+                    title="Preview"
+                  >▶</button>
+                </div>
               </div>
             </div>
           </div>

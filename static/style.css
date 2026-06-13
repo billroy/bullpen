@@ -729,50 +729,6 @@ body {
   font-weight: 500;
 }
 
-.toolbar-audio {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.toolbar-audio-label {
-  font-size: 11px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.toolbar-audio-select {
-  min-width: 120px;
-  max-width: 170px;
-}
-
-.toolbar-audio-volume {
-  width: 90px;
-}
-
-.toolbar-audio-value {
-  min-width: 36px;
-  text-align: right;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-@media (max-width: 1200px) {
-  .toolbar-audio-label {
-    display: none;
-  }
-
-  .toolbar-audio-select {
-    min-width: 104px;
-    max-width: 130px;
-  }
-
-  .toolbar-audio-volume {
-    width: 72px;
-  }
-}
-
 @media (max-width: 900px) {
   .toolbar-worker-controls .btn span {
     display: none;
@@ -782,33 +738,76 @@ body {
     display: none;
   }
 
-  .toolbar-audio-value {
-    display: none;
-  }
-
   .theme-select {
     min-width: 120px;
   }
 }
 
-.event-sounds-menu-wrap {
+.toolbar-audio-menu-wrap {
   display: flex;
   align-items: center;
 }
 
-.event-sounds-btn {
+.toolbar-audio-btn {
+  width: 32px;
+  height: 32px;
   padding: 6px;
 }
 
-.event-sounds-btn.is-disabled {
+.toolbar-audio-btn.is-disabled {
   opacity: 0.45;
 }
 
-.top-toolbar .event-sounds-menu {
+.top-toolbar .toolbar-audio-panel {
   left: auto;
   right: 0;
-  min-width: 260px;
-  padding: 8px 0;
+  width: 300px;
+  padding: 10px 12px;
+}
+
+.toolbar-audio-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolbar-audio-panel-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.toolbar-audio-control {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-audio-control .toolbar-audio-select {
+  grid-column: 2 / 4;
+}
+
+.toolbar-audio-control-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.toolbar-audio-select {
+  width: 100%;
+  min-width: 0;
+}
+
+.toolbar-audio-volume {
+  width: 100%;
+}
+
+.toolbar-audio-value {
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .event-sounds-row {

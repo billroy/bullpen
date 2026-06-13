@@ -111,10 +111,24 @@ def test_app_wires_toolbar_worker_pause_events():
 
 def test_toolbar_audio_and_worker_color_menus_are_mutually_exclusive():
     text = _read("static/components/TopToolbar.js")
-    assert "this.showEventSoundsMenu = false;" in text
+    assert "this.showAudioMenu = false;" in text
     assert "this.showProviderColorsMenu = false;" in text
     assert "toggleProviderColorsMenu()" in text
-    assert "toggleEventSoundsMenu()" in text
+    assert "toggleAudioMenu()" in text
+
+
+def test_toolbar_audio_controls_are_consolidated_into_menu():
+    text = _read("static/components/TopToolbar.js")
+    css = _read("static/style.css")
+    assert "toolbar-audio-btn" in text
+    assert ":title=\"audioButtonTitle\"" in text
+    assert "toolbar-audio-panel" in text
+    assert "toolbar-audio-panel-title\">Ambient</div>" in text
+    assert "toolbar-audio-panel-title\">Event sounds</div>" in text
+    assert "toolbar-audio-label" not in text
+    assert "event-sounds-btn" not in text
+    assert ".toolbar-audio-btn" in css
+    assert ".top-toolbar .toolbar-audio-panel" in css
 
 
 def test_worker_config_modal_receives_workspace_palette_colors():
