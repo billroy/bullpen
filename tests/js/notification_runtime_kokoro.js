@@ -213,6 +213,30 @@ async function waitFor(predicate, timeoutMs = 1000) {
     throw new Error('Completion payload did not include ticket id');
   }
 
+  calls.emitted.length = 0;
+  runtime.addToast = () => new Promise(() => {});
+  runtime.playSound = () => new Promise(() => {});
+  runtime.flash = () => new Promise(() => {});
+  handlers['notification:fire']({
+    id: 'delivery-2',
+    workspaceId: 'ws-test',
+    slot: 8,
+    worker: { name: 'Nonblocking Notify' },
+    ticket: { id: 'ticket-2', title: 'Ticket 2' },
+    channels: {
+      toast: { enabled: true, text: 'Toast should not block', duration_ms: 30000 },
+      sound: { enabled: true, effect: 'done' },
+      flash: { enabled: true, sequence: [{ color: '#00ff88', duration_ms: 500 }] },
+      speech: { enabled: false },
+    },
+    policy: { cooldown_ms: 0, dedupe_window_ms: 0 },
+  });
+
+  await waitFor(() => calls.emitted.length === 1, 250);
+  if (calls.emitted[0].payload.delivery_id !== 'delivery-2') {
+    throw new Error('Toast/sound/flash-only delivery did not complete immediately');
+  }
+
   process.stdout.write(JSON.stringify(calls, null, 2));
 })().catch(err => {
   console.error(err);

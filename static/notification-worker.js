@@ -210,10 +210,10 @@
       }
       try {
         const promises = [];
-        if (channels.toast?.enabled && this.flags.toasts) promises.push(this.addToast(payload));
-        if (channels.sound?.enabled && this.flags.sounds) promises.push(this.playSound(channels.sound));
+        if (channels.toast?.enabled && this.flags.toasts) this.addToast(payload);
+        if (channels.sound?.enabled && this.flags.sounds) this.playSound(channels.sound);
         if (channels.speech?.enabled && this.flags.speech) promises.push(this.speak(channels.speech, payload));
-        if (channels.flash?.enabled && this.flags.flash) promises.push(this.flash(channels.flash));
+        if (channels.flash?.enabled && this.flags.flash) this.flash(channels.flash);
         await Promise.all(promises);
       } finally {
         if (deliveryId) this._activeDeliveries.delete(deliveryId);

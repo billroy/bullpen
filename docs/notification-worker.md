@@ -209,17 +209,19 @@ When a ticket reaches a Notification worker:
 3. The server marks the worker `working`, marks the ticket `in_progress`, and
    emits one Socket.IO `notification:fire` event to connected clients in the
    same workspace room.
-4. A browser client completes every enabled notification channel. Generated
-   speech is not complete until model load, generation, and playback finish.
+4. A browser client starts every enabled notification channel. Toast, sound, and
+   flash effects do not gate routing. Spoken notification text gates routing
+   until model load, generation, and playback finish.
 5. The browser emits `notification:complete` with the delivery id, slot, and
    ticket id.
 6. The server verifies the pending delivery still matches the worker and ticket,
    then applies the worker's configured disposition.
 7. The worker returns to `idle` and drains any runnable queue behind it.
 
-The ticket waits for notification delivery completion. V1 delivery means "the
-configured local notification effects have completed or failed according to
-policy," not merely "the server published intent."
+The ticket waits for spoken notification delivery completion when speech is
+enabled. V1 delivery means "the browser started the configured local effects,
+and any spoken message has completed or failed according to policy," not merely
+"the server published intent."
 
 If automation is paused or the worker is stopped before completion, the ticket
 remains assigned at the notification worker and does not advance to the next
