@@ -784,6 +784,9 @@ const app = createApp({
       ws.teams = teams;
       if (_isActive(wsId)) state.teams = teams;
     });
+    socket.on('toast', (data) => {
+      addToast((data && data.message) || 'Notification', (data && data.level) || 'info');
+    });
     socket.on('error', (data) => { addToast((data && data.message) || 'An error occurred', 'error'); });
     socket.on('project:clone:started', (data) => {
       const target = data?.path ? ` into ${data.path}` : '';

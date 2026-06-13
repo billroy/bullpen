@@ -226,11 +226,12 @@ def test_worker_card_exposes_explicit_group_and_selection_menu_items():
     assert "this.$emit('delete-worker', this.slotIndex);" in text
 
 
-def test_worker_card_blocks_run_during_automation_pause():
+def test_worker_card_keeps_run_visible_during_automation_pause():
     text = _read("static/components/WorkerCard.js")
     assert "automationPausedForWorker()" in text
     assert "this.$root?.state?.config?.worker_automation_paused === true" in text
-    assert "canStart && !isPaused && !automationPausedForWorker" in text
+    assert "canStart && !isPaused\" class=\"worker-menu-item\" @click=\"menuRun\"" in text
+    assert "canStart && !isPaused && !automationPausedForWorker" not in text
 
 
 def test_bullpen_tab_deletes_selected_worker_group_from_menu():

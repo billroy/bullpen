@@ -16,6 +16,7 @@ def test_notification_worker_runtime_is_loaded_and_initialized():
 
     assert '<script src="/notification-worker.js"></script>' in index
     assert "window.NotificationWorkers.init(socket)" in app
+    assert "socket.on('toast'" in app
 
 
 def test_notification_worker_config_modal_fields_exist():

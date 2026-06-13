@@ -2595,7 +2595,7 @@ class TestNotificationWorker:
         assert payload["channels"]["toast"]["text"] == "Notification review task reached Notify Review."
         assert payload["channels"]["speech"]["text"] == "Speak high Notification review task."
 
-    def test_notification_empty_queue_does_not_create_synthetic_ticket(self, bp_dir):
+    def test_notification_empty_queue_creates_synthetic_ticket_and_fires(self, bp_dir):
         layout = read_json(os.path.join(bp_dir, "layout.json"))
         layout["slots"] = [{
             "type": "notification",
@@ -2609,17 +2609,49 @@ class TestNotificationWorker:
             "state": "idle",
             "icon": "bell-ring",
             "color": "notification",
+            "notification": {
+                "toast": {
+                    "enabled": True,
+                    "template": "{ticket.title} via {worker.name}",
+                    "variant": "stage",
+                    "duration_ms": 6000,
+                },
+                "speech": {
+                    "enabled": False,
+                    "template": "{ticket.title}",
+                    "engine": "default",
+                    "voice": "",
+                    "rate": 1,
+                    "volume": 1,
+                },
+                "sound": {"enabled": False, "effect": "done", "repeat_count": 1, "gap_ms": 250, "volume": 1},
+                "flash": {"enabled": False, "sequence": [], "opacity": 0.35},
+                "policy": {"cooldown_ms": 1000, "dedupe_window_ms": 3000},
+            },
         }]
         write_json(os.path.join(bp_dir, "layout.json"), layout)
 
         before = {task["id"] for task in list_tasks(bp_dir)}
-        start_worker(bp_dir, 0)
+        socket = CapturingSocket()
+        start_worker(bp_dir, 0, socketio=socket, ws_id="ws-notify-empty")
+        time.sleep(0.2)
         after = {task["id"] for task in list_tasks(bp_dir)}
+        created_ids = after - before
 
-        assert after == before
+        assert len(created_ids) == 1
+        created = read_task(bp_dir, next(iter(created_ids)))
+        assert created["synthetic_run"] is True
+        assert created["trigger_kind"] == "manual"
+        assert created["status"] == "review"
+        assert created["assigned_to"] == ""
+        assert created["title"].startswith("[Auto] Empty Notification - manual - ")
         final_layout = _load_layout(bp_dir)
         assert final_layout["slots"][0]["state"] == "idle"
         assert final_layout["slots"][0]["task_queue"] == []
+        notification_events = [payload for event, payload, _to in socket.events if event == "notification:fire"]
+        assert len(notification_events) == 1
+        assert notification_events[0]["ticket"]["id"] == created["id"]
+        assert notification_events[0]["channels"]["toast"]["text"] == f"{created['title']} via Empty Notification"
 
 
 class TestWatchColumn:

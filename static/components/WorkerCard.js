@@ -63,7 +63,7 @@ const WorkerCard = {
         <div v-if="showMenu" ref="menu" class="worker-menu" :style="menuStyle" @click.stop @keydown="onMenuKeydown">
           <div class="worker-menu-section-label">This Worker</div>
           <button v-if="canConfigure" class="worker-menu-item" @click="menuEdit"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
-          <button v-if="canStart && !isPaused && !automationPausedForWorker" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
+          <button v-if="canStart && !isPaused" class="worker-menu-item" @click="menuRun"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel }}</span></button>
           <button v-if="canRestart" class="worker-menu-item" @click="menuRestart"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
           <button v-if="canWatch" class="worker-menu-item" @click="menuWatch"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
           <button v-if="isService" class="worker-menu-item" :disabled="!serviceSiteUrl" @click="menuOpenSite"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
