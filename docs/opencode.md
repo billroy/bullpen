@@ -357,8 +357,8 @@ Phase status:
 |-------|--------|------------|
 | 0. Contract spike and fixtures | Complete | Contract captured in `docs/opencode-contract.md` |
 | 1. Backend adapter and provider registration | Complete | Adapter/validation/hardening tests passed |
-| 2. Model catalog backend API | Not started | Commit after catalog API tests pass |
-| 3. Worker configuration UI | Blocked on Phase 2 | Commit after UI/manual picker check |
+| 2. Model catalog backend API | Complete | Catalog API tests passed |
+| 3. Worker configuration UI | Not started | Commit after UI/manual picker check |
 | 4. Worker lifecycle integration and smoke test | Blocked on Phase 3 | Commit after fake lifecycle and local smoke |
 | 5. Live Agent Chat support | Blocked on Phase 4 | Commit after chat tests/manual check |
 | 6. Setup, manager, Docker, and Microsandbox | Blocked on Phase 5 | Commit after setup/deploy checks |
@@ -541,10 +541,12 @@ Verification:
 
 Phase-end checkpoint:
 
-- Confirm API shape with a sample response in this doc or adjacent fixture.
-- Confirm frontend can build provider-first picker from the response without
-  extra server calls per provider.
-- Update open items around catalog behavior.
+- Completed with mocked subprocess coverage and route test.
+- API shape:
+  `{"status":"ok","models":[{"id":"opencode/north-mini-code-free","provider":"opencode","model":"north-mini-code-free"}],"cached":false}`.
+- Frontend can build the provider-first picker from a single response by
+  grouping `models[*].provider`.
+- Focused verification passed: `285 passed`.
 
 Commit:
 
