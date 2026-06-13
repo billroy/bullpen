@@ -194,6 +194,33 @@ def test_cli_test_provider_subcommand_parses_target(sb, tmp_path, monkeypatch):
     assert config.target == "git"
 
 
+def test_cli_accepts_opencode_setup_targets(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(ROOT)
+
+    auth_config = sb.config_from_args(
+        ["--workspace-root", str(workspace), "--no-open", "auth", "opencode"]
+    )
+    test_config = sb.config_from_args(
+        ["--workspace-root", str(workspace), "--no-open", "test-provider", "opencode"]
+    )
+
+    assert auth_config.action == "auth"
+    assert auth_config.target == "opencode"
+    assert test_config.action == "test-provider"
+    assert test_config.target == "opencode"
+
+
+def test_setup_items_include_opencode(sb):
+    items = {item.key: item for item in sb.setup_items()}
+
+    assert "opencode" in items
+    assert items["opencode"].label == "OpenCode"
+    assert items["opencode"].auth_func is sb.auth_opencode
+    assert items["opencode"].verify_func is sb.verify_opencode_auth
+
+
 def test_cli_first_light_subcommand_parses_claude_without_admin_password(sb, tmp_path, monkeypatch):
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -763,6 +790,7 @@ def test_runtime_env_disables_nested_codex_sandbox_like_docker(sb, tmp_path, mon
 
     assert config.runtime_env["BULLPEN_CODEX_SANDBOX"] == "none"
     assert config.runtime_env["BULLPEN_CODEX_PATH"] == "/usr/local/bin/codex"
+    assert config.runtime_env["BULLPEN_OPENCODE_PATH"] == "/usr/local/bin/opencode"
     assert "SSL_CERT_FILE" not in config.runtime_env
     assert "SSL_CERT_DIR" not in config.runtime_env
     assert "NODE_EXTRA_CA_CERTS" not in config.runtime_env
@@ -1101,10 +1129,10 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "useradd --uid" in prepare_command
     assert "BULLPEN_UID=" in prepare_command
     assert "Existing bullpen user has uid" in prepare_command
-    assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /var/lib/bullpen" in prepare_command
+    assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.local/share/opencode /var/lib/bullpen" in prepare_command
     assert "bullpen soft nofile 65536" in prepare_command
     assert "bullpen hard nofile 65536" in prepare_command
-    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex" in prepare_command
+    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.local /home/bullpen/.local/share /home/bullpen/.local/share/opencode" in prepare_command
     assert "chown bullpen:\"$group_name\" /workspace" not in prepare_command
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /home/bullpen\n" not in prepare_command
@@ -1948,18 +1976,22 @@ def test_prepare_base_validates_codex_helper_before_and_after_snapshot(sb, monke
     asyncio.run(sb.prepare_base(FakeRuntime(), config))
 
     install_command = next(entry[2] for entry in commands if entry[0] == "Installing OS packages")
+    agent_install_command = next(entry[2] for entry in commands if entry[0] == "Installing agent CLIs")
     verify_command = next(entry[2] for entry in commands if entry[0] == "Verifying prepared base")
     snapshot_command = next(entry[2] for entry in commands if entry[0] == "Validating prepared base snapshot")
     assert "bubblewrap" in install_command
+    assert "opencode-ai" in agent_install_command
     assert "command -v bwrap >/dev/null" in verify_command
     assert 'createRequire("/usr/local/lib/node_modules/@openai/codex/bin/codex.js")' in verify_command
     assert 'require.resolve(`${packageName}/package.json`)' in verify_command
     assert "packageJsonStat.size <= 0" in verify_command
     assert "codex --version" in verify_command
+    assert "opencode --version" in verify_command
     assert "\n            sync\n" in verify_command
     assert "command -v bwrap >/dev/null" in snapshot_command
     assert 'createRequire("/usr/local/lib/node_modules/@openai/codex/bin/codex.js")' in snapshot_command
     assert "codex --version" in snapshot_command
+    assert "opencode --version" in snapshot_command
     assert commands.index(("snapshot", "bullpen-microsandbox-local-prepare", "bullpen-microsandbox-local")) < commands.index(
         ("create-validation", "bullpen-microsandbox-local-v", "bullpen-microsandbox-local", "bullpen-microsandbox-local")
     )

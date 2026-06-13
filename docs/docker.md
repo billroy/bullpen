@@ -90,6 +90,18 @@ because no bearer or basic authentication header is available. If
 `OPENAI_API_KEY` is set in the host environment, the deploy script also forwards
 it into the container.
 
+For OpenCode, mount or sync the OpenCode auth state into the container user
+home, or forward provider API keys that OpenCode can read:
+
+```text
+~/.local/share/opencode/auth.json -> /home/bullpen/.local/share/opencode/auth.json
+```
+
+OpenCode can also be authenticated inside a persistent Docker home by running
+the host deploy flow with `HOME=~/.bullpen/docker-home opencode auth login`.
+Future container replacements keep that auth state when the Docker home is
+mounted at `/home/bullpen`.
+
 ## Git and Pull Request Auth
 
 The Docker image includes `git`, `openssh-client`, and the GitHub CLI (`gh`).

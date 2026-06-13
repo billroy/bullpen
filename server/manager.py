@@ -45,6 +45,7 @@ AI_PROVIDER_LABELS = {
     "claude": "Claude",
     "codex": "Codex",
     "gemini": "Gemini",
+    "opencode": "OpenCode",
 }
 
 
@@ -222,6 +223,10 @@ def provider_auth_info(profile: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "label": "Codex",
             "authenticated": codex_credentials_authenticated(home),
         },
+        "opencode": {
+            "label": "OpenCode",
+            "authenticated": opencode_credentials_authenticated(home),
+        },
         "git": {
             "label": "Git",
             "authenticated": git_credentials_authenticated(home),
@@ -247,6 +252,14 @@ def claude_credentials_authenticated(home: Path) -> bool:
 def codex_credentials_authenticated(home: Path) -> bool:
     try:
         data = read_json(str(home / ".codex" / "auth.json"))
+    except Exception:
+        return False
+    return isinstance(data, dict) and bool(data)
+
+
+def opencode_credentials_authenticated(home: Path) -> bool:
+    try:
+        data = read_json(str(home / ".local" / "share" / "opencode" / "auth.json"))
     except Exception:
         return False
     return isinstance(data, dict) and bool(data)

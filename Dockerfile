@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_MAJOR}.x nodistro main" \
       > /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && apt-get install -y --no-install-recommends nodejs && \
-    npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli && \
+    npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli opencode-ai && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

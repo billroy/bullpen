@@ -480,6 +480,7 @@ sync_file_if_exists "$HOME/.codex/auth.json" "$DOCKER_HOME/.codex/auth.json"
 seed_dir_if_missing "$HOME/.config/codex" "$DOCKER_HOME/.config/codex"
 seed_dir_if_missing "$HOME/.config/gemini" "$DOCKER_HOME/.config/gemini"
 seed_dir_if_missing "$HOME/.config/google-gemini" "$DOCKER_HOME/.config/google-gemini"
+seed_dir_if_missing "$HOME/.local/share/opencode" "$DOCKER_HOME/.local/share/opencode"
 RUNTIME_VOLUME_ARGS+=("-v" "${DOCKER_HOME}:/home/bullpen")
 
 # Auto-detect provider credentials seeded into the persistent container home.
@@ -489,6 +490,7 @@ RUNTIME_VOLUME_ARGS+=("-v" "${DOCKER_HOME}:/home/bullpen")
 [[ -d "$DOCKER_HOME/.config/codex" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/codex")
 [[ -d "$DOCKER_HOME/.config/gemini" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/gemini")
 [[ -d "$DOCKER_HOME/.config/google-gemini" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.config/google-gemini")
+[[ -f "$DOCKER_HOME/.local/share/opencode/auth.json" ]] && DETECTED_CREDENTIALS+=("home:${DOCKER_HOME}/.local/share/opencode/auth.json")
 
 # Auto-detect Git/GitHub auth. These are separate from agent-provider
 # credentials because they enable push and pull request workflows.
@@ -509,16 +511,20 @@ fi
 
 # Auto-forward commonly used provider env vars when present on host.
 add_env_if_set "OPENAI_API_KEY"
+add_env_if_set "ANTHROPIC_API_KEY"
 add_env_if_set "GEMINI_API_KEY"
 add_env_if_set "GOOGLE_API_KEY"
+add_env_if_set "OPENROUTER_API_KEY"
 
 if [[ ${#DETECTED_CREDENTIALS[@]} -eq 0 ]]; then
   warn "No provider credentials were auto-detected on this machine."
   echo "Enter any credentials you have now; at least one is required so agent CLIs can run."
   prompt_optional_credential "CLAUDE_CODE_OAUTH_TOKEN" "Claude Code OAuth token"
   prompt_optional_credential "OPENAI_API_KEY" "OpenAI API key"
+  prompt_optional_credential "ANTHROPIC_API_KEY" "Anthropic API key"
   prompt_optional_credential "GEMINI_API_KEY" "Gemini API key"
   prompt_optional_credential "GOOGLE_API_KEY" "Google API key"
+  prompt_optional_credential "OPENROUTER_API_KEY" "OpenRouter API key"
   [[ ${#DETECTED_CREDENTIALS[@]} -gt 0 ]] || die "No provider credentials were supplied."
 fi
 

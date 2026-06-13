@@ -1,6 +1,6 @@
 # Bullpen
 
-An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex, Gemini) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
+An AI agent team manager. Configure workers on a grid, create task tickets, assign work, and let CLI agents (Claude, Codex, Gemini, OpenCode) execute autonomously with retry logic and real-time output streaming. Includes an MCP server so supported agents can manage tickets directly from the conversation.
 
 ## Screenshots
 
@@ -44,14 +44,18 @@ Bullpen runs provider CLIs locally. Install and authenticate each provider you w
 - **Gemini CLI**
   - Installation: https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/index.md
   - Authentication: https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/authentication.md
+- **OpenCode CLI**
+  - Installation: `npm install -g opencode-ai`
+  - Authentication: `opencode auth login` or provider environment variables supported by OpenCode
 
-Only authenticated providers are usable in Bullpen. If you plan to use all three agents, complete login/auth setup in all three CLIs first.
+Only authenticated providers are usable in Bullpen. Complete login/auth setup in each provider CLI you plan to use first.
 
 If a CLI is installed in a non-standard location, you can point Bullpen to explicit executables:
 
 - `BULLPEN_CLAUDE_PATH`
 - `BULLPEN_CODEX_PATH`
 - `BULLPEN_GEMINI_PATH`
+- `BULLPEN_OPENCODE_PATH`
 
 ### Options
 
@@ -76,12 +80,12 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **List view** -- switchable list view for the Tickets tab with sortable columns, full-text search, priority/status/type filters, timestamped Created column, and token-consumption display
 - **Worker grid** -- configurable grid of AI agent slots; drag tickets onto workers to assign them
 - **Worker grid selection** -- select multiple workers, move or delete groups, and use scoped context-menu actions for one worker, a pass-connected group, or the explicit selection
-- **Agent execution** -- workers invoke Claude, Codex, or Gemini CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (structured stream parsing for Claude/Codex)
+- **Agent execution** -- workers invoke Claude, Codex, Gemini, or OpenCode CLI tools in subprocesses with prompt assembly, retry on failure, and real-time output streaming (structured stream parsing for Claude/Codex/OpenCode)
 - **Shell / Script workers** -- run a configured shell command against a ticket, pass ticket data as JSON/env/argv, capture output, and route or update the ticket from script output
 - **Service workers** -- supervise long-running workspace processes, stream logs, run health checks, and accept ticket-triggered start/restart orders
 - **Marker workers** -- place no-op marker cards on the worker grid for labels, navigation targets, and pass-through routing
 - **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
-- **Live Agent Chat** -- interactive chat tabs for Claude, Codex, and Gemini with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
+- **Live Agent Chat** -- interactive chat tabs for Claude, Codex, Gemini, and OpenCode with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
 - **Web terminal tabs** -- open one or more PTY-backed terminal tabs rooted in the active workspace directory, with xterm.js rendering, resize support, restart/close controls, and cleanup on browser disconnect
 - **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, file downloads, and an in-browser editor with find/replace; clicking `.html` files opens them in the default browser
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
@@ -363,6 +367,7 @@ For larger payloads, the ticket CLI also supports `--description-file` on
 | Claude | `claude` | Real-time streaming via stream-json |
 | Codex | `codex` | GPT-5 family models, stderr streaming |
 | Gemini | `gemini` | Gemini CLI prompt execution with stdout streaming, MCP ticket tools, and conservative Flash defaults |
+| OpenCode | `opencode` | Catalog-backed `provider/model` selection, JSON streaming, MCP ticket tools |
 
 Each agent CLI must be installed, available on your PATH, and authenticated with its provider before Bullpen can use it.
 
@@ -446,7 +451,7 @@ python3 -m pip install microsandbox
 Microsandbox deploy uses one Python entrypoint. On first run, the script creates
 the reusable local base snapshot if it is missing, then starts Bullpen for the
 project. The base contains Python dependencies, Node.js/npm, Git, GitHub CLI,
-ripgrep, and the Claude, Codex, and Gemini CLIs.
+ripgrep, and the Claude, Codex, Gemini, and OpenCode CLIs.
 
 ```bash
 python3 deploy-sandbox.py --workspace-root /path/to/projects
@@ -460,8 +465,8 @@ python3 deploy-sandbox.py --prepare-base
 
 During the run step, Bullpen prompts for the admin password if
 `--admin-password` is omitted. Provider setup is intentionally sandbox-native:
-Claude, Codex, and GitHub login flows run inside the VM as the `bullpen` user
-and persist under `/home/bullpen`.
+Claude, Codex, OpenCode, and GitHub login flows run inside the VM as the
+`bullpen` user and persist under `/home/bullpen`.
 
 ### Microsandbox options
 
@@ -499,9 +504,11 @@ Additional maintenance commands:
 ```bash
 python3 deploy-sandbox.py auth claude
 python3 deploy-sandbox.py auth codex
+python3 deploy-sandbox.py auth opencode
 python3 deploy-sandbox.py auth git
 python3 deploy-sandbox.py test-provider claude
 python3 deploy-sandbox.py test-provider codex
+python3 deploy-sandbox.py test-provider opencode
 python3 deploy-sandbox.py test-provider git
 python3 deploy-sandbox.py first-light claude
 ```
@@ -525,7 +532,7 @@ Bullpen ships an MCP (Model Context Protocol) stdio server that lets supported a
 
 ### How it works
 
-Claude, Codex, and Gemini adapters spawn `server/mcp_tools.py` as a child process and communicate via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.
+Claude, Codex, Gemini, and OpenCode adapters spawn `server/mcp_tools.py` as a child process and communicate via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.
 
 When auth is enabled, the MCP server authenticates using a shared token that Bullpen writes to `~/.bullpen/secrets.json` on startup, keyed per project, while keeping runtime host/port metadata in each workspace's `.bullpen/config.json`.
 

@@ -74,10 +74,19 @@ def test_deploy_docker_does_not_launch_claude_browser_login():
     assert "Complete Claude Code login outside this deploy" in text
 
 
-def test_deploy_docker_does_not_support_anthropic_api_key_claude_auth():
+def test_deploy_docker_forwards_opencode_provider_env_and_home():
     text = _read("deploy-docker.sh")
-    assert "ANTHROPIC_API_KEY" not in text
-    assert "Anthropic API key" not in text
+    compose = _read("docker-compose.yml")
+    dockerfile = _read("Dockerfile")
+
+    assert 'seed_dir_if_missing "$HOME/.local/share/opencode" "$DOCKER_HOME/.local/share/opencode"' in text
+    assert '[[ -f "$DOCKER_HOME/.local/share/opencode/auth.json" ]]' in text
+    assert 'add_env_if_set "ANTHROPIC_API_KEY"' in text
+    assert 'add_env_if_set "OPENROUTER_API_KEY"' in text
+    assert 'prompt_optional_credential "ANTHROPIC_API_KEY" "Anthropic API key"' in text
+    assert 'prompt_optional_credential "OPENROUTER_API_KEY" "OpenRouter API key"' in text
+    assert "opencode-ai" in dockerfile
+    assert "${HOME}/.local/share/opencode:/home/bullpen/.local/share/opencode:ro" in compose
 
 
 def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():

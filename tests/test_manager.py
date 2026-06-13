@@ -123,11 +123,13 @@ def test_microsandbox_deployment_info_reports_provider_auth_status(tmp_path):
     info = manager_mod.deployment_info(profile)
     assert info["providerAuth"]["claude"]["authenticated"] is False
     assert info["providerAuth"]["codex"]["authenticated"] is False
+    assert info["providerAuth"]["opencode"]["authenticated"] is False
     assert info["providerAuth"]["git"]["authenticated"] is False
 
     home = Path(profile["sandboxHome"])
     write_json(str(home / ".claude" / ".credentials.json"), {"claudeAiOauth": {"refreshToken": "token"}})
     write_json(str(home / ".codex" / "auth.json"), {"OPENAI_API_KEY": "token"})
+    write_json(str(home / ".local" / "share" / "opencode" / "auth.json"), {"openrouter": {"apiKey": "token"}})
     (home / ".config" / "gh").mkdir(parents=True)
     (home / ".config" / "gh" / "hosts.yml").write_text("github.com:\n  oauth_token: token\n", encoding="utf-8")
     (home / ".gitconfig").write_text("[user]\n\tname = Bullpen\n\temail = bullpen@example.test\n", encoding="utf-8")
@@ -135,6 +137,7 @@ def test_microsandbox_deployment_info_reports_provider_auth_status(tmp_path):
     info = manager_mod.deployment_info(profile)
     assert info["providerAuth"]["claude"]["authenticated"] is True
     assert info["providerAuth"]["codex"]["authenticated"] is True
+    assert info["providerAuth"]["opencode"]["authenticated"] is True
     assert info["providerAuth"]["git"]["authenticated"] is True
 
 
@@ -237,6 +240,7 @@ def test_manager_api_profiles_include_deployment_info(tmp_path):
             "slots": [
                 {"type": "ai", "agent": "codex", "model": "gpt-5.3-codex"},
                 {"type": "ai", "agent": "claude", "model": "claude-sonnet-4-6"},
+                {"type": "ai", "agent": "opencode", "model": "opencode/north-mini-code-free"},
                 {"type": "shell", "command": "pytest"},
             ]
         },
@@ -262,11 +266,14 @@ def test_manager_api_profiles_include_deployment_info(tmp_path):
     [profile] = response.get_json()["profiles"]
     info = profile["deploymentInfo"]
     assert info["resources"]["source"] == "host"
-    assert {provider["agent"] for provider in info["aiProviders"]} == {"claude", "codex"}
+    assert {provider["agent"] for provider in info["aiProviders"]} == {"claude", "codex", "opencode"}
     codex = next(provider for provider in info["aiProviders"] if provider["agent"] == "codex")
     assert codex["model"] == "gpt-5.3-codex"
     assert codex["count"] == 1
     assert codex["workspaces"] == ["project-a"]
+    opencode = next(provider for provider in info["aiProviders"] if provider["agent"] == "opencode")
+    assert opencode["label"] == "OpenCode"
+    assert opencode["model"] == "opencode/north-mini-code-free"
     assert info["git"]["repositories"][0]["name"] == "project-a"
     assert info["git"]["repositories"][0]["dirty"] is True
 
@@ -406,7 +413,8 @@ def test_manager_renders_selected_deployment_info_rows():
     assert "function memoryText(profile)" in manager_js
     assert "function providersText(profile)" in manager_js
     assert "`${value} MiB${suffix}`" in manager_js
-    assert "const allowed = new Set(['claude', 'codex', 'git']);" in manager_js
+    assert "const allowed = new Set(['claude', 'codex', 'opencode', 'git']);" in manager_js
+    assert "const order = ['claude', 'codex', 'opencode', 'git'];" in manager_js
     assert "deploymentInfo(profile).providerAuth || {}" in manager_js
     assert "(deploymentInfo(profile).aiProviders || []).forEach" in manager_js
     assert "if (allowed.has(agent)) providers.set(agent, provider.label || providerLabel(agent));" in manager_js

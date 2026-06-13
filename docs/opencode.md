@@ -361,8 +361,8 @@ Phase status:
 | 3. Worker configuration UI | Complete | Catalog-backed inline picker added; static and syntax checks passed |
 | 4. Worker lifecycle integration and smoke test | Complete | Fake CLI lifecycle smoke passed |
 | 5. Live Agent Chat support | Complete | Fake CLI chat and catalog picker tests passed |
-| 6. Setup, manager, Docker, and Microsandbox | Ready | Commit after setup/deploy checks |
-| 7. Hardening, docs, and release readiness | Blocked on Phase 6 | Commit after release-readiness review |
+| 6. Setup, manager, Docker, and Microsandbox | Complete | Setup/deploy wiring tests passed |
+| 7. Hardening, docs, and release readiness | Ready | Commit after release-readiness review |
 
 ### Phase 0 - Contract spike and fixtures
 
@@ -801,9 +801,30 @@ Verification:
 
 Phase-end checkpoint:
 
-- Decide whether Docker and Microsandbox validation is complete or needs a
-  release-blocking manual run.
-- Update deployment limitations and open items.
+- Completed setup/deployment wiring:
+  - README provider prerequisites, supported-agent table, feature bullets,
+    executable env vars, Microsandbox commands, and MCP description now include
+    OpenCode.
+  - Docker image installs `opencode-ai`.
+  - `docker-compose.yml` documents the optional OpenCode auth mount.
+  - `deploy-docker.sh` seeds `~/.local/share/opencode`, detects
+    `auth.json`, and forwards common upstream provider env vars including
+    Anthropic and OpenRouter keys.
+  - Bullpen Manager provider labels/status include OpenCode auth detection via
+    `~/.local/share/opencode/auth.json`.
+  - Microsandbox runtime env includes `BULLPEN_OPENCODE_PATH`.
+  - Microsandbox base install and validation include `opencode-ai` /
+    `opencode --version`.
+  - Microsandbox `auth opencode` and `test-provider opencode` targets are
+    registered.
+- Focused verification passed:
+  - `python3 -m py_compile server/manager.py deploy-sandbox.py`
+  - `node --check static/manager/manager.js`
+  - `pytest tests/test_manager.py tests/test_deploy_sandbox.py tests/test_deploy_docker_script.py -q`
+    (`95 passed`)
+- Full Docker image build and real Microsandbox auth/provider smoke were not
+  run in this phase. They remain Phase 7/manual release checks because they
+  require external runtimes and live provider auth.
 
 Commit:
 
@@ -866,8 +887,8 @@ Commit:
   until then.
 - Add fake-executable auth failure fixtures unless a safe real missing-auth
   probe becomes available.
-- Decide the complete env/auth pass-through set for Docker and Microsandbox
-  during Phase 6 setup work.
+- Run real Docker and Microsandbox OpenCode auth/provider smoke checks before
+  release, or explicitly document them as unverified deployment paths.
 
 ## Review comments not adopted
 

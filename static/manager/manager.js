@@ -97,7 +97,7 @@ createApp({
 
     function providersText(profile) {
       const providers = new Map();
-      const allowed = new Set(['claude', 'codex', 'git']);
+      const allowed = new Set(['claude', 'codex', 'opencode', 'git']);
       const auth = deploymentInfo(profile).providerAuth || {};
       const configured = profile && profile.auth && profile.auth.providers;
       if (configured && typeof configured === 'object') {
@@ -119,7 +119,7 @@ createApp({
         if (allowed.has(key)) providers.set(key, (status && status.label) || providerLabel(key));
       });
       if (!providers.size) return 'None configured';
-      const order = ['claude', 'codex', 'git'];
+      const order = ['claude', 'codex', 'opencode', 'git'];
       return Array.from(providers.entries())
         .sort(([left], [right]) => {
           const leftIndex = order.includes(left) ? order.indexOf(left) : order.length;
