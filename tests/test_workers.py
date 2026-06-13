@@ -762,6 +762,15 @@ class TestStartWorker:
         assert not is_non_retryable_provider_error("gemini", "Temporary upstream timeout")
         assert not is_non_retryable_provider_error("claude", "You have exhausted your capacity on this model.")
 
+    def test_non_retryable_opencode_provider_error_is_classified(self):
+        assert is_non_retryable_provider_error(
+            "opencode",
+            "No endpoints found that support tool use. Try disabling \"bash\".",
+        )
+        assert is_non_retryable_provider_error("opencode", "model not found")
+        assert is_non_retryable_provider_error("opencode", "not authenticated")
+        assert not is_non_retryable_provider_error("opencode", "Temporary upstream timeout")
+
     def test_start_transitions_to_working(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Test task")
         assign_task(bp_dir, worker_slot, task["id"])

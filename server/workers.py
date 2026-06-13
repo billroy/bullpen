@@ -2272,6 +2272,20 @@ def is_non_retryable_provider_error(provider, *texts):
         )
         return any(phrase in haystack for phrase in phrases)
 
+    if provider == "opencode":
+        phrases = (
+            "no endpoints found that support tool use",
+            "model not found",
+            "unknown model",
+            "invalid model",
+            "not authenticated",
+            "authentication failed",
+            "api key",
+            "statuscode\":404",
+            "status code 404",
+        )
+        return any(phrase in haystack for phrase in phrases)
+
     return False
 
 

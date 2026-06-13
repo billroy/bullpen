@@ -18,8 +18,8 @@ MAX_TERMINAL_INPUT = 64 * 1024
 
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
-VALID_AGENTS = {"claude", "codex", "gemini"}
-VALID_WORKER_COLOR_KEYS = {"claude", "codex", "gemini", "shell", "service", "marker"}
+VALID_AGENTS = {"claude", "codex", "gemini", "opencode"}
+VALID_WORKER_COLOR_KEYS = {"claude", "codex", "gemini", "opencode", "shell", "service", "marker"}
 VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval"}
 VALID_DISPOSITIONS = {"review", "done"}
 VALID_THEMES = {
@@ -237,7 +237,7 @@ def validate_worker_configure(data, max_slots=100):
         sanitized["agent"] = _enum(fields["agent"], VALID_AGENTS, "agent")
         consumed.add("agent")
     if "model" in fields:
-        sanitized["model"] = _str(fields["model"], 50, "model")
+        sanitized["model"] = _str(fields["model"], 128, "model")
         consumed.add("model")
     if "activation" in fields:
         sanitized["activation"] = _enum(fields["activation"], VALID_ACTIVATIONS, "activation")

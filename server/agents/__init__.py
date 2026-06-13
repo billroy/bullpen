@@ -3,12 +3,14 @@
 from server.agents.claude_adapter import ClaudeAdapter
 from server.agents.codex_adapter import CodexAdapter
 from server.agents.gemini_adapter import GeminiAdapter
+from server.agents.opencode_adapter import OpenCodeAdapter
 
 
 _adapters = {
     "claude": ClaudeAdapter(),
     "codex": CodexAdapter(),
     "gemini": GeminiAdapter(),
+    "opencode": OpenCodeAdapter(),
 }
 
 

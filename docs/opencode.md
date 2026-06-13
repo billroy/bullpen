@@ -356,8 +356,8 @@ Phase status:
 | Phase | Status | Checkpoint |
 |-------|--------|------------|
 | 0. Contract spike and fixtures | Complete | Contract captured in `docs/opencode-contract.md` |
-| 1. Backend adapter and provider registration | Not started | Commit after adapter tests pass |
-| 2. Model catalog backend API | Blocked on Phase 1 | Commit after catalog API tests pass |
+| 1. Backend adapter and provider registration | Complete | Adapter/validation/hardening tests passed |
+| 2. Model catalog backend API | Not started | Commit after catalog API tests pass |
 | 3. Worker configuration UI | Blocked on Phase 2 | Commit after UI/manual picker check |
 | 4. Worker lifecycle integration and smoke test | Blocked on Phase 3 | Commit after fake lifecycle and local smoke |
 | 5. Live Agent Chat support | Blocked on Phase 4 | Commit after chat tests/manual check |
@@ -486,10 +486,12 @@ Verification:
 
 Phase-end checkpoint:
 
-- Confirm the adapter can be resolved with `get_adapter("opencode")`.
-- Confirm long model IDs and `agent: "opencode"` are accepted server-side.
-- Confirm trusted and untrusted argv behavior matches the Phase 0 decision.
-- Update the plan with any adapter limitations found during tests.
+- Completed with focused backend coverage.
+- `get_adapter("opencode")` resolves successfully.
+- Long model IDs and `agent: "opencode"` are accepted server-side.
+- Trusted worker argv adds `--dangerously-skip-permissions`; untrusted and chat
+  argv do not.
+- Focused verification passed: `278 passed`.
 
 Commit:
 

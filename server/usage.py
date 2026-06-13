@@ -316,6 +316,34 @@ def extract_gemini_usage_event(event_obj):
     return usage
 
 
+def extract_opencode_usage_event(event_obj):
+    """Extract normalized usage from OpenCode JSON events."""
+    if not isinstance(event_obj, dict):
+        return {}
+
+    if event_obj.get("type") != "step_finish":
+        return {}
+
+    part = event_obj.get("part")
+    if not isinstance(part, dict):
+        return {}
+
+    tokens = part.get("tokens")
+    if not isinstance(tokens, dict):
+        return {}
+
+    raw_usage = {
+        "input_tokens": tokens.get("input"),
+        "output_tokens": tokens.get("output"),
+        "reasoning_output_tokens": tokens.get("reasoning"),
+        "total_tokens": tokens.get("total"),
+    }
+    cache = tokens.get("cache")
+    if isinstance(cache, dict):
+        raw_usage["cached_input_tokens"] = cache.get("read")
+    return normalize_usage(raw_usage)
+
+
 def _normalize_gemini_tokens(raw_tokens):
     """Normalize Gemini token stats object into canonical fields."""
     if not isinstance(raw_tokens, dict):
@@ -371,6 +399,8 @@ def extract_stream_usage_event(provider, event_obj):
         return extract_codex_usage_event(event_obj)
     if provider == "gemini":
         return extract_gemini_usage_event(event_obj)
+    if provider == "opencode":
+        return extract_opencode_usage_event(event_obj)
 
     if not isinstance(event_obj, dict):
         return {}

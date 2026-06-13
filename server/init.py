@@ -10,6 +10,7 @@ DEFAULT_PROVIDER_COLORS = {
     "claude": "#da7756",
     "codex": "#5b6fd6",
     "gemini": "#3c7bf4",
+    "opencode": "#63b3ed",
     "shell": "#64748b",
     "service": "#0f766e",
     "marker": "#c8b38c",

@@ -78,6 +78,9 @@ def harden_agent_argv(provider, argv, trust_mode=TRUST_MODE_TRUSTED, *, chat=Fal
         default=TRUST_MODE_UNTRUSTED if chat else TRUST_MODE_TRUSTED,
     )
     if provider != "claude":
+        if provider == "opencode" and not chat and normalized == TRUST_MODE_TRUSTED:
+            if "--dangerously-skip-permissions" not in hardened:
+                hardened.append("--dangerously-skip-permissions")
         return hardened
     if chat or normalized == TRUST_MODE_UNTRUSTED:
         if "--strict-mcp-config" not in hardened:

@@ -12,10 +12,15 @@ from server.agents import get_adapter, register_adapter, list_adapters
 from server.agents.claude_adapter import ClaudeAdapter
 from server.agents.codex_adapter import CodexAdapter
 from server.agents.gemini_adapter import GeminiAdapter
+from server.agents.opencode_adapter import OpenCodeAdapter
 import server.agents.claude_adapter as claude_mod
 import server.agents.codex_adapter as codex_mod
 import server.agents.gemini_adapter as gemini_mod
+import server.agents.opencode_adapter as opencode_mod
 from tests.conftest import MockAdapter
+
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 class TestClaudeAdapter:
@@ -883,6 +888,102 @@ class TestMockAdapter:
         assert result["success"] is False
 
 
+class TestOpenCodeAdapter:
+    def test_name(self):
+        adapter = OpenCodeAdapter()
+        assert adapter.name == "opencode"
+
+    def test_find_opencode_honors_configured_path(self, monkeypatch):
+        configured = "/opt/bullpen/bin/opencode"
+        monkeypatch.setenv("BULLPEN_OPENCODE_PATH", configured)
+        monkeypatch.setattr(opencode_mod, "_is_executable", lambda path: path == configured)
+
+        assert opencode_mod._find_opencode() == configured
+
+    def test_unavailable_message_mentions_configured_bad_path(self, monkeypatch):
+        monkeypatch.setenv("BULLPEN_OPENCODE_PATH", "/missing/opencode")
+        msg = OpenCodeAdapter().unavailable_message()
+        assert "BULLPEN_OPENCODE_PATH" in msg
+        assert "/missing/opencode" in msg
+
+    def test_build_argv_uses_json_run_and_stdin_prompt(self, monkeypatch):
+        monkeypatch.setattr(opencode_mod, "_find_opencode", lambda: "/usr/local/bin/opencode")
+
+        adapter = OpenCodeAdapter()
+        argv = adapter.build_argv("test prompt", "opencode/north-mini-code-free", "/workspace")
+
+        assert argv[:4] == ["/usr/local/bin/opencode", "run", "--format", "json"]
+        assert "--model" in argv
+        assert "opencode/north-mini-code-free" in argv
+        assert "test prompt" not in argv
+        assert adapter.prompt_via_stdin() is True
+
+    def test_prepare_env_writes_opencode_mcp_config(self, tmp_workspace):
+        adapter = OpenCodeAdapter()
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+        with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"server_host": "0.0.0.0", "server_port": 5050}, f)
+
+        env, cleanup_path = adapter.prepare_env(tmp_workspace, bp_dir=bp_dir)
+        try:
+            assert env["TMPDIR"] == cleanup_path
+            config_path = env["OPENCODE_CONFIG"]
+            cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
+            server = cfg["mcp"]["bullpen"]
+            assert server["type"] == "local"
+            assert server["enabled"] is True
+            assert server["command"][0] == sys.executable
+            assert server["command"][1].endswith(os.path.join("server", "mcp_tools.py"))
+            assert "--bp-dir" in server["command"]
+            assert os.path.abspath(bp_dir) in server["command"]
+            assert "--host" in server["command"]
+            assert "127.0.0.1" in server["command"]
+            assert "--port" in server["command"]
+            assert "5050" in server["command"]
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
+
+    def test_format_stream_line_text_event(self):
+        adapter = OpenCodeAdapter()
+        line = json.dumps({"type": "text", "part": {"text": "OK"}})
+        assert adapter.format_stream_line(line) == "OK"
+
+    def test_format_stream_line_skips_step_finish(self):
+        adapter = OpenCodeAdapter()
+        line = json.dumps({"type": "step_finish", "part": {"tokens": {"total": 1}}})
+        assert adapter.format_stream_line(line) is None
+
+    def test_format_stream_line_error_event(self):
+        adapter = OpenCodeAdapter()
+        line = json.dumps({"type": "error", "error": {"data": {"message": "No endpoints found"}}})
+        assert adapter.format_stream_line(line) == "No endpoints found"
+
+    def test_parse_output_success_fixture(self):
+        adapter = OpenCodeAdapter()
+        stdout = (FIXTURES_DIR / "opencode" / "run_success_text.jsonl").read_text(encoding="utf-8")
+
+        result = adapter.parse_output(stdout, "", 0)
+
+        assert result["success"] is True
+        assert result["output"] == "OK"
+        assert result["error"] is None
+        assert result["usage"]["input_tokens"] == 7754
+        assert result["usage"]["output_tokens"] == 1
+        assert result["usage"]["reasoning_output_tokens"] == 85
+        assert result["usage"]["cached_input_tokens"] == 0
+        assert result["usage"]["total_tokens"] == 7840
+
+    def test_parse_output_error_fixture(self):
+        adapter = OpenCodeAdapter()
+        stdout = (FIXTURES_DIR / "opencode" / "run_provider_error.jsonl").read_text(encoding="utf-8")
+
+        result = adapter.parse_output(stdout, "", 1)
+
+        assert result["success"] is False
+        assert "No endpoints found" in result["error"]
+
+
 class TestRegistry:
     def test_get_claude(self):
         adapter = get_adapter("claude")
@@ -898,6 +999,11 @@ class TestRegistry:
         adapter = get_adapter("gemini")
         assert adapter is not None
         assert adapter.name == "gemini"
+
+    def test_get_opencode(self):
+        adapter = get_adapter("opencode")
+        assert adapter is not None
+        assert adapter.name == "opencode"
 
     def test_get_nonexistent(self):
         assert get_adapter("nonexistent") is None

@@ -142,6 +142,15 @@ class TestWorkerConfigureValidation:
         _, fields = validate_worker_configure({"slot": 0, "fields": {"agent": "gemini"}})
         assert fields["agent"] == "gemini"
 
+    def test_opencode_agent_allowed(self):
+        _, fields = validate_worker_configure({"slot": 0, "fields": {"agent": "opencode"}})
+        assert fields["agent"] == "opencode"
+
+    def test_opencode_long_provider_model_allowed(self):
+        model = "openrouter/meta-llama/llama-3.1-405b-instruct"
+        _, fields = validate_worker_configure({"slot": 0, "fields": {"agent": "opencode", "model": model}})
+        assert fields["model"] == model
+
     def test_disposition_accepts_any_string(self):
         """Disposition accepts any string (column key or worker: target)."""
         _, fields = validate_worker_configure({"slot": 0, "fields": {"disposition": "review"}})
@@ -209,6 +218,10 @@ class TestConfigUpdate:
     def test_new_themes_accepted(self, theme):
         result = validate_config_update({"theme": theme})
         assert result == {"theme": theme}
+
+    def test_opencode_provider_color_accepted(self):
+        result = validate_config_update({"provider_colors": {"opencode": "#63b3ed"}})
+        assert result["provider_colors"]["opencode"] == "#63b3ed"
 
 
 class TestWorkerMove:

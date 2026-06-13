@@ -9,6 +9,7 @@ from server.usage import (
     elapsed_task_time_ms,
     extract_codex_usage_event,
     extract_gemini_usage_event,
+    extract_opencode_usage_event,
     extract_stream_usage_event,
     normalize_usage,
     reported_task_time_ms_value,
@@ -135,6 +136,50 @@ def test_extract_gemini_stream_result_usage_event():
     assert normalized["output_tokens"] == 2
     assert normalized["total_tokens"] == 6812
     assert normalized["cached_input_tokens"] == 0
+
+
+def test_extract_opencode_step_finish_usage_event():
+    event = {
+        "type": "step_finish",
+        "part": {
+            "tokens": {
+                "total": 7840,
+                "input": 7754,
+                "output": 1,
+                "reasoning": 85,
+                "cache": {"write": 0, "read": 12},
+            }
+        },
+    }
+
+    normalized = extract_opencode_usage_event(event)
+    assert normalized["input_tokens"] == 7754
+    assert normalized["output_tokens"] == 1
+    assert normalized["reasoning_output_tokens"] == 85
+    assert normalized["cached_input_tokens"] == 12
+    assert normalized["total_tokens"] == 7840
+
+
+def test_extract_stream_usage_opencode_step_finish_event():
+    event = {
+        "type": "step_finish",
+        "part": {
+            "tokens": {
+                "total": 100,
+                "input": 80,
+                "output": 10,
+                "reasoning": 10,
+                "cache": {"read": 5},
+            }
+        },
+    }
+
+    usage = extract_stream_usage_event("opencode", event)
+    assert usage["input_tokens"] == 80
+    assert usage["output_tokens"] == 10
+    assert usage["reasoning_output_tokens"] == 10
+    assert usage["cached_input_tokens"] == 5
+    assert usage["total_tokens"] == 100
 
 
 def test_build_usage_update_appends_entry_and_increments_tokens():
