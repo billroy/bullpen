@@ -33,6 +33,7 @@ DEFAULT_CONFIG = {
         {"key": "blocked", "label": "Blocked", "color": "#EF4444"},
     ],
     "agent_timeout_seconds": 600,
+    "chat_timeout_seconds": 60,
     "max_prompt_chars": 100000,
 }
 

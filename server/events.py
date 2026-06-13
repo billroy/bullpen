@@ -59,6 +59,20 @@ _AI_COPY_FIELDS = {
     "trigger_interval_minutes", "trigger_every_day", "last_trigger_time",
     "paused", "task_queue", "state", "color", "avatar",
 }
+_DEFAULT_CHAT_TIMEOUT_SECONDS = 60
+_MAX_CHAT_TIMEOUT_SECONDS = 3600
+
+
+def _chat_timeout_seconds(bp_dir):
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    try:
+        timeout = int(config.get("chat_timeout_seconds", _DEFAULT_CHAT_TIMEOUT_SECONDS))
+    except (TypeError, ValueError):
+        timeout = _DEFAULT_CHAT_TIMEOUT_SECONDS
+    return max(1, min(timeout, _MAX_CHAT_TIMEOUT_SECONDS))
 
 
 def _harden_live_agent_argv(provider, argv):
@@ -1854,11 +1868,27 @@ def register_events(socketio, app):
     _chat_processes = {}
     _chat_proc_lock = threading.Lock()
 
-    def _run_chat(session_id, message, argv, adapter, response_collector, workspace=None, ws_id=None, bp_dir=None, model=None):
+    def _run_chat(
+        session_id,
+        message,
+        argv,
+        adapter,
+        response_collector,
+        workspace=None,
+        ws_id=None,
+        bp_dir=None,
+        model=None,
+        timeout_seconds=None,
+    ):
         """Run chat agent subprocess, emit streaming lines, then emit done."""
         if not ws_id:
             logging.error("Chat run missing workspace context for session %s", session_id)
             return
+        try:
+            timeout_seconds = int(timeout_seconds or _DEFAULT_CHAT_TIMEOUT_SECONDS)
+        except (TypeError, ValueError):
+            timeout_seconds = _DEFAULT_CHAT_TIMEOUT_SECONDS
+        timeout_seconds = max(1, min(timeout_seconds, _MAX_CHAT_TIMEOUT_SECONDS))
         # Extract temp MCP config path for cleanup (written by adapter.build_argv)
         mcp_config_path = None
         for i, arg in enumerate(argv):
@@ -1885,16 +1915,32 @@ def register_events(socketio, app):
                 )
                 if workspace:
                     popen_kwargs["cwd"] = workspace
+                if os.name == "nt":
+                    popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                else:
+                    popen_kwargs["start_new_session"] = True
                 prepared_env = adapter.prepare_env(workspace, bp_dir=bp_dir)
                 if isinstance(prepared_env, tuple):
                     popen_kwargs["env"], env_cleanup_path = prepared_env
                 else:
                     popen_kwargs["env"] = prepared_env
                 proc = None
+                timer = None
+                timed_out = [False]
                 try:
                     proc = subprocess.Popen(argv, **popen_kwargs)
                     with _chat_proc_lock:
                         _chat_processes[_chat_key(ws_id, session_id)] = proc
+
+                    def _watchdog():
+                        if proc.poll() is None:
+                            timed_out[0] = True
+                            _terminate_proc(proc)
+
+                    timer = threading.Timer(timeout_seconds, _watchdog)
+                    timer.daemon = True
+                    timer.start()
+
                     prompt = response_collector["prompt"]
                     try:
                         if adapter.prompt_via_stdin():
@@ -1977,8 +2023,29 @@ def register_events(socketio, app):
                     t_err = threading.Thread(target=_drain_stderr, daemon=True)
                     t_err.start()
                     _drain_stdout()
-                    proc.wait()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        _terminate_proc(proc, force=True)
+                        try:
+                            proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            pass
+                    if timer:
+                        timer.cancel()
                     t_err.join(timeout=2)
+
+                    if timed_out[0]:
+                        unit = "second" if timeout_seconds == 1 else "seconds"
+                        _emit_chat(
+                            "chat:error",
+                            {
+                                "sessionId": session_id,
+                                "message": f"Agent timed out after {timeout_seconds} {unit}.",
+                            },
+                            ws_id,
+                        )
+                        return
 
                     if startup_error:
                         _emit_chat("chat:error", {"sessionId": session_id, "message": startup_error}, ws_id)
@@ -2082,6 +2149,8 @@ def register_events(socketio, app):
                     _emit_chat("chat:done", {"sessionId": session_id}, ws_id)
                     return
                 finally:
+                    if timer:
+                        timer.cancel()
                     if env_cleanup_path:
                         try:
                             adapter.finalize_env(popen_kwargs.get("env"), env_cleanup_path)
@@ -2163,10 +2232,17 @@ def register_events(socketio, app):
         argv = _harden_live_agent_argv(provider, argv)
 
         response_collector = {"prompt": full_prompt}
+        timeout_seconds = _chat_timeout_seconds(bp_dir)
         thread = threading.Thread(
             target=_run_chat,
             args=(session_id, message, argv, adapter, response_collector),
-            kwargs={"workspace": workspace, "ws_id": ws_id, "bp_dir": bp_dir, "model": model},
+            kwargs={
+                "workspace": workspace,
+                "ws_id": ws_id,
+                "bp_dir": bp_dir,
+                "model": model,
+                "timeout_seconds": timeout_seconds,
+            },
             daemon=True,
         )
         thread.start()

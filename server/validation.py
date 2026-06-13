@@ -309,7 +309,7 @@ def validate_grid(data):
 
 # Allowed keys for config:update
 VALID_CONFIG_KEYS = {
-    "name", "grid", "columns", "agent_timeout_seconds",
+    "name", "grid", "columns", "agent_timeout_seconds", "chat_timeout_seconds",
     "max_prompt_chars", "auto_commit", "auto_pr", "theme",
     "ambient_preset", "ambient_volume", "provider_colors",
     "worker_automation_paused",
@@ -351,6 +351,9 @@ def validate_config_update(data):
             continue
         if k == "ambient_volume":
             sanitized[k] = _int(v, "ambient_volume", min_val=0, max_val=100)
+            continue
+        if k == "chat_timeout_seconds":
+            sanitized[k] = _int(v, "chat_timeout_seconds", min_val=1, max_val=3600)
             continue
         if k == "ambient_preset":
             if v in (None, ""):

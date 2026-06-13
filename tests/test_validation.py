@@ -211,6 +211,11 @@ class TestConfigUpdate:
         with pytest.raises(ValidationError, match="ambient_volume must be <="):
             validate_config_update({"ambient_volume": 999})
 
+    def test_chat_timeout_seconds_bounds(self):
+        assert validate_config_update({"chat_timeout_seconds": 30}) == {"chat_timeout_seconds": 30}
+        with pytest.raises(ValidationError, match="chat_timeout_seconds must be >="):
+            validate_config_update({"chat_timeout_seconds": 0})
+
     @pytest.mark.parametrize("theme", [
         "shades-of-purple", "solarized", "panda", "cobalt-2", "one-dark-pro",
         "light-ethereal", "light-stone-teal", "light-ivory-olive", "eyeshade-dark",

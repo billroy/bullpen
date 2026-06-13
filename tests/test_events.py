@@ -302,6 +302,29 @@ class ChatEnvAdapter(AgentAdapter):
         return {"success": exit_code == 0, "output": stdout.strip(), "error": stderr.strip(), "usage": {}}
 
 
+class ChatHangingAdapter(AgentAdapter):
+    def __init__(self, pid_file):
+        self.pid_file = str(pid_file)
+
+    @property
+    def name(self):
+        return "chat-hanging-mock"
+
+    def available(self):
+        return True
+
+    def build_argv(self, prompt, model, workspace, bp_dir=None):
+        script = (
+            "import os, time; "
+            f"open({json.dumps(self.pid_file)}, 'w', encoding='utf-8').write(str(os.getpid())); "
+            "time.sleep(30)"
+        )
+        return [sys.executable, "-c", script]
+
+    def parse_output(self, stdout, stderr, exit_code):
+        return {"success": exit_code == 0, "output": stdout.strip(), "error": stderr.strip(), "usage": {}}
+
+
 class TestTaskEvents:
     def test_create_task(self, client):
         c, app = client
@@ -1528,6 +1551,42 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 13, "outpu
         assert error is not None, "chat:error not received"
         assert "Requested entity was not found" in error["message"]
         assert done is False
+
+    def test_chat_times_out_silent_provider_process(self, client, tmp_path):
+        c, app = client
+        pid_file = tmp_path / "chat-hanging.pid"
+        register_adapter("chat-hanging-mock", ChatHangingAdapter(pid_file))
+
+        config_path = os.path.join(app.config["bp_dir"], "config.json")
+        config = read_json(config_path)
+        config["chat_timeout_seconds"] = 1
+        write_json(config_path, config)
+
+        c.emit("chat:send", {
+            "sessionId": "session-timeout-1",
+            "provider": "chat-hanging-mock",
+            "model": "mock-model",
+            "message": "hello",
+        })
+
+        error = _wait_for_event(c, "chat:error", timeout=4.0)
+
+        assert error is not None, "chat:error not received"
+        assert error["message"] == "Agent timed out after 1 second."
+        assert _wait_for_event(c, "chat:done", timeout=0.3) is None
+        assert pid_file.exists()
+
+        pid = int(pid_file.read_text(encoding="utf-8"))
+        deadline = time.time() + 2.0
+        still_running = True
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                still_running = False
+                break
+            time.sleep(0.05)
+        assert still_running is False
 
     def test_chat_tab_open_is_broadcast_to_other_clients(self):
         with tempfile.TemporaryDirectory(prefix="bullpen_chat_tabs_") as ws:
