@@ -1152,7 +1152,7 @@ def register_events(socketio, app):
         ws_id, bp_dir = _resolve(data)
         _set_worker_automation_paused(bp_dir, ws_id, True)
         _emit("toast", {
-            "message": "Worker automation paused. Active AI and Shell runs will finish.",
+            "message": "Worker automation paused. Active workers will finish their current step before advancing.",
             "level": "info",
         }, ws_id)
 
@@ -1330,6 +1330,25 @@ def register_events(socketio, app):
                 return
         for slot in slots:
             worker_mod.stop_worker(bp_dir, slot, socketio, ws_id)
+
+    @socketio.on("notification:complete")
+    @with_lock
+    def on_notification_complete(data):
+        ws_id, bp_dir = _resolve(data)
+        slot = data.get("slot")
+        if slot is None:
+            emit("error", {"message": "notification:complete requires slot"})
+            return
+        worker_mod.complete_notification_delivery(
+            bp_dir,
+            slot,
+            data.get("delivery_id") or data.get("id"),
+            data.get("task_id"),
+            data.get("status", "complete"),
+            data.get("error", ""),
+            socketio,
+            ws_id,
+        )
 
     # --- Output streaming events ---
 

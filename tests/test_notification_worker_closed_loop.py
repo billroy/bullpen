@@ -24,12 +24,33 @@ def _node_modal_payload():
     return json.loads(result.stdout)
 
 
+def _node_runtime_payload():
+    result = subprocess.run(
+        ["node", str(ROOT / "tests/js/notification_runtime_kokoro.js")],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def _event_payloads(client, name):
     return [
         evt["args"][0]
         for evt in client.get_received()
         if evt["name"] == name
     ]
+
+
+def _complete_notification(client, payload):
+    client.emit("notification:complete", {
+        "workspaceId": payload.get("workspaceId"),
+        "delivery_id": payload["id"],
+        "slot": payload["slot"],
+        "task_id": payload["ticket"]["id"],
+        "status": "complete",
+    })
 
 
 def _wait_for_task_status(bp_dir, task_id, status, timeout=3.0):
@@ -110,8 +131,8 @@ def test_notification_dialog_controls_round_trip_through_worker_configure():
         assert notification["speech"] == {
             "enabled": True,
             "template": "Speak {ticket.priority} {ticket.title}",
-            "engine": "web-speech",
-            "voice": "Samantha",
+            "engine": "kokoro",
+            "voice": "af_bella",
             "rate": 1.4,
             "volume": 0.6,
         }
@@ -142,6 +163,15 @@ def test_notification_dialog_controls_round_trip_through_worker_configure():
         tmp.cleanup()
 
 
+def test_notification_runtime_uses_kokoro_for_kokoro_engine():
+    payload = _node_runtime_payload()
+
+    assert payload["imports"] == ["test-loader"]
+    assert payload["generated"][0]["opts"]["voice"] == "af_bella"
+    assert payload["generated"][1]["opts"]["voice"] == "af_heart"
+    assert payload["webSpeech"] == []
+
+
 def test_notification_worker_manual_start_fires_notification_and_routes_ticket():
     tmp, app, client = _make_client()
     try:
@@ -163,22 +193,34 @@ def test_notification_worker_manual_start_fires_notification_and_routes_ticket()
         client.emit("task:assign", {"task_id": created["id"], "slot": 0})
         client.get_received()
 
-        client.emit("worker:start", {"slot": 0})
-        updated = _wait_for_task_status(app.config["bp_dir"], created["id"], "review")
         notification_events = _event_payloads(client, "notification:fire")
+        client.emit("worker:start", {"slot": 0})
+        deadline = time.time() + 3
+        while time.time() < deadline and not notification_events:
+            notification_events.extend(_event_payloads(client, "notification:fire"))
+            if notification_events:
+                break
+            time.sleep(0.05)
 
-        assert updated["assigned_to"] == ""
         assert notification_events
         fired = notification_events[-1]
+        in_progress = _wait_for_task_status(app.config["bp_dir"], created["id"], "in_progress")
+        assert str(in_progress["assigned_to"]) == "0"
         assert fired["worker"]["name"] == "Manual Notify"
         assert fired["ticket"]["title"] == "Manual notification ticket"
         assert fired["channels"]["toast"]["enabled"] is False
         assert fired["channels"]["toast"]["variant"] == "warning"
         assert fired["channels"]["speech"]["enabled"] is True
         assert fired["channels"]["speech"]["text"] == "Speak urgent Manual notification ticket"
+        assert fired["channels"]["speech"]["engine"] == "kokoro"
+        assert fired["channels"]["speech"]["voice"] == "af_bella"
         assert fired["channels"]["sound"]["effect"] == "warning"
         assert fired["channels"]["flash"]["sequence"] == [{"color": "#00ff88", "duration_ms": 220}]
         assert fired["policy"]["cooldown_ms"] == 2500
+
+        _complete_notification(client, fired)
+        updated = _wait_for_task_status(app.config["bp_dir"], created["id"], "review")
+        assert updated["assigned_to"] == ""
 
         layout_path = os.path.join(app.config["bp_dir"], "layout.json")
         final_layout = json.load(open(layout_path, encoding="utf-8"))
@@ -217,13 +259,18 @@ def test_notification_worker_manual_start_empty_queue_creates_synthetic_ticket()
             time.sleep(0.05)
 
         assert synthetic is not None
-        assert synthetic["assigned_to"] == ""
         assert notification_events
         fired = notification_events[-1]
-        assert fired["worker"]["name"] == "Empty Manual Notify"
         assert fired["ticket"]["id"] == synthetic["id"]
+        in_progress = _wait_for_task_status(app.config["bp_dir"], synthetic["id"], "in_progress")
+        assert str(in_progress["assigned_to"]) == "0"
+        assert fired["worker"]["name"] == "Empty Manual Notify"
         assert fired["ticket"]["title"] == synthetic["title"]
         assert fired["channels"]["speech"]["text"] == f"Speak normal {synthetic['title']}"
+
+        _complete_notification(client, fired)
+        updated = _wait_for_task_status(app.config["bp_dir"], synthetic["id"], "review")
+        assert updated["assigned_to"] == ""
 
         layout_path = os.path.join(app.config["bp_dir"], "layout.json")
         final_layout = json.load(open(layout_path, encoding="utf-8"))
@@ -254,7 +301,6 @@ def test_notification_worker_on_drop_assignment_fires_notification_and_routes_ti
         created = _event_payloads(client, "task:created")[-1]
         client.emit("task:assign", {"task_id": created["id"], "slot": 0})
 
-        updated = _wait_for_task_status(app.config["bp_dir"], created["id"], "review")
         notification_events = []
         deadline = time.time() + 3
         while time.time() < deadline:
@@ -263,17 +309,206 @@ def test_notification_worker_on_drop_assignment_fires_notification_and_routes_ti
                 break
             time.sleep(0.05)
 
-        assert updated["assigned_to"] == ""
         assert notification_events
         fired = notification_events[-1]
+        in_progress = _wait_for_task_status(app.config["bp_dir"], created["id"], "in_progress")
+        assert str(in_progress["assigned_to"]) == "0"
         assert fired["worker"]["name"] == "Drop Notify"
         assert fired["ticket"]["title"] == "Dropped notification ticket"
         assert fired["channels"]["speech"]["text"] == "Speak high Dropped notification ticket"
+
+        _complete_notification(client, fired)
+        updated = _wait_for_task_status(app.config["bp_dir"], created["id"], "review")
+        assert updated["assigned_to"] == ""
 
         layout_path = os.path.join(app.config["bp_dir"], "layout.json")
         final_layout = json.load(open(layout_path, encoding="utf-8"))
         assert final_layout["slots"][0]["task_queue"] == []
         assert final_layout["slots"][0]["state"] == "idle"
+    finally:
+        client.disconnect()
+        tmp.cleanup()
+
+
+def test_notification_pass_loop_waits_for_completion_and_pause_stops_advance():
+    tmp, app, client = _make_client()
+    try:
+        speech_only = {
+            "toast": {"enabled": False, "template": "{ticket.title}", "variant": "stage", "duration_ms": 1000},
+            "speech": {"enabled": True, "template": "Speak {worker.name}", "engine": "kokoro", "voice": "af_heart", "rate": 1, "volume": 1},
+            "sound": {"enabled": False, "effect": "done", "repeat_count": 1, "gap_ms": 250, "volume": 1},
+            "flash": {"enabled": False, "sequence": [], "opacity": 0.35},
+            "policy": {"cooldown_ms": 0, "dedupe_window_ms": 0},
+        }
+        for slot, name, disposition in [
+            (0, "Notify A", "pass:right"),
+            (1, "Notify B", "pass:down"),
+            (5, "Notify C", "pass:left"),
+            (4, "Notify D", "pass:up"),
+        ]:
+            client.emit("worker:add", {
+                "slot": slot,
+                "type": "notification",
+                "fields": {
+                    "name": name,
+                    "activation": "on_drop",
+                    "disposition": disposition,
+                    "notification": speech_only,
+                },
+            })
+            assert _event_payloads(client, "layout:updated")
+
+        client.emit("task:create", {"title": "Loop notification ticket", "priority": "high"})
+        created = _event_payloads(client, "task:created")[-1]
+        client.emit("task:assign", {"task_id": created["id"], "slot": 0})
+
+        notification_events = []
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            notification_events.extend(_event_payloads(client, "notification:fire"))
+            if notification_events:
+                break
+            time.sleep(0.05)
+
+        assert len(notification_events) == 1
+        first = notification_events[0]
+        assert first["worker"]["name"] == "Notify A"
+        in_progress = _wait_for_task_status(app.config["bp_dir"], created["id"], "in_progress")
+        assert str(in_progress["assigned_to"]) == "0"
+
+        client.emit("workers:pause_automation", {})
+        client.get_received()
+        _complete_notification(client, first)
+        held = _wait_for_task_status(app.config["bp_dir"], created["id"], "assigned")
+        assert str(held["assigned_to"]) == "0"
+
+        layout_path = os.path.join(app.config["bp_dir"], "layout.json")
+        final_layout = json.load(open(layout_path, encoding="utf-8"))
+        assert final_layout["slots"][0]["task_queue"] == [created["id"]]
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert final_layout["slots"][1]["task_queue"] == []
+        assert final_layout["slots"][4]["task_queue"] == []
+        assert final_layout["slots"][5]["task_queue"] == []
+    finally:
+        client.disconnect()
+        tmp.cleanup()
+
+
+def test_notification_stop_line_cancels_pending_completion_before_handoff():
+    tmp, app, client = _make_client()
+    try:
+        speech_only = {
+            "toast": {"enabled": False, "template": "{ticket.title}", "variant": "stage", "duration_ms": 1000},
+            "speech": {"enabled": True, "template": "Speak {worker.name}", "engine": "kokoro", "voice": "af_heart", "rate": 1, "volume": 1},
+            "sound": {"enabled": False, "effect": "done", "repeat_count": 1, "gap_ms": 250, "volume": 1},
+            "flash": {"enabled": False, "sequence": [], "opacity": 0.35},
+            "policy": {"cooldown_ms": 0, "dedupe_window_ms": 0},
+        }
+        client.emit("worker:add", {
+            "slot": 0,
+            "type": "notification",
+            "fields": {
+                "name": "Stop A",
+                "activation": "on_drop",
+                "disposition": "pass:right",
+                "notification": speech_only,
+            },
+        })
+        assert _event_payloads(client, "layout:updated")
+        client.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {
+                "name": "Stop B",
+                "activation": "on_drop",
+                "disposition": "review",
+                "notification": speech_only,
+            },
+        })
+        assert _event_payloads(client, "layout:updated")
+
+        client.emit("task:create", {"title": "Stop pending notification", "priority": "high"})
+        created = _event_payloads(client, "task:created")[-1]
+        client.emit("task:assign", {"task_id": created["id"], "slot": 0})
+
+        notification_events = []
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            notification_events.extend(_event_payloads(client, "notification:fire"))
+            if notification_events:
+                break
+            time.sleep(0.05)
+        assert len(notification_events) == 1
+        fired = notification_events[0]
+
+        client.emit("workers:stop_line", {})
+        events = client.get_received()
+        assert any(evt["name"] == "notification:cancel" for evt in events)
+
+        held = _wait_for_task_status(app.config["bp_dir"], created["id"], "assigned")
+        assert str(held["assigned_to"]) == "0"
+        _complete_notification(client, fired)
+        time.sleep(0.2)
+
+        still_held = _wait_for_task_status(app.config["bp_dir"], created["id"], "assigned")
+        assert str(still_held["assigned_to"]) == "0"
+        layout_path = os.path.join(app.config["bp_dir"], "layout.json")
+        final_layout = json.load(open(layout_path, encoding="utf-8"))
+        assert final_layout["slots"][0]["task_queue"] == [created["id"]]
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert "pending_notification" not in final_layout["slots"][0]
+        assert final_layout["slots"][1]["task_queue"] == []
+    finally:
+        client.disconnect()
+        tmp.cleanup()
+
+
+def test_notification_delivery_timeout_blocks_when_browser_does_not_ack(monkeypatch):
+    from server import workers as worker_mod
+
+    monkeypatch.setattr(worker_mod, "NOTIFICATION_DELIVERY_TIMEOUT_SECONDS", 0.1)
+    tmp, app, client = _make_client()
+    try:
+        speech_only = {
+            "toast": {"enabled": False, "template": "{ticket.title}", "variant": "stage", "duration_ms": 1000},
+            "speech": {"enabled": True, "template": "Speak {worker.name}", "engine": "kokoro", "voice": "af_heart", "rate": 1, "volume": 1},
+            "sound": {"enabled": False, "effect": "done", "repeat_count": 1, "gap_ms": 250, "volume": 1},
+            "flash": {"enabled": False, "sequence": [], "opacity": 0.35},
+            "policy": {"cooldown_ms": 0, "dedupe_window_ms": 0},
+        }
+        client.emit("worker:add", {
+            "slot": 0,
+            "type": "notification",
+            "fields": {
+                "name": "Timeout Notify",
+                "activation": "on_drop",
+                "disposition": "review",
+                "notification": speech_only,
+            },
+        })
+        assert _event_payloads(client, "layout:updated")
+
+        client.emit("task:create", {"title": "Unacknowledged notification", "priority": "high"})
+        created = _event_payloads(client, "task:created")[-1]
+        client.emit("task:assign", {"task_id": created["id"], "slot": 0})
+
+        notification_events = []
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            notification_events.extend(_event_payloads(client, "notification:fire"))
+            if notification_events:
+                break
+            time.sleep(0.05)
+        assert len(notification_events) == 1
+
+        blocked = _wait_for_task_status(app.config["bp_dir"], created["id"], "blocked")
+        assert blocked["assigned_to"] == ""
+
+        layout_path = os.path.join(app.config["bp_dir"], "layout.json")
+        final_layout = json.load(open(layout_path, encoding="utf-8"))
+        assert final_layout["slots"][0]["task_queue"] == []
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert "pending_notification" not in final_layout["slots"][0]
     finally:
         client.disconnect()
         tmp.cleanup()

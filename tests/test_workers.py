@@ -20,6 +20,7 @@ from server.worktrees import remove_worktree, reconcile_worktrees, setup_worktre
 from server.workers import (
     assign_task,
     check_watch_columns,
+    complete_notification_delivery,
     create_auto_task,
     start_worker,
     stop_worker,
@@ -2548,8 +2549,8 @@ class TestNotificationWorker:
                 "speech": {
                     "enabled": True,
                     "template": "Speak {ticket.priority} {ticket.title}.",
-                    "engine": "default",
-                    "voice": "",
+                    "engine": "kokoro",
+                    "voice": "af_heart",
                     "rate": 1,
                     "volume": 1,
                 },
@@ -2583,17 +2584,33 @@ class TestNotificationWorker:
         final_layout = _load_layout(bp_dir)
         notification_events = [payload for event, payload, _to in socket.events if event == "notification:fire"]
 
-        assert updated["status"] == "review"
-        assert updated["assigned_to"] == ""
-        assert final_layout["slots"][0]["state"] == "idle"
-        assert final_layout["slots"][0]["task_queue"] == []
+        assert updated["status"] == "in_progress"
+        assert str(updated["assigned_to"]) == "0"
+        assert final_layout["slots"][0]["state"] == "working"
+        assert final_layout["slots"][0]["task_queue"] == [task["id"]]
         assert len(notification_events) == 1
         payload = notification_events[0]
+        assert final_layout["slots"][0]["pending_notification"]["delivery_id"] == payload["id"]
         assert payload["workspaceId"] == "ws-notify"
         assert payload["worker"]["name"] == "Notify Review"
         assert payload["ticket"]["id"] == task["id"]
         assert payload["channels"]["toast"]["text"] == "Notification review task reached Notify Review."
         assert payload["channels"]["speech"]["text"] == "Speak high Notification review task."
+
+        complete_notification_delivery(
+            bp_dir,
+            0,
+            payload["id"],
+            task["id"],
+            socketio=socket,
+            ws_id="ws-notify",
+        )
+        updated = read_task(bp_dir, task["id"])
+        final_layout = _load_layout(bp_dir)
+        assert updated["status"] == "review"
+        assert updated["assigned_to"] == ""
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert final_layout["slots"][0]["task_queue"] == []
 
     def test_notification_empty_queue_creates_synthetic_ticket_and_fires(self, bp_dir):
         layout = read_json(os.path.join(bp_dir, "layout.json"))
@@ -2619,8 +2636,8 @@ class TestNotificationWorker:
                 "speech": {
                     "enabled": False,
                     "template": "{ticket.title}",
-                    "engine": "default",
-                    "voice": "",
+                    "engine": "kokoro",
+                    "voice": "af_heart",
                     "rate": 1,
                     "volume": 1,
                 },
@@ -2642,16 +2659,31 @@ class TestNotificationWorker:
         created = read_task(bp_dir, next(iter(created_ids)))
         assert created["synthetic_run"] is True
         assert created["trigger_kind"] == "manual"
-        assert created["status"] == "review"
-        assert created["assigned_to"] == ""
+        assert created["status"] == "in_progress"
+        assert str(created["assigned_to"]) == "0"
         assert created["title"].startswith("[Auto] Empty Notification - manual - ")
         final_layout = _load_layout(bp_dir)
-        assert final_layout["slots"][0]["state"] == "idle"
-        assert final_layout["slots"][0]["task_queue"] == []
+        assert final_layout["slots"][0]["state"] == "working"
+        assert final_layout["slots"][0]["task_queue"] == [created["id"]]
         notification_events = [payload for event, payload, _to in socket.events if event == "notification:fire"]
         assert len(notification_events) == 1
         assert notification_events[0]["ticket"]["id"] == created["id"]
         assert notification_events[0]["channels"]["toast"]["text"] == f"{created['title']} via Empty Notification"
+
+        complete_notification_delivery(
+            bp_dir,
+            0,
+            notification_events[0]["id"],
+            created["id"],
+            socketio=socket,
+            ws_id="ws-notify-empty",
+        )
+        completed = read_task(bp_dir, created["id"])
+        final_layout = _load_layout(bp_dir)
+        assert completed["status"] == "review"
+        assert completed["assigned_to"] == ""
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert final_layout["slots"][0]["task_queue"] == []
 
 
 class TestWatchColumn:

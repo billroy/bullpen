@@ -258,6 +258,11 @@ def test_notification_slot_normalizes_defaults_and_preserves_config(tmp_workspac
                     "template": "{ticket.title} is ready.",
                     "duration_ms": 999999,
                 },
+                "speech": {
+                    "enabled": True,
+                    "engine": "kokoro",
+                    "voice": "not-a-kokoro-voice",
+                },
                 "sound": {
                     "enabled": True,
                     "effect": "done",
@@ -282,6 +287,8 @@ def test_notification_slot_normalizes_defaults_and_preserves_config(tmp_workspac
     assert slot["max_retries"] == 0
     assert slot["notification"]["toast"]["template"] == "{ticket.title} is ready."
     assert slot["notification"]["toast"]["duration_ms"] == 30000
+    assert slot["notification"]["speech"]["engine"] == "kokoro"
+    assert slot["notification"]["speech"]["voice"] == "af_heart"
     assert slot["notification"]["sound"]["repeat_count"] == 5
     assert slot["notification"]["flash"]["sequence"] == [{"color": "#facc15", "duration_ms": 50}]
     assert slot["notification"]["flash"]["opacity"] == 0.5

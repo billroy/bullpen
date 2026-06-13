@@ -18,6 +18,15 @@ SERVICE_COMMAND_SOURCES = {"manual", "procfile"}
 SERVICE_LOG_MAX_BYTES_DEFAULT = 5 * 1024 * 1024
 NOTIFICATION_TOAST_VARIANTS = {"stage", "success", "warning", "error"}
 NOTIFICATION_SPEECH_ENGINES = {"default", "web-speech", "kokoro"}
+NOTIFICATION_KOKORO_VOICES = {
+    "af_heart",
+    "af_bella",
+    "af_nicole",
+    "am_michael",
+    "am_fenrir",
+    "bf_emma",
+    "bm_george",
+}
 NOTIFICATION_SOUND_EFFECTS = {"toast", "start", "done", "move", "warning", "error", "spawn", "despawn"}
 DEFAULT_NOTIFICATION_CONFIG = {
     "toast": {
@@ -29,8 +38,8 @@ DEFAULT_NOTIFICATION_CONFIG = {
     "speech": {
         "enabled": False,
         "template": "{ticket.title} is ready.",
-        "voice": "",
-        "engine": "default",
+        "voice": "af_heart",
+        "engine": "kokoro",
         "rate": 1.0,
         "volume": 1.0,
     },
@@ -307,9 +316,13 @@ def _normalize_notification_config(raw):
     speech = raw.get("speech") if isinstance(raw.get("speech"), dict) else {}
     out["speech"]["enabled"] = _normalize_bool(speech.get("enabled"), defaults["speech"]["enabled"])
     out["speech"]["template"] = str(speech.get("template", defaults["speech"]["template"]))[:2000]
-    out["speech"]["voice"] = str(speech.get("voice") or "")[:200]
     engine = str(speech.get("engine") or defaults["speech"]["engine"]).strip().lower()
     out["speech"]["engine"] = engine if engine in NOTIFICATION_SPEECH_ENGINES else defaults["speech"]["engine"]
+    voice = str(speech.get("voice") or "").strip()[:200]
+    if out["speech"]["engine"] == "kokoro":
+        out["speech"]["voice"] = voice if voice in NOTIFICATION_KOKORO_VOICES else defaults["speech"]["voice"]
+    else:
+        out["speech"]["voice"] = voice
     out["speech"]["rate"] = _clamp_float(speech.get("rate"), defaults["speech"]["rate"], 0.5, 2.0)
     out["speech"]["volume"] = _clamp_float(speech.get("volume"), defaults["speech"]["volume"], 0.0, 1.0)
 

@@ -263,7 +263,7 @@ const TopToolbar = {
     },
     onStopTheLine() {
       const ok = window.confirm(
-        'Stop active AI/Shell runs in this workspace and pause automation? Services will keep running.'
+        'Stop active non-service workers in this workspace and pause automation? Services will keep running.'
       );
       if (!ok) return;
       this.showSafetyMenu = false;
@@ -271,7 +271,7 @@ const TopToolbar = {
     },
     onStopAllLines() {
       const ok = window.confirm(
-        'Stop active AI/Shell runs in all workspaces and pause automation everywhere? Services will keep running.'
+        'Stop active non-service workers in all workspaces and pause automation everywhere? Services will keep running.'
       );
       if (!ok) return;
       this.showSafetyMenu = false;

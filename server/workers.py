@@ -43,6 +43,7 @@ from server.worker_types import get_worker_type, normalize_layout
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
 MAX_HANDOFF_DEPTH = 0
+NOTIFICATION_DELIVERY_TIMEOUT_SECONDS = 120
 SHELL_WORKER_EXIT_BLOCKED = 78
 SHELL_OUTPUT_ARTIFACT_LIMIT = 1_048_576
 TASK_BODY_LIMIT = 1_048_576
@@ -1208,7 +1209,7 @@ def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None):
 
 
 def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None):
-    """Notification worker backend: emit client notification intent, then route."""
+    """Notification worker backend: emit client notification intent and await completion."""
     begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
     if begun is None:
         return
@@ -1237,20 +1238,128 @@ def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         return
 
     payload = _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=ws_id)
-    with _write_lock:
-        layout = _load_layout(bp_dir)
-        slots = layout.get("slots", [])
-        if slot_index >= len(slots):
-            return
-        current_worker = slots[slot_index]
-        if not current_worker:
-            return
-        current_worker["last_trigger_time"] = int(time.time())
-        _clear_worker_retry_state(current_worker)
-        _save_layout(bp_dir, layout)
+    committed = _commit_run_start(
+        bp_dir,
+        slot_index,
+        task_id,
+        socketio,
+        ws_id,
+        worker_updates={
+            "pending_notification": {
+                "delivery_id": payload["id"],
+                "task_id": task_id,
+                "disposition": disposition,
+                "created_at": payload["created_at"],
+                "timeout_seconds": NOTIFICATION_DELIVERY_TIMEOUT_SECONDS,
+            },
+        },
+    )
+    if committed is None:
+        drain_runnable_queues(bp_dir, socketio, ws_id)
+        return
 
     if socketio:
         _ws_emit(socketio, "notification:fire", payload, ws_id)
+    _schedule_notification_delivery_timeout(
+        bp_dir,
+        slot_index,
+        payload["id"],
+        task_id,
+        socketio,
+        ws_id,
+        NOTIFICATION_DELIVERY_TIMEOUT_SECONDS,
+    )
+
+
+def _schedule_notification_delivery_timeout(bp_dir, slot_index, delivery_id, task_id, socketio=None, ws_id=None, timeout_seconds=None):
+    """Fail a notification run if the browser never acknowledges delivery."""
+    try:
+        timeout = float(timeout_seconds if timeout_seconds is not None else NOTIFICATION_DELIVERY_TIMEOUT_SECONDS)
+    except (TypeError, ValueError):
+        timeout = NOTIFICATION_DELIVERY_TIMEOUT_SECONDS
+    if timeout <= 0:
+        return None
+
+    def _timeout():
+        complete_notification_delivery(
+            bp_dir,
+            slot_index,
+            delivery_id,
+            task_id,
+            status="failed",
+            error=f"timed out after {timeout:g} seconds",
+            socketio=socketio,
+            ws_id=ws_id,
+        )
+
+    timer = threading.Timer(timeout, _timeout)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def complete_notification_delivery(bp_dir, slot_index, delivery_id, task_id, status="complete", error="", socketio=None, ws_id=None):
+    """Advance a notification worker only after the browser finishes delivery."""
+    try:
+        slot_index = int(slot_index)
+    except (TypeError, ValueError):
+        return False
+    delivery_id = str(delivery_id or "")
+    task_id = str(task_id or "")
+    if not delivery_id or not task_id:
+        return False
+
+    with _write_lock:
+        try:
+            layout = _load_layout(bp_dir)
+        except FileNotFoundError:
+            return False
+        slots = layout.get("slots", [])
+        if slot_index < 0 or slot_index >= len(slots):
+            return False
+        worker = slots[slot_index]
+        if not worker or str(worker.get("type") or "") != "notification":
+            return False
+        pending = worker.get("pending_notification") if isinstance(worker.get("pending_notification"), dict) else {}
+        if pending.get("delivery_id") != delivery_id or pending.get("task_id") != task_id:
+            return False
+        queue = worker.get("task_queue", [])
+        if not queue or queue[0] != task_id:
+            worker.pop("pending_notification", None)
+            _mark_worker_idle(worker)
+            _save_layout(bp_dir, layout)
+            return False
+
+        disposition = str(pending.get("disposition") or worker.get("disposition") or "").strip()
+        worker.pop("pending_notification", None)
+
+        if str(status or "complete") != "complete":
+            _save_layout(bp_dir, layout)
+            _block_marker_run_failure(
+                bp_dir,
+                slot_index,
+                task_id,
+                f"Notification delivery failed: {error or status}",
+                socketio,
+                ws_id,
+            )
+            return True
+
+        if worker_start_blocked(bp_dir, worker)[0]:
+            _finalize_task_time(bp_dir, task_id)
+            _mark_worker_idle(worker)
+            task_mod.update_task(bp_dir, task_id, {
+                "status": "assigned",
+                ACTIVE_TASK_TIME_FIELD: "",
+            })
+            _save_layout(bp_dir, layout)
+            if socketio:
+                task = task_mod.read_task(bp_dir, task_id)
+                _ws_emit(socketio, "task:updated", task, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id)
+            return True
+
+        _save_layout(bp_dir, layout)
 
     _on_agent_success(
         bp_dir,
@@ -1263,6 +1372,7 @@ def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         output_appender=lambda _worker: None,
         allow_auto_actions=False,
     )
+    return True
 
 
 def _validate_shell_worker(worker, bp_dir):
@@ -1465,7 +1575,15 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     layout = _load_layout(bp_dir)
     worker = layout["slots"][slot_index]
     entry = None
+    cancel_payload = None
     if worker:
+        pending_notification = worker.pop("pending_notification", None)
+        if isinstance(pending_notification, dict) and pending_notification.get("delivery_id"):
+            cancel_payload = {
+                "delivery_id": pending_notification.get("delivery_id"),
+                "slot": slot_index,
+                "task_id": pending_notification.get("task_id", ""),
+            }
         _mark_worker_idle(worker)
         queue = worker.get("task_queue", [])
         if queue:
@@ -1496,19 +1614,21 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
 
         _save_layout(bp_dir, layout)
         if socketio:
+            if cancel_payload:
+                _ws_emit(socketio, "notification:cancel", cancel_payload, ws_id)
             _ws_emit(socketio, "layout:updated", layout, ws_id)
     _request_process_shutdown_and_cleanup(bp_dir, entry)
 
 
 def stop_line_workers(bp_dir, socketio=None, ws_id=None):
-    """Stop active AI/Shell workers for an emergency automation hold."""
+    """Stop active non-service workers for an emergency automation hold."""
     try:
         layout = _load_layout(bp_dir)
     except FileNotFoundError:
         return 0
     stopped = 0
     for slot_index, worker in enumerate(layout.get("slots", [])):
-        if not worker or str(worker.get("type") or "ai") not in {"ai", "shell"}:
+        if not worker or not _worker_obeys_automation_pause(worker):
             continue
         if worker.get("state") not in {"working", "retrying"}:
             continue

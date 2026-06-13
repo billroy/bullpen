@@ -8,8 +8,8 @@ const DEFAULT_NOTIFICATION_FORM = {
   speech: {
     enabled: false,
     template: '{ticket.title} is ready.',
-    voice: '',
-    engine: 'default',
+    voice: 'af_heart',
+    engine: 'kokoro',
     rate: 1.0,
     volume: 1.0,
   },
@@ -30,6 +30,16 @@ const DEFAULT_NOTIFICATION_FORM = {
     dedupe_window_ms: 3000,
   },
 };
+
+const KOKORO_VOICE_OPTIONS = [
+  { value: 'af_heart', label: 'Heart - US female' },
+  { value: 'af_bella', label: 'Bella - US female' },
+  { value: 'af_nicole', label: 'Nicole - US female' },
+  { value: 'am_michael', label: 'Michael - US male' },
+  { value: 'am_fenrir', label: 'Fenrir - US male' },
+  { value: 'bf_emma', label: 'Emma - UK female' },
+  { value: 'bm_george', label: 'George - UK male' },
+];
 
 function cloneNotificationForm(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
@@ -71,6 +81,7 @@ const WorkerConfigModal = {
       opencodeModelsLoading: false,
       opencodeModelProvider: '',
       opencodeModelSearch: '',
+      webSpeechVoices: [],
     };
   },
   watch: {
@@ -153,9 +164,18 @@ const WorkerConfigModal = {
       },
     }
   },
+  mounted() {
+    this.loadWebSpeechVoices();
+    try {
+      window.speechSynthesis?.addEventListener?.('voiceschanged', this.loadWebSpeechVoices);
+    } catch (_err) {}
+  },
   beforeUnmount() {
     if (this.servicePreviewTimer) clearTimeout(this.servicePreviewTimer);
     this.teardownWorkerColorPicker();
+    try {
+      window.speechSynthesis?.removeEventListener?.('voiceschanged', this.loadWebSpeechVoices);
+    } catch (_err) {}
   },
   computed: {
     isShell() {
@@ -276,6 +296,33 @@ const WorkerConfigModal = {
     },
     workerColorPickerValue() {
       return this.normalizeHexColor(this.selectedWorkerColorOverride) || this.workerColorPreviewValue;
+    },
+    notificationSpeechEngine() {
+      return String(this.form.notification?.speech?.engine || 'kokoro');
+    },
+    notificationVoiceOptions() {
+      const engine = this.notificationSpeechEngine;
+      if (engine === 'kokoro') return KOKORO_VOICE_OPTIONS;
+      const options = [{ value: '', label: 'Browser default voice' }];
+      for (const voice of this.webSpeechVoices || []) {
+        const value = voice.voiceURI || voice.name;
+        if (!value) continue;
+        options.push({
+          value,
+          label: `${voice.name || value}${voice.lang ? ` (${voice.lang})` : ''}${voice.default ? ' - default' : ''}`,
+        });
+      }
+      const current = String(this.form.notification?.speech?.voice || '');
+      if (current && !options.some(option => option.value === current)) {
+        options.push({ value: current, label: `${current} (saved voice)` });
+      }
+      return options;
+    },
+    notificationSpeechHint() {
+      const engine = this.notificationSpeechEngine;
+      if (engine === 'kokoro') return 'Kokoro runs locally and loads its model on first speech use.';
+      if (engine === 'web-speech') return 'Web Speech voices come from the browser or operating system.';
+      return 'Automatic uses Kokoro first, then browser speech if Kokoro cannot load.';
     },
   },
   template: `
@@ -690,15 +737,17 @@ const WorkerConfigModal = {
                 <div class="form-row">
                   <label class="form-label">
                     Engine
-                    <select class="form-select" v-model="form.notification.speech.engine">
-                      <option value="default">Default</option>
-                      <option value="web-speech">Web Speech</option>
+                    <select class="form-select" v-model="form.notification.speech.engine" @change="onNotificationSpeechEngineChange">
                       <option value="kokoro">Kokoro</option>
+                      <option value="web-speech">Web Speech</option>
+                      <option value="default">Automatic fallback</option>
                     </select>
                   </label>
                   <label class="form-label">
                     Voice
-                    <input class="form-input" v-model="form.notification.speech.voice" placeholder="Global default">
+                    <select class="form-select" v-model="form.notification.speech.voice" @focus="loadWebSpeechVoices">
+                      <option v-for="voice in notificationVoiceOptions" :key="voice.value" :value="voice.value">{{ voice.label }}</option>
+                    </select>
                   </label>
                   <label class="form-label">
                     Rate
@@ -709,7 +758,7 @@ const WorkerConfigModal = {
                     <input class="form-input" type="number" step="0.1" v-model.number="form.notification.speech.volume" min="0" max="1">
                   </label>
                 </div>
-                <span class="form-hint">Kokoro is preserved as a config option; the first implementation falls back to browser speech when available.</span>
+                <span class="form-hint">{{ notificationSpeechHint }}</span>
               </div>
 
               <div class="notification-channel">
@@ -1156,6 +1205,27 @@ const WorkerConfigModal = {
       if (!Array.isArray(sequence)) return;
       sequence.splice(i, 1);
       if (!sequence.length) sequence.push({ color: '#facc15', duration_ms: 180 });
+    },
+    loadWebSpeechVoices() {
+      try {
+        const voices = window.speechSynthesis?.getVoices?.() || [];
+        this.webSpeechVoices = Array.isArray(voices)
+          ? voices.map(voice => ({
+              name: String(voice.name || ''),
+              voiceURI: String(voice.voiceURI || ''),
+              lang: String(voice.lang || ''),
+              default: !!voice.default,
+            }))
+          : [];
+      } catch (_err) {
+        this.webSpeechVoices = [];
+      }
+    },
+    onNotificationSpeechEngineChange() {
+      const speech = this.form.notification?.speech;
+      if (!speech) return;
+      const valid = this.notificationVoiceOptions.some(option => option.value === speech.voice);
+      if (!valid) speech.voice = speech.engine === 'kokoro' ? 'af_heart' : '';
     },
     onSave() {
       const fields = { ...this.form };

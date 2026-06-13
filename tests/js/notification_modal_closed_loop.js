@@ -115,8 +115,8 @@ instance.form.notification.toast.duration_ms = 12345;
 
 instance.form.notification.speech.enabled = true;
 instance.form.notification.speech.template = 'Speak {ticket.priority} {ticket.title}';
-instance.form.notification.speech.engine = 'web-speech';
-instance.form.notification.speech.voice = 'Samantha';
+instance.form.notification.speech.engine = 'kokoro';
+instance.form.notification.speech.voice = 'af_bella';
 instance.form.notification.speech.rate = 1.4;
 instance.form.notification.speech.volume = 0.6;
 

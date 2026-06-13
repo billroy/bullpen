@@ -25,6 +25,10 @@ def test_notification_worker_config_modal_fields_exist():
     assert "isNotification()" in text
     assert "form.notification.toast.template" in text
     assert "form.notification.speech.template" in text
+    assert "KOKORO_VOICE_OPTIONS" in text
+    assert "af_heart" in text
+    assert "af_bella" in text
+    assert "placeholder=\"Global default\"" not in text
     assert "form.notification.sound.effect" in text
     assert "form.notification.flash.sequence" in text
     assert "form.notification.policy.cooldown_ms" in text
@@ -36,6 +40,9 @@ def test_notification_worker_runtime_caps_and_settings_exist():
     toolbar = _read("static/components/TopToolbar.js")
 
     assert "const VISIBLE_TOASTS = 3" in text
+    assert "KOKORO_IMPORT_URL" in text
+    assert "loadKokoro()" in text
+    assert "_speakKokoro" in text
     assert "notification:fire" in text
     assert "prefers-reduced-motion: reduce" in text
     assert "stopSpeech()" in text

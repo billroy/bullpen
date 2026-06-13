@@ -206,18 +206,29 @@ When a ticket reaches a Notification worker:
 1. Bullpen begins the normal shared worker lifecycle.
 2. The worker renders its configured templates against the current ticket,
    worker, and workspace context.
-3. The server emits one Socket.IO `notification:fire` event to connected
-   clients in the same workspace room.
-4. The server records `last_trigger_time`, clears retry state, and applies the
-   worker's configured disposition.
-5. The worker returns to `idle` and drains any runnable queue behind it.
+3. The server marks the worker `working`, marks the ticket `in_progress`, and
+   emits one Socket.IO `notification:fire` event to connected clients in the
+   same workspace room.
+4. A browser client completes every enabled notification channel. Generated
+   speech is not complete until model load, generation, and playback finish.
+5. The browser emits `notification:complete` with the delivery id, slot, and
+   ticket id.
+6. The server verifies the pending delivery still matches the worker and ticket,
+   then applies the worker's configured disposition.
+7. The worker returns to `idle` and drains any runnable queue behind it.
 
-The ticket does not wait for client playback. V1 delivery means "the server
-published the notification intent to connected clients."
+The ticket waits for notification delivery completion. V1 delivery means "the
+configured local notification effects have completed or failed according to
+policy," not merely "the server published intent."
 
-If no browser client is connected, the worker still succeeds and routes the
-ticket onward. This preserves the queue semantics expected by scheduled and
-chained automation.
+If automation is paused or the worker is stopped before completion, the ticket
+remains assigned at the notification worker and does not advance to the next
+worker. Late completion acknowledgements from cancelled deliveries are ignored.
+
+If no browser client is connected, the worker must not silently route the ticket
+onward as though a notification was delivered. The server keeps the delivery
+pending for 120 seconds, then blocks the ticket with a notification delivery
+timeout.
 
 ### Trigger Model
 
@@ -238,12 +249,14 @@ Notification dispatch is best effort and client-side effects can fail for many
 legitimate reasons: browser audio lock, muted tab, unsupported WebGPU, reduced
 motion, hidden tab throttling, or a disconnected browser.
 
-V1 treats these as client-side nonfatal delivery failures. They do not block
-the ticket. The only server-side failures that block the ticket are:
+V1 treats these as delivery outcomes, not invisible background details. A
+notification worker must not advance a ticket until the client either completes
+delivery or reports failure. The server-side failures that block the ticket are:
 
 - invalid notification config that should have been caught at save time,
 - invalid disposition,
 - missing ticket at queue head,
+- notification delivery failure or the 120 second delivery timeout,
 - unexpected server exception while rendering the notification payload.
 
 ### Ticket Audit

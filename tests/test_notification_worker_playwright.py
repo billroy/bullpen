@@ -119,12 +119,12 @@ def test_notification_dialog_controls_and_run_menu_with_playwright():
                 modal.get_by_placeholder("{ticket.title} is ready.").fill(
                     "Speak {ticket.priority} {ticket.title}"
                 )
-                modal.locator("select").nth(1).select_option("web-speech")
-                modal.get_by_placeholder("Global default").fill("Samantha")
+                modal.get_by_label("Engine").select_option("kokoro")
+                modal.get_by_label("Voice").select_option("af_bella")
                 modal.locator('input[type="number"]').nth(1).fill("1.4")
                 modal.locator('input[type="number"]').nth(2).fill("0.6")
                 modal.get_by_role("checkbox", name="Sound", exact=True).check()
-                modal.locator("select").nth(2).select_option("warning")
+                modal.get_by_label("Effect").select_option("warning")
                 modal.locator('input[type="number"]').nth(3).fill("4")
                 modal.locator('input[type="number"]').nth(4).fill("750")
                 modal.locator('input[type="number"]').nth(5).fill("0.7")
@@ -143,7 +143,7 @@ def test_notification_dialog_controls_and_run_menu_with_playwright():
                 modal.get_by_label("Dedupe window (ms)").fill("9000")
                 trigger = modal.get_by_label("Input Trigger")
                 trigger.select_option("on_queue")
-                modal.locator("select").nth(4).select_option("review")
+                modal.get_by_label("Pass tickets to").select_option("review")
                 trigger.select_option("at_time")
                 modal.get_by_label("Trigger Time (HH:MM, local)").fill("09:30")
                 modal.get_by_label("Repeat every day").check()
@@ -152,6 +152,24 @@ def test_notification_dialog_controls_and_run_menu_with_playwright():
                 trigger.select_option("on_drop")
                 modal.get_by_role("button", name="Save").click()
 
+                page.evaluate("""
+                    window.BULLPEN_KOKORO_LOADER = async () => ({
+                      KokoroTTS: {
+                        from_pretrained: async () => ({
+                          generate: async () => ({
+                            toBlob: () => new Blob(['fake-audio'], { type: 'audio/wav' })
+                          })
+                        })
+                      }
+                    });
+                    HTMLMediaElement.prototype.play = function () {
+                      setTimeout(() => {
+                        if (typeof this.onended === 'function') this.onended();
+                        this.dispatchEvent(new Event('ended'));
+                      }, 0);
+                      return Promise.resolve();
+                    };
+                """)
                 page.locator(".worker-card", has_text="Playwright Notify").hover()
                 page.locator(".worker-card", has_text="Playwright Notify").locator(".worker-menu-btn").click()
                 page.get_by_role("button", name="Run").click()
