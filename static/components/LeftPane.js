@@ -215,6 +215,7 @@ const LeftPane = {
           retry_max: s.retry_max,
           agent: s.agent,
           type: s.type,
+          color: s.color,
           taskQueueLength: Array.isArray(s.task_queue) ? s.task_queue.length : 0,
         };
       });
