@@ -226,13 +226,11 @@ worker types:
 
 - `on_drop`: a dropped ticket triggers notification immediately.
 - `on_queue`: the worker watches a column, claims tickets, and notifies.
-- `manual`: Run notifies the head queued ticket. If the queue is empty, use
-  the shared synthetic-ticket behavior only if that behavior is generalized for
-  all pass-through workers; otherwise show an informational toast and do not
-  create a synthetic ticket in the notification-specific implementation.
+- `manual`: Run notifies the head queued ticket. If the queue is empty, create
+  the same synthetic manual worker-run ticket used by other runnable workers,
+  notify against that ticket, and apply the configured disposition.
 - `at_time` / `on_interval`: scheduler triggers work the same way as other
-  workers. If synthetic tickets are supported by the shared lifecycle, scheduled
-  notification-only reminders are allowed.
+  workers. Empty scheduled runs use the shared synthetic-ticket behavior.
 
 ### Failure Policy
 
@@ -747,13 +745,12 @@ Screen flash and speech are not decorative implementation details. They must
 ship with reduced-motion handling, mute controls, keyboard-accessible settings,
 and seizure-risk caps. Without those controls, flash should not ship.
 
-### R6: Synthetic ticket behavior is still unsettled
+### R6: Synthetic ticket behavior follows runnable workers
 
-The shared worker lifecycle docs discuss synthetic tickets for empty manual and
-scheduled runs, while Marker currently avoids creating a synthetic ticket when
-manually run empty. Notification workers should follow whatever shared
-pass-through policy the codebase settles on, rather than inventing a third
-behavior.
+Notification workers are runnable workers, not marker-only pass-through
+decorations. Empty manual and scheduled runs must create the shared synthetic
+worker-run ticket, emit notification intent for that ticket, and then route it
+through the configured disposition.
 
 ### R7: Template rendering should stay intentionally small
 
