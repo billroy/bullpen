@@ -2806,10 +2806,9 @@ body {
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  /* overflow: visible so pass-connected pills can render outside the card
-     footprint, into the grid gap. The drag handles themselves now sit
-     inside the card, but the pass-connected indicator pills still need to
-     reach into the gutter. */
+  /* overflow: visible so resize handles and unconnected pass indicators can
+     render outside the card footprint. Live neighbor connections are rendered
+     by the worker-grid overlay so adjacent cards cannot obscure them. */
   overflow: visible;
   transition: border-color 0.15s;
   display: flex;
@@ -2818,7 +2817,7 @@ body {
   /* No CSS containment here: it would turn .worker-card into a containing
      block for position:fixed descendants, which breaks the header kebab menu
      (positioned via getBoundingClientRect — viewport coords). Paint
-     containment also clips pass-connected pills, defeating overflow:visible. */
+     containment also clips edge controls, defeating overflow:visible. */
 }
 
 .worker-card[draggable="true"] {
@@ -2874,17 +2873,17 @@ body.worker-singleton-dragging * {
   border-style: solid;
 }
 
+.worker-card.selected,
+.worker-grid-ghost-cell.selected {
+  box-shadow: 0 0 0 2px var(--accent);
+  z-index: 1;
+}
+
 .worker-card.connect-target {
   box-shadow:
     0 0 0 2px var(--accent),
     0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
   z-index: 3;
-}
-
-.worker-card.selected,
-.worker-grid-ghost-cell.selected {
-  box-shadow: 0 0 0 2px var(--accent);
-  z-index: 1;
 }
 
 .worker-card.selected:hover {
@@ -2908,6 +2907,30 @@ body.worker-singleton-dragging * {
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
   z-index: 5;
+}
+
+.worker-pass-connector-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 7;
+}
+
+.worker-pass-connector {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: white;
+  opacity: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: auto;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transform: translate(-50%, -50%);
 }
 
 .worker-card.worker-card--small {
@@ -3005,36 +3028,6 @@ body.worker-singleton-dragging * {
   right: 2px;
   font-size: 10px;
   font-weight: bold;
-}
-
-/* When a pass disposition has a live neighbor, the indicator becomes a
-   prominent pill straddling the gutter between the two cards to visualize
-   the connection. Direction is encoded in the unicode arrow character. */
-.pass-indicator.pass-connected {
-  background: var(--accent);
-  color: white;
-  opacity: 1;
-  padding: 1px 3px;
-  border-radius: 3px;
-  font-size: 9px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  z-index: 5;
-}
-
-.pass-up.pass-connected {
-  top: -8px;
-}
-
-.pass-down.pass-connected {
-  bottom: -8px;
-}
-
-.pass-left.pass-connected {
-  left: -9px;
-}
-
-.pass-right.pass-connected {
-  right: -9px;
 }
 
 /* Draggable edge handles for creating pass-direction connections.

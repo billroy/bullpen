@@ -37,10 +37,10 @@ const WorkerCard = {
           <span class="connect-handle-arrow" aria-hidden="true">{{ connectHandleArrow(dir) }}</span>
         </div>
       </template>
-      <span v-if="passDir === 'up'" class="pass-indicator pass-up" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
-      <span v-if="passDir === 'down'" class="pass-indicator pass-down" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
-      <span v-if="passDir === 'left'" class="pass-indicator pass-left" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
-      <span v-if="passDir === 'right'" class="pass-indicator pass-right" :class="{ 'pass-connected': passConnectsToNeighbor }" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
+      <span v-if="passDir === 'up' && !passConnectsToNeighbor" class="pass-indicator pass-up" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
+      <span v-if="passDir === 'down' && !passConnectsToNeighbor" class="pass-indicator pass-down" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
+      <span v-if="passDir === 'left' && !passConnectsToNeighbor" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
+      <span v-if="passDir === 'right' && !passConnectsToNeighbor" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
       <span v-if="passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
       <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
         <div class="worker-card-identity">

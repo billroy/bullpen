@@ -129,8 +129,8 @@ def test_worker_grid_styles_define_viewport_minimap_and_fixed_card_overflow():
     # .worker-card must NOT set `contain: layout` or `contain: paint` — both
     # make the card a containing block for position:fixed descendants, which
     # breaks the header kebab menu (positioned via viewport coords from
-    # getBoundingClientRect). `contain: paint` would also clip the
-    # pass-connected indicator pills that render into the grid gutter.
+    # getBoundingClientRect). `contain: paint` would also clip edge controls
+    # that render into the grid gutter.
     assert "contain: layout" not in text
     assert "contain: paint" not in text
 

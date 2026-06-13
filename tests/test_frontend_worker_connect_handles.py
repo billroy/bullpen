@@ -71,9 +71,15 @@ def test_worker_card_connect_target_class_toggled_on_card():
     assert "'connect-target': connectTarget" in text
 
 
-def test_pass_indicator_gets_connected_class_when_neighbor_exists():
+def test_worker_card_hides_local_indicator_when_overlay_connector_exists():
     text = _read("static/components/WorkerCard.js")
-    assert "'pass-connected': passConnectsToNeighbor" in text
+    assert "passConnectsToNeighbor" in text
+    assert "passDir === 'up' && !passConnectsToNeighbor" in text
+    assert "passDir === 'down' && !passConnectsToNeighbor" in text
+    assert "passDir === 'left' && !passConnectsToNeighbor" in text
+    assert "passDir === 'right' && !passConnectsToNeighbor" in text
+    assert "'has-pass-connection'" not in text
+    assert "'pass-connected': passConnectsToNeighbor" not in text
 
 
 def test_connect_handle_and_target_styles_exist():
@@ -157,16 +163,32 @@ def test_worker_card_tracks_hovered_handle_for_edge_reveal():
     assert "hoveredHandle: null" in text
 
 
-def test_pass_connected_pill_renders_in_gutter():
-    text = _read("static/style.css")
-    assert ".pass-indicator.pass-connected {" in text
-    # Pills sit outside the card footprint (negative offsets = gutter).
-    assert ".pass-up.pass-connected {" in text
-    assert ".pass-down.pass-connected {" in text
-    assert ".pass-left.pass-connected {" in text
-    assert ".pass-right.pass-connected {" in text
-    # Card must allow children to render into the gutter
-    assert "overflow: visible;" in text
+def test_live_pass_connectors_render_in_grid_overlay():
+    tab = _read("static/components/BullpenTab.js")
+    css = _read("static/style.css")
+
+    assert "class=\"worker-pass-connector-layer\"" in tab
+    assert "v-for=\"connector in visiblePassConnectors\"" in tab
+    assert "visiblePassConnectors()" in tab
+    assert "passConnectorStyle(item, dir)" in tab
+    assert "passConnectorArrow(dir)" in tab
+    assert "this.neighborSlotsMap[item.slotIndex]?.[dir]" in tab
+    assert ".worker-pass-connector-layer {" in css
+    assert ".worker-pass-connector {" in css
+    assert "z-index: 7;" in css
+    # Cards still allow unconnected pass indicators and resize handles to draw
+    # outside their own content box, but live neighbor connectors are overlaid
+    # by the grid so adjacent cards cannot obscure them.
+    assert "overflow: visible;" in css
+
+
+def test_worker_grid_card_style_keeps_z_index_to_expanded_cards_only():
+    text = _read("static/components/BullpenTab.js")
+    start = text.index("cardStyle(item) {")
+    end = text.index("},", start)
+    block = text[start:end]
+    assert "const expanded = this.cardExpansionDeltaForSlot(item.slotIndex);" in block
+    assert "zIndex: expanded > 0 ? 6 : null" in block
 
 
 def test_worker_config_modal_disables_pass_options_without_neighbor():

@@ -151,6 +151,14 @@ const BullpenTab = {
             @menu-closed="focusViewport"
           />
 
+          <div class="worker-pass-connector-layer" aria-hidden="true">
+            <span v-for="connector in visiblePassConnectors"
+                  :key="'pass-' + connector.slotIndex + '-' + connector.dir"
+                  class="worker-pass-connector"
+                  :class="'worker-pass-connector-' + connector.dir"
+                  :style="connector.style">{{ connector.arrow }}</span>
+          </div>
+
           <div v-for="cell in visibleDropTargetOverlays"
                :key="'drop-' + cell.col + '-' + cell.row"
                class="worker-grid-drop-target-overlay"
@@ -544,6 +552,29 @@ const BullpenTab = {
       }
       return out;
     },
+    visiblePassConnectors() {
+      const r = this.visibleRange;
+      const out = [];
+      for (const item of this.workerItems) {
+        if (
+          item.coord.col < r.colStart || item.coord.col > r.colEnd ||
+          item.coord.row < r.rowStart || item.coord.row > r.rowEnd
+        ) continue;
+        const disposition = String(item.worker?.disposition || '');
+        if (!disposition.startsWith('pass:')) continue;
+        const dir = disposition.slice(5);
+        if (!['up', 'down', 'left', 'right'].includes(dir)) continue;
+        const target = this.neighborSlotsMap[item.slotIndex]?.[dir];
+        if (!Number.isInteger(target)) continue;
+        out.push({
+          slotIndex: item.slotIndex,
+          dir,
+          arrow: this.passConnectorArrow(dir),
+          style: this.passConnectorStyle(item, dir),
+        });
+      }
+      return out;
+    },
     emptyMenuStyle() {
       if (this.emptyMenuPos) {
         return { position: 'fixed', top: this.emptyMenuPos.y + 'px', left: this.emptyMenuPos.x + 'px' };
@@ -832,6 +863,33 @@ const BullpenTab = {
         position: 'absolute',
         ...this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex)),
         zIndex: expanded > 0 ? 6 : null,
+      };
+    },
+    passConnectorArrow(dir) {
+      return {
+        up: '\u25B2',
+        down: '\u25BC',
+        left: '\u25C0',
+        right: '\u25B6',
+      }[dir] || '';
+    },
+    passConnectorStyle(item, dir) {
+      const p = GridGeometry.coordToPixel(item.coord.col, item.coord.row, this.viewportOrigin, this.cardSize);
+      const box = this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex));
+      const left = parseFloat(box.left);
+      const top = parseFloat(box.top);
+      const width = parseFloat(box.width);
+      const height = parseFloat(box.height);
+      const positions = {
+        up: { left: left + width / 2, top },
+        down: { left: left + width / 2, top: top + height },
+        left: { left, top: top + height / 2 },
+        right: { left: left + width, top: top + height / 2 },
+      };
+      const pos = positions[dir] || { left, top };
+      return {
+        left: pos.left + 'px',
+        top: pos.top + 'px',
       };
     },
     setOrigin(origin, persist = true) {
