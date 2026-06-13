@@ -1,5 +1,6 @@
 """Tests for server/workers.py."""
 
+import json
 import os
 import signal
 import subprocess
@@ -1052,6 +1053,88 @@ class TestStartWorker:
         finally:
             if previous is not None:
                 register_adapter("temp-env", previous)
+
+    def test_opencode_worker_lifecycle_with_fake_cli(self, bp_dir, worker_slot, monkeypatch, tmp_path):
+        fake_opencode = tmp_path / "opencode"
+        capture_path = tmp_path / "opencode-capture.json"
+        fake_opencode.write_text(
+            """#!/usr/bin/env python3
+import json
+import os
+import sys
+
+prompt = sys.stdin.read()
+config_path = os.environ.get("OPENCODE_CONFIG", "")
+config = {}
+if config_path:
+    with open(config_path, encoding="utf-8") as f:
+        config = json.load(f)
+
+with open(os.environ["BULLPEN_OPENCODE_CAPTURE"], "w", encoding="utf-8") as f:
+    json.dump({
+        "argv": sys.argv[1:],
+        "cwd": os.getcwd(),
+        "prompt": prompt,
+        "tmpdir": os.environ.get("TMPDIR", ""),
+        "opencode_config": config,
+    }, f)
+
+print(json.dumps({"type": "step_start"}), flush=True)
+print(json.dumps({"type": "text", "part": {"text": "OpenCode lifecycle ok"}}), flush=True)
+print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 11, "output": 7, "total": 18}}}), flush=True)
+""",
+            encoding="utf-8",
+        )
+        fake_opencode.chmod(0o755)
+        monkeypatch.setenv("BULLPEN_OPENCODE_PATH", str(fake_opencode))
+        monkeypatch.setenv("BULLPEN_OPENCODE_CAPTURE", str(capture_path))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+        layout = _load_layout(bp_dir)
+        layout["slots"][worker_slot]["agent"] = "opencode"
+        layout["slots"][worker_slot]["model"] = "openrouter/meta-llama/llama-3.1-405b-instruct"
+        layout["slots"][worker_slot]["trust_mode"] = "trusted"
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Lifecycle opencode", description="Run through the OpenCode adapter.")
+        assign_task(bp_dir, worker_slot, task["id"])
+
+        start_worker(bp_dir, worker_slot)
+        assert _wait_for_path(capture_path)
+        assert _wait_for_worker_threads()
+
+        updated = read_task(bp_dir, task["id"])
+        final_layout = _load_layout(bp_dir)
+        capture = json.loads(capture_path.read_text(encoding="utf-8"))
+
+        assert updated["status"] == "review"
+        assert "OpenCode lifecycle ok" in updated["body"]
+        assert updated["tokens"] == 18
+        usage = updated["usage"][0]
+        assert usage["provider"] == "opencode"
+        assert usage["model"] == "openrouter/meta-llama/llama-3.1-405b-instruct"
+        assert usage["input_tokens"] == 11
+        assert usage["output_tokens"] == 7
+        assert final_layout["slots"][worker_slot]["state"] == "idle"
+        assert final_layout["slots"][worker_slot]["model"] == "openrouter/meta-llama/llama-3.1-405b-instruct"
+
+        assert capture["argv"] == [
+            "run",
+            "--format",
+            "json",
+            "--model",
+            "openrouter/meta-llama/llama-3.1-405b-instruct",
+            "--dangerously-skip-permissions",
+        ]
+        assert os.path.realpath(capture["cwd"]) == os.path.realpath(os.path.dirname(bp_dir))
+        assert "Title: Lifecycle opencode" in capture["prompt"]
+        assert "Run through the OpenCode adapter." in capture["prompt"]
+        assert "bullpen-opencode-" in capture["tmpdir"]
+        mcp = capture["opencode_config"]["mcp"]["bullpen"]
+        assert mcp["type"] == "local"
+        assert mcp["enabled"] is True
+        assert "--bp-dir" in mcp["command"]
+        assert bp_dir in mcp["command"]
 
     def test_worker_success_appends_structured_usage_and_keeps_tokens_compatible(self, bp_dir, worker_slot):
         register_adapter("usage-mock", UsageAdapter(output="Usage output"))

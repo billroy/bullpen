@@ -359,8 +359,8 @@ Phase status:
 | 1. Backend adapter and provider registration | Complete | Adapter/validation/hardening tests passed |
 | 2. Model catalog backend API | Complete | Catalog API tests passed |
 | 3. Worker configuration UI | Complete | Catalog-backed inline picker added; static and syntax checks passed |
-| 4. Worker lifecycle integration and smoke test | Ready | Commit after fake lifecycle and local smoke |
-| 5. Live Agent Chat support | Blocked on Phase 4 | Commit after chat tests/manual check |
+| 4. Worker lifecycle integration and smoke test | Complete | Fake CLI lifecycle smoke passed |
+| 5. Live Agent Chat support | Ready | Commit after chat tests/manual check |
 | 6. Setup, manager, Docker, and Microsandbox | Blocked on Phase 5 | Commit after setup/deploy checks |
 | 7. Hardening, docs, and release readiness | Blocked on Phase 6 | Commit after release-readiness review |
 
@@ -663,9 +663,27 @@ Verification:
 
 Phase-end checkpoint:
 
-- Decide whether worker support is ready to ship behind normal UI, or whether
-  it needs a temporary "experimental" note.
-- Close worker-path open items or move them to hardening.
+- Completed with deterministic fake-CLI lifecycle coverage through the normal
+  worker queue path.
+- The test verifies:
+  - assigned ticket startup through `start_worker`
+  - OpenCode prompt delivery on stdin
+  - long `provider/model` preservation
+  - trusted-worker `--dangerously-skip-permissions` hardening
+  - per-run `OPENCODE_CONFIG` generation with local Bullpen MCP settings
+  - final assistant output appended to the ticket
+  - provider/model usage metadata persisted on the ticket
+  - worker returns to idle with the OpenCode model intact
+- No production worker branching was needed; OpenCode is using the shared AI
+  worker lifecycle.
+- Focused verification passed:
+  - `pytest tests/test_workers.py::TestStartWorker::test_opencode_worker_lifecycle_with_fake_cli -q`
+  - `pytest tests/test_workers.py tests/test_agents.py tests/test_usage.py tests/test_validation.py tests/test_prompt_hardening.py tests/test_opencode_models.py -q`
+    (`286 passed`)
+- Worker support is ready to proceed to Live Agent planning/implementation
+  behind the normal OpenCode UI. A real installed-model Bullpen worker smoke is
+  still listed for Phase 7/manual release checks because it depends on live
+  OpenCode auth/provider state.
 
 Commit:
 
