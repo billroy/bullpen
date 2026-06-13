@@ -362,7 +362,7 @@ Phase status:
 | 4. Worker lifecycle integration and smoke test | Complete | Fake CLI lifecycle smoke passed |
 | 5. Live Agent Chat support | Complete | Fake CLI chat and catalog picker tests passed |
 | 6. Setup, manager, Docker, and Microsandbox | Complete | Setup/deploy wiring tests passed |
-| 7. Hardening, docs, and release readiness | Ready | Commit after release-readiness review |
+| 7. Hardening, docs, and release readiness | Complete | Focused release-readiness suite passed |
 
 ### Phase 0 - Contract spike and fixtures
 
@@ -869,17 +869,39 @@ Verification:
 
 Phase-end checkpoint:
 
-- Confirm release readiness:
-  - worker path validated
-  - chat path validated or explicitly deferred
-  - setup/deployment path validated or explicitly scoped out
-  - no unresolved blocker open items
+- Release-readiness review complete.
+- Validated paths:
+  - Backend adapter and provider registration are covered by fixture-backed
+    adapter tests.
+  - Worker execution is covered by a fake OpenCode CLI lifecycle test through
+    the normal queue path.
+  - Live Agent Chat is covered by a fake OpenCode CLI socket-event test through
+    the normal chat path.
+  - Worker and chat model picker UI are covered by static regression tests and
+    syntax checks.
+  - Manager, Docker helper, Docker compose, and Microsandbox setup wiring are
+    covered by targeted static/unit tests.
+- Focused release-readiness verification passed:
+  - `pytest tests/test_agents.py tests/test_usage.py tests/test_validation.py tests/test_prompt_hardening.py tests/test_workers.py tests/test_opencode_models.py tests/test_frontend_worker_models.py tests/test_frontend_top_toolbar_menu.py tests/test_events.py::TestChatEvents tests/test_manager.py tests/test_deploy_sandbox.py tests/test_deploy_docker_script.py -q`
+    (`403 passed`)
+  - `python3 -m py_compile server/agents/opencode_adapter.py server/opencode_models.py server/events.py server/manager.py deploy-sandbox.py`
+  - `node --check static/components/WorkerConfigModal.js`
+  - `node --check static/components/LiveAgentChatTab.js`
+  - `node --check static/components/TopToolbar.js`
+  - `node --check static/manager/manager.js`
+  - `node --check static/app.js`
+- Browser/manual checks were not completed because the local app reached the
+  sign-in page during browser smoke. Real Docker and Microsandbox provider
+  smoke were not run because they require external runtimes and live provider
+  auth.
+- No blocker open items remain for implementation planning. The remaining
+  items below are manual validation or post-release hardening follow-ups.
 
 Commit:
 
 - Suggested message: `docs(opencode): finalize release readiness`
 
-## Open items
+## Manual and post-release follow-ups
 
 - Capture real tool-call and tool-result JSON event shapes manually, with
   explicit human approval, if richer focus-view rendering is required before
