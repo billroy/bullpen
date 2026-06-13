@@ -18,18 +18,71 @@ const LiveAgentChatTab = {
       busy: false,
       activeSessionId: this.sessionId || _generateChatSessionId(),
       _streamingBuf: '',
+      opencodeModels: [],
+      opencodeModelsStatus: '',
+      opencodeModelsError: '',
+      opencodeModelsLoading: false,
+      opencodeModelProvider: '',
+      opencodeModelSearch: '',
     };
   },
   computed: {
     providerOptions() {
-      return ['claude', 'codex', 'gemini'];
+      return ['claude', 'codex', 'gemini', 'opencode'];
     },
     modelOptions() {
       return MODEL_OPTIONS[this.provider] || [];
     },
+    isOpenCodeProvider() {
+      return this.provider === 'opencode';
+    },
+    currentOpenCodeProvider() {
+      const model = String(this.model || '').trim();
+      if (!model.includes('/')) return '';
+      return model.split('/', 1)[0];
+    },
+    opencodeProviders() {
+      const providers = this.opencodeModels
+        .map(model => String(model.provider || '').trim())
+        .filter(Boolean);
+      const currentProvider = this.currentOpenCodeProvider;
+      if (currentProvider) providers.unshift(currentProvider);
+      return [...new Set(providers)].sort((a, b) => a.localeCompare(b));
+    },
+    filteredOpenCodeModels() {
+      const provider = String(this.opencodeModelProvider || '').trim();
+      const query = String(this.opencodeModelSearch || '').trim().toLowerCase();
+      return this.opencodeModels.filter(model => {
+        if (provider && model.provider !== provider) return false;
+        if (!query) return true;
+        const id = String(model.id || '').toLowerCase();
+        const label = String(model.model || '').toLowerCase();
+        return id.includes(query) || label.includes(query);
+      });
+    },
+    isOpenCodeModelInCatalog() {
+      const current = String(this.model || '').trim();
+      return !!current && this.opencodeModels.some(model => model.id === current);
+    },
+    opencodeCatalogHint() {
+      if (this.opencodeModelsLoading) return 'Loading OpenCode models...';
+      if (this.opencodeModelsError) return this.opencodeModelsError;
+      if (!this.opencodeModels.length && this.opencodeModelsStatus === 'ok') return 'No OpenCode models returned. Enter a custom provider/model value.';
+      if (this.opencodeModelsStatus === 'unavailable') return 'OpenCode CLI is not available. Install OpenCode or set BULLPEN_OPENCODE_PATH, then enter a custom provider/model value if needed.';
+      return '';
+    },
+    canSend() {
+      return !!this.input.trim() && !this.busy && (!this.isOpenCodeProvider || !!String(this.model || '').trim());
+    },
   },
   watch: {
     provider(newProvider) {
+      if (newProvider === 'opencode') {
+        if (!String(this.model || '').includes('/')) this.model = '';
+        this.syncOpenCodeModelProvider();
+        this.ensureOpenCodeModels();
+        return;
+      }
       const opts = this.modelOptions;
       if (!opts.includes(this.model)) this.model = opts[0] || '';
     },
@@ -111,6 +164,7 @@ const LiveAgentChatTab = {
     sendMessage() {
       const text = this.input.trim();
       if (!text || this.busy) return;
+      if (this.isOpenCodeProvider && !String(this.model || '').trim()) return;
       this.messages.push({ role: 'user', content: text });
       this.input = '';
       this.busy = true;
@@ -137,6 +191,56 @@ const LiveAgentChatTab = {
       if (s) s.emit('chat:clear', { sessionId: this.activeSessionId, workspaceId: this.workspaceId });
       this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
     },
+    syncOpenCodeModelProvider() {
+      const currentProvider = this.currentOpenCodeProvider;
+      if (currentProvider) {
+        this.opencodeModelProvider = currentProvider;
+      } else if (!this.opencodeModelProvider && this.opencodeProviders.length === 1) {
+        this.opencodeModelProvider = this.opencodeProviders[0];
+      }
+    },
+    ensureOpenCodeModels() {
+      if (this.opencodeModels.length || this.opencodeModelsLoading) return;
+      this.loadOpenCodeModels();
+    },
+    async loadOpenCodeModels({ refresh = false } = {}) {
+      this.opencodeModelsLoading = true;
+      this.opencodeModelsError = '';
+      try {
+        const params = new URLSearchParams();
+        if (this.workspaceId) params.set('workspaceId', this.workspaceId);
+        if (refresh) params.set('refresh', '1');
+        const query = params.toString();
+        const resp = await fetch(`/api/models/opencode${query ? `?${query}` : ''}`, {
+          credentials: 'same-origin',
+        });
+        const data = await resp.json();
+        this.opencodeModelsStatus = data.status || (resp.ok ? 'ok' : 'error');
+        this.opencodeModels = Array.isArray(data.models) ? data.models : [];
+        if (!resp.ok || this.opencodeModelsStatus === 'error') {
+          this.opencodeModelsError = data.error || 'OpenCode model catalog is unavailable. Enter a custom provider/model value.';
+        } else {
+          this.opencodeModelsError = '';
+        }
+        this.syncOpenCodeModelProvider();
+      } catch (err) {
+        this.opencodeModelsStatus = 'error';
+        this.opencodeModels = [];
+        this.opencodeModelsError = err.message || 'OpenCode model catalog is unavailable. Enter a custom provider/model value.';
+      } finally {
+        this.opencodeModelsLoading = false;
+      }
+    },
+    refreshOpenCodeModels() {
+      return this.loadOpenCodeModels({ refresh: true });
+    },
+    onOpenCodeProviderChange() {
+      this.opencodeModelSearch = '';
+    },
+    onOpenCodeModelSelect(e) {
+      this.model = e.target.value || '';
+      this.syncOpenCodeModelProvider();
+    },
     onKeydown(e) {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -158,9 +262,26 @@ const LiveAgentChatTab = {
           <option v-for="p in providerOptions" :key="p" :value="p">{{ p }}</option>
         </select>
         <label class="chat-label">Model</label>
-        <select class="form-select chat-select" v-model="model" :disabled="busy">
+        <select v-if="!isOpenCodeProvider" class="form-select chat-select" v-model="model" :disabled="busy">
           <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
         </select>
+        <template v-if="isOpenCodeProvider">
+          <select class="form-select chat-select" v-model="opencodeModelProvider" :disabled="busy" @change="onOpenCodeProviderChange">
+            <option value="">All providers</option>
+            <option v-for="provider in opencodeProviders" :key="provider" :value="provider">{{ provider }}</option>
+          </select>
+          <input class="form-input chat-model-search" v-model="opencodeModelSearch" :disabled="busy" placeholder="Search models">
+          <select class="form-select chat-select chat-model-select" :value="model" :disabled="busy" @change="onOpenCodeModelSelect">
+            <option value="">Select a model...</option>
+            <option v-if="model && !isOpenCodeModelInCatalog" :value="model">{{ model }}</option>
+            <option v-for="m in filteredOpenCodeModels" :key="m.id" :value="m.id">{{ m.id }}</option>
+          </select>
+          <input class="form-input chat-custom-model" v-model="model" :disabled="busy" placeholder="provider/model">
+          <button class="btn btn-sm" @click="refreshOpenCodeModels" :disabled="busy || opencodeModelsLoading">
+            {{ opencodeModelsLoading ? 'Refreshing...' : 'Refresh' }}
+          </button>
+          <span v-if="opencodeCatalogHint" class="chat-hint">{{ opencodeCatalogHint }}</span>
+        </template>
         <button class="btn btn-sm" @click="clearChat" :disabled="busy">Clear</button>
       </div>
       <div class="chat-messages" ref="messages">
@@ -185,7 +306,7 @@ const LiveAgentChatTab = {
           @keydown="onKeydown"
         ></textarea>
         <button v-if="busy" class="btn btn-danger chat-stop-btn" @click="stopChat">Stop</button>
-        <button v-else class="btn chat-send-btn" :disabled="!input.trim()" @click="sendMessage">Send</button>
+        <button v-else class="btn chat-send-btn" :disabled="!canSend" @click="sendMessage">Send</button>
       </div>
     </div>
   `,

@@ -21,6 +21,7 @@ from server.usage import (
     build_usage_update,
     extract_stream_usage_event,
     merge_usage_dicts,
+    merge_usage_max,
 )
 from server.model_aliases import normalize_model
 from server import workers as worker_mod
@@ -2043,7 +2044,7 @@ def register_events(socketio, app):
                                 source="chat",
                                 provider=adapter.name,
                                 model=model,
-                                usage=merge_usage_dicts(chat_usage, parsed.get("usage", {})),
+                                usage=merge_usage_max(chat_usage, parsed.get("usage", {})),
                                 occurred_at=now,
                             )
 

@@ -4760,6 +4760,7 @@ body.worker-singleton-dragging * {
 .chat-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
@@ -4778,6 +4779,25 @@ body.worker-singleton-dragging * {
   padding: 4px 8px;
   min-width: 0;
   max-width: 220px;
+}
+
+.chat-model-search,
+.chat-custom-model {
+  width: 180px;
+  max-width: 100%;
+  font-size: 0.85em;
+  padding: 4px 8px;
+}
+
+.chat-model-select {
+  width: min(360px, 100%);
+  max-width: 360px;
+}
+
+.chat-hint {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 0.8em;
 }
 
 .chat-messages {

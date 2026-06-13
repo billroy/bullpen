@@ -56,6 +56,21 @@ def test_opencode_uses_catalog_backed_model_picker():
     assert ':active-workspace-id="activeWorkspaceId"' in app
 
 
+def test_live_agent_chat_exposes_opencode_catalog_picker():
+    text = (ROOT / "static" / "components" / "LiveAgentChatTab.js").read_text(encoding="utf-8")
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert "['claude', 'codex', 'gemini', 'opencode']" in text
+    assert "isOpenCodeProvider()" in text
+    assert "/api/models/opencode" in text
+    assert "opencodeModelProvider" in text
+    assert "filteredOpenCodeModels" in text
+    assert "refreshOpenCodeModels" in text
+    assert 'placeholder="provider/model"' in text
+    assert "BULLPEN_OPENCODE_PATH" in text
+    assert "chat-model-select" in css
+
+
 def test_model_options_defined_in_shared_constant():
     """Both components must use MODEL_OPTIONS from utils.js, not inline lists."""
     utils = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")

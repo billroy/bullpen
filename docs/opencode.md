@@ -360,8 +360,8 @@ Phase status:
 | 2. Model catalog backend API | Complete | Catalog API tests passed |
 | 3. Worker configuration UI | Complete | Catalog-backed inline picker added; static and syntax checks passed |
 | 4. Worker lifecycle integration and smoke test | Complete | Fake CLI lifecycle smoke passed |
-| 5. Live Agent Chat support | Ready | Commit after chat tests/manual check |
-| 6. Setup, manager, Docker, and Microsandbox | Blocked on Phase 5 | Commit after setup/deploy checks |
+| 5. Live Agent Chat support | Complete | Fake CLI chat and catalog picker tests passed |
+| 6. Setup, manager, Docker, and Microsandbox | Ready | Commit after setup/deploy checks |
 | 7. Hardening, docs, and release readiness | Blocked on Phase 6 | Commit after release-readiness review |
 
 ### Phase 0 - Contract spike and fixtures
@@ -725,9 +725,31 @@ Verification:
 
 Phase-end checkpoint:
 
-- Decide whether OpenCode chat is included in the same release note as workers
-  or called out as separately validated.
-- Update open item for Live Agent session strategy.
+- Completed with a compact OpenCode-only catalog picker in Live Agent Chat.
+  Claude, Codex, and Gemini remain on the shared static `MODEL_OPTIONS`
+  selector.
+- The chat picker includes provider filtering, model search, catalog refresh,
+  selected catalog model, and custom `provider/model` input.
+- Backend chat support uses the existing adapter flow; no OpenCode-only chat
+  runner was needed.
+- Added fake OpenCode chat coverage proving:
+  - chat prompt is delivered on stdin
+  - chat hardening does not add `--dangerously-skip-permissions`
+  - per-run `OPENCODE_CONFIG` includes local Bullpen MCP settings
+  - OpenCode stream text reaches `chat:output`
+  - chat transcript ticket logs provider/model usage
+  - isolated temp/config dir is cleaned up
+- Fixed chat usage recording to max-merge stream and parsed usage, avoiding
+  double-counting when the same structured usage event is observed during
+  streaming and final parse.
+- Focused verification passed:
+  - `node --check static/components/LiveAgentChatTab.js`
+  - `pytest tests/test_frontend_worker_models.py tests/test_events.py::TestChatEvents tests/test_workers.py::TestStartWorker::test_opencode_worker_lifecycle_with_fake_cli tests/test_agents.py tests/test_usage.py tests/test_opencode_models.py tests/test_prompt_hardening.py -q`
+    (`124 passed`)
+- Browser/manual Live Agent smoke still needs a signed-in app session and is
+  retained for Phase 7/manual release checks.
+- OpenCode chat should ship in the same release note as worker support; both
+  paths now have fake-CLI lifecycle coverage.
 
 Commit:
 

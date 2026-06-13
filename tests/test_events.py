@@ -1408,6 +1408,100 @@ class TestChatEvents:
         assert breakdown["cached_input_tokens"] == 3
         assert breakdown["tokens"] == 18
 
+    def test_opencode_chat_uses_fake_cli_and_logs_usage(self, client, monkeypatch, tmp_path):
+        c, app = client
+        fake_opencode = tmp_path / "opencode"
+        capture_path = tmp_path / "opencode-chat-capture.json"
+        model = "openrouter/meta-llama/llama-3.1-405b-instruct"
+        fake_opencode.write_text(
+            """#!/usr/bin/env python3
+import json
+import os
+import sys
+
+prompt = sys.stdin.read()
+config_path = os.environ.get("OPENCODE_CONFIG", "")
+config = {}
+if config_path:
+    with open(config_path, encoding="utf-8") as f:
+        config = json.load(f)
+
+with open(os.environ["BULLPEN_OPENCODE_CHAT_CAPTURE"], "w", encoding="utf-8") as f:
+    json.dump({
+        "argv": sys.argv[1:],
+        "prompt": prompt,
+        "tmpdir": os.environ.get("TMPDIR", ""),
+        "opencode_config": config,
+    }, f)
+
+print(json.dumps({"type": "text", "part": {"text": "OpenCode chat ok"}}), flush=True)
+print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 13, "output": 5, "total": 18}}}), flush=True)
+""",
+            encoding="utf-8",
+        )
+        fake_opencode.chmod(0o755)
+        monkeypatch.setenv("BULLPEN_OPENCODE_PATH", str(fake_opencode))
+        monkeypatch.setenv("BULLPEN_OPENCODE_CHAT_CAPTURE", str(capture_path))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+        c.emit("chat:send", {
+            "sessionId": "session-opencode-1",
+            "provider": "opencode",
+            "model": model,
+            "message": "hello opencode",
+        })
+
+        output_lines = []
+        done = False
+        error = None
+        deadline = time.time() + 3.0
+        while time.time() < deadline and not done and error is None:
+            for evt in c.get_received():
+                if evt["name"] == "chat:output":
+                    output_lines.extend(evt["args"][0].get("lines", []))
+                elif evt["name"] == "chat:done":
+                    done = True
+                elif evt["name"] == "chat:error":
+                    error = evt["args"][0]
+            if not done and error is None:
+                time.sleep(0.05)
+
+        assert error is None
+        assert done, "chat:done not received"
+        assert output_lines == ["OpenCode chat ok"]
+
+        capture = json.loads(capture_path.read_text(encoding="utf-8"))
+        assert capture["argv"] == [
+            "run",
+            "--format",
+            "json",
+            "--model",
+            model,
+        ]
+        assert "--dangerously-skip-permissions" not in capture["argv"]
+        assert "hello opencode" in capture["prompt"]
+        assert "bullpen-opencode-" in capture["tmpdir"]
+        assert not os.path.exists(capture["tmpdir"])
+        mcp = capture["opencode_config"]["mcp"]["bullpen"]
+        assert mcp["type"] == "local"
+        assert mcp["enabled"] is True
+        assert app.config["bp_dir"] in mcp["command"]
+
+        from server.tasks import list_tasks
+
+        tasks = list_tasks(app.config["bp_dir"])
+        chat_tasks = [t for t in tasks if "chat" in (t.get("tags") or [])]
+        assert chat_tasks
+        task = chat_tasks[0]
+        assert "OpenCode chat ok" in task["body"]
+        assert task["tokens"] == 18
+        usage = task["usage"][0]
+        assert usage["source"] == "chat"
+        assert usage["provider"] == "opencode"
+        assert usage["model"] == model
+        assert usage["input_tokens"] == 13
+        assert usage["output_tokens"] == 5
+
     def test_chat_emits_error_on_provider_failure(self, client):
         c, _ = client
         register_adapter("chat-failing-mock", ChatFailingAdapter())
