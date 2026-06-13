@@ -101,6 +101,14 @@ textarea {
 
 .brand {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand-text {
+  display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
@@ -158,6 +166,84 @@ textarea {
 
 .deployments-header {
   border-bottom: none;
+}
+
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.header-menu-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.hamburger-line {
+  width: 15px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--text-primary);
+}
+
+.menu-panel {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  min-width: 230px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #0b0d12;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
+  pointer-events: none;
+}
+
+.main-menu {
+  top: calc(100% + 8px);
+  left: 0;
+}
+
+.menu-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 0 10px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+  pointer-events: auto;
+}
+
+.menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.menu-item-icon {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.menu-item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menu-anchor {
@@ -399,10 +485,19 @@ textarea {
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.5);
 }
 
+.modal-wide {
+  width: min(900px, 100%);
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.modal-log-box {
+  margin: 12px;
+  max-height: min(64vh, 680px);
 }
 
 @media (max-width: 820px) {

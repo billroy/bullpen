@@ -16,10 +16,16 @@ createApp({
       setupOutput: '',
       setupExit: '',
       createModalOpen: false,
+      mainMenuOpen: false,
       deploymentMenuOpen: false,
       baseSnapshots: [],
       baseSnapshotsLoading: false,
       baseSnapshotsError: '',
+      baseRebuildBusy: false,
+      baseRebuildRunning: false,
+      baseRebuildStatus: '',
+      baseRebuildLogs: '',
+      baseRebuildLogOpen: false,
     });
     const socketRef = ref(null);
     const terminalRef = ref(null);
@@ -43,6 +49,12 @@ createApp({
     });
 
     const selected = computed(() => state.profiles.find(profile => profile.id === state.selectedId) || state.profiles[0] || null);
+    const selectedBaseSnapshot = computed(() => {
+      if (selected.value && selected.value.runtime === 'microsandbox' && selected.value.base) {
+        return selected.value.base;
+      }
+      return form.base || defaultMicrosandboxBase;
+    });
     const baseSnapshotOptions = computed(() => {
       const byName = new Map();
       (state.baseSnapshots || []).forEach((snapshot) => {
@@ -257,8 +269,19 @@ createApp({
       state.createModalOpen = false;
     }
 
+    function closeMenus() {
+      state.mainMenuOpen = false;
+      state.deploymentMenuOpen = false;
+    }
+
+    function toggleMainMenu() {
+      state.mainMenuOpen = !state.mainMenuOpen;
+      state.deploymentMenuOpen = false;
+    }
+
     function toggleDeploymentMenu() {
       state.deploymentMenuOpen = !state.deploymentMenuOpen;
+      state.mainMenuOpen = false;
     }
 
     function openDropdownOnEnter(event) {
@@ -298,6 +321,57 @@ createApp({
       } finally {
         state.actionBusy = '';
       }
+    }
+
+    function updateBaseRebuildState(prepare) {
+      const statePayload = prepare || {};
+      state.baseRebuildRunning = Boolean(statePayload.running);
+      if (statePayload.lastError) {
+        state.baseRebuildStatus = statePayload.lastError;
+      } else if (statePayload.running) {
+        state.baseRebuildStatus = `Rebuilding ${statePayload.base || selectedBaseSnapshot.value}`;
+      } else if (statePayload.returncode !== null && statePayload.returncode !== undefined) {
+        state.baseRebuildStatus = Number(statePayload.returncode) === 0
+          ? `Rebuilt ${statePayload.base || selectedBaseSnapshot.value}`
+          : `Base rebuild exited with ${statePayload.returncode}`;
+      }
+    }
+
+    async function rebuildBaseSnapshot() {
+      closeMenus();
+      const base = selectedBaseSnapshot.value;
+      if (!confirm(`Rebuild Microsandbox base snapshot "${base}"?`)) return;
+      state.error = '';
+      state.baseRebuildBusy = true;
+      state.baseRebuildLogOpen = true;
+      try {
+        const data = await api('/api/microsandbox/base-snapshots/rebuild', {
+          method: 'POST',
+          body: JSON.stringify({ base }),
+        });
+        updateBaseRebuildState(data.prepare);
+        await loadBaseRebuildLogs();
+      } catch (err) {
+        state.error = err.message;
+      } finally {
+        state.baseRebuildBusy = false;
+      }
+    }
+
+    async function loadBaseRebuildLogs() {
+      try {
+        const data = await api('/api/microsandbox/base-snapshots/rebuild/logs');
+        state.baseRebuildLogs = data.text || '';
+        updateBaseRebuildState(data.prepare);
+      } catch (err) {
+        state.error = err.message;
+      }
+    }
+
+    async function openBaseRebuildLogs() {
+      closeMenus();
+      state.baseRebuildLogOpen = true;
+      await loadBaseRebuildLogs();
     }
 
     async function deleteProfile(profile) {
@@ -579,6 +653,11 @@ createApp({
       socket.on('manager:error', (payload) => {
         state.error = (payload && payload.error) || 'Manager error';
       });
+      socket.on('manager:base-rebuild-updated', (payload) => {
+        updateBaseRebuildState(payload && payload.prepare);
+        if (state.baseRebuildLogOpen) loadBaseRebuildLogs();
+        if (payload && payload.prepare && payload.prepare.running === false) loadBaseSnapshots();
+      });
     });
 
     watch(selected, (profile) => {
@@ -602,6 +681,7 @@ createApp({
       stateLabel,
       showLogPanel,
       showSetupPanel,
+      selectedBaseSnapshot,
       cpuText,
       memoryText,
       providersText,
@@ -613,9 +693,14 @@ createApp({
       createProfile,
       openCreateModal,
       closeCreateModal,
+      closeMenus,
+      toggleMainMenu,
       toggleDeploymentMenu,
       openDropdownOnEnter,
       action,
+      rebuildBaseSnapshot,
+      loadBaseRebuildLogs,
+      openBaseRebuildLogs,
       setupProviders,
       syncSetupSession,
       syncSetupLog,
@@ -629,11 +714,28 @@ createApp({
     };
   },
   template: `
-    <div class="manager-shell">
+    <div class="manager-shell" @click="closeMenus">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-title">Bullpen Manager</div>
-          <div class="brand-subtitle">Local control plane for Bullpen instances</div>
+          <div class="menu-wrap" @click.stop>
+            <button class="icon-button header-menu-button" type="button" title="Main menu" aria-label="Main menu" @click.stop="toggleMainMenu">
+              <span class="hamburger-line"></span>
+              <span class="hamburger-line"></span>
+              <span class="hamburger-line"></span>
+            </button>
+            <div v-if="state.mainMenuOpen" class="menu-panel main-menu">
+              <button class="menu-item" type="button" :disabled="state.baseRebuildBusy || state.baseRebuildRunning" @click="rebuildBaseSnapshot">
+                <span class="menu-item-icon">R</span><span class="menu-item-label">Rebuild base snapshot</span>
+              </button>
+              <button class="menu-item" type="button" @click="openBaseRebuildLogs">
+                <span class="menu-item-icon">L</span><span class="menu-item-label">Base rebuild logs</span>
+              </button>
+            </div>
+          </div>
+          <div class="brand-text">
+            <div class="brand-title">Bullpen Manager</div>
+            <div class="brand-subtitle">Local control plane for Bullpen instances</div>
+          </div>
         </div>
         <button @click="refresh" :disabled="state.loading">Refresh</button>
       </header>
@@ -821,6 +923,22 @@ createApp({
               <button class="primary" type="submit">Create Deployment</button>
             </div>
           </form>
+        </section>
+      </div>
+
+      <div v-if="state.baseRebuildLogOpen" class="modal-backdrop" @click.self="state.baseRebuildLogOpen = false">
+        <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="base-rebuild-logs-title" @click.stop>
+          <div class="panel-header">
+            <div>
+              <div id="base-rebuild-logs-title" class="panel-title">Base Rebuild Logs</div>
+              <div class="instance-meta">{{ state.baseRebuildStatus || selectedBaseSnapshot }}</div>
+            </div>
+            <div class="actions">
+              <button type="button" @click="loadBaseRebuildLogs">Reload</button>
+              <button type="button" class="icon-button" aria-label="Close" @click="state.baseRebuildLogOpen = false">x</button>
+            </div>
+          </div>
+          <pre class="log-box modal-log-box">{{ state.baseRebuildLogs || 'No base rebuild logs yet.' }}</pre>
         </section>
       </div>
     </div>

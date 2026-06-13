@@ -466,6 +466,21 @@ def test_manager_create_deployment_uses_base_snapshot_dropdown():
     assert ".field-error" in manager_css
 
 
+def test_manager_header_menu_exposes_base_rebuild_actions():
+    manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
+    manager_css = Path("static/manager/manager.css").read_text(encoding="utf-8")
+
+    assert 'title="Main menu" aria-label="Main menu" @click.stop="toggleMainMenu"' in manager_js
+    assert "Rebuild base snapshot" in manager_js
+    assert "Base rebuild logs" in manager_js
+    assert "api('/api/microsandbox/base-snapshots/rebuild'" in manager_js
+    assert "api('/api/microsandbox/base-snapshots/rebuild/logs')" in manager_js
+    assert ".menu-wrap" in manager_css
+    assert ".menu-panel" in manager_css
+    assert "pointer-events: none;" in manager_css
+    assert "pointer-events: auto;" in manager_css
+
+
 def test_manager_dropdowns_open_on_enter_key():
     manager_js = Path("static/manager/manager.js").read_text(encoding="utf-8")
 
@@ -475,6 +490,46 @@ def test_manager_dropdowns_open_on_enter_key():
     assert "select.showPicker();" in manager_js
     assert '<select v-model="form.runtime" @keydown.enter="openDropdownOnEnter">' in manager_js
     assert '<select v-model="form.base" :disabled="state.baseSnapshotsLoading" @keydown.enter="openDropdownOnEnter">' in manager_js
+
+
+def test_manager_api_rebuilds_microsandbox_base_in_background(tmp_path, monkeypatch):
+    class FakeProcess:
+        def wait(self):
+            return 0
+
+    class ImmediateThread:
+        def __init__(self, target, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+            self.kwargs = kwargs or {}
+
+        def start(self):
+            self.target(*self.args, **self.kwargs)
+
+    calls = []
+    monkeypatch.setattr(manager_mod.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(manager_mod.subprocess, "Popen", lambda argv, **kwargs: calls.append((argv, kwargs)) or FakeProcess())
+    app, _socketio = create_manager_app(home=tmp_path / "manager")
+
+    response = app.test_client().post(
+        "/api/microsandbox/base-snapshots/rebuild",
+        json={"base": "bullpen-microsandbox-local-v2"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["started"] is True
+    assert calls
+    argv, kwargs = calls[0]
+    assert "deploy-sandbox.py" in argv[1]
+    assert "--prepare-base" in argv
+    assert argv[argv.index("--base") + 1] == "bullpen-microsandbox-local-v2"
+    assert kwargs["cwd"] == str(manager_mod.repo_root())
+
+    logs_response = app.test_client().get("/api/microsandbox/base-snapshots/rebuild/logs")
+    logs = logs_response.get_json()
+    assert logs["prepare"]["running"] is False
+    assert logs["prepare"]["returncode"] == 0
+    assert "deploy-sandbox.py" in logs["text"]
 
 
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):

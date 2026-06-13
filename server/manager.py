@@ -1202,6 +1202,115 @@ class MicrosandboxRuntimeController:
             self.socketio.emit("manager:updated", {"profiles": profiles_payload(self.registry)})
 
 
+class MicrosandboxBaseRebuildController:
+    """Prepare or rebuild the reusable Microsandbox base snapshot."""
+
+    def __init__(self, home: Path, socketio: SocketIO | None = None):
+        self.home = home
+        self.socketio = socketio
+        self._lock = threading.RLock()
+        self._state: dict[str, Any] = {
+            "running": False,
+            "base": DEFAULT_MICROSANDBOX_BASE,
+            "logPath": str(self.log_path),
+            "returncode": None,
+            "startedAt": None,
+            "finishedAt": None,
+            "lastError": "",
+        }
+
+    @property
+    def log_path(self) -> Path:
+        return self.home / "logs" / "microsandbox-base-rebuild.log"
+
+    def start(self, *, base: str | None = None) -> dict[str, Any]:
+        base_name = str(base or DEFAULT_MICROSANDBOX_BASE).strip() or DEFAULT_MICROSANDBOX_BASE
+        with self._lock:
+            if self._state.get("running"):
+                return {"started": False, "prepare": dict(self._state), "message": "Base rebuild is already running."}
+            argv = self.build_argv(base_name)
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._state = {
+                "running": True,
+                "base": base_name,
+                "logPath": str(self.log_path),
+                "returncode": None,
+                "startedAt": now_ts(),
+                "finishedAt": None,
+                "lastError": "",
+            }
+            result = {"started": True, "prepare": dict(self._state)}
+        thread = threading.Thread(target=self._run_background, args=(argv,), daemon=True)
+        thread.start()
+        self._emit_update()
+        return result
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            return dict(self._state)
+
+    def logs(self) -> dict[str, Any]:
+        state = self.status()
+        text = ""
+        log_path = Path(state.get("logPath") or self.log_path)
+        try:
+            text = log_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            text = ""
+        except Exception as exc:
+            text = f"Unable to read base rebuild logs: {exc}"
+        return {"prepare": state, "text": text}
+
+    def build_argv(self, base: str) -> list[str]:
+        deploy_script = repo_root() / "deploy-sandbox.py"
+        if not deploy_script.is_file():
+            raise ManagerError(f"deploy-sandbox.py not found: {deploy_script}")
+        return [
+            sys.executable,
+            str(deploy_script),
+            "--prepare-base",
+            "--base",
+            base,
+        ]
+
+    def _run_background(self, argv: list[str]) -> None:
+        returncode = -1
+        last_error = ""
+        try:
+            with open(self.log_path, "w", encoding="utf-8") as log_file:
+                log_file.write(f"[{now_ts()}] {' '.join(argv)}\n")
+                log_file.flush()
+                process = subprocess.Popen(
+                    argv,
+                    cwd=str(repo_root()),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                returncode = process.wait()
+        except Exception as exc:
+            last_error = str(exc)
+            try:
+                with open(self.log_path, "a", encoding="utf-8") as log_file:
+                    log_file.write(f"\n[{now_ts()}] Base rebuild failed: {exc}\n")
+            except Exception:
+                pass
+        with self._lock:
+            self._state.update(
+                {
+                    "running": False,
+                    "returncode": returncode,
+                    "finishedAt": now_ts(),
+                    "lastError": last_error,
+                }
+            )
+        self._emit_update()
+
+    def _emit_update(self) -> None:
+        if self.socketio:
+            self.socketio.emit("manager:base-rebuild-updated", {"prepare": self.status()})
+
+
 class InstanceRuntimeController:
     """Dispatch profile lifecycle actions to runtime-specific controllers."""
 
@@ -1371,9 +1480,11 @@ def create_manager_app(
         cors_allowed_origins=[],
     )
     runtime = InstanceRuntimeController(registry, socketio=socketio)
+    base_rebuild = MicrosandboxBaseRebuildController(registry.paths.home, socketio=socketio)
     app = Flask(__name__, static_folder=None)
     app.config["MANAGER_REGISTRY"] = registry
     app.config["MANAGER_RUNTIME"] = runtime
+    app.config["MANAGER_BASE_REBUILD"] = base_rebuild
 
     @app.route("/")
     def index():
@@ -1410,6 +1521,18 @@ def create_manager_app(
             return jsonify({"snapshots": microsandbox_base_snapshots_payload()})
         except ManagerError as exc:
             return jsonify({"error": str(exc), "snapshots": []}), 503
+
+    @app.route("/api/microsandbox/base-snapshots/rebuild", methods=["POST"])
+    def api_microsandbox_base_rebuild():
+        payload = request.get_json(silent=True) or {}
+        try:
+            return jsonify(base_rebuild.start(base=payload.get("base")))
+        except ManagerError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/microsandbox/base-snapshots/rebuild/logs")
+    def api_microsandbox_base_rebuild_logs():
+        return jsonify(base_rebuild.logs())
 
     @app.route("/api/profiles", methods=["POST"])
     def api_create_profile():
