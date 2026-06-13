@@ -2523,6 +2523,105 @@ class TestMarkerWorker:
         assert final_layout["slots"][0]["task_queue"] == []
 
 
+class TestNotificationWorker:
+    def test_notification_emits_payload_and_routes_to_column(self, bp_dir):
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "type": "notification",
+            "row": 0, "col": 0,
+            "name": "Notify Review",
+            "activation": "manual",
+            "disposition": "review",
+            "watch_column": None,
+            "max_retries": 0,
+            "task_queue": [],
+            "state": "idle",
+            "icon": "bell-ring",
+            "color": "notification",
+            "notification": {
+                "toast": {
+                    "enabled": True,
+                    "template": "{ticket.title} reached {worker.name}.",
+                    "variant": "stage",
+                    "duration_ms": 6000,
+                },
+                "speech": {
+                    "enabled": True,
+                    "template": "Speak {ticket.priority} {ticket.title}.",
+                    "engine": "default",
+                    "voice": "",
+                    "rate": 1,
+                    "volume": 1,
+                },
+                "sound": {
+                    "enabled": True,
+                    "effect": "done",
+                    "repeat_count": 1,
+                    "gap_ms": 250,
+                    "volume": 1,
+                },
+                "flash": {
+                    "enabled": False,
+                    "sequence": [{"color": "#facc15", "duration_ms": 180}],
+                    "opacity": 0.35,
+                },
+                "policy": {
+                    "cooldown_ms": 1000,
+                    "dedupe_window_ms": 3000,
+                },
+            },
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Notification review task", priority="high")
+        assign_task(bp_dir, 0, task["id"])
+        socket = CapturingSocket()
+        start_worker(bp_dir, 0, socketio=socket, ws_id="ws-notify")
+        time.sleep(0.2)
+
+        updated = read_task(bp_dir, task["id"])
+        final_layout = _load_layout(bp_dir)
+        notification_events = [payload for event, payload, _to in socket.events if event == "notification:fire"]
+
+        assert updated["status"] == "review"
+        assert updated["assigned_to"] == ""
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert final_layout["slots"][0]["task_queue"] == []
+        assert len(notification_events) == 1
+        payload = notification_events[0]
+        assert payload["workspaceId"] == "ws-notify"
+        assert payload["worker"]["name"] == "Notify Review"
+        assert payload["ticket"]["id"] == task["id"]
+        assert payload["channels"]["toast"]["text"] == "Notification review task reached Notify Review."
+        assert payload["channels"]["speech"]["text"] == "Speak high Notification review task."
+
+    def test_notification_empty_queue_does_not_create_synthetic_ticket(self, bp_dir):
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "type": "notification",
+            "row": 0, "col": 0,
+            "name": "Empty Notification",
+            "activation": "manual",
+            "disposition": "review",
+            "watch_column": None,
+            "max_retries": 0,
+            "task_queue": [],
+            "state": "idle",
+            "icon": "bell-ring",
+            "color": "notification",
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        before = {task["id"] for task in list_tasks(bp_dir)}
+        start_worker(bp_dir, 0)
+        after = {task["id"] for task in list_tasks(bp_dir)}
+
+        assert after == before
+        final_layout = _load_layout(bp_dir)
+        assert final_layout["slots"][0]["state"] == "idle"
+        assert final_layout["slots"][0]["task_queue"] == []
+
+
 class TestWatchColumn:
     """Tests for on_queue / watch_column task claiming."""
 

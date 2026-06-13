@@ -1,0 +1,42 @@
+"""Frontend regression checks for Notification workers."""
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _read(rel_path: str) -> str:
+    return (ROOT / rel_path).read_text(encoding="utf-8")
+
+
+def test_notification_worker_runtime_is_loaded_and_initialized():
+    index = _read("static/index.html")
+    app = _read("static/app.js")
+
+    assert '<script src="/notification-worker.js"></script>' in index
+    assert "window.NotificationWorkers.init(socket)" in app
+
+
+def test_notification_worker_config_modal_fields_exist():
+    text = _read("static/components/WorkerConfigModal.js")
+
+    assert "isNotification()" in text
+    assert "form.notification.toast.template" in text
+    assert "form.notification.speech.template" in text
+    assert "form.notification.sound.effect" in text
+    assert "form.notification.flash.sequence" in text
+    assert "form.notification.policy.cooldown_ms" in text
+    assert "{ticket.title}" in text
+
+
+def test_notification_worker_runtime_caps_and_settings_exist():
+    text = _read("static/notification-worker.js")
+    toolbar = _read("static/components/TopToolbar.js")
+
+    assert "const VISIBLE_TOASTS = 3" in text
+    assert "notification:fire" in text
+    assert "prefers-reduced-motion: reduce" in text
+    assert "stopSpeech()" in text
+    assert "Notification workers" in toolbar
+    assert "onToggleNotificationFlag" in toolbar

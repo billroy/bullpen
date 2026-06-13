@@ -14,6 +14,7 @@ DEFAULT_PROVIDER_COLORS = {
     "shell": "#64748b",
     "service": "#0f766e",
     "marker": "#c8b38c",
+    "notification": "#d7ad4a",
 }
 
 DEFAULT_CONFIG = {

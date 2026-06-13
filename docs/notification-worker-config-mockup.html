@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notification Worker Config Mockup</title>
+<style>
+  :root {
+    --bg: #171a1f;
+    --panel: #242a31;
+    --panel-2: #2d343d;
+    --panel-3: #20262d;
+    --line: #3a424d;
+    --line-soft: #303842;
+    --text: #e8eaee;
+    --muted: #a3adb8;
+    --faint: #75808c;
+    --accent: #6b8076;
+    --accent-strong: #8ab6a1;
+    --notification: #d7ad4a;
+    --danger: #e07171;
+    --input: #1e242b;
+    --shadow: rgba(0, 0, 0, 0.38);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      linear-gradient(180deg, rgba(107, 128, 118, 0.10), transparent 260px),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  button, input, select, textarea {
+    font: inherit;
+  }
+
+  .page {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 28px;
+  }
+
+  .modal {
+    width: min(1120px, 100%);
+    max-height: calc(100vh - 56px);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 24px 70px var(--shadow);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .modal-header,
+  .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .modal-footer {
+    border-top: 1px solid var(--line-soft);
+    border-bottom: 0;
+    background: #20262d;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: 0;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 9px;
+    border: 1px solid rgba(215, 173, 74, 0.45);
+    border-radius: 7px;
+    background: rgba(215, 173, 74, 0.13);
+    color: #f0d28b;
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .theme-note {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-2);
+    color: var(--muted);
+    cursor: default;
+  }
+
+  .modal-body {
+    overflow: auto;
+    padding: 18px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 18px;
+    align-items: start;
+  }
+
+  .main {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .section {
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background: var(--panel-3);
+    overflow: hidden;
+  }
+
+  .section-header {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 650;
+  }
+
+  .section-subtitle {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .section-body {
+    padding: 12px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .form-grid.three {
+    grid-template-columns: minmax(0, 1.4fr) minmax(150px, 0.8fr) minmax(130px, 0.7fr);
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  label,
+  .field-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    min-height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--input);
+    color: var(--text);
+    padding: 8px 10px;
+  }
+
+  textarea {
+    min-height: 74px;
+    resize: vertical;
+  }
+
+  .inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-weight: 650;
+  }
+
+  .switch {
+    width: 38px;
+    height: 22px;
+    border-radius: 999px;
+    border: 1px solid rgba(138, 182, 161, 0.7);
+    background: rgba(138, 182, 161, 0.28);
+    position: relative;
+    flex: 0 0 auto;
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 2px;
+    right: 3px;
+    border-radius: 50%;
+    background: var(--accent-strong);
+  }
+
+  .switch.off {
+    border-color: var(--line);
+    background: #20252b;
+  }
+
+  .switch.off::after {
+    right: auto;
+    left: 3px;
+    background: #68737f;
+  }
+
+  .channel-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+    gap: 12px;
+  }
+
+  .channel-grid.compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .help-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+    color: var(--faint);
+    font-size: 12px;
+  }
+
+  .secondary-btn,
+  .primary-btn,
+  .danger-btn {
+    min-height: 34px;
+    border-radius: 7px;
+    padding: 7px 12px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .primary-btn {
+    border-color: rgba(138, 182, 161, 0.55);
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .danger-btn {
+    border-color: rgba(224, 113, 113, 0.5);
+    color: #ffc7c7;
+  }
+
+  .tokens {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .token {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 2px 7px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel-2);
+    color: #d9dde3;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .worker-card {
+    border: 1px solid rgba(215, 173, 74, 0.55);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #20252b;
+  }
+
+  .worker-card-header {
+    background: rgba(215, 173, 74, 0.25);
+    border-bottom: 1px solid rgba(215, 173, 74, 0.36);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .worker-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+  }
+
+  .status-pill {
+    border: 1px solid rgba(138, 182, 161, 0.5);
+    border-radius: 999px;
+    padding: 2px 8px;
+    color: #bfe3d1;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .worker-card-body {
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .mini-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .toast-preview {
+    border: 1px solid rgba(215, 173, 74, 0.45);
+    border-radius: 8px;
+    background: rgba(215, 173, 74, 0.12);
+    padding: 10px;
+    display: grid;
+    gap: 4px;
+  }
+
+  .toast-title {
+    color: #f0d28b;
+    font-weight: 700;
+  }
+
+  .audio-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .audio-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 1px solid var(--line-soft);
+    border-radius: 8px;
+    background: #1f252c;
+  }
+
+  .flash-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .flash-step {
+    min-height: 36px;
+    border-radius: 7px;
+    border: 1px solid var(--line);
+  }
+
+  .flash-step.one { background: rgba(250, 204, 21, 0.35); }
+  .flash-step.two { background: rgba(107, 128, 118, 0.30); }
+  .flash-step.empty { background: #1f252c; }
+
+  .footer-note {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  @media (max-width: 920px) {
+    .grid,
+    .channel-grid,
+    .form-grid,
+    .form-grid.three,
+    .channel-grid.compact {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .page {
+      padding: 12px;
+    }
+
+    .modal {
+      max-height: calc(100vh - 24px);
+    }
+  }
+</style>
+</head>
+<body>
+  <main class="page">
+    <section class="modal" aria-label="Notification worker configuration mockup">
+      <header class="modal-header">
+        <div class="title-row">
+          <h1>Configure Worker</h1>
+          <span class="badge">bell Notification</span>
+          <span class="theme-note">Mockup colors only; real dialog uses active theme tokens.</span>
+        </div>
+        <button class="icon-btn" aria-label="Close">x</button>
+      </header>
+
+      <div class="modal-body">
+        <div class="grid">
+          <div class="main">
+            <section class="section">
+              <div class="section-header">
+                <div>
+                  <div class="section-title">Routing</div>
+                  <div class="section-subtitle">Shared worker behavior</div>
+                </div>
+              </div>
+              <div class="section-body">
+                <div class="form-grid three">
+                  <div class="field">
+                    <label for="worker-name">Name</label>
+                    <input id="worker-name" value="Notify review">
+                  </div>
+                  <div class="field">
+                    <label for="activation">Input trigger</label>
+                    <select id="activation">
+                      <option>On drop</option>
+                      <option>Manual</option>
+                      <option>Watch column</option>
+                      <option>At time</option>
+                      <option>On interval</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="output">Output</label>
+                    <select id="output">
+                      <option>Review</option>
+                      <option>Done</option>
+                      <option>Blocked</option>
+                      <option>Pass right</option>
+                      <option>Worker...</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <label class="toggle"><span class="switch"></span> Toast</label>
+                <span class="section-subtitle">Stage-colored, separate from system toasts</span>
+              </div>
+              <div class="section-body">
+                <div class="channel-grid">
+                  <div class="field">
+                    <label for="toast-template">Message template</label>
+                    <textarea id="toast-template">{ticket.title} is ready for review.</textarea>
+                    <div class="help-row">
+                      <div class="tokens">
+                        <span class="token">{ticket.title}</span>
+                        <span class="token">{worker.name}</span>
+                        <span class="token">{workspace.name}</span>
+                      </div>
+                      <button class="secondary-btn">Insert variable</button>
+                    </div>
+                  </div>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="toast-variant">Variant</label>
+                      <select id="toast-variant">
+                        <option>Stage</option>
+                        <option>Success</option>
+                        <option>Warning</option>
+                        <option>Error</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="toast-duration">Duration</label>
+                      <input id="toast-duration" value="6000 ms">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <label class="toggle"><span class="switch"></span> Speech</label>
+                <span class="section-subtitle">Client-side, best effort</span>
+              </div>
+              <div class="section-body">
+                <div class="channel-grid">
+                  <div class="field">
+                    <label for="speech-template">Speech template</label>
+                    <textarea id="speech-template">{ticket.title} is ready for review.</textarea>
+                  </div>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="speech-engine">Engine</label>
+                      <select id="speech-engine">
+                        <option>Default</option>
+                        <option>Web Speech</option>
+                        <option>Kokoro</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="voice">Voice</label>
+                      <select id="voice">
+                        <option>Global default</option>
+                        <option>af_heart</option>
+                        <option>am_michael</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="rate">Rate</label>
+                      <input id="rate" value="1.0">
+                    </div>
+                    <div class="field">
+                      <label for="speech-volume">Volume</label>
+                      <input id="speech-volume" value="100%">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <label class="toggle"><span class="switch"></span> Sound</label>
+                <span class="section-subtitle">Synthesized effects from the existing audio engine</span>
+              </div>
+              <div class="section-body">
+                <div class="channel-grid compact">
+                  <div class="field">
+                    <label for="effect">Effect</label>
+                    <select id="effect">
+                      <option>Done chime</option>
+                      <option>Toast chime</option>
+                      <option>Warning tone</option>
+                      <option>Error buzz</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="repeat">Repeat</label>
+                    <input id="repeat" value="1">
+                  </div>
+                  <div class="field">
+                    <label for="sound-volume">Volume</label>
+                    <input id="sound-volume" value="80%">
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <label class="toggle"><span class="switch off"></span> Screen flash</label>
+                <span class="section-subtitle">Disabled by default when reduced motion is active</span>
+              </div>
+              <div class="section-body">
+                <div class="channel-grid">
+                  <div class="flash-strip" aria-label="Flash sequence preview">
+                    <div class="flash-step one"></div>
+                    <div class="flash-step two"></div>
+                    <div class="flash-step empty"></div>
+                    <div class="flash-step empty"></div>
+                  </div>
+                  <div class="form-grid">
+                    <div class="field">
+                      <label for="flash-color">Color</label>
+                      <input id="flash-color" value="#facc15">
+                    </div>
+                    <div class="field">
+                      <label for="flash-duration">Step duration</label>
+                      <input id="flash-duration" value="180 ms">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <div>
+                  <div class="section-title">Notification policy</div>
+                  <div class="section-subtitle">Client flood control and dedupe defaults</div>
+                </div>
+              </div>
+              <div class="section-body">
+                <div class="form-grid">
+                  <div class="field">
+                    <label for="cooldown">Cooldown</label>
+                    <input id="cooldown" value="1000 ms">
+                  </div>
+                  <div class="field">
+                    <label for="dedupe">Dedupe window</label>
+                    <input id="dedupe" value="3000 ms">
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside class="side">
+            <section class="worker-card">
+              <div class="worker-card-header">
+                <div class="worker-name">bell Notify review</div>
+                <span class="status-pill">IDLE</span>
+              </div>
+              <div class="worker-card-body">
+                <div class="mini-row"><span>Trigger</span><strong>On drop</strong></div>
+                <div class="mini-row"><span>Output</span><strong>Review</strong></div>
+                <div class="mini-row"><span>Channels</span><strong>Toast, speech, sound</strong></div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <div class="section-title">Toast preview</div>
+              </div>
+              <div class="section-body">
+                <div class="toast-preview">
+                  <div class="toast-title">bell Notify review</div>
+                  <div>Fix deploy preview is ready for review.</div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <div>
+                  <div class="section-title">Audio panel relationship</div>
+                  <div class="section-subtitle">Global controls live outside this modal</div>
+                </div>
+              </div>
+              <div class="section-body audio-list">
+                <div class="audio-item">
+                  <span>Notification workers</span>
+                  <span class="switch"></span>
+                </div>
+                <div class="audio-item">
+                  <span>Speech</span>
+                  <span class="switch"></span>
+                </div>
+                <div class="audio-item">
+                  <span>Kokoro model</span>
+                  <button class="secondary-btn">Load</button>
+                </div>
+                <div class="audio-item">
+                  <span>Screen flash</span>
+                  <span class="switch off"></span>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+
+      <footer class="modal-footer">
+        <button class="danger-btn">Remove</button>
+        <div class="footer-note">Mockup only: layout and labels, not live controls.</div>
+        <div class="inline">
+          <button class="secondary-btn">Cancel</button>
+          <button class="primary-btn">Save</button>
+        </div>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

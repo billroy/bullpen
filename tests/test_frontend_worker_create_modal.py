@@ -25,3 +25,5 @@ def test_worker_library_creation_waits_for_layout_echo_before_configuring():
     assert "type: 'shell'," in text
     assert "type: 'service'," in text
     assert "type: 'marker'," in text
+    assert "type: 'notification'," in text
+    assert "addNotificationWorker()" in text

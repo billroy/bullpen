@@ -539,7 +539,7 @@ def register_events(socketio, app):
         if not worker_type:
             worker_type = "ai" if profile_id is not None else ""
 
-        if worker_type not in ("ai", "shell", "service", "marker"):
+        if worker_type not in ("ai", "shell", "service", "marker", "notification"):
             emit("error", {"message": "worker:add requires a supported type"})
             return
 
@@ -669,27 +669,50 @@ def register_events(socketio, app):
                 "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
             }
         else:  # marker
-            base_name = fields.get("name") or "Marker"
-            worker = {
-                "type": "marker",
-                "row": row,
-                "col": col,
-                "name": _unique_name(str(base_name)),
-                "note": str(fields.get("note", "") or ""),
-                "activation": fields.get("activation", "on_drop"),
-                "disposition": fields.get("disposition", "review"),
-                "watch_column": None,
-                "max_retries": 0,
-                "trigger_time": None,
-                "trigger_interval_minutes": None,
-                "trigger_every_day": False,
-                "last_trigger_time": None,
-                "paused": False,
-                "task_queue": [],
-                "state": "idle",
-                "icon": "square-dot",
-                "color": "marker",
-            }
+            if worker_type == "marker":
+                base_name = fields.get("name") or "Marker"
+                worker = {
+                    "type": "marker",
+                    "row": row,
+                    "col": col,
+                    "name": _unique_name(str(base_name)),
+                    "note": str(fields.get("note", "") or ""),
+                    "activation": fields.get("activation", "on_drop"),
+                    "disposition": fields.get("disposition", "review"),
+                    "watch_column": None,
+                    "max_retries": 0,
+                    "trigger_time": None,
+                    "trigger_interval_minutes": None,
+                    "trigger_every_day": False,
+                    "last_trigger_time": None,
+                    "paused": False,
+                    "task_queue": [],
+                    "state": "idle",
+                    "icon": "square-dot",
+                    "color": "marker",
+                }
+            else:
+                base_name = fields.get("name") or "Notification worker"
+                worker = {
+                    "type": "notification",
+                    "row": row,
+                    "col": col,
+                    "name": _unique_name(str(base_name)),
+                    "activation": fields.get("activation", "on_drop"),
+                    "disposition": fields.get("disposition", "review"),
+                    "watch_column": None,
+                    "max_retries": 0,
+                    "trigger_time": None,
+                    "trigger_interval_minutes": None,
+                    "trigger_every_day": False,
+                    "last_trigger_time": None,
+                    "paused": False,
+                    "task_queue": [],
+                    "state": "idle",
+                    "notification": fields.get("notification") if isinstance(fields.get("notification"), dict) else {},
+                    "icon": "bell-ring",
+                    "color": "notification",
+                }
 
         # Ensure slots list is large enough
         while len(layout["slots"]) <= slot_index:

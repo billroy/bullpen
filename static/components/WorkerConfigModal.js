@@ -1,3 +1,55 @@
+const DEFAULT_NOTIFICATION_FORM = {
+  toast: {
+    enabled: true,
+    template: '{ticket.title} reached {worker.name}.',
+    variant: 'stage',
+    duration_ms: 6000,
+  },
+  speech: {
+    enabled: false,
+    template: '{ticket.title} is ready.',
+    voice: '',
+    engine: 'default',
+    rate: 1.0,
+    volume: 1.0,
+  },
+  sound: {
+    enabled: false,
+    effect: 'done',
+    repeat_count: 1,
+    gap_ms: 250,
+    volume: 1.0,
+  },
+  flash: {
+    enabled: false,
+    sequence: [{ color: '#facc15', duration_ms: 180 }],
+    opacity: 0.35,
+  },
+  policy: {
+    cooldown_ms: 1000,
+    dedupe_window_ms: 3000,
+  },
+};
+
+function cloneNotificationForm(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const merged = JSON.parse(JSON.stringify(DEFAULT_NOTIFICATION_FORM));
+  for (const key of Object.keys(merged)) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      merged[key] = { ...merged[key], ...source[key] };
+    }
+  }
+  if (Array.isArray(source.flash?.sequence)) {
+    merged.flash.sequence = source.flash.sequence.length
+      ? source.flash.sequence.map(step => ({
+          color: step?.color || '#facc15',
+          duration_ms: Number(step?.duration_ms || 180),
+        }))
+      : [{ color: '#facc15', duration_ms: 180 }];
+  }
+  return merged;
+}
+
 const WorkerConfigModal = {
   props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors', 'activeWorkspaceId'],
   emits: ['close', 'save', 'remove', 'save-profile'],
@@ -82,6 +134,7 @@ const WorkerConfigModal = {
             on_crash: w.on_crash || 'stay-crashed',
             stop_timeout_seconds: w.stop_timeout_seconds ?? 5,
             log_max_bytes: w.log_max_bytes ?? 5242880,
+            notification: cloneNotificationForm(w.notification),
           };
           this.servicePreview = null;
           this.servicePreviewError = '';
@@ -114,6 +167,9 @@ const WorkerConfigModal = {
     isMarker() {
       return this.form.type === 'marker';
     },
+    isNotification() {
+      return this.form.type === 'notification';
+    },
     isProcfileService() {
       return this.isService && this.form.command_source === 'procfile';
     },
@@ -124,7 +180,7 @@ const WorkerConfigModal = {
       return this.isAI && this.form.agent === 'opencode';
     },
     canPauseWorker() {
-      return this.isAI || this.isShell || this.isService;
+      return this.isAI || this.isShell || this.isService || this.isNotification;
     },
     isUntrustedAI() {
       return this.isAI && this.form.trust_mode === 'untrusted';
@@ -231,6 +287,7 @@ const WorkerConfigModal = {
             <span v-if="isShell" class="worker-type-badge">Shell</span>
             <span v-if="isService" class="worker-type-badge">Service</span>
             <span v-if="isMarker" class="worker-type-badge">Marker</span>
+            <span v-if="isNotification" class="worker-type-badge">Notification</span>
           </h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
         </div>
@@ -589,6 +646,144 @@ const WorkerConfigModal = {
             </div>
           </template>
 
+          <!-- Notification-only: toast, speech, sound, flash, policy -->
+          <template v-if="isNotification">
+            <div class="notification-config-block">
+              <div class="notification-channel">
+                <label class="form-label form-label-inline notification-channel-title">
+                  <input type="checkbox" v-model="form.notification.toast.enabled">
+                  Toast
+                </label>
+                <label class="form-label">
+                  Message template
+                  <textarea class="form-textarea" v-model="form.notification.toast.template" rows="3" maxlength="2000"
+                            placeholder="{ticket.title} reached {worker.name}."></textarea>
+                  <span class="form-hint">Variables: <code>{ticket.title}</code>, <code>{worker.name}</code>, <code>{workspace.name}</code></span>
+                </label>
+                <div class="form-row">
+                  <label class="form-label">
+                    Variant
+                    <select class="form-select" v-model="form.notification.toast.variant">
+                      <option value="stage">Stage</option>
+                      <option value="success">Success</option>
+                      <option value="warning">Warning</option>
+                      <option value="error">Error</option>
+                    </select>
+                  </label>
+                  <label class="form-label">
+                    Duration (ms)
+                    <input class="form-input" type="number" v-model.number="form.notification.toast.duration_ms" min="1000" max="30000">
+                  </label>
+                </div>
+              </div>
+
+              <div class="notification-channel">
+                <label class="form-label form-label-inline notification-channel-title">
+                  <input type="checkbox" v-model="form.notification.speech.enabled">
+                  Speech
+                </label>
+                <label class="form-label">
+                  Speech template
+                  <textarea class="form-textarea" v-model="form.notification.speech.template" rows="3" maxlength="2000"
+                            placeholder="{ticket.title} is ready."></textarea>
+                </label>
+                <div class="form-row">
+                  <label class="form-label">
+                    Engine
+                    <select class="form-select" v-model="form.notification.speech.engine">
+                      <option value="default">Default</option>
+                      <option value="web-speech">Web Speech</option>
+                      <option value="kokoro">Kokoro</option>
+                    </select>
+                  </label>
+                  <label class="form-label">
+                    Voice
+                    <input class="form-input" v-model="form.notification.speech.voice" placeholder="Global default">
+                  </label>
+                  <label class="form-label">
+                    Rate
+                    <input class="form-input" type="number" step="0.1" v-model.number="form.notification.speech.rate" min="0.5" max="2">
+                  </label>
+                  <label class="form-label">
+                    Volume
+                    <input class="form-input" type="number" step="0.1" v-model.number="form.notification.speech.volume" min="0" max="1">
+                  </label>
+                </div>
+                <span class="form-hint">Kokoro is preserved as a config option; the first implementation falls back to browser speech when available.</span>
+              </div>
+
+              <div class="notification-channel">
+                <label class="form-label form-label-inline notification-channel-title">
+                  <input type="checkbox" v-model="form.notification.sound.enabled">
+                  Sound
+                </label>
+                <div class="form-row">
+                  <label class="form-label">
+                    Effect
+                    <select class="form-select" v-model="form.notification.sound.effect">
+                      <option value="toast">Toast chime</option>
+                      <option value="start">Start</option>
+                      <option value="done">Done chime</option>
+                      <option value="move">Move tick</option>
+                      <option value="warning">Warning</option>
+                      <option value="error">Error</option>
+                      <option value="spawn">Spawn</option>
+                      <option value="despawn">Despawn</option>
+                    </select>
+                  </label>
+                  <label class="form-label">
+                    Repeat
+                    <input class="form-input" type="number" v-model.number="form.notification.sound.repeat_count" min="1" max="5">
+                  </label>
+                  <label class="form-label">
+                    Gap (ms)
+                    <input class="form-input" type="number" v-model.number="form.notification.sound.gap_ms" min="100" max="2000">
+                  </label>
+                  <label class="form-label">
+                    Volume
+                    <input class="form-input" type="number" step="0.1" v-model.number="form.notification.sound.volume" min="0" max="1">
+                  </label>
+                </div>
+              </div>
+
+              <div class="notification-channel">
+                <label class="form-label form-label-inline notification-channel-title">
+                  <input type="checkbox" v-model="form.notification.flash.enabled">
+                  Screen flash
+                </label>
+                <div class="shell-warning">
+                  Flash respects reduced-motion settings and is capped by the client runtime.
+                </div>
+                <div class="shell-env-list">
+                  <div v-for="(step, i) in form.notification.flash.sequence" :key="i" class="shell-env-row">
+                    <input class="form-input" v-model="step.color" placeholder="#facc15">
+                    <input class="form-input" type="number" v-model.number="step.duration_ms" min="50" max="1000" placeholder="180">
+                    <button class="btn btn-sm btn-danger" @click="removeFlashStep(i)" title="Remove">&times;</button>
+                  </div>
+                  <button class="btn btn-sm" @click="addFlashStep" :disabled="form.notification.flash.sequence.length >= 6">Add flash step</button>
+                </div>
+                <label class="form-label">
+                  Opacity
+                  <input class="form-input" type="number" step="0.05" v-model.number="form.notification.flash.opacity" min="0" max="0.5">
+                </label>
+              </div>
+
+              <div class="notification-channel">
+                <div class="notification-channel-title">Notification policy</div>
+                <div class="form-row">
+                  <label class="form-label">
+                    Cooldown (ms)
+                    <input class="form-input" type="number" v-model.number="form.notification.policy.cooldown_ms" min="0" max="60000">
+                  </label>
+                  <label class="form-label">
+                    Dedupe window (ms)
+                    <input class="form-input" type="number" v-model.number="form.notification.policy.dedupe_window_ms" min="0" max="300000">
+                  </label>
+                </div>
+              </div>
+            </div>
+          </template>
+
           <!-- Shared: activation, disposition, max retries -->
           <div v-if="!isService" class="form-row">
             <label class="form-label">
@@ -627,7 +822,7 @@ const WorkerConfigModal = {
           </div>
           <div v-if="!isService" class="form-row">
             <label class="form-label">
-              {{ isMarker ? 'Pass tickets to' : 'Output' }}
+              {{ (isMarker || isNotification) ? 'Pass tickets to' : 'Output' }}
               <select class="form-select" v-model="form.disposition">
                 <optgroup label="Columns">
                   <option v-for="col in columns" :key="col.key" :value="col.key">{{ col.label }}</option>
@@ -648,7 +843,7 @@ const WorkerConfigModal = {
               </select>
               <input v-if="form.disposition === 'random:'" class="form-input" v-model="form.random_name" placeholder="Worker name (blank matches all)" style="margin-top: 4px;">
             </label>
-            <label v-if="!isMarker" class="form-label">
+            <label v-if="!isMarker && !isNotification" class="form-label">
               Max Retries
               <select class="form-select" v-model.number="form.max_retries">
                 <option :value="0">0</option>
@@ -950,13 +1145,25 @@ const WorkerConfigModal = {
     removeEnv(i) {
       this.form.env.splice(i, 1);
     },
+    addFlashStep() {
+      const notification = this.form.notification || cloneNotificationForm();
+      if (!Array.isArray(notification.flash.sequence)) notification.flash.sequence = [];
+      if (notification.flash.sequence.length >= 6) return;
+      notification.flash.sequence.push({ color: '#facc15', duration_ms: 180 });
+    },
+    removeFlashStep(i) {
+      const sequence = this.form.notification?.flash?.sequence;
+      if (!Array.isArray(sequence)) return;
+      sequence.splice(i, 1);
+      if (!sequence.length) sequence.push({ color: '#facc15', duration_ms: 180 });
+    },
     onSave() {
       const fields = { ...this.form };
       if (fields.disposition === 'random:') {
         fields.disposition = 'random:' + (fields.random_name || '').trim();
       }
       delete fields.random_name;
-      if (this.isMarker) {
+      if (this.isMarker || this.isNotification) {
         delete fields.agent;
         delete fields.model;
         delete fields.expertise_prompt;
@@ -986,7 +1193,13 @@ const WorkerConfigModal = {
         delete fields.on_crash;
         delete fields.stop_timeout_seconds;
         delete fields.log_max_bytes;
-        fields.note = String(fields.note || '');
+        if (this.isMarker) {
+          fields.note = String(fields.note || '');
+          delete fields.notification;
+        } else {
+          delete fields.note;
+          fields.notification = cloneNotificationForm(fields.notification);
+        }
         fields.color = String(fields.color || '').trim();
       } else if (this.isShell || this.isService) {
         // Drop AI-only fields from the payload so server-side normalization
@@ -999,6 +1212,7 @@ const WorkerConfigModal = {
         delete fields.use_worktree;
         delete fields.auto_commit;
         delete fields.auto_pr;
+        delete fields.notification;
         fields.color = String(fields.color || '').trim();
         fields.env = (fields.env || [])
           .filter(e => e && String(e.key || '').trim())
@@ -1024,6 +1238,7 @@ const WorkerConfigModal = {
       } else {
         // Drop non-AI fields from AI payloads.
         delete fields.note;
+        delete fields.notification;
         delete fields.command;
         delete fields.cwd;
         delete fields.timeout_seconds;

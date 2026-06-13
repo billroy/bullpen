@@ -243,6 +243,55 @@ def test_marker_slot_preserves_color_override(tmp_workspace):
     assert slot["color"] == "#3a7bd5"
 
 
+def test_notification_slot_normalizes_defaults_and_preserves_config(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = normalize_worker_slot(
+        {
+            "type": "notification",
+            "row": 0,
+            "col": 0,
+            "name": "Notify Review",
+            "notification": {
+                "toast": {
+                    "enabled": True,
+                    "template": "{ticket.title} is ready.",
+                    "duration_ms": 999999,
+                },
+                "sound": {
+                    "enabled": True,
+                    "effect": "done",
+                    "repeat_count": 9,
+                },
+                "flash": {
+                    "enabled": True,
+                    "sequence": [{"color": "#FAcC15", "duration_ms": 25}],
+                    "opacity": 9,
+                },
+            },
+            "task_queue": ["ticket-1"],
+            "state": "working",
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["type"] == "notification"
+    assert slot["icon"] == "bell-ring"
+    assert slot["color"] == "notification"
+    assert slot["max_retries"] == 0
+    assert slot["notification"]["toast"]["template"] == "{ticket.title} is ready."
+    assert slot["notification"]["toast"]["duration_ms"] == 30000
+    assert slot["notification"]["sound"]["repeat_count"] == 5
+    assert slot["notification"]["flash"]["sequence"] == [{"color": "#facc15", "duration_ms": 50}]
+    assert slot["notification"]["flash"]["opacity"] == 0.5
+
+    clone = copy_worker_slot(slot, reset_runtime=True)
+    assert clone["notification"]["toast"]["template"] == "{ticket.title} is ready."
+    assert clone["task_queue"] == []
+    assert clone["state"] == "idle"
+
+
 def test_unknown_worker_type_transfer_preserves_fields(tmp_path):
     ws_a = str(tmp_path / "a")
     ws_b = str(tmp_path / "b")

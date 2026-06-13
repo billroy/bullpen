@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import random
+import re
 import signal
 import shutil
 import subprocess
@@ -354,7 +355,7 @@ def worker_automation_paused(bp_dir):
 
 def _worker_obeys_automation_pause(worker):
     """Return True for workers governed by workspace automation pause."""
-    return str((worker or {}).get("type") or "ai") in {"ai", "shell", "marker"}
+    return str((worker or {}).get("type") or "ai") in {"ai", "shell", "marker", "notification"}
 
 
 def worker_start_blocked(bp_dir, worker):
@@ -726,6 +727,9 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     if worker_type.type_id == "marker":
         _run_marker_worker(bp_dir, slot_index, socketio, ws_id)
         return
+    if worker_type.type_id == "notification":
+        _run_notification_worker(bp_dir, slot_index, socketio, ws_id)
+        return
     # Unknown or not-yet-runnable types (eval, unknown) surface a toast and
     # never enter the lifecycle.
     if socketio:
@@ -1060,6 +1064,212 @@ def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         worker["last_trigger_time"] = int(time.time())
         _clear_worker_retry_state(worker)
         _save_layout(bp_dir, layout)
+
+    _on_agent_success(
+        bp_dir,
+        slot_index,
+        task_id,
+        "",
+        socketio,
+        ws_id=ws_id,
+        disposition_override=disposition,
+        output_appender=lambda _worker: None,
+        allow_auto_actions=False,
+    )
+
+
+_NOTIFICATION_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\}")
+
+
+def _notification_context(bp_dir, slot_index, worker, task):
+    workspace = os.path.dirname(bp_dir)
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    return {
+        "ticket": {
+            "id": task.get("id", ""),
+            "title": task.get("title", ""),
+            "status": task.get("status", ""),
+            "priority": task.get("priority", ""),
+            "type": task.get("type", ""),
+            "assigned_to": task.get("assigned_to", ""),
+        },
+        "worker": {
+            "name": worker.get("name", "Notification"),
+            "type": worker.get("type", "notification"),
+            "slot_index": slot_index,
+        },
+        "workspace": {
+            "name": config.get("name") or os.path.basename(workspace) or workspace,
+            "path": workspace,
+        },
+    }
+
+
+def _render_notification_template(template, context, *, max_len, single_line=False):
+    text = str(template or "")
+
+    def _replace(match):
+        path = match.group(1).split(".")
+        value = context
+        for part in path:
+            if isinstance(value, dict) and part in value:
+                value = value[part]
+            else:
+                return ""
+        return str(value if value is not None else "")
+
+    rendered = _NOTIFICATION_PLACEHOLDER_RE.sub(_replace, text)
+    rendered = "".join(ch for ch in rendered if ch in "\n\t" or ord(ch) >= 32)
+    if single_line:
+        rendered = " ".join(rendered.split())
+    else:
+        rendered = re.sub(r"[ \t\r\f\v]+", " ", rendered).strip()
+    return rendered[:max_len]
+
+
+def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None):
+    config = worker.get("notification") if isinstance(worker.get("notification"), dict) else {}
+    context = _notification_context(bp_dir, slot_index, worker, task)
+    toast = config.get("toast") if isinstance(config.get("toast"), dict) else {}
+    speech = config.get("speech") if isinstance(config.get("speech"), dict) else {}
+    sound = config.get("sound") if isinstance(config.get("sound"), dict) else {}
+    flash = config.get("flash") if isinstance(config.get("flash"), dict) else {}
+    policy = config.get("policy") if isinstance(config.get("policy"), dict) else {}
+    created_at = _now_iso()
+
+    def _num(mapping, key, default, cast=float):
+        value = mapping.get(key, default)
+        if value is None:
+            value = default
+        try:
+            return cast(value)
+        except (TypeError, ValueError):
+            return cast(default)
+
+    return {
+        "id": f"notif_{_timestamp_id()}_{random.randrange(0x100000):05x}",
+        **({"workspaceId": ws_id} if ws_id else {}),
+        "slot": slot_index,
+        "worker": {
+            "name": worker.get("name", "Notification"),
+            "type": "notification",
+        },
+        "ticket": {
+            "id": task.get("id"),
+            "title": task.get("title", ""),
+        },
+        "channels": {
+            "toast": {
+                "enabled": bool(toast.get("enabled")),
+                "text": _render_notification_template(
+                    toast.get("template"),
+                    context,
+                    max_len=500,
+                    single_line=True,
+                ),
+                "variant": str(toast.get("variant") or "stage"),
+                "duration_ms": _num(toast, "duration_ms", 6000, int),
+            },
+            "speech": {
+                "enabled": bool(speech.get("enabled")),
+                "text": _render_notification_template(
+                    speech.get("template"),
+                    context,
+                    max_len=800,
+                    single_line=False,
+                ),
+                "voice": str(speech.get("voice") or ""),
+                "engine": str(speech.get("engine") or "default"),
+                "rate": _num(speech, "rate", 1.0, float),
+                "volume": _num(speech, "volume", 1.0, float),
+            },
+            "sound": {
+                "enabled": bool(sound.get("enabled")),
+                "effect": str(sound.get("effect") or "done"),
+                "repeat_count": _num(sound, "repeat_count", 1, int),
+                "gap_ms": _num(sound, "gap_ms", 250, int),
+                "volume": _num(sound, "volume", 1.0, float),
+            },
+            "flash": {
+                "enabled": bool(flash.get("enabled")),
+                "sequence": flash.get("sequence") if isinstance(flash.get("sequence"), list) else [],
+                "opacity": _num(flash, "opacity", 0.35, float),
+            },
+        },
+        "policy": {
+            "cooldown_ms": _num(policy, "cooldown_ms", 1000, int),
+            "dedupe_window_ms": _num(policy, "dedupe_window_ms", 3000, int),
+        },
+        "created_at": created_at,
+    }
+
+
+def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+    """Notification worker backend: emit client notification intent, then route."""
+    try:
+        preflight_layout = _load_layout(bp_dir)
+    except FileNotFoundError:
+        return
+    preflight_slots = preflight_layout.get("slots", [])
+    preflight_worker = preflight_slots[slot_index] if slot_index < len(preflight_slots) else None
+    if not preflight_worker:
+        return
+    if not preflight_worker.get("task_queue"):
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": (
+                    f"{preflight_worker.get('name', 'Notification')} notifies existing tickets only; "
+                    "drop a ticket on it or connect it to another worker."
+                ),
+                "level": "info",
+            }, ws_id)
+        return
+
+    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    if begun is None:
+        return
+    _layout, worker, task, task_id = begun
+
+    disposition = str(worker.get("disposition") or "").strip()
+    if not disposition:
+        _block_marker_run_failure(
+            bp_dir,
+            slot_index,
+            task_id,
+            "Notification workers require Output before they can run.",
+            socketio,
+            ws_id,
+        )
+        return
+    if not _valid_disposition(bp_dir, disposition):
+        _block_marker_run_failure(
+            bp_dir,
+            slot_index,
+            task_id,
+            f"Invalid disposition: {disposition}",
+            socketio,
+            ws_id,
+        )
+        return
+
+    payload = _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=ws_id)
+    with _write_lock:
+        layout = _load_layout(bp_dir)
+        slots = layout.get("slots", [])
+        if slot_index >= len(slots):
+            return
+        current_worker = slots[slot_index]
+        if not current_worker:
+            return
+        current_worker["last_trigger_time"] = int(time.time())
+        _clear_worker_retry_state(current_worker)
+        _save_layout(bp_dir, layout)
+
+    if socketio:
+        _ws_emit(socketio, "notification:fire", payload, ws_id)
 
     _on_agent_success(
         bp_dir,

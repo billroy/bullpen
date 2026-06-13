@@ -9,13 +9,48 @@ from server.model_aliases import normalize_model
 from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
 
 
-VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "eval"}
+VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "notification", "eval"}
 RUNTIME_FIELDS = {"task_queue", "state", "started_at"}
 SERVICE_TICKET_ACTIONS = {"start-if-stopped-else-restart", "restart", "start-if-stopped"}
 SERVICE_HEALTH_TYPES = {"none", "http", "shell"}
 SERVICE_CRASH_POLICIES = {"stay-crashed"}
 SERVICE_COMMAND_SOURCES = {"manual", "procfile"}
 SERVICE_LOG_MAX_BYTES_DEFAULT = 5 * 1024 * 1024
+NOTIFICATION_TOAST_VARIANTS = {"stage", "success", "warning", "error"}
+NOTIFICATION_SPEECH_ENGINES = {"default", "web-speech", "kokoro"}
+NOTIFICATION_SOUND_EFFECTS = {"toast", "start", "done", "move", "warning", "error", "spawn", "despawn"}
+DEFAULT_NOTIFICATION_CONFIG = {
+    "toast": {
+        "enabled": True,
+        "template": "{ticket.title} reached {worker.name}.",
+        "variant": "stage",
+        "duration_ms": 6000,
+    },
+    "speech": {
+        "enabled": False,
+        "template": "{ticket.title} is ready.",
+        "voice": "",
+        "engine": "default",
+        "rate": 1.0,
+        "volume": 1.0,
+    },
+    "sound": {
+        "enabled": False,
+        "effect": "done",
+        "repeat_count": 1,
+        "gap_ms": 250,
+        "volume": 1.0,
+    },
+    "flash": {
+        "enabled": False,
+        "sequence": [{"color": "#facc15", "duration_ms": 180}],
+        "opacity": 0.35,
+    },
+    "policy": {
+        "cooldown_ms": 1000,
+        "dedupe_window_ms": 3000,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -119,6 +154,24 @@ class MarkerWorkerType(WorkerType):
         return True
 
 
+class NotificationWorkerType(WorkerType):
+    type_id = "notification"
+
+    def validate_config(self, slot):
+        if not str(slot.get("name") or "").strip():
+            return ["Notification workers require a name."]
+        return []
+
+    def default_icon(self):
+        return "bell-ring"
+
+    def default_color(self):
+        return "notification"
+
+    def runnable(self):
+        return True
+
+
 class EvalWorkerType(WorkerType):
     type_id = "eval"
 
@@ -151,6 +204,7 @@ WORKER_TYPES = {
     "shell": ShellWorkerType(),
     "service": ServiceWorkerType(),
     "marker": MarkerWorkerType(),
+    "notification": NotificationWorkerType(),
     "eval": EvalWorkerType(),
 }
 
@@ -199,6 +253,97 @@ def _normalize_service_port(value):
         return int(value)
     except (TypeError, ValueError):
         return value
+
+
+def _safe_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _clamp_int(value, default, minimum, maximum):
+    return max(minimum, min(_safe_int(value, default), maximum))
+
+
+def _clamp_float(value, default, minimum, maximum):
+    return max(minimum, min(_safe_float(value, default), maximum))
+
+
+def _normalize_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off", ""}
+    return bool(value)
+
+
+def _normalize_hex_color(value, default="#facc15"):
+    text = str(value or "").strip()
+    if not text.startswith("#"):
+        return default
+    body = text[1:]
+    if len(body) not in (3, 6):
+        return default
+    if not all(ch in "0123456789abcdefABCDEF" for ch in body):
+        return default
+    return "#" + body.lower()
+
+
+def _normalize_notification_config(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    defaults = copy.deepcopy(DEFAULT_NOTIFICATION_CONFIG)
+    out = copy.deepcopy(defaults)
+
+    toast = raw.get("toast") if isinstance(raw.get("toast"), dict) else {}
+    out["toast"]["enabled"] = _normalize_bool(toast.get("enabled"), defaults["toast"]["enabled"])
+    out["toast"]["template"] = str(toast.get("template", defaults["toast"]["template"]))[:2000]
+    variant = str(toast.get("variant") or defaults["toast"]["variant"]).strip().lower()
+    out["toast"]["variant"] = variant if variant in NOTIFICATION_TOAST_VARIANTS else defaults["toast"]["variant"]
+    out["toast"]["duration_ms"] = _clamp_int(toast.get("duration_ms"), defaults["toast"]["duration_ms"], 1000, 30000)
+
+    speech = raw.get("speech") if isinstance(raw.get("speech"), dict) else {}
+    out["speech"]["enabled"] = _normalize_bool(speech.get("enabled"), defaults["speech"]["enabled"])
+    out["speech"]["template"] = str(speech.get("template", defaults["speech"]["template"]))[:2000]
+    out["speech"]["voice"] = str(speech.get("voice") or "")[:200]
+    engine = str(speech.get("engine") or defaults["speech"]["engine"]).strip().lower()
+    out["speech"]["engine"] = engine if engine in NOTIFICATION_SPEECH_ENGINES else defaults["speech"]["engine"]
+    out["speech"]["rate"] = _clamp_float(speech.get("rate"), defaults["speech"]["rate"], 0.5, 2.0)
+    out["speech"]["volume"] = _clamp_float(speech.get("volume"), defaults["speech"]["volume"], 0.0, 1.0)
+
+    sound = raw.get("sound") if isinstance(raw.get("sound"), dict) else {}
+    out["sound"]["enabled"] = _normalize_bool(sound.get("enabled"), defaults["sound"]["enabled"])
+    effect = str(sound.get("effect") or defaults["sound"]["effect"]).strip().lower()
+    out["sound"]["effect"] = effect if effect in NOTIFICATION_SOUND_EFFECTS else defaults["sound"]["effect"]
+    out["sound"]["repeat_count"] = _clamp_int(sound.get("repeat_count"), defaults["sound"]["repeat_count"], 1, 5)
+    out["sound"]["gap_ms"] = _clamp_int(sound.get("gap_ms"), defaults["sound"]["gap_ms"], 100, 2000)
+    out["sound"]["volume"] = _clamp_float(sound.get("volume"), defaults["sound"]["volume"], 0.0, 1.0)
+
+    flash = raw.get("flash") if isinstance(raw.get("flash"), dict) else {}
+    out["flash"]["enabled"] = _normalize_bool(flash.get("enabled"), defaults["flash"]["enabled"])
+    out["flash"]["opacity"] = _clamp_float(flash.get("opacity"), defaults["flash"]["opacity"], 0.0, 0.5)
+    sequence = flash.get("sequence")
+    clean_sequence = []
+    if isinstance(sequence, list):
+        for item in sequence[:6]:
+            if not isinstance(item, dict):
+                continue
+            clean_sequence.append({
+                "color": _normalize_hex_color(item.get("color"), defaults["flash"]["sequence"][0]["color"]),
+                "duration_ms": _clamp_int(item.get("duration_ms"), defaults["flash"]["sequence"][0]["duration_ms"], 50, 1000),
+            })
+    out["flash"]["sequence"] = clean_sequence or copy.deepcopy(defaults["flash"]["sequence"])
+
+    policy = raw.get("policy") if isinstance(raw.get("policy"), dict) else {}
+    out["policy"]["cooldown_ms"] = _clamp_int(policy.get("cooldown_ms"), defaults["policy"]["cooldown_ms"], 0, 60000)
+    out["policy"]["dedupe_window_ms"] = _clamp_int(policy.get("dedupe_window_ms"), defaults["policy"]["dedupe_window_ms"], 0, 300000)
+
+    for key, value in raw.items():
+        if key not in out:
+            out[key] = copy.deepcopy(value)
+    return out
 
 
 def _trim_trailing_empty_slots(slots):
@@ -301,6 +446,11 @@ def normalize_worker_slot(raw, *, index, config):
         slot["note"] = str(slot.get("note") or "")
         slot["icon"] = "square-dot"
         slot["color"] = str(slot.get("color") or "marker")
+        slot["max_retries"] = 0
+    elif type_id == "notification":
+        slot["notification"] = _normalize_notification_config(slot.get("notification"))
+        slot["icon"] = str(slot.get("icon") or "bell-ring")
+        slot["color"] = str(slot.get("color") or "notification")
         slot["max_retries"] = 0
 
     return slot

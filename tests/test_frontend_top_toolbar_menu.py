@@ -63,12 +63,13 @@ def test_app_wires_toolbar_export_import_events():
     assert "await _importZip(url, file, 'Workers import complete');" in text
 
 
-def test_worker_colors_menu_includes_opencode_and_marker():
+def test_worker_colors_menu_includes_opencode_marker_and_notification():
     text = _read("static/components/TopToolbar.js")
     utils = _read("static/utils.js")
     assert "class=\"provider-colors-title\">Worker colors</div>" in text
-    assert "['claude','codex','gemini','opencode','shell','service','marker']" in text
+    assert "['claude','codex','gemini','opencode','shell','service','marker','notification']" in text
     assert "opencode: '#63b3ed'" in utils
+    assert "notification: '#d7ad4a'" in utils
 
 
 def test_toolbar_exposes_worker_pause_and_stop_line_controls():

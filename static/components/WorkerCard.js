@@ -278,7 +278,7 @@ const WorkerCard = {
     },
     automationPausedForWorker() {
       const paused = this.$root?.state?.config?.worker_automation_paused === true;
-      return paused && ['ai', 'shell', 'marker'].includes(String(this.worker?.type || 'ai'));
+      return paused && ['ai', 'shell', 'marker', 'notification'].includes(String(this.worker?.type || 'ai'));
     },
     canPauseWorker() {
       return !this.isMarker && !this.isEval && !this.isUnknownType;
@@ -315,6 +315,9 @@ const WorkerCard = {
     },
     isMarker() {
       return isMarkerWorker(this.worker);
+    },
+    isNotification() {
+      return isNotificationWorker(this.worker);
     },
     isEval() {
       return isEvalWorker(this.worker);
@@ -376,6 +379,7 @@ const WorkerCard = {
     },
     emptyLabel() {
       if (this.isMarker) return 'Marker';
+      if (this.isNotification) return 'Notification';
       if (this.isService) return this.workerState === 'idle' ? 'Stopped' : this.workerState;
       if (this.isHeldQueue) return 'Waiting for Run';
       return 'Idle';

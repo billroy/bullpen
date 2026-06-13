@@ -634,6 +634,7 @@ const app = createApp({
     window._bullpenSocket = socket;
 
     if (window.EventSounds) window.EventSounds.init(socket);
+    if (window.NotificationWorkers) window.NotificationWorkers.init(socket);
 
     let hasConnectedOnce = false;
     let disconnectToastId = null;

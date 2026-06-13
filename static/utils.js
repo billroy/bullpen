@@ -13,7 +13,7 @@ const MODEL_OPTIONS = {
   opencode: [],
 };
 
-const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c' };
+const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c', notification: '#d7ad4a' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
   ? window.Vue.reactive({ overrides: {} })
@@ -29,6 +29,7 @@ function workerColorKey(worker) {
   if (worker?.type === 'shell') return 'shell';
   if (worker?.type === 'service') return 'service';
   if (worker?.type === 'marker') return 'marker';
+  if (worker?.type === 'notification') return 'notification';
   return worker?.agent;
 }
 
@@ -42,7 +43,7 @@ function isHumanWorker(worker) {
   return worker?.is_human === true || worker?.type === 'human' || worker?.agent === 'human';
 }
 
-const BUILTIN_WORKER_TYPES = new Set(['ai', 'shell', 'service', 'marker', 'eval', 'human']);
+const BUILTIN_WORKER_TYPES = new Set(['ai', 'shell', 'service', 'marker', 'notification', 'eval', 'human']);
 
 function isShellWorker(worker) {
   return worker?.type === 'shell';
@@ -54,6 +55,10 @@ function isServiceWorker(worker) {
 
 function isMarkerWorker(worker) {
   return worker?.type === 'marker';
+}
+
+function isNotificationWorker(worker) {
+  return worker?.type === 'notification';
 }
 
 function getServiceSiteUrl(worker, locationLike = window.location) {
@@ -90,6 +95,7 @@ function getWorkerTypeIcon(worker) {
   if (isShellWorker(worker)) return 'terminal';
   if (isServiceWorker(worker)) return 'server-cog';
   if (isMarkerWorker(worker)) return 'square-dot';
+  if (isNotificationWorker(worker)) return 'bell-ring';
   if (isEvalWorker(worker)) return 'flask-conical';
   if (isUnknownWorkerType(worker)) return 'circle-help';
   return 'bot';
@@ -99,6 +105,7 @@ function workerTypeLabel(worker) {
   if (isShellWorker(worker)) return 'Shell';
   if (isServiceWorker(worker)) return 'Service';
   if (isMarkerWorker(worker)) return 'Marker';
+  if (isNotificationWorker(worker)) return 'Notification';
   if (isEvalWorker(worker)) return 'Eval';
   if (isHumanWorker(worker)) return 'Human';
   if (isUnknownWorkerType(worker)) return worker.type;

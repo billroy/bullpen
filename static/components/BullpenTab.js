@@ -344,6 +344,12 @@ const BullpenTab = {
               <i data-lucide="square-dot" aria-hidden="true"></i>
               <span>Marker</span>
             </button>
+            <button class="worker-type-tab" :class="{ active: libraryMode === 'notification' }"
+                    role="tab" :aria-selected="libraryMode === 'notification'"
+                    @click="libraryMode = 'notification'">
+              <i data-lucide="bell-ring" aria-hidden="true"></i>
+              <span>Notification</span>
+            </button>
           </div>
           <div v-if="libraryMode === 'ai'" class="modal-body profile-library">
             <div v-for="p in sortedProfiles" :key="p.id"
@@ -379,6 +385,13 @@ const BullpenTab = {
                  @click="addMarkerWorker()">
               <span class="profile-name">Blank marker worker</span>
               <span class="profile-agent">label, jump target, pass-through</span>
+            </div>
+          </div>
+          <div v-else-if="libraryMode === 'notification'" class="modal-body profile-library">
+            <div class="profile-item profile-item--blank"
+                 @click="addNotificationWorker()">
+              <span class="profile-name">Blank notification worker</span>
+              <span class="profile-agent">toast, speech, sound, flash</span>
             </div>
           </div>
         </div>
@@ -1521,6 +1534,16 @@ const BullpenTab = {
         },
       });
     },
+    addNotificationWorker() {
+      this.createWorkerAndOpenConfig({
+        type: 'notification',
+        fields: {
+          name: 'Notification worker',
+          activation: 'on_drop',
+          disposition: 'review',
+        },
+      });
+    },
     nextEmptySlotIndex() {
       const slots = this.layout?.slots || [];
       const idx = slots.findIndex(slot => !slot);
@@ -1534,6 +1557,7 @@ const BullpenTab = {
         'health_type', 'health_url', 'health_command', 'health_interval_seconds',
         'health_timeout_seconds', 'health_failure_threshold', 'on_crash',
         'stop_timeout_seconds', 'log_max_bytes', 'color', 'avatar'];
+      fields.push('notification');
       const copy = {};
       for (const key of fields) {
         if (worker[key] !== undefined) copy[key] = JSON.parse(JSON.stringify(worker[key]));

@@ -37,6 +37,8 @@ const TopToolbar = {
       eventSoundFlags: (window.EventSounds && window.EventSounds.getFlags())
         || { ...(window.EVENT_SOUND_FLAGS_DEFAULTS || {}) },
       eventSoundLabels: window.EVENT_SOUND_LABELS || [],
+      notificationFlags: (window.NotificationWorkers && window.NotificationWorkers.getFlags())
+        || { ...(window.NOTIFICATION_WORKER_FLAGS_DEFAULTS || {}) },
     };
   },
   computed: {
@@ -130,7 +132,8 @@ const TopToolbar = {
     },
     audioButtonTitle() {
       const eventState = this.eventSoundFlags.enabled ? 'event sounds on' : 'event sounds off';
-      return `Audio: ${this.ambientPresetLabel}, ${this.ambientVolume}%, ${eventState}`;
+      const notificationState = this.notificationFlags.enabled ? 'notifications on' : 'notifications off';
+      return `Audio: ${this.ambientPresetLabel}, ${this.ambientVolume}%, ${eventState}, ${notificationState}`;
     },
   },
   watch: {
@@ -315,6 +318,15 @@ const TopToolbar = {
       const next = !this.eventSoundFlags[key];
       window.EventSounds.setFlag(key, next);
       this.eventSoundFlags = { ...this.eventSoundFlags, [key]: next };
+    },
+    onToggleNotificationFlag(key) {
+      if (!window.NotificationWorkers) return;
+      const next = !this.notificationFlags[key];
+      window.NotificationWorkers.setFlag(key, next);
+      this.notificationFlags = { ...this.notificationFlags, [key]: next };
+    },
+    onStopNotificationSpeech() {
+      if (window.NotificationWorkers) window.NotificationWorkers.stopSpeech();
     },
     onPreviewEventSound(previewMethod) {
       if (window.ambientAudio && typeof window.ambientAudio[previewMethod] === 'function') {
@@ -640,6 +652,43 @@ const TopToolbar = {
               </div>
               <div class="event-sounds-divider"></div>
               <div class="toolbar-audio-panel-section">
+                <div class="toolbar-audio-panel-title">Notification workers</div>
+                <label class="event-sounds-row event-sounds-master">
+                  <input
+                    type="checkbox"
+                    :checked="notificationFlags.enabled"
+                    @change="onToggleNotificationFlag('enabled')"
+                  >
+                  <span class="event-sounds-row-label">All notification workers</span>
+                </label>
+                <label class="event-sounds-row">
+                  <span class="event-sounds-row-main">
+                    <input type="checkbox" :checked="notificationFlags.toasts" :disabled="!notificationFlags.enabled" @change="onToggleNotificationFlag('toasts')">
+                    <span class="event-sounds-row-label">Toasts</span>
+                  </span>
+                </label>
+                <label class="event-sounds-row">
+                  <span class="event-sounds-row-main">
+                    <input type="checkbox" :checked="notificationFlags.sounds" :disabled="!notificationFlags.enabled" @change="onToggleNotificationFlag('sounds')">
+                    <span class="event-sounds-row-label">Sounds</span>
+                  </span>
+                </label>
+                <div class="event-sounds-row">
+                  <label class="event-sounds-row-main">
+                    <input type="checkbox" :checked="notificationFlags.speech" :disabled="!notificationFlags.enabled" @change="onToggleNotificationFlag('speech')">
+                    <span class="event-sounds-row-label">Speech</span>
+                  </label>
+                  <button class="btn btn-sm event-sounds-preview" @click="onStopNotificationSpeech" title="Stop speech">Stop</button>
+                </div>
+                <label class="event-sounds-row">
+                  <span class="event-sounds-row-main">
+                    <input type="checkbox" :checked="notificationFlags.flash" :disabled="!notificationFlags.enabled" @change="onToggleNotificationFlag('flash')">
+                    <span class="event-sounds-row-label">Screen flash</span>
+                  </span>
+                </label>
+              </div>
+              <div class="event-sounds-divider"></div>
+              <div class="toolbar-audio-panel-section">
                 <div class="toolbar-audio-panel-title">Event sounds</div>
                 <label class="event-sounds-row event-sounds-master">
                   <input
@@ -682,7 +731,7 @@ const TopToolbar = {
             </button>
             <div v-if="showProviderColorsMenu" class="project-menu toolbar-menu provider-colors-menu">
               <div class="provider-colors-title">Worker colors</div>
-              <div class="provider-colors-row" v-for="agent in ['claude','codex','gemini','opencode','shell','service','marker']" :key="agent">
+              <div class="provider-colors-row" v-for="agent in ['claude','codex','gemini','opencode','shell','service','marker','notification']" :key="agent">
                 <span class="provider-colors-swatch" :style="{ background: providerColorValue(agent) }"></span>
                 <label class="provider-colors-label">{{ agent }}</label>
                 <input
