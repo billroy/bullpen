@@ -865,6 +865,21 @@ class TestWorkerEvents:
         assert worker["state"] == "idle"
         assert worker["task_queue"] == []
 
+    def test_add_marker_worker_at_sparse_coordinate(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "coord": {"col": 3, "row": 2},
+            "type": "marker",
+            "fields": {"name": "Blank Marker"},
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout is not None
+        worker = next(s for s in layout["slots"] if s)
+        assert worker["type"] == "marker"
+        assert worker["name"] == "Blank Marker"
+        assert worker["col"] == 3
+        assert worker["row"] == 2
+
     def test_configure_marker_worker_preserves_color_override(self, client):
         c, _ = client
         c.emit("worker:add", {

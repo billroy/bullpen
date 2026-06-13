@@ -18,6 +18,8 @@ const BullpenTab = {
       goToError: '',
       showHelp: false,
       selectedAddCoord: null,
+      pendingWorkerAdd: null,
+      pendingWorkerAddTimer: null,
       hoveredCoord: null,
       selectedCell: null,
       selectionAnchor: null,
@@ -738,6 +740,12 @@ const BullpenTab = {
         this.reconcilePendingGridSize();
       },
     },
+    layout: {
+      deep: true,
+      handler() {
+        this.resolvePendingWorkerAdd();
+      },
+    },
   },
   mounted() {
     this.updateViewportSize();
@@ -755,6 +763,7 @@ const BullpenTab = {
     this._teardownColumnResizeListeners?.();
     this._teardownRowResizeListeners?.();
     this._teardownCardVerticalResizeListeners?.();
+    if (this.pendingWorkerAddTimer) clearTimeout(this.pendingWorkerAddTimer);
   },
   methods: {
     clampColumnWidth(value) {
@@ -1436,15 +1445,37 @@ const BullpenTab = {
       this.selectedAddCoord = null;
       this.$nextTick(() => this.$refs.viewport?.focus());
     },
+    clearPendingWorkerAdd() {
+      if (this.pendingWorkerAddTimer) {
+        clearTimeout(this.pendingWorkerAddTimer);
+        this.pendingWorkerAddTimer = null;
+      }
+      this.pendingWorkerAdd = null;
+    },
+    resolvePendingWorkerAdd() {
+      const pending = this.pendingWorkerAdd;
+      if (!pending?.coord) return;
+      const item = this.itemAtCoord(pending.coord);
+      if (!item) return;
+      if (pending.type && item.worker?.type !== pending.type) return;
+      this.clearPendingWorkerAdd();
+      this.$emit('configure-worker', item.slotIndex);
+    },
     createWorkerAndOpenConfig({ type, profile, fields }) {
-      const slot = this.nextEmptySlotIndex();
+      if (this.pendingWorkerAdd) return;
+      const coord = this.selectedAddCoord ? { ...this.selectedAddCoord } : null;
+      this.pendingWorkerAdd = { coord, type };
+      if (this.pendingWorkerAddTimer) clearTimeout(this.pendingWorkerAddTimer);
+      this.pendingWorkerAddTimer = setTimeout(() => {
+        this.pendingWorkerAddTimer = null;
+        this.pendingWorkerAdd = null;
+      }, 5000);
       this.$emit('add-worker', {
-        coord: this.selectedAddCoord,
+        coord,
         profile,
         type,
         fields,
       });
-      this.$emit('configure-worker', slot);
       this.closeLibrary();
     },
     addFromLibrary(profileId) {
