@@ -90,7 +90,7 @@ const LeftPane = {
               <i class="worker-type-icon worker-type-icon--roster" :data-lucide="workerTypeIcon(w)" aria-hidden="true"></i>
               <span class="roster-label">{{ w.name }}</span>
             </span>
-            <span class="status-pill" :class="'status-' + (w.state || 'idle')">{{ workerStatusLabel(w) }}</span>
+            <span class="status-pill" :class="'status-' + workerStatusClass(w)">{{ workerStatusLabel(w) }}</span>
           </div>
         </div>
       </div>
@@ -210,6 +210,8 @@ const LeftPane = {
           slot: e.slot,
           name: s.name,
           state: s.state || 'idle',
+          paused: s.paused === true,
+          activation: s.activation,
           retry_at: s.retry_at,
           retry_attempt: s.retry_attempt,
           retry_max: s.retry_max,
@@ -349,7 +351,11 @@ const LeftPane = {
       return getWorkerTypeIcon(worker);
     },
     workerStatusLabel(worker) {
+      if (worker?.paused === true) return 'PAUSED';
       const state = (worker?.state || 'idle').toUpperCase();
+      if (state === 'IDLE' && worker?.activation === 'manual' && Number(worker?.taskQueueLength || 0) > 0) {
+        return 'WAITING FOR RUN';
+      }
       if (state === 'RETRYING') {
         const attempt = Number(worker?.retry_attempt || 0);
         const max = Number(worker?.retry_max || 0);
@@ -358,6 +364,9 @@ const LeftPane = {
       if (state !== 'WORKING') return state;
       const queueCount = Math.max(1, Number(worker?.taskQueueLength || 0));
       return `${state} (${queueCount})`;
+    },
+    workerStatusClass(worker) {
+      return worker?.state || 'idle';
     },
     unseenCount(wsId) {
       if (!this.workspaces || !this.workspaces[wsId]) return 0;
