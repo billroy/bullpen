@@ -10,9 +10,10 @@ const MODEL_OPTIONS = {
   ],
   codex: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'],
   gemini: ['flash', 'flash-lite', 'gemini-3-flash-preview'],
+  opencode: [],
 };
 
-const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', shell: '#64748b', service: '#0f766e', marker: '#c8b38c' };
+const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
   ? window.Vue.reactive({ overrides: {} })

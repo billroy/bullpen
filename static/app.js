@@ -2008,6 +2008,7 @@ const app = createApp({
         :grid-cols="state.config.grid?.cols || 6"
         :provider-colors="currentProviderColors"
         :default-provider-colors="defaultProviderColors"
+        :active-workspace-id="activeWorkspaceId"
         @close="closeWorkerConfig"
         @save="saveWorkerConfig"
         @remove="removeWorker"

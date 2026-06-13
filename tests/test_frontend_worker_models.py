@@ -39,6 +39,23 @@ def test_gemini_model_options_present():
     assert "'gemini-2.0-flash'" not in text
 
 
+def test_opencode_uses_catalog_backed_model_picker():
+    utils = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
+    modal = (ROOT / "static" / "components" / "WorkerConfigModal.js").read_text(encoding="utf-8")
+    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "opencode: []" in utils
+    assert '<option value="opencode">OpenCode</option>' in modal
+    assert "isOpenCodeAgent()" in modal
+    assert "/api/models/opencode" in modal
+    assert "opencodeModelProvider" in modal
+    assert "filteredOpenCodeModels" in modal
+    assert "refreshOpenCodeModels" in modal
+    assert 'placeholder="provider/model"' in modal
+    assert "BULLPEN_OPENCODE_PATH" in modal
+    assert ':active-workspace-id="activeWorkspaceId"' in app
+
+
 def test_model_options_defined_in_shared_constant():
     """Both components must use MODEL_OPTIONS from utils.js, not inline lists."""
     utils = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")

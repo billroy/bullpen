@@ -1,5 +1,5 @@
 const WorkerConfigModal = {
-  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors'],
+  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors', 'activeWorkspaceId'],
   emits: ['close', 'save', 'remove', 'save-profile'],
   data() {
     return {
@@ -13,6 +13,12 @@ const WorkerConfigModal = {
       servicePreviewSeq: 0,
       servicePreviewTimer: null,
       workerColorPickerInput: null,
+      opencodeModels: [],
+      opencodeModelsStatus: '',
+      opencodeModelsError: '',
+      opencodeModelsLoading: false,
+      opencodeModelProvider: '',
+      opencodeModelSearch: '',
     };
   },
   watch: {
@@ -81,6 +87,8 @@ const WorkerConfigModal = {
           this.servicePreviewError = '';
           this.serviceSuggestedPort = null;
           this.servicePortAutoFilled = false;
+          this.syncOpenCodeModelProvider();
+          if (this.isOpenCodeAgent) this.ensureOpenCodeModels();
           this.scheduleServicePreview();
         }
       }
@@ -112,6 +120,9 @@ const WorkerConfigModal = {
     isAI() {
       return this.form.type === 'ai' || this.form.type == null;
     },
+    isOpenCodeAgent() {
+      return this.isAI && this.form.agent === 'opencode';
+    },
     canPauseWorker() {
       return this.isAI || this.isShell || this.isService;
     },
@@ -126,6 +137,41 @@ const WorkerConfigModal = {
     },
     modelOptions() {
       return MODEL_OPTIONS[this.form.agent] || ['default'];
+    },
+    opencodeProviders() {
+      const providers = this.opencodeModels
+        .map(model => String(model.provider || '').trim())
+        .filter(Boolean);
+      const currentProvider = this.currentOpenCodeProvider;
+      if (currentProvider) providers.unshift(currentProvider);
+      return [...new Set(providers)].sort((a, b) => a.localeCompare(b));
+    },
+    currentOpenCodeProvider() {
+      const model = String(this.form.model || '').trim();
+      if (!model.includes('/')) return '';
+      return model.split('/', 1)[0];
+    },
+    filteredOpenCodeModels() {
+      const provider = String(this.opencodeModelProvider || '').trim();
+      const query = String(this.opencodeModelSearch || '').trim().toLowerCase();
+      return this.opencodeModels.filter(model => {
+        if (provider && model.provider !== provider) return false;
+        if (!query) return true;
+        const id = String(model.id || '').toLowerCase();
+        const label = String(model.model || '').toLowerCase();
+        return id.includes(query) || label.includes(query);
+      });
+    },
+    isOpenCodeModelInCatalog() {
+      const current = String(this.form.model || '').trim();
+      return !!current && this.opencodeModels.some(model => model.id === current);
+    },
+    opencodeCatalogHint() {
+      if (this.opencodeModelsLoading) return 'Loading OpenCode models...';
+      if (this.opencodeModelsError) return this.opencodeModelsError;
+      if (!this.opencodeModels.length && this.opencodeModelsStatus === 'ok') return 'No OpenCode models returned. Enter a custom provider/model value.';
+      if (this.opencodeModelsStatus === 'unavailable') return 'OpenCode CLI is not available. Install OpenCode or set BULLPEN_OPENCODE_PATH, then enter a custom provider/model value if needed.';
+      return '';
     },
     passAvailability() {
       const rows = this.gridRows || 4;
@@ -143,7 +189,7 @@ const WorkerConfigModal = {
       return { up, down, left, right, any: up || down || left || right };
     },
     showCustomModel() {
-      return !this.modelOptions.includes(this.form.model);
+      return !this.isOpenCodeAgent && !this.modelOptions.includes(this.form.model);
     },
     modelSelectValue() {
       return this.modelOptions.includes(this.form.model) ? this.form.model : '__custom__';
@@ -225,9 +271,10 @@ const WorkerConfigModal = {
                   <option value="claude">Claude</option>
                   <option value="codex">Codex</option>
                   <option value="gemini">Gemini</option>
+                  <option value="opencode">OpenCode</option>
                 </select>
               </label>
-              <label class="form-label">
+              <label v-if="!isOpenCodeAgent" class="form-label">
                 Model
                 <select class="form-select" :value="modelSelectValue" @change="onModelSelect">
                   <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
@@ -236,6 +283,41 @@ const WorkerConfigModal = {
                 <input v-if="showCustomModel" class="form-input" v-model="form.model" placeholder="Enter model slug" style="margin-top: 4px;">
               </label>
             </div>
+            <template v-if="isOpenCodeAgent">
+              <div class="form-row">
+                <label class="form-label">
+                  Model Provider
+                  <select class="form-select" v-model="opencodeModelProvider" @change="onOpenCodeProviderChange">
+                    <option value="">All providers</option>
+                    <option v-for="provider in opencodeProviders" :key="provider" :value="provider">{{ provider }}</option>
+                  </select>
+                </label>
+                <label class="form-label">
+                  Search Models
+                  <input class="form-input" v-model="opencodeModelSearch" placeholder="Search OpenCode models">
+                </label>
+                <label class="form-label">
+                  Catalog
+                  <button type="button" class="btn btn-sm" @click="refreshOpenCodeModels" :disabled="opencodeModelsLoading">
+                    {{ opencodeModelsLoading ? 'Refreshing...' : 'Refresh' }}
+                  </button>
+                </label>
+              </div>
+              <label class="form-label">
+                Model
+                <select class="form-select" :value="form.model" @change="onOpenCodeModelSelect">
+                  <option value="">Select a model...</option>
+                  <option v-if="form.model && !isOpenCodeModelInCatalog" :value="form.model">{{ form.model }}</option>
+                  <option v-for="model in filteredOpenCodeModels" :key="model.id" :value="model.id">{{ model.id }}</option>
+                </select>
+                <span v-if="opencodeCatalogHint" class="form-hint">{{ opencodeCatalogHint }}</span>
+              </label>
+              <label class="form-label">
+                Custom Model
+                <input class="form-input" v-model="form.model" placeholder="provider/model">
+                <span class="form-hint">OpenCode model IDs are passed through as <code>provider/model</code>.</span>
+              </label>
+            </template>
           </template>
 
           <!-- Shell-only: command, delivery, cwd, timeout, env -->
@@ -732,6 +814,12 @@ const WorkerConfigModal = {
       this.onSave();
     },
     onAgentChange() {
+      if (this.form.agent === 'opencode') {
+        if (!String(this.form.model || '').includes('/')) this.form.model = '';
+        this.syncOpenCodeModelProvider();
+        this.ensureOpenCodeModels();
+        return;
+      }
       this.form.model = this.modelOptions[0];
     },
     onTrustModeChange() {
@@ -746,6 +834,57 @@ const WorkerConfigModal = {
       } else {
         this.form.model = e.target.value;
       }
+    },
+    syncOpenCodeModelProvider() {
+      const currentProvider = this.currentOpenCodeProvider;
+      if (currentProvider) {
+        this.opencodeModelProvider = currentProvider;
+      } else if (!this.opencodeModelProvider && this.opencodeProviders.length === 1) {
+        this.opencodeModelProvider = this.opencodeProviders[0];
+      }
+    },
+    ensureOpenCodeModels() {
+      if (this.opencodeModels.length || this.opencodeModelsLoading) return;
+      this.loadOpenCodeModels();
+    },
+    async loadOpenCodeModels({ refresh = false } = {}) {
+      this.opencodeModelsLoading = true;
+      this.opencodeModelsError = '';
+      try {
+        const params = new URLSearchParams();
+        const workspaceId = this.activeWorkspaceId || this.$root?.activeWorkspaceId || '';
+        if (workspaceId) params.set('workspaceId', workspaceId);
+        if (refresh) params.set('refresh', '1');
+        const query = params.toString();
+        const resp = await fetch(`/api/models/opencode${query ? `?${query}` : ''}`, {
+          credentials: 'same-origin',
+        });
+        const data = await resp.json();
+        this.opencodeModelsStatus = data.status || (resp.ok ? 'ok' : 'error');
+        this.opencodeModels = Array.isArray(data.models) ? data.models : [];
+        if (!resp.ok || this.opencodeModelsStatus === 'error') {
+          this.opencodeModelsError = data.error || 'OpenCode model catalog is unavailable. Enter a custom provider/model value.';
+        } else {
+          this.opencodeModelsError = '';
+        }
+        this.syncOpenCodeModelProvider();
+      } catch (err) {
+        this.opencodeModelsStatus = 'error';
+        this.opencodeModels = [];
+        this.opencodeModelsError = err.message || 'OpenCode model catalog is unavailable. Enter a custom provider/model value.';
+      } finally {
+        this.opencodeModelsLoading = false;
+      }
+    },
+    refreshOpenCodeModels() {
+      return this.loadOpenCodeModels({ refresh: true });
+    },
+    onOpenCodeProviderChange() {
+      this.opencodeModelSearch = '';
+    },
+    onOpenCodeModelSelect(e) {
+      this.form.model = e.target.value || '';
+      this.syncOpenCodeModelProvider();
     },
     onOverlayClick() {
       if (this.overlayMouseDown) this.$emit('close');

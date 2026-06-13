@@ -358,8 +358,8 @@ Phase status:
 | 0. Contract spike and fixtures | Complete | Contract captured in `docs/opencode-contract.md` |
 | 1. Backend adapter and provider registration | Complete | Adapter/validation/hardening tests passed |
 | 2. Model catalog backend API | Complete | Catalog API tests passed |
-| 3. Worker configuration UI | Not started | Commit after UI/manual picker check |
-| 4. Worker lifecycle integration and smoke test | Blocked on Phase 3 | Commit after fake lifecycle and local smoke |
+| 3. Worker configuration UI | Complete | Catalog-backed inline picker added; static and syntax checks passed |
+| 4. Worker lifecycle integration and smoke test | Ready | Commit after fake lifecycle and local smoke |
 | 5. Live Agent Chat support | Blocked on Phase 4 | Commit after chat tests/manual check |
 | 6. Setup, manager, Docker, and Microsandbox | Blocked on Phase 5 | Commit after setup/deploy checks |
 | 7. Hardening, docs, and release readiness | Blocked on Phase 6 | Commit after release-readiness review |
@@ -600,9 +600,25 @@ Verification:
 
 Phase-end checkpoint:
 
-- Capture a short UI note in this doc if the picker uses a modal or inline
-  layout.
-- Confirm no regressions to Claude/Codex/Gemini model selection.
+- Completed with an inline OpenCode-only picker in the existing worker config
+  modal:
+  - AI provider dropdown now includes OpenCode.
+  - OpenCode workers use a catalog-backed provider filter, search input, model
+    selector, refresh button, and custom `provider/model` input.
+  - Claude, Codex, and Gemini remain on the existing static `MODEL_OPTIONS`
+    selector.
+  - The model catalog request is scoped with the active workspace ID.
+  - Frontend defaults and the worker color menu include OpenCode `#63b3ed`.
+- Focused verification passed:
+  - `node --check static/components/WorkerConfigModal.js`
+  - `node --check static/components/TopToolbar.js`
+  - `node --check static/utils.js`
+  - `node --check static/app.js`
+  - `pytest tests/test_frontend_worker_models.py tests/test_frontend_top_toolbar_menu.py tests/test_opencode_models.py tests/test_agents.py tests/test_usage.py tests/test_validation.py tests/test_prompt_hardening.py tests/test_workers.py -q`
+    (`299 passed`)
+- Browser smoke check reached the running Bullpen app, but stopped at the
+  sign-in page. A signed-in manual check of save/reopen remains part of Phase
+  4's lifecycle smoke.
 
 Commit:
 
