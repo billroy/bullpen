@@ -798,6 +798,23 @@ class TestWorkerEvents:
         assert updated["status"] == "review"
         assert updated["assigned_to"] == ""
 
+    def test_task_assign_to_value_worker_emits_error(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Budget", "value": "3", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("task:create", {"title": "Cannot drop on value"})
+        task = get_event(c, "task:created")
+        c.emit("task:assign", {"task_id": task["id"], "slot": 0})
+
+        error = get_event(c, "error")
+        assert error is not None
+        assert "cannot accept tickets" in error["message"]
+
     def test_add_unconfigured_worker_uses_safe_defaults(self, client):
         c, _ = client
         c.emit("worker:add", {"slot": 0, "profile": "unconfigured-worker"})

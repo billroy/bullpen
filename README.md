@@ -195,6 +195,19 @@ The terminal frontend uses xterm.js from a CDN and the backend bridges PTY
 input/output over the existing Socket.IO connection. Terminal transcripts are
 not persisted to `.bullpen/`.
 
+## Value Workers
+
+Value workers are editable data cells on the worker grid. They occupy normal
+grid cells, can be moved/copied/duplicated like other workers, and can be
+referenced by spreadsheet-style coordinates such as `A1` or by their optional
+name. They do not run, queue tickets, watch columns, or receive ticket drops.
+
+Use Value workers for small pieces of shared workflow state such as branch
+names, counters, thresholds, or labels. Supported workers can interpolate them
+with `{A1}` or `{value name}` in configured fields. Shell and Service
+interpolation is raw text substitution, so quote values yourself when the
+rendered command needs shell-safe syntax.
+
 ## Shell / Script Workers
 
 Shell workers, also shown as script-style workers in some workflows, run one
@@ -529,6 +542,11 @@ Bullpen ships an MCP (Model Context Protocol) stdio server that lets supported a
 | `list_tasks` | Alias for `list_tickets` |
 | `list_tickets_by_title` | List tickets by approximate title match |
 | `update_ticket` | Update a ticket's status, title, or description |
+| `get_value` | Read a Value worker by coordinate or name |
+| `set_value` | Update an existing Value worker |
+| `increment_value` | Atomically add to a numeric Value worker |
+| `decrement_value` | Atomically subtract from a numeric Value worker |
+| `list_values` | List Value workers in grid order |
 
 ### How it works
 

@@ -211,7 +211,7 @@ def test_procfile_preview_resolves_selected_process_and_port(tmp_workspace):
         "web: python3 app.py --port=$PORT --workers=${WEB_CONCURRENCY}\n"
         "worker: python3 jobs.py\n",
     )
-    _install_service_worker(
+    worker = _install_service_worker(
         bp_dir,
         tmp_workspace,
         command="",

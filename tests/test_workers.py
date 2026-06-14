@@ -1912,6 +1912,56 @@ class TestHandoff:
         assert updated["status"] == "blocked"
         assert "Ghost Worker" in updated["body"]
 
+    def test_direct_assign_to_value_worker_rejected(self, bp_dir):
+        """Value workers occupy cells but are not ticket assignment targets."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [{
+            "row": 0, "col": 0, "type": "value",
+            "name": "Budget", "value": "3", "value_type": "number",
+            "resolved_value_type": "number", "format": {"kind": "auto"},
+        }]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Do not queue")
+        with pytest.raises(ValueError, match="cannot accept tickets"):
+            assign_task(bp_dir, 0, task["id"])
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "inbox"
+        assert updated.get("assigned_to", "") == ""
+        assert updated_layout["slots"][0].get("task_queue") in (None, [])
+
+    def test_handoff_to_value_worker_blocks(self, bp_dir):
+        """worker:<name> resolves Value workers, then fails closed."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "worker:Budget",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "type": "value",
+                "name": "Budget", "value": "3", "value_type": "number",
+                "resolved_value_type": "number", "format": {"kind": "auto"},
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Handoff to value")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "blocked"
+        assert "cannot accept tickets" in updated.get("body", "")
+        assert task["id"] not in updated_layout["slots"][1].get("task_queue", [])
+
     def test_handoff_depth_increments(self, bp_dir, two_workers):
         """Handoff increments handoff_depth on the task."""
         task = create_task(bp_dir, "Depth task")
@@ -2185,6 +2235,64 @@ class TestHandoff:
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "blocked"
 
+    def test_pass_to_value_worker_blocks(self, bp_dir):
+        """pass:<direction> treats a Value neighbor as an unavailable target."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "pass:right",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "type": "value",
+                "name": "Budget", "value": "3", "value_type": "number",
+                "resolved_value_type": "number", "format": {"kind": "auto"},
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Pass to value")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "blocked"
+        assert "target worker cannot accept tickets" in updated.get("body", "")
+        assert task["id"] not in updated_layout["slots"][1].get("task_queue", [])
+
+    def test_pass_random_direction_excludes_value_neighbors(self, bp_dir):
+        """pass:random only chooses neighboring workers that can accept tickets."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "pass:random",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "type": "value",
+                "name": "Budget", "value": "3", "value_type": "number",
+                "resolved_value_type": "number", "format": {"kind": "auto"},
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random pass to value only")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        assert updated["status"] == "blocked"
+        assert "no ticket worker in any direction" in updated.get("body", "")
+
     def test_random_pass_by_name(self, bp_dir):
         """random:<name> passes to a worker whose name matches."""
         layout = read_json(os.path.join(bp_dir, "layout.json"))
@@ -2396,6 +2504,35 @@ class TestHandoff:
 
         updated = read_task(bp_dir, task["id"])
         assert updated["status"] == "blocked"
+
+    def test_random_pass_excludes_value_worker_matches(self, bp_dir):
+        """random:<name> should not select a matching Value worker."""
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+        layout["slots"] = [
+            {
+                "row": 0, "col": 0, "profile": "test",
+                "name": "Sender", "agent": "mock", "model": "mock-model",
+                "activation": "manual", "disposition": "random:Budget",
+                "watch_column": None, "expertise_prompt": "",
+                "max_retries": 0, "task_queue": [], "state": "idle",
+            },
+            {
+                "row": 0, "col": 1, "type": "value",
+                "name": "Budget", "value": "3", "value_type": "number",
+                "resolved_value_type": "number", "format": {"kind": "auto"},
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        task = create_task(bp_dir, "Random value match")
+        assign_task(bp_dir, 0, task["id"])
+        start_worker(bp_dir, 0)
+        time.sleep(0.5)
+
+        updated = read_task(bp_dir, task["id"])
+        updated_layout = _load_layout(bp_dir)
+        assert updated["status"] == "blocked"
+        assert task["id"] not in updated_layout["slots"][1].get("task_queue", [])
 
 
 class TestMarkerWorker:

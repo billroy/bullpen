@@ -82,6 +82,18 @@ def _normalize_worker_name(name):
     return (name or "").strip().casefold()
 
 
+def _worker_accepts_ticket(worker):
+    if not worker:
+        return False
+    return get_worker_type(worker.get("type", "ai")).runnable()
+
+
+def _worker_ticket_target_error(worker):
+    label = worker.get("name") or worker.get("type") or "worker"
+    worker_type = get_worker_type(worker.get("type", "ai"))
+    return f"{label} is a {worker_type.type_id} worker and cannot accept tickets"
+
+
 def _clear_worker_retry_state(worker):
     """Remove transient retry/backoff fields from a worker layout entry."""
     if not worker:
@@ -635,6 +647,8 @@ def assign_task(
         worker = layout["slots"][slot_index]
         if not worker:
             raise ValueError(f"No worker in slot {slot_index}")
+        if not _worker_accepts_ticket(worker):
+            raise ValueError(_worker_ticket_target_error(worker))
         # Handoffs follow the target worker's normal assignment policy. Auto
         # workers start on assignment; held/manual workers queue until Run.
 
@@ -2885,9 +2899,11 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
         col = slot_index % cols
 
     if direction == "random":
-        def _neighbor_has_worker(tr, tc):
+        def _neighbor_has_ticket_worker(tr, tc):
             for i, candidate in enumerate(slots):
                 if not candidate:
+                    continue
+                if not _worker_accepts_ticket(candidate):
                     continue
                 try:
                     cr = int(candidate.get("row", i // cols))
@@ -2901,12 +2917,12 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
 
         candidates = []
         for d, (dr, dc) in (("up", (-1, 0)), ("down", (1, 0)), ("left", (0, -1)), ("right", (0, 1))):
-            if _neighbor_has_worker(row + dr, col + dc):
+            if _neighbor_has_ticket_worker(row + dr, col + dc):
                 candidates.append(d)
 
         if not candidates:
             task = task_mod.read_task(bp_dir, task_id)
-            msg = "\n\n**Pass random direction: no worker in any direction.** Task moved to blocked.\n"
+            msg = "\n\n**Pass random direction: no ticket worker in any direction.** Task moved to blocked.\n"
             body = (task.get("body", "") if task else "") + msg
             task_mod.update_task(bp_dir, task_id, {
                 "status": "blocked",
@@ -2916,7 +2932,7 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
             _save_layout(bp_dir, layout)
             if socketio:
                 _ws_emit(socketio, "toast", {
-                    "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: no neighbor worker in any direction",
+                    "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: no neighbor ticket worker in any direction",
                     "level": "warning",
                 }, ws_id)
             return
@@ -2981,6 +2997,22 @@ def _pass_to_direction(bp_dir, slot_index, task_id, direction, layout, socketio,
         if socketio:
             _ws_emit(socketio, "toast", {
                 "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: no worker {direction}",
+                "level": "warning",
+            }, ws_id)
+        return
+
+    if not _worker_accepts_ticket(target_worker):
+        msg = f"\n\n**Pass {direction}: target worker cannot accept tickets.** Task moved to blocked.\n"
+        body = (task.get("body", "") if task else "") + msg
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: {_worker_ticket_target_error(target_worker)}",
                 "level": "warning",
             }, ws_id)
         return
@@ -3222,6 +3254,20 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
             }, ws_id)
         return
 
+    def block(message, toast_message):
+        body = (task.get("body", "") if task else "") + message
+        task_mod.update_task(bp_dir, task_id, {
+            "status": "blocked",
+            "assigned_to": "",
+            "body": body,
+        })
+        _save_layout(bp_dir, layout)
+        if socketio:
+            _ws_emit(socketio, "toast", {
+                "message": toast_message,
+                "level": "warning",
+            }, ws_id)
+
     # Find target worker by name (case-insensitive, whitespace-insensitive)
     target_slot = None
     normalized_target = _normalize_worker_name(target_name)
@@ -3231,19 +3277,18 @@ def _handoff_to_worker(bp_dir, task_id, target_name, layout, socketio, ws_id):
             break
 
     if target_slot is None:
-        msg = f"\n\n**Handoff target \"{target_name}\" not found.** Task moved to blocked.\n"
-        body = (task.get("body", "") if task else "") + msg
-        task_mod.update_task(bp_dir, task_id, {
-            "status": "blocked",
-            "assigned_to": "",
-            "body": body,
-        })
-        _save_layout(bp_dir, layout)
-        if socketio:
-            _ws_emit(socketio, "toast", {
-                "message": f"Task \"{task.get('title', task_id)}\" blocked: worker \"{target_name}\" not found",
-                "level": "warning",
-            }, ws_id)
+        block(
+            f"\n\n**Handoff target \"{target_name}\" not found.** Task moved to blocked.\n",
+            f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: worker \"{target_name}\" not found",
+        )
+        return
+
+    target_worker = layout["slots"][target_slot]
+    if not _worker_accepts_ticket(target_worker):
+        block(
+            f"\n\n**Handoff target \"{target_name}\" cannot accept tickets.** Task moved to blocked.\n",
+            f"Task \"{task.get('title', task_id) if task else task_id}\" blocked: {_worker_ticket_target_error(target_worker)}",
+        )
         return
 
     # Increment depth and hand off
@@ -3289,6 +3334,8 @@ def _pass_to_random_worker(bp_dir, slot_index, task_id, target_name, layout, soc
     normalized_target = _normalize_worker_name(target_name)
     for i, slot in enumerate(layout.get("slots", [])):
         if not slot or i == slot_index:
+            continue
+        if not _worker_accepts_ticket(slot):
             continue
         if not normalized_target or _normalize_worker_name(slot.get("name")) == normalized_target:
             candidates.append(i)

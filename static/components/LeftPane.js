@@ -441,6 +441,11 @@ const LeftPane = {
       this.$emit('clone-project', { url: url.trim(), path: (path || '').trim() || null });
     },
     onRosterDragOver(e, w) {
+      if (!this.rosterWorkerAcceptsTaskDrop(w)) {
+        e.dataTransfer.dropEffect = 'none';
+        this.rosterDragSlot = null;
+        return;
+      }
       const types = e.dataTransfer.types;
       if (types.includes(window.BULLPEN_TASK_DND_MIME) || (window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain'))) {
         e.dataTransfer.dropEffect = 'move';
@@ -453,11 +458,17 @@ const LeftPane = {
     onRosterDrop(e, slot) {
       e.preventDefault();
       this.rosterDragSlot = null;
+      const worker = (this.workerList || []).find(w => w.slot === slot);
+      if (!this.rosterWorkerAcceptsTaskDrop(worker)) return;
       const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
         || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
       if (taskId) {
         this.$root.assignTask(taskId, slot);
       }
+    },
+    rosterWorkerAcceptsTaskDrop(worker) {
+      const type = String(worker?.type || 'ai');
+      return !['value', 'eval'].includes(type);
     },
     onResizeDown(e) {
       if (e.button !== 0) return;

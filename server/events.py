@@ -1392,7 +1392,10 @@ def register_events(socketio, app):
         if not task_mod.read_task(bp_dir, task_id):
             emit("error", {"message": f"Task not found: {task_id}"})
             return
-        worker_mod.assign_task(bp_dir, slot, task_id, socketio, ws_id)
+        try:
+            worker_mod.assign_task(bp_dir, slot, task_id, socketio, ws_id)
+        except ValueError as exc:
+            emit("error", {"message": str(exc)})
 
     @socketio.on("worker:start")
     @with_lock

@@ -70,6 +70,20 @@ def test_value_worker_card_displays_value_without_run_controls():
     assert "window.GridGeometry?.coordToCellRef?.(this.worker)" in text
 
 
+def test_value_worker_card_rejects_ticket_drop_affordances():
+    card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+    roster = (ROOT / "static" / "components" / "LeftPane.js").read_text()
+
+    assert ':aria-label="cardAriaLabel"' in card
+    assert "Not a ticket drop target." in card
+    assert "acceptsTaskDrop()" in card
+    assert "return !this.isValue && !this.isDisabledType;" in card
+    assert "isTaskDrag && !this.acceptsTaskDrop" in card
+    assert "taskId && this.acceptsTaskDrop" in card
+    assert "rosterWorkerAcceptsTaskDrop(worker)" in roster
+    assert "return !['value', 'eval'].includes(type);" in roster
+
+
 def test_value_worker_card_styles_exist():
     text = (ROOT / "static" / "style.css").read_text()
 

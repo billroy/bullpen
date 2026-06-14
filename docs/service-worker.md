@@ -192,6 +192,12 @@ surprising matches.
 Configured env rows override inherited env, but `BULLPEN_MCP_TOKEN` is never
 accepted. If a configured env row uses a Bullpen-reserved name, validation fails.
 
+Value worker placeholders such as `{A1}` or `{target branch}` are resolved
+immediately before launch in Service inline commands, pre-start commands,
+working directories, health commands, and configured environment values. This
+is raw text substitution, not shell escaping; quote or escape command text
+accordingly.
+
 ---
 
 ## What the User Sees

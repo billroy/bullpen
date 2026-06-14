@@ -4,6 +4,7 @@ const WorkerCard = {
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
          :style="effectiveLayoutMode === 'small' ? { background: agentColor } : null"
+         :aria-label="cardAriaLabel"
          draggable="true"
          @pointerdown="onPointerDown"
          @pointermove="onPointerMove"
@@ -356,6 +357,18 @@ const WorkerCard = {
     },
     isDisabledType() {
       return this.isEval || this.isUnknownType;
+    },
+    acceptsTaskDrop() {
+      return !this.isValue && !this.isDisabledType;
+    },
+    cardAriaLabel() {
+      const type = this.workerTypeLabel || 'Worker';
+      const name = this.workerNameWithPort || this.valueCellRef || 'Unnamed worker';
+      if (this.isValue) {
+        const ref = this.valueCellRef ? ` at ${this.valueCellRef}` : '';
+        return `Value worker ${name}${ref}. Not a ticket drop target.`;
+      }
+      return `${type} worker ${name}`;
     },
     disabledTypeMessage() {
       if (this.isUnknownType) return 'Worker type not installed';
@@ -836,6 +849,11 @@ const WorkerCard = {
           }
           return;
         }
+        if (isTaskDrag && !this.acceptsTaskDrop) {
+          e.dataTransfer.dropEffect = 'none';
+          this.dragOver = false;
+          return;
+        }
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         this.dragOver = true;
@@ -874,7 +892,7 @@ const WorkerCard = {
       }
       const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
         || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
-      if (taskId) {
+      if (taskId && this.acceptsTaskDrop) {
         e.stopPropagation();
         this.$root.assignTask(taskId, this.slotIndex);
       }
