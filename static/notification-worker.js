@@ -397,7 +397,7 @@
     async _speakKokoro(speech) {
       const tts = await this.loadKokoro();
       const options = {};
-      if (KOKORO_VOICES.some(item => item.value === speech.voice)) options.voice = speech.voice;
+      options.voice = KOKORO_VOICES.some(item => item.value === speech.voice) ? speech.voice : 'af_heart';
       const result = await tts.generate(String(speech.text || ''), options);
       const blob = typeof result?.toBlob === 'function' ? result.toBlob() : result;
       if (!blob) throw new Error('Kokoro did not return audio');

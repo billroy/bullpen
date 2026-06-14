@@ -30,11 +30,89 @@ def test_workspace_pause_gates_ambient_audio():
     assert "window.ambientAudio.unmuteAmbient();" in app
     assert "muteAmbient()" in audio
     assert "unmuteAmbient()" in audio
+    assert "const targetVol = this._ambientMuted ? 0 : this._ambientVolume(intensity);" in audio
     assert "if (this._ambientMuted) return;" in audio
-    assert "_setWorkspaceAutomationPaused(activeWorkspaceId.value, true);" in app
-    assert "_setWorkspaceAutomationPaused(activeWorkspaceId.value, false);" in app
-    assert "_setKnownWorkspacesAutomationPaused(true);" in app
-    assert "_setKnownWorkspacesAutomationPaused(false);" in app
+    assert "_setWorkspaceAutomationPaused" not in app
+    assert "_setKnownWorkspacesAutomationPaused" not in app
+
+
+def test_ambient_mute_survives_until_ambient_starts():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "audio.js"))}, 'utf8');
+
+class Param {{
+  constructor() {{ this.value = 0; }}
+  cancelScheduledValues() {{}}
+  setValueAtTime(value) {{ this.value = value; }}
+  linearRampToValueAtTime(value) {{ this.value = value; }}
+}}
+class FakeNode {{
+  constructor() {{
+    this.gain = new Param();
+    this.frequency = new Param();
+    this.Q = new Param();
+    this.context = {{}};
+  }}
+  connect(dest) {{ this.dest = dest; return dest; }}
+  start() {{}}
+  stop() {{}}
+  disconnect() {{}}
+}}
+class FakeBuffer {{
+  getChannelData() {{ return new Float32Array(4); }}
+}}
+class FakeAudioContext {{
+  constructor() {{
+    this.currentTime = 0;
+    this.sampleRate = 1;
+    this.state = 'running';
+    this.destination = {{}};
+  }}
+  createGain() {{ return new FakeNode(); }}
+  createOscillator() {{ return new FakeNode(); }}
+  createBuffer() {{ return new FakeBuffer(); }}
+  createBufferSource() {{ return new FakeNode(); }}
+  createBiquadFilter() {{ return new FakeNode(); }}
+  resume() {{}}
+}}
+
+const context = {{
+  window: {{ AudioContext: FakeAudioContext }},
+  console,
+  Math,
+  setTimeout,
+}};
+vm.createContext(context);
+vm.runInContext(source, context);
+
+const audio = context.window.ambientAudio;
+audio.muteAmbient();
+const mutedBeforeStart = audio._ambientMuted;
+audio.startAmbient('server_room', 10);
+const startedMuted = audio._ambientGain.gain.value;
+audio.updateAmbientIntensity(20);
+const stayedMuted = audio._ambientGain.gain.value;
+audio.unmuteAmbient();
+const restored = audio._ambientGain.gain.value;
+
+process.stdout.write(JSON.stringify({{ mutedBeforeStart, startedMuted, stayedMuted, restored }}));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["mutedBeforeStart"] is True
+    assert payload["startedMuted"] == 0
+    assert payload["stayedMuted"] == 0
+    assert payload["restored"] > 0
 
 
 def test_value_update_sound_fires_only_for_known_value_changes():

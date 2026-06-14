@@ -23,5 +23,5 @@ def test_task_detail_commit_clickthrough_is_wired_to_root_app():
     text = _read("static/app.js")
     assert "const requestedCommitDiffHash = ref('');" in text
     assert "openCommitDiffFromTicket(hash)" in text
-    assert "activeTab.value = 'commits';" in text
+    assert "setActiveTab('commits');" in text
     assert "@open-commit-diff=\"openCommitDiffFromTicket\"" in text

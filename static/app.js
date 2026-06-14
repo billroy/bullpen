@@ -241,22 +241,6 @@ const app = createApp({
       document.title = project ? `Bullpen : ${project}` : 'Bullpen';
     }
 
-    function _setWorkspaceAutomationPaused(wsId, paused) {
-      if (!wsId) return;
-      const ws = _getWs(wsId);
-      ws.config = _normalizeConfig({ ...(ws.config || {}), worker_automation_paused: paused });
-      if (_isActive(wsId)) {
-        state.config = ws.config;
-        _applyWorkspaceAmbient(wsId);
-      }
-    }
-
-    function _setKnownWorkspacesAutomationPaused(paused) {
-      for (const wsId of Object.keys(workspaces)) {
-        _setWorkspaceAutomationPaused(wsId, paused);
-      }
-    }
-
     const ACTIVE_PROJECT_STORAGE_KEY = 'bullpen.activeWorkspaceId';
     const ACTIVE_TAB_STORAGE_KEY = 'bullpen.activeTab';
     const RESTORABLE_TAB_IDS = ['tasks', 'workers', 'files', 'commits', 'stats', 'chat'];
@@ -1345,27 +1329,21 @@ const app = createApp({
       socket.emit('service:restart', _wsData({ slot }));
     }
     function pauseAutomation() {
-      _setWorkspaceAutomationPaused(activeWorkspaceId.value, true);
       socket.emit('workers:pause_automation', _wsData({}));
     }
     function resumeAutomation() {
-      _setWorkspaceAutomationPaused(activeWorkspaceId.value, false);
       socket.emit('workers:resume_automation', _wsData({}));
     }
     function stopTheLine() {
-      _setWorkspaceAutomationPaused(activeWorkspaceId.value, true);
       socket.emit('workers:stop_line', _wsData({}));
     }
     function pauseAllAutomation() {
-      _setKnownWorkspacesAutomationPaused(true);
       socket.emit('workers:pause_all_automation', {});
     }
     function resumeAllAutomation() {
-      _setKnownWorkspacesAutomationPaused(false);
       socket.emit('workers:resume_all_automation', {});
     }
     function stopAllLines() {
-      _setKnownWorkspacesAutomationPaused(true);
       socket.emit('workers:stop_all_lines', {});
     }
     function openServiceSite(slot) {

@@ -138,9 +138,8 @@ class AudioEngine {
     if (!builder) return;
 
     const now = ctx.currentTime;
-    const targetVol = this._ambientVolume(intensity);
+    const targetVol = this._ambientMuted ? 0 : this._ambientVolume(intensity);
     this._ambientIntensity = intensity;
-    this._ambientMuted = false;
 
     // Master ambient gain — fade in
     this._ambientGain = ctx.createGain();
@@ -165,19 +164,20 @@ class AudioEngine {
   }
 
   muteAmbient() {
+    this._ambientMuted = true;
     if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
     const now = this._ctx.currentTime;
-    this._ambientMuted = true;
     this._ambientGain.gain.cancelScheduledValues(now);
     this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
     this._ambientGain.gain.linearRampToValueAtTime(0, now + 0.3);
   }
 
   unmuteAmbient() {
-    if (!this._ambientActive || !this._ambientGain || !this._ctx || !this._ambientMuted) return;
+    const wasMuted = this._ambientMuted;
+    this._ambientMuted = false;
+    if (!this._ambientActive || !this._ambientGain || !this._ctx || !wasMuted) return;
     const now = this._ctx.currentTime;
     const targetVol = this._ambientVolume(this._ambientIntensity || 10);
-    this._ambientMuted = false;
     this._ambientGain.gain.cancelScheduledValues(now);
     this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
     this._ambientGain.gain.linearRampToValueAtTime(targetVol, now + 0.5);
