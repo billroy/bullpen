@@ -35,6 +35,26 @@ def test_notification_worker_config_modal_fields_exist():
     assert "{ticket.title}" in text
 
 
+def test_notification_worker_exposes_expanded_sound_effects():
+    modal = _read("static/components/WorkerConfigModal.js")
+    runtime = _read("static/notification-worker.js")
+    audio = _read("static/audio.js")
+
+    assert "const NOTIFICATION_SOUND_OPTIONS = [" in modal
+    assert modal.count("value: '") >= 30
+    for effect, method in {
+        "bell": "playBell",
+        "critical": "playCritical",
+        "double_tick": "playDoubleTick",
+        "ripple": "playRipple",
+        "upload": "playUpload",
+        "download": "playDownload",
+    }.items():
+        assert f"value: '{effect}'" in modal
+        assert f"{effect}: '{method}'" in runtime
+        assert f"{method}()" in audio
+
+
 def test_notification_worker_runtime_caps_and_settings_exist():
     text = _read("static/notification-worker.js")
     toolbar = _read("static/components/TopToolbar.js")

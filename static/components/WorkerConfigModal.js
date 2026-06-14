@@ -41,6 +41,39 @@ const KOKORO_VOICE_OPTIONS = [
   { value: 'bm_george', label: 'George - UK male' },
 ];
 
+const NOTIFICATION_SOUND_OPTIONS = [
+  { value: 'toast', label: 'Toast chime' },
+  { value: 'start', label: 'Start' },
+  { value: 'done', label: 'Done chime' },
+  { value: 'move', label: 'Move tick' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'error', label: 'Error' },
+  { value: 'spawn', label: 'Spawn' },
+  { value: 'despawn', label: 'Despawn' },
+  { value: 'success', label: 'Success' },
+  { value: 'confirm', label: 'Confirm' },
+  { value: 'cancel', label: 'Cancel' },
+  { value: 'attention', label: 'Attention' },
+  { value: 'alert', label: 'Alert' },
+  { value: 'critical', label: 'Critical' },
+  { value: 'ready', label: 'Ready' },
+  { value: 'complete', label: 'Complete' },
+  { value: 'bell', label: 'Bell' },
+  { value: 'ping', label: 'Ping' },
+  { value: 'pong', label: 'Pong' },
+  { value: 'tick', label: 'Tick' },
+  { value: 'double_tick', label: 'Double tick' },
+  { value: 'pulse', label: 'Pulse' },
+  { value: 'scan', label: 'Scan' },
+  { value: 'sweep', label: 'Sweep' },
+  { value: 'pop', label: 'Pop' },
+  { value: 'zap', label: 'Zap' },
+  { value: 'knock', label: 'Knock' },
+  { value: 'ripple', label: 'Ripple' },
+  { value: 'upload', label: 'Upload' },
+  { value: 'download', label: 'Download' },
+];
+
 function cloneNotificationForm(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const merged = JSON.parse(JSON.stringify(DEFAULT_NOTIFICATION_FORM));
@@ -101,12 +134,15 @@ const WorkerConfigModal = {
             randomName = disposition.substring('random:'.length);
             disposition = 'random:';
           }
+          const isAiForm = !w.type || w.type === 'ai';
+          const preferredAi = isAiForm ? this.preferredAiSelection : null;
+          const defaultAgent = w.agent || preferredAi?.agent || 'claude';
           this.form = {
             type: w.type || 'ai',
             name: w.name || '',
             note: w.note || '',
-            agent: w.agent || this.preferredAiSelection?.agent || 'claude',
-            model: w.model || this.preferredDefaultModel(w.agent || this.preferredAiSelection?.agent || 'claude'),
+            agent: defaultAgent,
+            model: w.model || (isAiForm ? this.preferredDefaultModel(defaultAgent) : ''),
             activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop'),
             disposition,
             random_name: randomName,
@@ -333,6 +369,9 @@ const WorkerConfigModal = {
         options.push({ value: current, label: `${current} (saved voice)` });
       }
       return options;
+    },
+    notificationSoundOptions() {
+      return NOTIFICATION_SOUND_OPTIONS;
     },
     notificationSpeechHint() {
       const engine = this.notificationSpeechEngine;
@@ -822,14 +861,7 @@ const WorkerConfigModal = {
                   <label class="form-label">
                     Effect
                     <select class="form-select" v-model="form.notification.sound.effect">
-                      <option value="toast">Toast chime</option>
-                      <option value="start">Start</option>
-                      <option value="done">Done chime</option>
-                      <option value="move">Move tick</option>
-                      <option value="warning">Warning</option>
-                      <option value="error">Error</option>
-                      <option value="spawn">Spawn</option>
-                      <option value="despawn">Despawn</option>
+                      <option v-for="option in notificationSoundOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
                   </label>
                   <label class="form-label">

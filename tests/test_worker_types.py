@@ -8,6 +8,7 @@ from server.teams import load_team, save_team
 from server.transfer import transfer_worker
 from server.validation import validate_worker_configure
 from server.worker_types import (
+    NOTIFICATION_SOUND_EFFECTS,
     ViewerContext,
     copy_worker_slot,
     get_worker_type,
@@ -297,6 +298,34 @@ def test_notification_slot_normalizes_defaults_and_preserves_config(tmp_workspac
     assert clone["notification"]["toast"]["template"] == "{ticket.title} is ready."
     assert clone["task_queue"] == []
     assert clone["state"] == "idle"
+
+
+def test_notification_sound_effect_set_accepts_expanded_synth_pack(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+
+    assert len(NOTIFICATION_SOUND_EFFECTS) >= 30
+    assert {"bell", "critical", "double_tick", "ripple", "upload", "download"}.issubset(
+        NOTIFICATION_SOUND_EFFECTS
+    )
+
+    slot = normalize_worker_slot(
+        {
+            "type": "notification",
+            "row": 0,
+            "col": 0,
+            "notification": {
+                "sound": {
+                    "enabled": True,
+                    "effect": "ripple",
+                },
+            },
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["notification"]["sound"]["effect"] == "ripple"
 
 
 def test_value_slot_normalizes_defaults_without_runnable_fields(tmp_workspace):

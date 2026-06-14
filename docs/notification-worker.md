@@ -515,10 +515,32 @@ new `AudioEngine` methods:
 | `start` | `playStart()` |
 | `done` | `playDone()` |
 | `move` | `playMove()` |
-| `warning` | new short warning tone or reuse `playError()` at lower volume |
+| `warning` | `playWarning()` |
 | `error` | `playError()` |
 | `spawn` | `playSpawn()` |
 | `despawn` | `playDespawn()` |
+| `success` | `playSuccess()` |
+| `confirm` | `playConfirm()` |
+| `cancel` | `playCancel()` |
+| `attention` | `playAttention()` |
+| `alert` | `playAlert()` |
+| `critical` | `playCritical()` |
+| `ready` | `playReady()` |
+| `complete` | `playComplete()` |
+| `bell` | `playBell()` |
+| `ping` | `playPing()` |
+| `pong` | `playPong()` |
+| `tick` | `playTick()` |
+| `double_tick` | `playDoubleTick()` |
+| `pulse` | `playPulse()` |
+| `scan` | `playScan()` |
+| `sweep` | `playSweep()` |
+| `pop` | `playPop()` |
+| `zap` | `playZap()` |
+| `knock` | `playKnock()` |
+| `ripple` | `playRipple()` |
+| `upload` | `playUpload()` |
+| `download` | `playDownload()` |
 
 The worker config modal should present effect ids as labels in a dropdown.
 Repeat count is bounded and should replay the same named effect with `gap_ms`.

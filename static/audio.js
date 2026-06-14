@@ -59,7 +59,7 @@ class AudioEngine {
     }
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(vol, now + 0.01);
-    gain.gain.setValueAtTime(vol, now + duration - 0.05);
+    gain.gain.setValueAtTime(vol, now + Math.max(0.01, duration - 0.05));
     gain.gain.linearRampToValueAtTime(0, now + duration);
     osc.connect(gain);
     gain.connect(this._masterGain);
@@ -84,6 +84,21 @@ class AudioEngine {
     src.connect(gain);
     gain.connect(this._masterGain);
     src.start(now);
+  }
+
+  _sequence(steps) {
+    for (const step of steps) {
+      const delay = Math.max(0, Number(step.delay || 0));
+      setTimeout(() => {
+        this._tone(
+          step.freq,
+          step.freq2 ?? step.freq,
+          step.duration ?? 0.07,
+          step.type || 'sine',
+          step.volume ?? 0.18,
+        );
+      }, delay);
+    }
   }
 
   /** Called on first user interaction to unlock AudioContext */
@@ -294,6 +309,195 @@ class AudioEngine {
     this._init();
     this._noise(0.08, 0.10);
     this._tone(180, 120, 0.15, 'sawtooth', 0.2);
+  }
+
+  /** Warning: two pulsing mid tones with a light buzz bed */
+  playWarning() {
+    this._init();
+    this._noise(0.04, 0.04);
+    this._sequence([
+      { freq: 740, duration: 0.08, type: 'triangle', volume: 0.2 },
+      { freq: 740, duration: 0.08, type: 'triangle', volume: 0.17, delay: 120 },
+    ]);
+  }
+
+  /** Success: bright ascending perfect fifth */
+  playSuccess() {
+    this._init();
+    this._sequence([
+      { freq: 659, duration: 0.08, type: 'sine', volume: 0.22 },
+      { freq: 988, duration: 0.11, type: 'sine', volume: 0.22, delay: 75 },
+    ]);
+  }
+
+  /** Confirm: compact affirmative two-note click */
+  playConfirm() {
+    this._init();
+    this._sequence([
+      { freq: 880, duration: 0.045, type: 'triangle', volume: 0.16 },
+      { freq: 1175, duration: 0.055, type: 'triangle', volume: 0.14, delay: 50 },
+    ]);
+  }
+
+  /** Cancel: descending muted pair */
+  playCancel() {
+    this._init();
+    this._sequence([
+      { freq: 523, duration: 0.06, type: 'triangle', volume: 0.16 },
+      { freq: 392, duration: 0.08, type: 'triangle', volume: 0.13, delay: 70 },
+    ]);
+  }
+
+  /** Attention: quick three-tap notifier */
+  playAttention() {
+    this._init();
+    this._sequence([
+      { freq: 1047, duration: 0.05, type: 'sine', volume: 0.18 },
+      { freq: 1047, duration: 0.05, type: 'sine', volume: 0.16, delay: 85 },
+      { freq: 1319, duration: 0.07, type: 'sine', volume: 0.18, delay: 170 },
+    ]);
+  }
+
+  /** Alert: sharper alternating tone */
+  playAlert() {
+    this._init();
+    this._sequence([
+      { freq: 988, duration: 0.07, type: 'square', volume: 0.12 },
+      { freq: 740, duration: 0.07, type: 'square', volume: 0.1, delay: 95 },
+      { freq: 988, duration: 0.08, type: 'square', volume: 0.11, delay: 190 },
+    ]);
+  }
+
+  /** Critical: low noise hit plus falling buzz */
+  playCritical() {
+    this._init();
+    this._noise(0.12, 0.12);
+    this._tone(220, 90, 0.24, 'sawtooth', 0.22);
+  }
+
+  /** Ready: soft rising arpeggio */
+  playReady() {
+    this._init();
+    this._sequence([
+      { freq: 440, duration: 0.07, type: 'sine', volume: 0.14 },
+      { freq: 554, duration: 0.07, type: 'sine', volume: 0.14, delay: 65 },
+      { freq: 880, duration: 0.1, type: 'sine', volume: 0.15, delay: 130 },
+    ]);
+  }
+
+  /** Complete: warmer four-note resolution */
+  playComplete() {
+    this._init();
+    this._sequence([
+      { freq: 392, duration: 0.07, type: 'triangle', volume: 0.16 },
+      { freq: 523, duration: 0.07, type: 'triangle', volume: 0.16, delay: 65 },
+      { freq: 659, duration: 0.07, type: 'triangle', volume: 0.15, delay: 130 },
+      { freq: 784, duration: 0.12, type: 'triangle', volume: 0.16, delay: 195 },
+    ]);
+  }
+
+  /** Bell: glassy two-part bell tone */
+  playBell() {
+    this._init();
+    this._tone(1568, 1568, 0.18, 'sine', 0.16);
+    this._tone(2352, 2352, 0.12, 'sine', 0.07);
+    setTimeout(() => this._tone(1175, 1175, 0.22, 'sine', 0.1), 90);
+  }
+
+  /** Ping: single clean high tone */
+  playPing() {
+    this._init();
+    this._tone(1760, 1760, 0.08, 'sine', 0.16);
+  }
+
+  /** Pong: single lower response tone */
+  playPong() {
+    this._init();
+    this._tone(440, 440, 0.11, 'triangle', 0.16);
+  }
+
+  /** Tick: dry UI tick */
+  playTick() {
+    this._init();
+    this._tone(1200, 1200, 0.035, 'square', 0.08);
+  }
+
+  /** Double tick: paired dry UI ticks */
+  playDoubleTick() {
+    this._init();
+    this._tone(1200, 1200, 0.035, 'square', 0.08);
+    setTimeout(() => this._tone(1500, 1500, 0.035, 'square', 0.07), 55);
+  }
+
+  /** Pulse: rounded status pulse */
+  playPulse() {
+    this._init();
+    this._tone(330, 660, 0.14, 'sine', 0.13);
+    setTimeout(() => this._tone(660, 330, 0.16, 'sine', 0.1), 145);
+  }
+
+  /** Scan: fast upward telemetry sweep */
+  playScan() {
+    this._init();
+    this._tone(300, 1800, 0.18, 'sine', 0.12);
+    this._noise(0.04, 0.03);
+  }
+
+  /** Sweep: slower downward sweep */
+  playSweep() {
+    this._init();
+    this._tone(1400, 260, 0.24, 'triangle', 0.12);
+  }
+
+  /** Pop: tiny rounded pop */
+  playPop() {
+    this._init();
+    this._tone(220, 880, 0.055, 'sine', 0.18);
+  }
+
+  /** Zap: quick electric sweep */
+  playZap() {
+    this._init();
+    this._noise(0.05, 0.06);
+    this._tone(1800, 300, 0.11, 'sawtooth', 0.13);
+  }
+
+  /** Knock: two low woodblock-like taps */
+  playKnock() {
+    this._init();
+    this._tone(180, 180, 0.045, 'triangle', 0.16);
+    setTimeout(() => this._tone(150, 150, 0.055, 'triangle', 0.14), 90);
+  }
+
+  /** Ripple: light cascading notification */
+  playRipple() {
+    this._init();
+    this._sequence([
+      { freq: 784, duration: 0.05, type: 'sine', volume: 0.13 },
+      { freq: 988, duration: 0.05, type: 'sine', volume: 0.12, delay: 45 },
+      { freq: 1175, duration: 0.06, type: 'sine', volume: 0.11, delay: 90 },
+      { freq: 1568, duration: 0.08, type: 'sine', volume: 0.09, delay: 140 },
+    ]);
+  }
+
+  /** Upload: rising data chirp */
+  playUpload() {
+    this._init();
+    this._sequence([
+      { freq: 500, freq2: 900, duration: 0.075, type: 'triangle', volume: 0.12 },
+      { freq: 700, freq2: 1250, duration: 0.075, type: 'triangle', volume: 0.11, delay: 70 },
+      { freq: 900, freq2: 1600, duration: 0.08, type: 'triangle', volume: 0.1, delay: 140 },
+    ]);
+  }
+
+  /** Download: falling data chirp */
+  playDownload() {
+    this._init();
+    this._sequence([
+      { freq: 1600, freq2: 900, duration: 0.075, type: 'triangle', volume: 0.11 },
+      { freq: 1250, freq2: 700, duration: 0.075, type: 'triangle', volume: 0.1, delay: 70 },
+      { freq: 900, freq2: 500, duration: 0.08, type: 'triangle', volume: 0.1, delay: 140 },
+    ]);
   }
 
   /**
