@@ -539,7 +539,7 @@ def register_events(socketio, app):
         if not worker_type:
             worker_type = "ai" if profile_id is not None else ""
 
-        if worker_type not in ("ai", "shell", "service", "marker", "notification"):
+        if worker_type not in ("ai", "shell", "service", "marker", "notification", "value"):
             emit("error", {"message": "worker:add requires a supported type"})
             return
 
@@ -668,7 +668,19 @@ def register_events(socketio, app):
                 "log_max_bytes": int(fields.get("log_max_bytes", 5 * 1024 * 1024) or 5 * 1024 * 1024),
                 "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
             }
-        else:  # marker
+        elif worker_type == "value":
+            worker = {
+                "type": "value",
+                "row": row,
+                "col": col,
+                "name": str(fields.get("name", "") or "").strip(),
+                "value": fields.get("value", ""),
+                "value_type": fields.get("value_type", "auto"),
+                "format": fields.get("format") if isinstance(fields.get("format"), dict) else {"kind": "auto"},
+                "icon": "variable",
+                "color": "value",
+            }
+        else:  # marker or notification
             if worker_type == "marker":
                 base_name = fields.get("name") or "Marker"
                 worker = {

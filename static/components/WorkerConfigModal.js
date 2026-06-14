@@ -145,6 +145,10 @@ const WorkerConfigModal = {
             on_crash: w.on_crash || 'stay-crashed',
             stop_timeout_seconds: w.stop_timeout_seconds ?? 5,
             log_max_bytes: w.log_max_bytes ?? 5242880,
+            value: w.value ?? '',
+            value_type: w.value_type || 'auto',
+            resolved_value_type: w.resolved_value_type || 'string',
+            format: w.format && typeof w.format === 'object' ? { ...w.format } : { kind: 'auto' },
             notification: cloneNotificationForm(w.notification),
           };
           this.servicePreview = null;
@@ -189,6 +193,9 @@ const WorkerConfigModal = {
     },
     isNotification() {
       return this.form.type === 'notification';
+    },
+    isValue() {
+      return this.form.type === 'value';
     },
     isProcfileService() {
       return this.isService && this.form.command_source === 'procfile';
@@ -335,6 +342,7 @@ const WorkerConfigModal = {
             <span v-if="isService" class="worker-type-badge">Service</span>
             <span v-if="isMarker" class="worker-type-badge">Marker</span>
             <span v-if="isNotification" class="worker-type-badge">Notification</span>
+            <span v-if="isValue" class="worker-type-badge">Value</span>
           </h2>
           <button class="btn btn-icon" @click="$emit('close')">&times;</button>
         </div>
@@ -350,6 +358,44 @@ const WorkerConfigModal = {
               <textarea class="form-textarea" v-model="form.note" rows="3" maxlength="500"
                         placeholder="Optional label note or routing hint"></textarea>
             </label>
+          </template>
+
+          <template v-if="isValue">
+            <div class="form-row">
+              <label class="form-label">
+                Value
+                <input class="form-input" v-model="form.value">
+              </label>
+              <label class="form-label">
+                Type
+                <select class="form-select" v-model="form.value_type">
+                  <option value="auto">Auto</option>
+                  <option value="number">Number</option>
+                  <option value="string">String</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                Format
+                <select class="form-select" v-model="form.format.kind">
+                  <option value="auto">Auto</option>
+                  <option value="general">General</option>
+                  <option value="number">Number</option>
+                  <option value="currency">Currency</option>
+                  <option value="string-left">Text left</option>
+                  <option value="string-right">Text right</option>
+                </select>
+              </label>
+              <label class="form-label" v-if="form.format.kind === 'number' || form.format.kind === 'currency'">
+                Decimal Places
+                <input class="form-input" type="number" v-model.number="form.format.places" min="0" max="10">
+              </label>
+              <label class="form-label" v-if="form.format.kind === 'currency'">
+                Symbol
+                <input class="form-input" v-model="form.format.symbol" maxlength="8">
+              </label>
+            </div>
           </template>
 
           <!-- AI-only: expertise prompt, agent, model -->
@@ -834,7 +880,7 @@ const WorkerConfigModal = {
           </template>
 
           <!-- Shared: activation, disposition, max retries -->
-          <div v-if="!isService" class="form-row">
+          <div v-if="!isService && !isValue" class="form-row">
             <label class="form-label">
               Input Trigger
               <select class="form-select" v-model="form.activation">
@@ -869,7 +915,7 @@ const WorkerConfigModal = {
               Paused
             </label>
           </div>
-          <div v-if="!isService" class="form-row">
+          <div v-if="!isService && !isValue" class="form-row">
             <label class="form-label">
               {{ (isMarker || isNotification) ? 'Pass tickets to' : 'Output' }}
               <select class="form-select" v-model="form.disposition">
@@ -1233,7 +1279,51 @@ const WorkerConfigModal = {
         fields.disposition = 'random:' + (fields.random_name || '').trim();
       }
       delete fields.random_name;
-      if (this.isMarker || this.isNotification) {
+      if (this.isValue) {
+        fields.name = String(fields.name || '').trim();
+        fields.value_type = String(fields.value_type || 'auto');
+        fields.format = fields.format && typeof fields.format === 'object' ? { ...fields.format } : { kind: 'auto' };
+        delete fields.resolved_value_type;
+        delete fields.note;
+        delete fields.agent;
+        delete fields.model;
+        delete fields.activation;
+        delete fields.disposition;
+        delete fields.watch_column;
+        delete fields.expertise_prompt;
+        delete fields.trust_mode;
+        delete fields.max_retries;
+        delete fields.use_worktree;
+        delete fields.auto_commit;
+        delete fields.auto_pr;
+        delete fields.trigger_time;
+        delete fields.trigger_interval_minutes;
+        delete fields.trigger_every_day;
+        delete fields.paused;
+        delete fields.command;
+        delete fields.cwd;
+        delete fields.timeout_seconds;
+        delete fields.ticket_delivery;
+        delete fields.env;
+        delete fields.command_source;
+        delete fields.procfile_process;
+        delete fields.port;
+        delete fields.pre_start;
+        delete fields.ticket_action;
+        delete fields.startup_grace_seconds;
+        delete fields.startup_timeout_seconds;
+        delete fields.health_type;
+        delete fields.health_url;
+        delete fields.health_command;
+        delete fields.health_interval_seconds;
+        delete fields.health_timeout_seconds;
+        delete fields.health_failure_threshold;
+        delete fields.on_crash;
+        delete fields.stop_timeout_seconds;
+        delete fields.log_max_bytes;
+        delete fields.notification;
+        fields.color = String(fields.color || '').trim();
+      } else if (this.isMarker || this.isNotification) {
         delete fields.agent;
         delete fields.model;
         delete fields.expertise_prompt;

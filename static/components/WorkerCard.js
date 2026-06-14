@@ -119,6 +119,15 @@ const WorkerCard = {
           <div v-if="markerNote" class="worker-card-note">{{ markerNote }}</div>
           <template v-else>{{ emptyLabel }}</template>
         </div>
+        <div v-else-if="isValue" class="worker-card-value">
+          <div class="worker-card-value-meta">
+            <span>{{ valueCellRef || 'Value' }}</span>
+            <span>{{ valueTypeLabel }}</span>
+          </div>
+          <div class="worker-card-value-main" :title="valueDisplay">
+            {{ valueDisplay || 'Empty' }}
+          </div>
+        </div>
         <div v-else class="worker-card-empty">
           <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
             {{ statusLabel }}
@@ -232,7 +241,7 @@ const WorkerCard = {
       return Array.isArray(this.worker?.task_queue) ? this.worker.task_queue.length : 0;
     },
     workerNameLabel() {
-      const name = this.worker?.name || '';
+      const name = this.worker?.name || (this.isValue ? this.valueCellRef || 'Value' : '');
       return this.taskQueueCount > 0 ? `${name} (${this.taskQueueCount})` : name;
     },
     titlePortCandidate() {
@@ -248,6 +257,7 @@ const WorkerCard = {
     canStart() {
       if (this.isService) return ['idle', 'stopped', 'crashed'].includes(this.workerState);
       if (this.isMarker) return false;
+      if (this.isValue) return false;
       return this.workerState === 'idle' && !this.isDisabledType;
     },
     runMenuLabel() {
@@ -281,7 +291,7 @@ const WorkerCard = {
       return paused && ['ai', 'shell', 'marker', 'notification'].includes(String(this.worker?.type || 'ai'));
     },
     canPauseWorker() {
-      return !this.isMarker && !this.isEval && !this.isUnknownType;
+      return !this.isMarker && !this.isValue && !this.isEval && !this.isUnknownType;
     },
     connectedGroupCount() {
       return Array.isArray(this.menuContext?.connectedGroupSlots) ? this.menuContext.connectedGroupSlots.length : 0;
@@ -318,6 +328,9 @@ const WorkerCard = {
     },
     isNotification() {
       return isNotificationWorker(this.worker);
+    },
+    isValue() {
+      return isValueWorker(this.worker);
     },
     isEval() {
       return isEvalWorker(this.worker);
@@ -380,12 +393,37 @@ const WorkerCard = {
     emptyLabel() {
       if (this.isMarker) return 'Marker';
       if (this.isNotification) return 'Notification';
+      if (this.isValue) return 'Value';
       if (this.isService) return this.workerState === 'idle' ? 'Stopped' : this.workerState;
       if (this.isHeldQueue) return 'Waiting for Run';
       return 'Idle';
     },
     markerNote() {
       return String(this.worker?.note || '').trim();
+    },
+    valueCellRef() {
+      return window.GridGeometry?.coordToCellRef?.(this.worker) || '';
+    },
+    valueTypeLabel() {
+      const declared = String(this.worker?.value_type || 'auto');
+      const resolved = String(this.worker?.resolved_value_type || '');
+      return declared === 'auto' && resolved ? resolved : declared;
+    },
+    valueDisplay() {
+      const value = this.worker?.value;
+      if (value === null || value === undefined) return '';
+      const format = this.worker?.format || {};
+      const kind = String(format.kind || 'auto');
+      const numeric = typeof value === 'number' ? value : Number(value);
+      if ((kind === 'number' || kind === 'currency') && Number.isFinite(numeric)) {
+        const places = Math.max(0, Math.min(10, Number(format.places ?? 2)));
+        const rendered = numeric.toLocaleString(undefined, {
+          minimumFractionDigits: places,
+          maximumFractionDigits: places,
+        });
+        return kind === 'currency' ? `${format.symbol || '$'}${rendered}` : rendered;
+      }
+      return String(value);
     },
     showVerticalResizeHandle() {
       return !!(this.showsVerticalResizeControl && (this.hoveredVerticalResize || this.isVerticalResizing));

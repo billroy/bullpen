@@ -3388,6 +3388,37 @@ body.worker-singleton-dragging * {
   overflow-wrap: anywhere;
 }
 
+.worker-card-value {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 4px 6px;
+}
+
+.worker-card-value-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.worker-card-value-main {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .worker-card-output {
   margin-top: 1px;
   flex: 1 1 0;

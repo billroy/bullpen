@@ -697,6 +697,31 @@ class TestWorkerEvents:
         assert layout["slots"][0]["name"] == "Feature Architect"
         assert layout["slots"][0]["state"] == "idle"
 
+    def test_add_value_worker(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "coord": {"col": 27, "row": 4},
+            "type": "value",
+            "fields": {
+                "name": "Build Number",
+                "value": "00123",
+                "value_type": "auto",
+                "format": {"kind": "number", "places": 99},
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+
+        assert worker["type"] == "value"
+        assert worker["row"] == 4
+        assert worker["col"] == 27
+        assert worker["name"] == "Build Number"
+        assert worker["value"] == "00123"
+        assert worker["resolved_value_type"] == "string"
+        assert worker["format"] == {"kind": "number", "places": 10}
+        assert "task_queue" not in worker
+        assert "state" not in worker
+
     def test_marker_worker_start_via_socket_completes_without_deadlock(self, client):
         c, app = client
         c.emit("worker:add", {

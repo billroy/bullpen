@@ -350,6 +350,12 @@ const BullpenTab = {
               <i data-lucide="bell-ring" aria-hidden="true"></i>
               <span>Notification</span>
             </button>
+            <button class="worker-type-tab" :class="{ active: libraryMode === 'value' }"
+                    role="tab" :aria-selected="libraryMode === 'value'"
+                    @click="libraryMode = 'value'">
+              <i data-lucide="variable" aria-hidden="true"></i>
+              <span>Value</span>
+            </button>
           </div>
           <div v-if="libraryMode === 'ai'" class="modal-body profile-library">
             <div v-for="p in sortedProfiles" :key="p.id"
@@ -392,6 +398,13 @@ const BullpenTab = {
                  @click="addNotificationWorker()">
               <span class="profile-name">Blank notification worker</span>
               <span class="profile-agent">toast, speech, sound, flash</span>
+            </div>
+          </div>
+          <div v-else-if="libraryMode === 'value'" class="modal-body profile-library">
+            <div class="profile-item profile-item--blank"
+                 @click="addValueWorker()">
+              <span class="profile-name">Blank value worker</span>
+              <span class="profile-agent">named spreadsheet value</span>
             </div>
           </div>
         </div>
@@ -1535,6 +1548,17 @@ const BullpenTab = {
         },
       });
     },
+    addValueWorker() {
+      this.createWorkerAndOpenConfig({
+        type: 'value',
+        fields: {
+          name: '',
+          value: '',
+          value_type: 'auto',
+          format: { kind: 'auto' },
+        },
+      });
+    },
     nextEmptySlotIndex() {
       const slots = this.layout?.slots || [];
       const idx = slots.findIndex(slot => !slot);
@@ -1548,6 +1572,7 @@ const BullpenTab = {
         'health_type', 'health_url', 'health_command', 'health_interval_seconds',
         'health_timeout_seconds', 'health_failure_threshold', 'on_crash',
         'stop_timeout_seconds', 'log_max_bytes', 'color', 'avatar'];
+      fields.push('value', 'value_type', 'resolved_value_type', 'format', 'icon', 'updated_at');
       fields.push('notification');
       const copy = {};
       for (const key of fields) {
