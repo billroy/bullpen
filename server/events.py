@@ -46,7 +46,13 @@ from server.validation import (
     validate_layout_update, validate_team_name, validate_terminal_id,
     validate_terminal_input, validate_terminal_size,
 )
-from server.worker_types import copy_worker_slot, normalize_layout, normalize_worker_slot
+from server.worker_types import (
+    NOTIFICATION_KOKORO_VOICES,
+    NOTIFICATION_SPEECH_ENGINES,
+    copy_worker_slot,
+    normalize_layout,
+    normalize_worker_slot,
+)
 
 
 _CLAUDE_MCP_READY_STATES = {"connected", "ready", "ok"}
@@ -62,6 +68,7 @@ _AI_COPY_FIELDS = {
 }
 _DEFAULT_CHAT_TIMEOUT_SECONDS = 60
 _MAX_CHAT_TIMEOUT_SECONDS = 3600
+_MAX_NOTIFICATION_SPEECH_TEXT_LENGTH = 800
 
 
 def _chat_timeout_seconds(bp_dir):
@@ -74,6 +81,77 @@ def _chat_timeout_seconds(bp_dir):
     except (TypeError, ValueError):
         timeout = _DEFAULT_CHAT_TIMEOUT_SECONDS
     return max(1, min(timeout, _MAX_CHAT_TIMEOUT_SECONDS))
+
+
+def _clamp_float(value, default, low, high):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(low, min(number, high))
+
+
+def _normalize_direct_speech_payload(data):
+    text = str((data or {}).get("text") or "").strip()
+    if not text:
+        raise ValidationError("notification:speak requires text")
+    text = text[:_MAX_NOTIFICATION_SPEECH_TEXT_LENGTH]
+
+    engine = str((data or {}).get("engine") or "kokoro").strip().lower()
+    if engine not in NOTIFICATION_SPEECH_ENGINES:
+        raise ValidationError(f"Invalid speech engine: {engine}")
+
+    voice = str((data or {}).get("voice") or "").strip()[:200]
+    if engine == "kokoro" and voice and voice not in NOTIFICATION_KOKORO_VOICES:
+        raise ValidationError(f"Invalid Kokoro voice: {voice}")
+
+    created_at = _now_iso()
+    return {
+        "id": f"mcp_speech_{int(time.time() * 1000)}",
+        "ephemeral": True,
+        "slot": "mcp",
+        "worker": {
+            "name": "MCP speech",
+            "type": "notification",
+        },
+        "ticket": {
+            "id": "",
+            "title": text,
+        },
+        "channels": {
+            "toast": {
+                "enabled": False,
+                "text": "",
+                "variant": "stage",
+                "duration_ms": 6000,
+            },
+            "speech": {
+                "enabled": True,
+                "text": text,
+                "voice": voice,
+                "engine": engine,
+                "rate": _clamp_float((data or {}).get("rate"), 1.0, 0.5, 2.0),
+                "volume": _clamp_float((data or {}).get("volume"), 1.0, 0.0, 1.0),
+            },
+            "sound": {
+                "enabled": False,
+                "effect": "done",
+                "repeat_count": 1,
+                "gap_ms": 250,
+                "volume": 1.0,
+            },
+            "flash": {
+                "enabled": False,
+                "sequence": [],
+                "opacity": 0.35,
+            },
+        },
+        "policy": {
+            "cooldown_ms": 0,
+            "dedupe_window_ms": 0,
+        },
+        "created_at": created_at,
+    }
 
 
 def _harden_live_agent_argv(provider, argv):
@@ -484,6 +562,27 @@ def register_events(socketio, app):
             worker_mod.check_watch_columns(
                 bp_dir, fields["status"], socketio, ws_id,
             )
+
+    @socketio.on("notification:speak")
+    @with_lock
+    def on_notification_speak(data):
+        ws_id, _bp_dir = _resolve(data)
+        if not _ensure_workspace_membership(ws_id):
+            return {"ok": False, "error": "workspace unavailable"}
+        try:
+            payload = _normalize_direct_speech_payload(data)
+        except ValidationError as e:
+            emit("error", {"message": str(e)})
+            return {"ok": False, "error": str(e)}
+        payload["workspaceId"] = ws_id
+        socketio.emit("notification:fire", payload, to=ws_id)
+        return {
+            "ok": True,
+            "id": payload["id"],
+            "engine": payload["channels"]["speech"]["engine"],
+            "voice": payload["channels"]["speech"]["voice"],
+            "text": payload["channels"]["speech"]["text"],
+        }
 
     @socketio.on("task:delete")
     @with_lock

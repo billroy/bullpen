@@ -12,7 +12,6 @@
   const GLOBAL_START_GAP_MS = 250;
   const KOKORO_IMPORT_URL = 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js';
   const KOKORO_MODEL_ID = 'onnx-community/Kokoro-82M-v1.0-ONNX';
-  const KOKORO_DEFAULT_VOICE = 'af_heart';
   const KOKORO_VOICES = [
     { value: 'af_heart', label: 'Heart - US female' },
     { value: 'af_bella', label: 'Bella - US female' },
@@ -154,6 +153,7 @@
 
     completeDelivery(payload, status = 'complete', error = '') {
       if (!this._socket || !payload) return;
+      if (payload.ephemeral) return;
       const deliveryId = String(payload.id || payload.delivery_id || '');
       if (deliveryId) this._activeDeliveries.delete(deliveryId);
       this._socket.emit('notification:complete', {
@@ -396,10 +396,9 @@
 
     async _speakKokoro(speech) {
       const tts = await this.loadKokoro();
-      const voice = KOKORO_VOICES.some(item => item.value === speech.voice)
-        ? speech.voice
-        : KOKORO_DEFAULT_VOICE;
-      const result = await tts.generate(String(speech.text || ''), { voice });
+      const options = {};
+      if (KOKORO_VOICES.some(item => item.value === speech.voice)) options.voice = speech.voice;
+      const result = await tts.generate(String(speech.text || ''), options);
       const blob = typeof result?.toBlob === 'function' ? result.toBlob() : result;
       if (!blob) throw new Error('Kokoro did not return audio');
       const url = URL.createObjectURL(blob);

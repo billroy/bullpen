@@ -44,6 +44,7 @@ def test_notification_worker_runtime_caps_and_settings_exist():
     assert "loadKokoro()" in text
     assert "_speakKokoro" in text
     assert "notification:fire" in text
+    assert "if (payload.ephemeral) return;" in text
     assert "prefers-reduced-motion: reduce" in text
     assert "stopSpeech()" in text
     assert "Notification workers" in toolbar

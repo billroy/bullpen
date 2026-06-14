@@ -10,9 +10,11 @@ import pytest
 
 from server.agents import register_adapter
 from server.agents.base import AgentAdapter
+from server import events as events_mod
 from server import mcp_auth
 from server.app import create_app, socketio
 from server.persistence import read_json, write_json
+from server.validation import ValidationError
 from server import service_worker as service_worker_mod
 import server.workers as workers_mod
 from tests.conftest import MockAdapter
@@ -51,6 +53,40 @@ def _wait_for_event(client, name, timeout=3.0):
                 return evt["args"][0]
         time.sleep(0.05)
     return None
+
+
+def test_direct_speech_payload_normalizes_defaults_and_voice():
+    payload = events_mod._normalize_direct_speech_payload({"text": "  Hello Bullpen  "})
+
+    assert payload["ephemeral"] is True
+    speech = payload["channels"]["speech"]
+    assert speech["text"] == "Hello Bullpen"
+    assert speech["engine"] == "kokoro"
+    assert speech["voice"] == ""
+    assert speech["rate"] == 1.0
+    assert speech["volume"] == 1.0
+
+    payload = events_mod._normalize_direct_speech_payload({
+        "text": "Hello",
+        "engine": "kokoro",
+        "voice": "af_bella",
+        "rate": 3,
+        "volume": -1,
+    })
+
+    speech = payload["channels"]["speech"]
+    assert speech["voice"] == "af_bella"
+    assert speech["rate"] == 2.0
+    assert speech["volume"] == 0.0
+
+
+def test_direct_speech_payload_rejects_invalid_kokoro_voice():
+    with pytest.raises(ValidationError):
+        events_mod._normalize_direct_speech_payload({
+            "text": "Hello",
+            "engine": "kokoro",
+            "voice": "not-a-voice",
+        })
 
 
 def test_start_without_project_connects_with_empty_project_list(tmp_path, monkeypatch):

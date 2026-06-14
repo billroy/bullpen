@@ -94,10 +94,22 @@ class _ValueClient:
         return self.payload, self.err
 
 
+class _SpeakClient:
+    def __init__(self, payload=None, err=None):
+        self.payload = payload or {"ok": True, "id": "mcp_speech_1", "engine": "kokoro", "voice": "", "text": "Hello"}
+        self.err = err
+        self.calls = []
+
+    def speak_text(self, args):
+        self.calls.append(args)
+        return self.payload, self.err
+
+
 class _RecordingSio:
     def __init__(self):
         self.handlers = {}
         self.connect_calls = []
+        self.call_requests = []
 
     def on(self, name):
         def _register(fn):
@@ -117,6 +129,10 @@ class _RecordingSio:
 
     def emit(self, *_args, **_kwargs):
         return None
+
+    def call(self, event, payload, **kwargs):
+        self.call_requests.append((event, payload, kwargs))
+        return {"ok": True, "id": "mcp_speech_1", "engine": payload.get("engine", "kokoro"), "voice": payload.get("voice", ""), "text": payload.get("text", "")}
 
 
 class _FallbackRecordingSio(_RecordingSio):
@@ -341,6 +357,47 @@ def test_set_and_increment_value_dispatch_through_client(tmp_workspace, monkeypa
     assert captured[1]["is_error"] is False
 
 
+def test_speak_text_dispatches_through_client(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    client = _SpeakClient()
+    captured = []
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.append({"id": msg_id, "text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+
+    mcp_tools.handle_call(
+        bp_dir,
+        client=client,
+        msg_id=17,
+        name="speak_text",
+        args={"text": "Hello", "engine": "web-speech", "voice": "Samantha"},
+    )
+
+    assert client.calls == [{"text": "Hello", "engine": "web-speech", "voice": "Samantha"}]
+    assert captured[0]["is_error"] is False
+    assert json.loads(captured[0]["text"])["engine"] == "kokoro"
+
+
+def test_speak_text_requires_text(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured["id"] = msg_id
+        captured["text"] = text
+        captured["is_error"] = is_error
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+
+    mcp_tools.handle_call(bp_dir, client=_SpeakClient(), msg_id=18, name="speak_text", args={"text": "   "})
+
+    assert captured["id"] == 18
+    assert captured["is_error"] is True
+    assert captured["text"] == "Error: text is required"
+
+
 def test_bullpen_client_degrades_when_socket_unavailable(monkeypatch):
     monkeypatch.setattr(
         mcp_tools.socketio,
@@ -483,6 +540,37 @@ def test_bullpen_client_trusts_server_workspace_id_for_token_auth(monkeypatch, t
     assert client.workspace_id == "ws-1"
 
 
+def test_bullpen_client_speak_text_calls_notification_speak(monkeypatch, tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    mcp_auth.ensure_workspace_runtime_config(bp_dir, preferred_token="token-1")
+    created_sio = _RecordingSio()
+    monkeypatch.setattr(mcp_tools.socketio, "Client", lambda **_kwargs: created_sio)
+
+    client = mcp_tools.BullpenClient("127.0.0.1", 5050, bp_dir=bp_dir)
+    payload, err = client.speak_text({
+        "text": "Build complete",
+        "engine": "kokoro",
+        "voice": "af_bella",
+        "rate": 1.25,
+        "volume": 0.75,
+    })
+
+    assert err is None
+    assert payload["ok"] is True
+    assert created_sio.call_requests == [(
+        "notification:speak",
+        {
+            "workspaceId": "ws-1",
+            "text": "Build complete",
+            "engine": "kokoro",
+            "voice": "af_bella",
+            "rate": 1.25,
+            "volume": 0.75,
+        },
+        {"timeout": client.operation_timeout_seconds},
+    )]
+
+
 def test_resolve_runtime_args_reads_workspace_config(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     config_path = bp_dir + "/config.json"
@@ -621,6 +709,7 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
     assert "get_value" in tool_names
+    assert "speak_text" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
     assert created["id"] in ids
@@ -684,6 +773,7 @@ def test_main_processes_line_json_initialize_tools_and_list_tasks(tmp_workspace,
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
     assert "get_value" in tool_names
+    assert "speak_text" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
     assert created["id"] in ids

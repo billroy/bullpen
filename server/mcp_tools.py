@@ -37,7 +37,7 @@ from server.values import (
     iter_value_slots,
     value_ref_warning,
 )
-from server.worker_types import normalize_layout
+from server.worker_types import NOTIFICATION_SPEECH_ENGINES, normalize_layout
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
 VALID_PRIORITIES = ("low", "normal", "high", "urgent")
@@ -186,6 +186,31 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {},
+        },
+    },
+    {
+        "name": "speak_text",
+        "description": "Speak text in connected Bullpen browser clients.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "Text to speak"},
+                "engine": {
+                    "type": "string",
+                    "enum": sorted(NOTIFICATION_SPEECH_ENGINES),
+                    "default": "kokoro",
+                    "description": "Speech engine to use. Defaults to Kokoro.",
+                },
+                "voice": {
+                    "type": "string",
+                    "description": (
+                        "Optional voice id/name. For Kokoro, omit this to use the kokoro.js default voice."
+                    ),
+                },
+                "rate": {"type": "number", "default": 1.0, "description": "Playback rate from 0.5 to 2.0"},
+                "volume": {"type": "number", "default": 1.0, "description": "Playback volume from 0.0 to 1.0"},
+            },
+            "required": ["text"],
         },
     },
 ]
@@ -547,6 +572,37 @@ class BullpenClient:
             return None, "Value was updated but could not be read back"
         return _value_summary(match), None
 
+    def speak_text(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+        if not self._connect_best_effort():
+            return None, self._connection_failure_message("speak_text")
+        if not self.workspace_id:
+            return None, "MCP client has no workspace_id — server did not identify a workspace for this token"
+
+        payload: dict[str, Any] = {
+            "workspaceId": self.workspace_id,
+            "text": args.get("text", ""),
+        }
+        for key in ("engine", "voice", "rate", "volume"):
+            if key in args:
+                payload[key] = args[key]
+
+        try:
+            response = self.sio.call(
+                "notification:speak",
+                payload,
+                timeout=self.operation_timeout_seconds,
+            )
+        except AttributeError:
+            return None, "Socket.IO client does not support acknowledgement calls"
+        except Exception as exc:
+            return None, f"notification:speak failed: {exc}"
+
+        if not isinstance(response, dict):
+            return None, "Missing notification:speak acknowledgement"
+        if not response.get("ok"):
+            return None, str(response.get("error") or "notification:speak failed")
+        return response, None
+
     def disconnect(self) -> None:
         try:
             if self.connected:
@@ -747,6 +803,21 @@ def handle_call(
         payload, err = client.increment_value(args, sign=-1 if name == "decrement_value" else 1)
         if err:
             _tool_result(msg_id, json.dumps({"error": "validation", "message": err}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name == "speak_text":
+        text = str(args.get("text", "")).strip()
+        if not text:
+            _tool_result(msg_id, "Error: text is required", is_error=True, mode=io_mode)
+            return
+        if client is None:
+            _tool_result(msg_id, "Error: speak_text unavailable", is_error=True, mode=io_mode)
+            return
+        payload, err = client.speak_text(args)
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "speech", "message": err}), is_error=True, mode=io_mode)
             return
         _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
         return
