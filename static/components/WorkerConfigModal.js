@@ -379,6 +379,9 @@ const WorkerConfigModal = {
       if (engine === 'web-speech') return 'Web Speech voices come from the browser or operating system.';
       return 'Automatic uses Kokoro first, then browser speech if Kokoro cannot load.';
     },
+    canPreviewNotificationSound() {
+      return !!window.NotificationWorkers?.playSound && !!window.ambientAudio;
+    },
   },
   template: `
     <div v-if="worker" class="modal-overlay" @mousedown.self="overlayMouseDown = true" @click.self="onOverlayClick" @keydown.escape="$emit('close')" @keydown.meta.enter="onPrimaryShortcut" tabindex="0" ref="overlay">
@@ -864,6 +867,19 @@ const WorkerConfigModal = {
                       <option v-for="option in notificationSoundOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
                     </select>
                   </label>
+                  <label class="form-label notification-sound-preview-label">
+                    Preview
+                    <button
+                      type="button"
+                      class="btn btn-icon notification-sound-preview"
+                      @click="previewNotificationSound"
+                      :disabled="!canPreviewNotificationSound"
+                      title="Preview sound effect"
+                      aria-label="Preview sound effect"
+                    >
+                      <i data-lucide="volume-2" aria-hidden="true"></i>
+                    </button>
+                  </label>
                   <label class="form-label">
                     Repeat
                     <input class="form-input" type="number" v-model.number="form.notification.sound.repeat_count" min="1" max="5">
@@ -1320,6 +1336,17 @@ const WorkerConfigModal = {
       if (!speech) return;
       const valid = this.notificationVoiceOptions.some(option => option.value === speech.voice);
       if (!valid) speech.voice = speech.engine === 'kokoro' ? 'af_heart' : '';
+    },
+    previewNotificationSound() {
+      if (!this.canPreviewNotificationSound) return;
+      const sound = this.form.notification?.sound || {};
+      window.NotificationWorkers.playSound({
+        enabled: true,
+        effect: sound.effect || 'done',
+        repeat_count: sound.repeat_count,
+        gap_ms: sound.gap_ms,
+        volume: sound.volume,
+      });
     },
     onSave() {
       const fields = { ...this.form };

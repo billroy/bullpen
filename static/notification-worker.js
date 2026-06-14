@@ -319,16 +319,29 @@
     playSound(sound) {
       if (!window.ambientAudio) return Promise.resolve();
       const method = SOUND_METHODS[String(sound.effect || 'done')] || 'playDone';
-      const repeat = Math.max(1, Math.min(Number(sound.repeat_count || 1), 5));
-      const gap = Math.max(100, Math.min(Number(sound.gap_ms || 250), 2000));
+      const rawRepeat = Number(sound.repeat_count ?? 1);
+      const rawGap = Number(sound.gap_ms ?? 250);
+      const rawVolume = Number(sound.volume ?? 1);
+      const repeat = Number.isFinite(rawRepeat) ? Math.max(1, Math.min(rawRepeat, 5)) : 1;
+      const gap = Number.isFinite(rawGap) ? Math.max(100, Math.min(rawGap, 2000)) : 250;
+      const volume = Number.isFinite(rawVolume) ? Math.max(0, Math.min(rawVolume, 1)) : 1;
+      const originalVolume = typeof window.ambientAudio.getVolume === 'function'
+        ? window.ambientAudio.getVolume()
+        : null;
       for (let i = 0; i < repeat; i += 1) {
         setTimeout(() => {
           try { window.ambientAudio.unlock(); } catch (_err) {}
           try { window.ambientAudio._duckAmbient?.(6, 300); } catch (_err) {}
+          try { window.ambientAudio.setVolume?.(volume); } catch (_err) {}
           try { window.ambientAudio[method]?.(); } catch (_err) {}
         }, i * gap);
       }
-      return new Promise(resolve => setTimeout(resolve, ((repeat - 1) * gap) + 350));
+      return new Promise(resolve => setTimeout(() => {
+        if (originalVolume !== null) {
+          try { window.ambientAudio.setVolume?.(originalVolume); } catch (_err) {}
+        }
+        resolve();
+      }, ((repeat - 1) * gap) + 350));
     },
 
     speak(speech, payload) {

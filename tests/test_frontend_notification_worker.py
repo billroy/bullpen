@@ -30,6 +30,8 @@ def test_notification_worker_config_modal_fields_exist():
     assert "af_bella" in text
     assert "placeholder=\"Global default\"" not in text
     assert "form.notification.sound.effect" in text
+    assert "previewNotificationSound" in text
+    assert "aria-label=\"Preview sound effect\"" in text
     assert "form.notification.flash.sequence" in text
     assert "form.notification.policy.cooldown_ms" in text
     assert "{ticket.title}" in text
@@ -67,5 +69,6 @@ def test_notification_worker_runtime_caps_and_settings_exist():
     assert "if (payload.ephemeral) return;" in text
     assert "prefers-reduced-motion: reduce" in text
     assert "stopSpeech()" in text
+    assert "window.ambientAudio.setVolume?.(volume)" in text
     assert "Notification workers" in toolbar
     assert "onToggleNotificationFlag" in toolbar

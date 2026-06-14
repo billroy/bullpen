@@ -3749,6 +3749,17 @@ body.worker-singleton-dragging * {
   margin-top: 0;
 }
 
+.notification-sound-preview-label {
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.notification-sound-preview {
+  width: 34px;
+  height: 34px;
+  margin-top: 4px;
+}
+
 .notification-worker-toast-container {
   position: fixed;
   right: 16px;
