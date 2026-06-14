@@ -10,6 +10,7 @@ from server.values import (
     row_label,
 )
 from server.templates import render_value_template
+from server.templates import render_context_value_template
 
 
 def test_cell_ref_helpers_match_spreadsheet_coordinates():
@@ -86,3 +87,25 @@ def test_value_template_renders_raw_values_and_warns_for_missing_or_duplicate_na
     assert rendered.text == "deploy release/2026 build 42 missing {nope}"
     assert any("Duplicate value name matched A1" in warning for warning in rendered.warnings)
     assert any("value 'nope' not found" in warning for warning in rendered.warnings)
+
+
+def test_context_value_template_renders_context_first_then_values():
+    slots = [
+        {"type": "value", "row": 0, "col": 0, "name": "direction", "value": "west"},
+        {"type": "value", "row": 0, "col": 1, "name": "ticket.title", "value": "shadowed"},
+    ]
+    context = {
+        "ticket": {"title": "Real ticket"},
+        "worker": {"name": "Notifier"},
+    }
+
+    rendered = render_context_value_template(
+        "say {direction} for {ticket.title} via {worker.name}",
+        context,
+        slots,
+        max_len=200,
+        context_label="notification",
+    )
+
+    assert rendered.text == "say west for Real ticket via Notifier"
+    assert rendered.warnings == []

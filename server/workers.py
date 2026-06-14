@@ -39,7 +39,7 @@ from server.prompt_hardening import (
     render_untrusted_text_block,
     render_worker_trust_instructions,
 )
-from server.templates import render_context_template, render_value_template
+from server.templates import render_context_value_template, render_value_template
 from server.worker_types import get_worker_type, normalize_layout
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
@@ -1121,13 +1121,21 @@ def _notification_context(bp_dir, slot_index, worker, task):
     }
 
 
-def _render_notification_template(template, context, *, max_len, single_line=False):
-    return render_context_template(template, context, max_len=max_len, single_line=single_line)
+def _render_notification_template(template, context, slots, *, max_len, single_line=False):
+    return render_context_value_template(
+        template,
+        context,
+        slots,
+        max_len=max_len,
+        single_line=single_line,
+        context_label="notification",
+    ).text
 
 
-def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None):
+def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None, layout=None):
     config = worker.get("notification") if isinstance(worker.get("notification"), dict) else {}
     context = _notification_context(bp_dir, slot_index, worker, task)
+    slots = layout.get("slots") if isinstance(layout, dict) else []
     toast = config.get("toast") if isinstance(config.get("toast"), dict) else {}
     speech = config.get("speech") if isinstance(config.get("speech"), dict) else {}
     sound = config.get("sound") if isinstance(config.get("sound"), dict) else {}
@@ -1162,6 +1170,7 @@ def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None):
                 "text": _render_notification_template(
                     toast.get("template"),
                     context,
+                    slots,
                     max_len=500,
                     single_line=True,
                 ),
@@ -1173,6 +1182,7 @@ def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None):
                 "text": _render_notification_template(
                     speech.get("template"),
                     context,
+                    slots,
                     max_len=800,
                     single_line=False,
                 ),
@@ -1207,7 +1217,7 @@ def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
     if begun is None:
         return
-    _layout, worker, task, task_id = begun
+    layout, worker, task, task_id = begun
 
     disposition = str(worker.get("disposition") or "").strip()
     if not disposition:
@@ -1231,7 +1241,7 @@ def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         )
         return
 
-    payload = _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=ws_id)
+    payload = _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=ws_id, layout=layout)
     committed = _commit_run_start(
         bp_dir,
         slot_index,
