@@ -268,6 +268,51 @@ def test_shell_command_does_not_interpolate_ticket_fields(bp_dir):
     assert open(artifact).read() == ""
 
 
+def test_shell_worker_interpolates_value_placeholders_in_command_and_env(bp_dir):
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    layout["slots"] = [
+        {
+            "type": "value",
+            "row": 0,
+            "col": 0,
+            "name": "branch",
+            "value": "release/2026",
+            "value_type": "string",
+        },
+        {
+            "type": "shell",
+            "row": 0,
+            "col": 1,
+            "name": "Shell Gate",
+            "activation": "manual",
+            "disposition": "review",
+            "watch_column": None,
+            "max_retries": 0,
+            "paused": False,
+            "task_queue": [],
+            "state": "idle",
+            "command": _python_command(
+                "import json, os; "
+                "print(json.dumps({'branch': os.environ.get('TARGET_BRANCH'), 'cmd': '{branch}'}))"
+            ),
+            "cwd": "",
+            "timeout_seconds": 10,
+            "env": [{"key": "TARGET_BRANCH", "value": "{A1}"}],
+            "ticket_delivery": "stdin-json",
+        },
+    ]
+    write_json(os.path.join(bp_dir, "layout.json"), layout)
+    task = create_task(bp_dir, "Interpolate values")
+    assign_task(bp_dir, 1, task["id"])
+
+    start_worker(bp_dir, 1)
+    _wait_for_worker_done(bp_dir, slot=1)
+
+    updated = read_task(bp_dir, task["id"])
+    assert '"branch": "release/2026"' in updated["body"]
+    assert '"cmd": "release/2026"' in updated["body"]
+
+
 def test_shell_exit_78_blocks_without_retry(bp_dir):
     _set_shell_worker(
         bp_dir,

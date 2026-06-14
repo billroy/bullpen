@@ -39,6 +39,7 @@ from server.prompt_hardening import (
     render_untrusted_text_block,
     render_worker_trust_instructions,
 )
+from server.templates import render_context_template, render_value_template
 from server.worker_types import get_worker_type, normalize_layout
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
@@ -1079,9 +1080,6 @@ def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     )
 
 
-_NOTIFICATION_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\}")
-
-
 def _notification_context(bp_dir, slot_index, worker, task):
     workspace = os.path.dirname(bp_dir)
     try:
@@ -1110,25 +1108,7 @@ def _notification_context(bp_dir, slot_index, worker, task):
 
 
 def _render_notification_template(template, context, *, max_len, single_line=False):
-    text = str(template or "")
-
-    def _replace(match):
-        path = match.group(1).split(".")
-        value = context
-        for part in path:
-            if isinstance(value, dict) and part in value:
-                value = value[part]
-            else:
-                return ""
-        return str(value if value is not None else "")
-
-    rendered = _NOTIFICATION_PLACEHOLDER_RE.sub(_replace, text)
-    rendered = "".join(ch for ch in rendered if ch in "\n\t" or ord(ch) >= 32)
-    if single_line:
-        rendered = " ".join(rendered.split())
-    else:
-        rendered = re.sub(r"[ \t\r\f\v]+", " ", rendered).strip()
-    return rendered[:max_len]
+    return render_context_template(template, context, max_len=max_len, single_line=single_line)
 
 
 def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None):
@@ -1467,15 +1447,32 @@ def _prepare_shell_run(bp_dir, workspace, slot_index, worker, task):
     payload_json = json.dumps(payload, ensure_ascii=False)
     payload_json.encode("utf-8")
 
-    cwd = _resolve_shell_cwd(workspace, worker.get("cwd"))
-    env = _minimal_shell_env(worker.get("env"))
+    layout = _load_layout(bp_dir)
+    value_slots = layout.get("slots", [])
+    prelude_lines = []
+
+    cwd_render = render_value_template(worker.get("cwd"), value_slots, context_label="cwd")
+    prelude_lines.extend(f"[bullpen] {warning}" for warning in cwd_render.warnings)
+    cwd = _resolve_shell_cwd(workspace, cwd_render.text)
+
+    rendered_env = []
+    for item in worker.get("env") or []:
+        if not isinstance(item, dict):
+            continue
+        rendered_item = dict(item)
+        env_render = render_value_template(item.get("value", ""), value_slots, context_label=f"env.{item.get('key', '')}")
+        rendered_item["value"] = env_render.text
+        prelude_lines.extend(f"[bullpen] {warning}" for warning in env_render.warnings)
+        rendered_env.append(rendered_item)
+    env = _minimal_shell_env(rendered_env)
     delivery = worker.get("ticket_delivery") or "stdin-json"
     fallback_from = None
     stdin_text = None
     body_file = None
-    prelude_lines = []
 
-    command = str(worker.get("command") or "")
+    command_render = render_value_template(worker.get("command"), value_slots, context_label="command")
+    command = command_render.text
+    prelude_lines.extend(f"[bullpen] {warning}" for warning in command_render.warnings)
     if sys.platform == "win32":
         argv = ["cmd.exe", "/c", command]
     else:

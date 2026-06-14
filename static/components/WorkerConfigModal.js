@@ -476,7 +476,7 @@ const WorkerConfigModal = {
               Command
               <textarea class="form-textarea form-textarea--mono" v-model="form.command" rows="3"
                         placeholder="python3 scripts/check_ticket.py"></textarea>
-              <span class="form-hint">Executed with <code>/bin/sh -c</code> (POSIX) or <code>cmd.exe /c</code> (Windows). Ticket fields are never interpolated.</span>
+              <span class="form-hint">Executed with <code>/bin/sh -c</code> (POSIX) or <code>cmd.exe /c</code> (Windows). Ticket fields are never interpolated; Value placeholders are raw text.</span>
             </label>
             <div class="shell-warning">
               <strong>Stored in plaintext:</strong> command and env values live in

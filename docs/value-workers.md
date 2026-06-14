@@ -562,10 +562,9 @@ POSIX and Windows.
 - Shell and service command interpolation is raw text substitution. The command
   author is responsible for quoting and escaping.
 
-Open issue: there should be one shared server-side template renderer for
-Notification templates and Value interpolation. Duplicating placeholder logic
-in multiple worker implementations will create inconsistent escaping and
-lookup behavior.
+Implementation note: use the shared server-side renderer in
+`server/templates.py` for Notification templates and Value interpolation so
+placeholder scanning and warning behavior do not drift between worker types.
 
 ---
 

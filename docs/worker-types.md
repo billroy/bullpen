@@ -632,9 +632,10 @@ They are not merged into `worker_run` entries.
 The shell worker executes arbitrary commands configured by the workspace owner.
 It is not a sandbox. Baseline guardrails:
 
-- **No interpolation.** Bullpen never substitutes ticket fields into the
+- **Limited interpolation.** Bullpen never substitutes ticket fields into the
   command string. Ticket data reaches the subprocess only through the selected
-  delivery mode. Cover this with a test.
+  delivery mode. Value worker placeholders are raw-substituted in configured
+  command, cwd, and env values.
 - **Working directory confinement.** Resolve with `os.path.realpath()` and
   reject paths outside the workspace root, including symlink escapes.
 - **Minimal inherited env.** Start with an allowlist and then apply configured

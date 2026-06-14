@@ -19,6 +19,7 @@ from urllib.request import HTTPRedirectHandler, build_opener, Request
 
 from server.persistence import read_json
 from server import tasks as task_mod
+from server.templates import render_value_template
 from server.worker_types import normalize_layout
 
 
@@ -251,11 +252,44 @@ def _build_service_env(worker, workspace, slot_index, order=None):
     return env
 
 
-def resolve_service_preview(worker, workspace, slot_index, order=None):
-    cwd = _resolve_cwd(workspace, worker.get("cwd"))
-    env = _build_service_env(worker, workspace, slot_index, order=order)
-    command_source = _service_command_source(worker)
+def _load_value_slots(bp_dir):
+    if not bp_dir:
+        return []
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
+    except Exception:
+        return []
+    return layout.get("slots", [])
+
+
+def _render_configured_env_values(configured_env, value_slots, warnings):
+    rendered = []
+    for item in configured_env or []:
+        if not isinstance(item, dict):
+            continue
+        out = dict(item)
+        key = str(item.get("key") or "")
+        result = render_value_template(item.get("value", ""), value_slots, context_label=f"env.{key}")
+        out["value"] = result.text
+        warnings.extend(result.warnings)
+        rendered.append(out)
+    return rendered
+
+
+def resolve_service_preview(worker, workspace, slot_index, order=None, bp_dir=None):
+    value_slots = _load_value_slots(bp_dir)
     warnings = []
+
+    cwd_render = render_value_template(worker.get("cwd"), value_slots, context_label="cwd")
+    warnings.extend(cwd_render.warnings)
+    rendered_worker = dict(worker)
+    rendered_worker["cwd"] = cwd_render.text
+    rendered_worker["env"] = _render_configured_env_values(worker.get("env"), value_slots, warnings)
+
+    cwd = _resolve_cwd(workspace, rendered_worker.get("cwd"))
+    env = _build_service_env(rendered_worker, workspace, slot_index, order=order)
+    command_source = _service_command_source(worker)
     procfile_path = _procfile_path(cwd)
     process_names = []
     selected_process = None
@@ -279,6 +313,9 @@ def resolve_service_preview(worker, workspace, slot_index, order=None):
         warn_on_unset=True,
     )
     warnings.extend(interpolation_warnings)
+    value_render = render_value_template(resolved_command, value_slots, context_label="command")
+    resolved_command = value_render.text
+    warnings.extend(value_render.warnings)
 
     pre_start = str(worker.get("pre_start") or "").strip()
     resolved_pre_start = ""
@@ -291,6 +328,9 @@ def resolve_service_preview(worker, workspace, slot_index, order=None):
             warn_on_unset=True,
         )
         warnings.extend(pre_start_warnings)
+        value_render = render_value_template(resolved_pre_start, value_slots, context_label="pre_start")
+        resolved_pre_start = value_render.text
+        warnings.extend(value_render.warnings)
 
     health_command = str(worker.get("health_command") or "").strip()
     resolved_health_command = ""
@@ -301,6 +341,9 @@ def resolve_service_preview(worker, workspace, slot_index, order=None):
             context_label="health_command",
             warn_on_unset=False,
         )
+        value_render = render_value_template(resolved_health_command, value_slots, context_label="health_command")
+        resolved_health_command = value_render.text
+        warnings.extend(value_render.warnings)
 
     return {
         "cwd": cwd,
@@ -839,7 +882,10 @@ class ServiceWorkerController:
             self._write_log(f"[bullpen] starting service order {order_id}\n", emit=True)
 
             deadline = time.monotonic() + max(1, int(worker.get("startup_timeout_seconds", 60)))
-            preview = resolve_service_preview(worker, self.workspace, self.slot_index, order=order)
+            preview = resolve_service_preview(worker, self.workspace, self.slot_index, order=order, bp_dir=self.bp_dir)
+            if preview.get("resolved_health_command"):
+                worker = dict(worker)
+                worker["_resolved_health_command"] = preview["resolved_health_command"]
             cwd = preview["cwd"]
             env = preview["env"]
             command = preview["resolved_command"]
@@ -1040,7 +1086,14 @@ class ServiceWorkerController:
         if health_type == "http":
             return self._check_http_health(worker.get("health_url"), timeout)
         if health_type == "shell":
-            return self._check_shell_health(worker.get("health_command"), cwd, env, timeout)
+            resolved = worker.get("_resolved_health_command")
+            return self._check_shell_health(
+                resolved or worker.get("health_command"),
+                cwd,
+                env,
+                timeout,
+                interpolate_env=not bool(resolved),
+            )
         return True, "No health check configured."
 
     def _check_http_health(self, url, timeout):
@@ -1056,16 +1109,17 @@ class ServiceWorkerController:
         except Exception as exc:
             return False, str(exc)
 
-    def _check_shell_health(self, command, cwd, env, timeout):
+    def _check_shell_health(self, command, cwd, env, timeout, *, interpolate_env=True):
         command = str(command or "").strip()
         if not command:
             return False, "Shell health checks require a command."
-        command, _ = _interpolate_env_refs(
-            command,
-            env,
-            context_label="health_command",
-            warn_on_unset=False,
-        )
+        if interpolate_env:
+            command, _ = _interpolate_env_refs(
+                command,
+                env,
+                context_label="health_command",
+                warn_on_unset=False,
+            )
         try:
             proc = subprocess.Popen(
                 _command_argv(command),

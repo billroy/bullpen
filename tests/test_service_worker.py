@@ -211,7 +211,7 @@ def test_procfile_preview_resolves_selected_process_and_port(tmp_workspace):
         "web: python3 app.py --port=$PORT --workers=${WEB_CONCURRENCY}\n"
         "worker: python3 jobs.py\n",
     )
-    worker = _install_service_worker(
+    _install_service_worker(
         bp_dir,
         tmp_workspace,
         command="",
@@ -227,6 +227,37 @@ def test_procfile_preview_resolves_selected_process_and_port(tmp_workspace):
     assert preview["selected_process"] == "web"
     assert preview["raw_command"] == "python3 app.py --port=$PORT --workers=${WEB_CONCURRENCY}"
     assert preview["resolved_command"] == "python3 app.py --port=3100 --workers=2"
+
+
+def test_service_preview_interpolates_value_placeholders(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    worker = _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        command='echo {branch} $TARGET_BRANCH',
+        pre_start='echo pre-{A1}',
+        health_type="shell",
+        health_command='test "{branch}" = "$TARGET_BRANCH"',
+        env=[{"key": "TARGET_BRANCH", "value": "{A1}"}],
+    )
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    layout["slots"].insert(0, {
+        "type": "value",
+        "row": 0,
+        "col": 0,
+        "name": "branch",
+        "value": "release/2026",
+        "value_type": "string",
+    })
+    layout["slots"][1]["col"] = 1
+    write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+    preview = resolve_service_preview(layout["slots"][1], tmp_workspace, 1, bp_dir=bp_dir)
+
+    assert preview["env"]["TARGET_BRANCH"] == "release/2026"
+    assert preview["resolved_command"] == "echo release/2026 release/2026"
+    assert preview["resolved_pre_start"] == "echo pre-release/2026"
+    assert preview["resolved_health_command"] == 'test "release/2026" = "release/2026"'
 
 
 def test_suggest_service_port_skips_reserved_worker_ports(monkeypatch):

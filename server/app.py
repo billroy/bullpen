@@ -1158,7 +1158,7 @@ def create_app(
             return jsonify({"error": errors[0]}), 400
 
         try:
-            preview = service_worker_mod.resolve_service_preview(worker, ws.path, slot)
+            preview = service_worker_mod.resolve_service_preview(worker, ws.path, slot, bp_dir=ws.bp_dir)
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         suggested_port = None

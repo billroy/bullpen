@@ -79,9 +79,13 @@ In `env-vars` mode the scalar fields become environment variables:
 `BULLPEN_TICKET_TAGS` (JSON array string). The ticket body is written to a
 tempfile exposed via `BULLPEN_TICKET_BODY_FILE`.
 
-**Bullpen never interpolates ticket fields into the command string.** The
-command is run verbatim. Ticket data reaches the process only through the
-selected delivery mode.
+**Bullpen never interpolates ticket fields into the command string.** Ticket
+data reaches the process only through the selected delivery mode.
+
+Value worker placeholders such as `{A1}` or `{target branch}` are different:
+Bullpen resolves them immediately before launch in the command, working
+directory, and configured environment values. This is raw text substitution,
+not shell escaping. Quote or escape commands accordingly.
 
 ---
 
@@ -150,7 +154,9 @@ artifacts are not accidentally committed.
 Shell workers execute arbitrary commands configured by the workspace owner.
 **They are not a sandbox.** The defaults are:
 
-- **No interpolation.** Ticket fields never make it into the command string.
+- **Limited interpolation.** Ticket fields never make it into the command
+  string. Value worker placeholders are raw-substituted in configured command,
+  cwd, and env values.
 - **Working-directory confinement.** Real paths are resolved with
   `os.path.realpath()` and must stay inside the workspace root.
 - **Minimal inherited env.** Start from a small allowlist

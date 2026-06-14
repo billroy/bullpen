@@ -9,6 +9,7 @@ from server.values import (
     parse_cell_ref,
     row_label,
 )
+from server.templates import render_value_template
 
 
 def test_cell_ref_helpers_match_spreadsheet_coordinates():
@@ -71,3 +72,17 @@ def test_find_value_by_ref_prefers_cell_reference_then_name_with_ambiguity_flag(
     assert by_name["ambiguous"] is True
 
     assert find_value_by_ref(slots, "missing") is None
+
+
+def test_value_template_renders_raw_values_and_warns_for_missing_or_duplicate_names():
+    slots = [
+        {"type": "value", "row": 0, "col": 0, "name": "branch", "value": "release/2026"},
+        {"type": "value", "row": 1, "col": 0, "name": "branch", "value": "main"},
+        {"type": "value", "row": 0, "col": 1, "name": "", "value": 42},
+    ]
+
+    rendered = render_value_template("deploy {branch} build {B1} missing {nope}", slots, context_label="command")
+
+    assert rendered.text == "deploy release/2026 build 42 missing {nope}"
+    assert any("Duplicate value name matched A1" in warning for warning in rendered.warnings)
+    assert any("value 'nope' not found" in warning for warning in rendered.warnings)
