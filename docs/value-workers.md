@@ -390,8 +390,12 @@ label was supplied.
 
 Small layout:
 
-- Header shows the name and formatted value.
-- Value is right-aligned when possible.
+- The header pill shows the name and formatted value as `[name:value]`, for
+  example `[interest rate:5.3%]`.
+- Clicking anywhere on the small header pill converts the whole pill into a
+  single inline editor containing `name:value`.
+- The `...` worker menu remains a separate click target and does not enter
+  inline editing.
 
 Medium layout:
 
@@ -416,16 +420,18 @@ height.
 
 Inline direct editing is in scope for v1.
 
-- Click value text to edit the value.
-- Enter saves.
+- In Small layout, click the value worker header pill to edit both name and
+  value in one `name:value` input. Enter saves `name` and `value` only.
+- In Medium and Large layouts, click value text to edit the value only. Enter
+  saves `value` only.
 - Cmd+Enter on macOS or Ctrl+Enter on Windows/Linux opens the full config
   modal for type/format/name changes.
 - Escape reverts.
 - Blur saves only if the UI already uses blur-save consistently elsewhere;
   otherwise blur should not silently persist.
 - Failed validation keeps the editor open and shows an inline error.
-- Inline editing changes the value only. Name, type, format, and color changes
-  happen in the config modal.
+- Inline editing must not change type, format, color, icon, activation, or
+  other value-cell attributes.
 
 ### Future Adjustment Controls
 

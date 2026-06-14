@@ -78,11 +78,18 @@ def test_value_worker_small_card_shows_value_in_header():
     card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
     css = (ROOT / "static" / "style.css").read_text()
 
-    assert 'v-if="showCompactValue" class="worker-card-compact-value"' in card
+    assert 'v-if="showCompactValue"' in card
+    assert 'class="worker-card-compact-value worker-card-compact-value-button"' in card
+    assert 'class="worker-card-compact-value-editor worker-card-value-input"' in card
+    assert '@click.stop="startCompactValueEdit"' in card
+    assert '@dblclick.stop' in card
+    assert "valueInlineDisplay()" in card
+    assert "parseValueEditText(text)" in card
     assert "return this.isValue && this.effectiveLayoutMode === 'small';" in card
-    assert "{{ valueDisplay || 'Empty' }}" in card
+    assert "{{ valueInlineDisplay }}" in card
     assert ".worker-card-compact-value {" in css
-    assert "text-align: right;" in css
+    assert ".worker-card-compact-value-button {" in css
+    assert ".worker-card-compact-value-editor {" in css
     assert "text-overflow: ellipsis;" in css
 
 
@@ -168,10 +175,59 @@ def test_value_card_inline_edit_saves_and_reverts():
     text = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
 
     assert "valueEditing: false" in text
+    assert "valueEditIncludesName: false" in text
     assert '@keydown.enter.prevent.stop="commitValueEdit"' in text
     assert '@keydown.escape.prevent.stop="cancelValueEdit"' in text
     assert "@click.stop=\"startValueEdit\"" in text
+    assert "startCompactValueEdit()" in text
     assert "validateValueEditText(text)" in text
     assert "Enter a valid number." in text
-    assert "fields: { value: String(this.valueEditText) }" in text
+    assert "fields: this.valueEditIncludesName" in text
+    assert "? { name: parsed.name, value: parsed.value }" in text
+    assert ": { value: parsed.value }" in text
     assert "this.cancelValueEdit();" in text
+
+
+def test_value_card_compact_editor_saves_name_and_value_only():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "WorkerCard.js"))}, 'utf8');
+const calls = [];
+const context = {{
+  console,
+  isValueWorker: worker => worker?.type === 'value',
+  renderLucideIcons: () => {{}},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = WorkerCard.methods;
+  const component = {{
+    worker: {{ type: 'value', name: 'interest rate', value_type: 'auto' }},
+    valueEditIncludesName: true,
+    valueEditText: 'tax rate:6.4%',
+    slotIndex: 7,
+    parseValueEditText: methods.parseValueEditText,
+    validateValueEditText: methods.validateValueEditText,
+    cancelValueEdit() {{ this.cancelled = true; }},
+    $root: {{ saveWorkerConfig(payload) {{ globalThis.__calls.push(payload); }} }},
+  }};
+  globalThis.__calls = [];
+  methods.commitValueEdit.call(component);
+  globalThis.__result = {{ calls: globalThis.__calls, cancelled: component.cancelled }};
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["calls"] == [{
+        "slot": 7,
+        "fields": {"name": "tax rate", "value": "6.4%"},
+    }]
+    assert payload["cancelled"] is True

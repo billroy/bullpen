@@ -43,18 +43,39 @@ const WorkerCard = {
       <span v-if="passDir === 'left' && !passConnectsToNeighbor" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
       <span v-if="passDir === 'right' && !passConnectsToNeighbor" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
       <span v-if="passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
-      <div class="worker-card-header" :style="{ background: agentColor }" @dblclick="$emit('configure', slotIndex)">
-        <div class="worker-card-identity">
+      <div class="worker-card-header"
+           :class="{ 'worker-card-header--value-editing': showCompactValue && valueEditing }"
+           :style="{ background: agentColor }"
+           @click="onHeaderClick"
+           @dblclick="onHeaderDblClick">
+        <template v-if="showCompactValue">
+          <input v-if="valueEditing"
+                 class="worker-card-compact-value-editor worker-card-value-input"
+                 ref="valueEditInput"
+                 v-model="valueEditText"
+                 @keydown.stop
+                 @keydown.enter.prevent.stop="commitValueEdit"
+                 @keydown.escape.prevent.stop="cancelValueEdit"
+                 @click.stop
+                 @dblclick.stop
+                 aria-label="Edit name and value">
+          <button v-else type="button"
+                  class="worker-card-compact-value worker-card-compact-value-button"
+                  :title="valueInlineDisplay"
+                  @click.stop="startCompactValueEdit"
+                  @dblclick.stop
+                  aria-label="Edit name and value">
+            {{ valueInlineDisplay }}
+          </button>
+        </template>
+        <div v-else class="worker-card-identity">
           <div class="worker-card-title-row" ref="titleRow">
             <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
             <span class="worker-card-name" ref="nameLabel">{{ workerNameWithPort }}</span>
             <span class="worker-card-name worker-card-name--measure" ref="nameMeasure" aria-hidden="true"></span>
           </div>
         </div>
-        <span v-if="showCompactValue" class="worker-card-compact-value" :title="valueDisplay">
-          {{ valueDisplay || 'Empty' }}
-        </span>
-        <div class="worker-card-actions">
+        <div v-if="!showCompactValue || !valueEditing" class="worker-card-actions">
           <span class="worker-card-header-status">
             <span v-if="(workerState !== 'idle' || isPaused || isHeldQueue) && !pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
               {{ statusLabel }}
@@ -175,6 +196,7 @@ const WorkerCard = {
       valueEditing: false,
       valueEditText: '',
       valueEditError: '',
+      valueEditIncludesName: false,
     };
   },
   mounted() {
@@ -461,6 +483,12 @@ const WorkerCard = {
       }
       return String(value);
     },
+    valueEditSourceText() {
+      return `${String(this.worker?.name || '').trim()}:${this.storedValueText}`;
+    },
+    valueInlineDisplay() {
+      return `[${String(this.worker?.name || '').trim()}:${this.valueDisplay || 'Empty'}]`;
+    },
     showCompactValue() {
       return this.isValue && this.effectiveLayoutMode === 'small';
     },
@@ -595,9 +623,28 @@ const WorkerCard = {
       const taskId = this.queuedTasks.length ? this.queuedTasks[0].id : null;
       if (taskId) this.$emit('select-task', taskId);
     },
+    onHeaderClick() {
+      if (this.showCompactValue && !this.valueEditing) this.startCompactValueEdit();
+    },
+    onHeaderDblClick() {
+      if (this.showCompactValue || this.valueEditing) return;
+      this.$emit('configure', this.slotIndex);
+    },
+    parseValueEditText(text) {
+      const raw = String(text || '').trim();
+      const colon = raw.indexOf(':');
+      if (colon < 0) {
+        return { name: String(this.worker?.name || '').trim(), value: raw };
+      }
+      return {
+        name: raw.slice(0, colon).trim(),
+        value: raw.slice(colon + 1).trim(),
+      };
+    },
     validateValueEditText(text) {
       const valueType = String(this.worker?.value_type || 'auto');
-      const trimmed = String(text || '').trim();
+      const parsed = this.valueEditIncludesName ? this.parseValueEditText(text) : { value: String(text || '').trim() };
+      const trimmed = parsed.value;
       if (valueType === 'number' && !/^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(trimmed)) {
         return 'Enter a valid number.';
       }
@@ -605,7 +652,22 @@ const WorkerCard = {
     },
     startValueEdit() {
       if (!this.isValue) return;
+      this.valueEditIncludesName = false;
       this.valueEditText = this.storedValueText;
+      this.valueEditError = '';
+      this.valueEditing = true;
+      this.$nextTick(() => {
+        const input = this.$refs.valueEditInput;
+        if (input && typeof input.focus === 'function') {
+          input.focus();
+          input.select?.();
+        }
+      });
+    },
+    startCompactValueEdit() {
+      if (!this.isValue) return;
+      this.valueEditIncludesName = true;
+      this.valueEditText = this.valueEditSourceText;
       this.valueEditError = '';
       this.valueEditing = true;
       this.$nextTick(() => {
@@ -620,6 +682,7 @@ const WorkerCard = {
       this.valueEditing = false;
       this.valueEditText = '';
       this.valueEditError = '';
+      this.valueEditIncludesName = false;
     },
     commitValueEdit() {
       const error = this.validateValueEditText(this.valueEditText);
@@ -627,9 +690,14 @@ const WorkerCard = {
         this.valueEditError = error;
         return;
       }
+      const parsed = this.valueEditIncludesName
+        ? this.parseValueEditText(this.valueEditText)
+        : { value: String(this.valueEditText) };
       this.$root.saveWorkerConfig({
         slot: this.slotIndex,
-        fields: { value: String(this.valueEditText) },
+        fields: this.valueEditIncludesName
+          ? { name: parsed.name, value: parsed.value }
+          : { value: parsed.value },
       });
       this.cancelValueEdit();
     },

@@ -3251,6 +3251,26 @@ body.worker-singleton-dragging * {
   white-space: nowrap;
 }
 
+.worker-card-compact-value-button {
+  background: transparent;
+  border: 0;
+  cursor: text;
+  flex: 1 1 auto;
+  max-width: none;
+  padding: 0;
+  text-align: left;
+}
+
+.worker-card-compact-value-editor {
+  flex: 1 1 auto;
+  max-width: none;
+  text-align: left;
+}
+
+.worker-card-header--value-editing {
+  cursor: text;
+}
+
 .worker-card-header-status {
   display: inline-flex;
   align-items: center;
