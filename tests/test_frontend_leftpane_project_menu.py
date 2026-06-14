@@ -128,6 +128,19 @@ def test_projects_update_restores_remembered_or_first_available_workspace():
     assert "_restoreWorkspaceAfterProjectsUpdate();" in text
 
 
+def test_app_restores_remembered_tab_selection():
+    text = _read("static/app.js")
+    assert "const ACTIVE_TAB_STORAGE_KEY = 'bullpen.activeTab';" in text
+    assert "const RESTORABLE_TAB_IDS = ['tasks', 'workers', 'files', 'commits', 'stats', 'chat'];" in text
+    assert "localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, stored);" in text
+    assert "localStorage.getItem(ACTIVE_TAB_STORAGE_KEY)" in text
+    assert "let pendingActiveTabRestore = _loadRememberedTab();" in text
+    assert "const activeTab = ref(pendingActiveTabRestore === 'chat' ? 'tasks' : pendingActiveTabRestore);" in text
+    assert "_rememberActiveTab(tabId);" in text
+    assert "if (pendingActiveTabRestore === 'chat')" in text
+    assert "setActiveTab(ensuredChatTab.id);" in text
+
+
 def test_project_menu_styles_exist():
     text = _read("static/style.css")
     assert ".project-menu-tooltip {" in text

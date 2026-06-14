@@ -24,7 +24,7 @@ def test_live_agent_tabs_are_dynamic_in_app_shell():
 
 def test_live_agent_seed_does_not_override_default_tickets_tab():
     text = _read("static/app.js")
-    assert "const activeTab = ref('tasks');" in text
+    assert "const activeTab = ref(pendingActiveTabRestore === 'chat' ? 'tasks' : pendingActiveTabRestore);" in text
     assert "addLiveAgentTab({ activate: false });" in text
 
 
@@ -39,7 +39,7 @@ def test_live_agent_component_uses_injected_session_id():
 
 def test_live_agent_provider_options_include_gemini():
     text = _read("static/components/LiveAgentChatTab.js")
-    assert "['claude', 'codex', 'gemini']" in text
+    assert "['claude', 'codex', 'gemini', 'opencode']" in text
 
 
 def test_live_agent_component_syncs_user_messages_between_windows():

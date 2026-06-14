@@ -29,5 +29,5 @@ def test_worker_focus_tab_close_returns_keyboard_focus_to_grid():
 
     assert "function closeFocusTab(slotIndex) {" in text
     assert "if (activeTab.value === 'focus-' + slotIndex) {" in text
-    assert "activeTab.value = 'workers';" in text
+    assert "setActiveTab('workers');" in text
     assert "focusWorkerGridSoon();" in text

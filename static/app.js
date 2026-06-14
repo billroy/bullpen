@@ -230,6 +230,8 @@ const app = createApp({
     }
 
     const ACTIVE_PROJECT_STORAGE_KEY = 'bullpen.activeWorkspaceId';
+    const ACTIVE_TAB_STORAGE_KEY = 'bullpen.activeTab';
+    const RESTORABLE_TAB_IDS = ['tasks', 'workers', 'files', 'commits', 'stats', 'chat'];
 
     function _rememberActiveWorkspace(wsId) {
       try {
@@ -242,6 +244,30 @@ const app = createApp({
         return localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || '';
       } catch (e) {
         return '';
+      }
+    }
+
+    function _storageValueForActiveTab(tabId) {
+      const id = String(tabId || '').trim();
+      if (RESTORABLE_TAB_IDS.includes(id) && id !== 'chat') return id;
+      if (chatTabs.find(t => t.id === id)) return 'chat';
+      return '';
+    }
+
+    function _rememberActiveTab(tabId) {
+      const stored = _storageValueForActiveTab(tabId);
+      if (!stored) return;
+      try {
+        localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, stored);
+      } catch (e) { /* ignore */ }
+    }
+
+    function _loadRememberedTab() {
+      try {
+        const tabId = localStorage.getItem(ACTIVE_TAB_STORAGE_KEY) || '';
+        return RESTORABLE_TAB_IDS.includes(tabId) ? tabId : 'tasks';
+      } catch (e) {
+        return 'tasks';
       }
     }
 
@@ -289,27 +315,37 @@ const app = createApp({
       if (activeTab.value === 'stats') {
         socket.emit('task:list', _wsData({ scope: 'archived' }));
       }
+      if (pendingActiveTabRestore === 'chat') {
+        pendingActiveTabRestore = '';
+        if (ensuredChatTab) {
+          setActiveTab(ensuredChatTab.id);
+          return;
+        }
+      } else if (pendingActiveTabRestore) {
+        pendingActiveTabRestore = '';
+      }
       if (wasLiveAgent) {
         const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);
         const fallback = preferred || ensuredChatTab || chatTabs.find(t => t.workspaceId === wsId);
         if (fallback) {
           setActiveTab(fallback.id);
         } else {
-          activeTab.value = 'tasks';
+          setActiveTab('tasks');
         }
         return;
       }
       // If active tab belongs to a different workspace, fall back to tasks
       const ct = chatTabs.find(t => t.id === activeTab.value);
-      if (ct && ct.workspaceId && ct.workspaceId !== wsId) { activeTab.value = 'tasks'; return; }
+      if (ct && ct.workspaceId && ct.workspaceId !== wsId) { setActiveTab('tasks'); return; }
       const tt = terminalTabs.find(t => t.id === activeTab.value);
-      if (tt && tt.workspaceId && tt.workspaceId !== wsId) { activeTab.value = 'tasks'; return; }
+      if (tt && tt.workspaceId && tt.workspaceId !== wsId) { setActiveTab('tasks'); return; }
       const ft = focusTabs.find(t => 'focus-' + t.slotIndex === activeTab.value);
-      if (ft && ft.workspaceId && ft.workspaceId !== wsId) activeTab.value = 'tasks';
+      if (ft && ft.workspaceId && ft.workspaceId !== wsId) setActiveTab('tasks');
     }
 
     const connected = ref(false);
-    const activeTab = ref('tasks');
+    let pendingActiveTabRestore = _loadRememberedTab();
+    const activeTab = ref(pendingActiveTabRestore === 'chat' ? 'tasks' : pendingActiveTabRestore);
     const requestedCommitDiffHash = ref('');
     const ticketsViewMode = ref('kanban');
     const ticketListScope = ref('live');
@@ -423,6 +459,7 @@ const app = createApp({
     function setActiveTab(tabId) {
       activeTab.value = tabId;
       _rememberLiveAgentTab(tabId);
+      _rememberActiveTab(tabId);
       if (tabId === 'stats' && activeWorkspaceId.value) {
         socket.emit('task:list', _wsData({ scope: 'archived' }));
       }
@@ -484,7 +521,7 @@ const app = createApp({
       if (activeTab.value === tabId) {
         const fallback = chatTabs.find(t => t.workspaceId === wsId);
         if (fallback) setActiveTab(fallback.id);
-        else activeTab.value = 'tasks';
+        else setActiveTab('tasks');
       }
     }
 
@@ -566,7 +603,7 @@ const app = createApp({
       if (activeTab.value === tab.id) {
         const fallback = terminalTabs.find(t => t.workspaceId === tab.workspaceId) || chatTabs.find(t => t.workspaceId === tab.workspaceId);
         if (fallback) setActiveTab(fallback.id);
-        else activeTab.value = 'tasks';
+        else setActiveTab('tasks');
       }
     }
 
@@ -850,7 +887,7 @@ const app = createApp({
         const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);
         const fallback = preferred || chatTabs.find(t => t.workspaceId === wsId);
         if (fallback) setActiveTab(fallback.id);
-        else activeTab.value = 'tasks';
+        else setActiveTab('tasks');
       }
     });
 
@@ -1291,7 +1328,7 @@ const app = createApp({
       if (!existing) {
         focusTabs.push({ slotIndex, workspaceId: activeWorkspaceId.value, label: worker.name });
       }
-      activeTab.value = 'focus-' + slotIndex;
+      setActiveTab('focus-' + slotIndex);
       requestOutputCatchup(slotIndex, {
         workspaceId: activeWorkspaceId.value,
         workerType: worker.type,
@@ -1302,7 +1339,7 @@ const app = createApp({
       const idx = focusTabs.findIndex(t => t.slotIndex === slotIndex);
       if (idx >= 0) focusTabs.splice(idx, 1);
       if (activeTab.value === 'focus-' + slotIndex) {
-        activeTab.value = 'workers';
+        setActiveTab('workers');
         focusWorkerGridSoon();
       }
     }
@@ -1753,7 +1790,7 @@ const app = createApp({
         addToast('Invalid commit hash in ticket output', 'error');
         return;
       }
-      activeTab.value = 'commits';
+      setActiveTab('commits');
       requestedCommitDiffHash.value = '';
       setTimeout(() => {
         requestedCommitDiffHash.value = normalized;
