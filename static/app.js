@@ -1277,6 +1277,15 @@ const app = createApp({
       transferSlots.value = resolvedSlots.length ? resolvedSlots : (transferSlot.value !== null ? [transferSlot.value] : []);
       transferMode.value = mode;
     }
+    function copyWorkerFromLeftPane(slot) {
+      const copy = () => bullpenTabRef.value?.copyWorker?.(slot);
+      if (bullpenTabRef.value?.copyWorker) {
+        copy();
+        return;
+      }
+      setActiveTab('workers');
+      Vue.nextTick(copy);
+    }
     function closeCreateModal() {
       showCreateModal.value = false;
       focusWorkerGridSoon();
@@ -1870,6 +1879,7 @@ const app = createApp({
       stopWorkerSlot, stopWorkerSlots, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
+      copyWorkerFromLeftPane,
       closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
@@ -1946,6 +1956,7 @@ const app = createApp({
           :projects-root="projectSettings.projectsRoot"
           :active-workspace-id="activeWorkspaceId"
           :workspaces="workspaces"
+          :multiple-workspaces="multipleWorkspaces"
           @new-task="showCreateModal = true"
           @select-task="selectTask"
           @switch-workspace="switchWorkspace"
@@ -1953,6 +1964,10 @@ const app = createApp({
           @new-project="newProject"
           @clone-project="cloneProject"
           @remove-project="removeProject"
+          @configure-worker="configureSlot = $event"
+          @open-focus="openFocusTab"
+          @transfer-worker="openTransfer"
+          @copy-worker="copyWorkerFromLeftPane"
         />
         <div class="main-pane">
           <div class="tab-bar">

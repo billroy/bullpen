@@ -1,6 +1,6 @@
 const LeftPane = {
-  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'projectsRoot', 'activeWorkspaceId', 'workspaces'],
-  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project'],
+  props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'projectsRoot', 'activeWorkspaceId', 'workspaces', 'multipleWorkspaces'],
+  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project', 'configure-worker', 'open-focus', 'transfer-worker', 'copy-worker'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible, resizing: !!resizing }" :style="leftPaneStyle">
       <div
@@ -91,6 +91,26 @@ const LeftPane = {
               <span class="roster-label">{{ w.name }}</span>
             </span>
             <span class="status-pill" :class="'status-' + workerStatusClass(w)">{{ workerStatusLabel(w) }}</span>
+            <button class="roster-worker-menu-btn" @click.stop="toggleWorkerMenu(w, $event)" title="Actions" aria-label="Worker actions">&hellip;</button>
+            <Teleport to="body">
+              <div v-if="openRosterWorkerMenuSlot === w.slot" ref="rosterWorkerMenu" class="worker-menu" :style="rosterWorkerMenuStyle" @click.stop @keydown="onWorkerMenuKeydown">
+                <div class="worker-menu-section-label">This Worker</div>
+                <button v-if="canConfigureWorker(w)" class="worker-menu-item" @click="rosterMenuEdit(w.slot)"><i class="menu-item-icon" data-lucide="pencil" aria-hidden="true"></i><span class="menu-item-label">Edit</span></button>
+                <button v-if="canStartWorker(w) && !isPausedWorker(w)" class="worker-menu-item" @click="rosterMenuRun(w.slot)"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">{{ runMenuLabel(w) }}</span></button>
+                <button v-if="canRestartWorker(w)" class="worker-menu-item" @click="rosterMenuRestart(w.slot)"><i class="menu-item-icon" data-lucide="rotate-cw" aria-hidden="true"></i><span class="menu-item-label">Restart</span></button>
+                <button v-if="canWatchWorker(w)" class="worker-menu-item" @click="rosterMenuWatch(w.slot)"><i class="menu-item-icon" data-lucide="eye" aria-hidden="true"></i><span class="menu-item-label">Watch</span></button>
+                <button v-if="isServiceWorkerType(w)" class="worker-menu-item" :disabled="!serviceSiteUrl(w)" @click="rosterMenuOpenSite(w.slot)"><i class="menu-item-icon" data-lucide="external-link" aria-hidden="true"></i><span class="menu-item-label">Open site in browser</span></button>
+                <button v-if="canStopWorker(w)" class="worker-menu-item" @click="rosterMenuStop(w.slot)"><i class="menu-item-icon" data-lucide="square" aria-hidden="true"></i><span class="menu-item-label">Stop</span></button>
+                <button v-if="canPauseWorker(w) && !isPausedWorker(w)" class="worker-menu-item" @click="rosterMenuPause(w.slot)"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause Worker</span></button>
+                <button v-if="canPauseWorker(w) && isPausedWorker(w)" class="worker-menu-item" @click="rosterMenuUnpause(w.slot)"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Unpause Worker</span></button>
+                <button class="worker-menu-item" @click="rosterMenuDuplicate(w.slot)"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
+                <button class="worker-menu-item" @click="rosterMenuCopyWorker(w.slot)"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
+                <button class="worker-menu-item" @click="rosterMenuExportWorker(w.slot)"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Worker</span></button>
+                <button v-if="multipleWorkspaces" class="worker-menu-item" @click="rosterMenuCopyTo(w.slot)"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
+                <button v-if="multipleWorkspaces && canMoveWorker(w)" class="worker-menu-item" @click="rosterMenuMoveTo(w.slot)"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
+                <button class="worker-menu-item worker-menu-danger" @click="rosterMenuDelete(w.slot)"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Worker&hellip;</span></button>
+              </div>
+            </Teleport>
           </div>
         </div>
       </div>
@@ -209,7 +229,7 @@ const LeftPane = {
         return {
           slot: e.slot,
           name: s.name,
-          state: s.state || 'idle',
+          state: s.service_state?.state || s.state || 'idle',
           paused: s.paused === true,
           activation: s.activation,
           retry_at: s.retry_at,
@@ -218,6 +238,8 @@ const LeftPane = {
           agent: s.agent,
           type: s.type,
           color: s.color,
+          service_state: s.service_state,
+          port: s.port,
           taskQueueLength: Array.isArray(s.task_queue) ? s.task_queue.length : 0,
         };
       });
@@ -234,6 +256,22 @@ const LeftPane = {
       return this.workerList
         .map(worker => `${worker.slot}:${this.workerTypeIcon(worker)}`)
         .join('|');
+    },
+    rosterWorkerMenuIconToken() {
+      if (this.openRosterWorkerMenuSlot === null) return 'closed';
+      const worker = this.workerList.find(w => w.slot === this.openRosterWorkerMenuSlot);
+      if (!worker) return 'missing';
+      return [
+        worker.slot,
+        this.workerState(worker),
+        worker.taskQueueLength,
+        this.isPausedWorker(worker) ? 'paused' : 'active',
+        this.multipleWorkspaces ? 'workspaces' : 'one-workspace',
+        this.serviceSiteUrl(worker) ? 'site' : 'no-site',
+      ].join('|');
+    },
+    rosterWorkerMenuStyle() {
+      return { top: this.rosterWorkerMenuPos.top + 'px', left: this.rosterWorkerMenuPos.left + 'px' };
     },
     leftPaneStyle() {
       if (!this.visible) return null;
@@ -288,10 +326,15 @@ const LeftPane = {
     workerIconToken() {
       this.$nextTick(() => renderLucideIcons(this.$el));
     },
+    rosterWorkerMenuIconToken() {
+      if (this.openRosterWorkerMenuSlot !== null) this.$nextTick(() => this.renderRosterWorkerMenuIcons());
+    },
   },
   data() {
     return {
       rosterDragSlot: null,
+      openRosterWorkerMenuSlot: null,
+      rosterWorkerMenuPos: { top: 0, left: 0 },
       selectedColumn: 'inbox',
       showProjectMenu: false,
       showEmptyProjectHint: false,
@@ -324,6 +367,7 @@ const LeftPane = {
     onGlobalClick() {
       this.showProjectMenu = false;
       this.showEmptyProjectHint = false;
+      this.closeWorkerMenu();
     },
     onExternalCloseProjectMenu() {
       this.showProjectMenu = false;
@@ -350,9 +394,72 @@ const LeftPane = {
     workerTypeIcon(worker) {
       return getWorkerTypeIcon(worker);
     },
+    workerType(worker) {
+      return String(worker?.type || 'ai');
+    },
+    workerState(worker) {
+      return worker?.service_state?.state || worker?.state || 'idle';
+    },
+    isServiceWorkerType(worker) {
+      return typeof isServiceWorker === 'function' ? isServiceWorker(worker) : this.workerType(worker) === 'service';
+    },
+    isMarkerWorkerType(worker) {
+      return typeof isMarkerWorker === 'function' ? isMarkerWorker(worker) : this.workerType(worker) === 'marker';
+    },
+    isValueWorkerType(worker) {
+      return typeof isValueWorker === 'function' ? isValueWorker(worker) : this.workerType(worker) === 'value';
+    },
+    isEvalWorkerType(worker) {
+      return typeof isEvalWorker === 'function' ? isEvalWorker(worker) : this.workerType(worker) === 'eval';
+    },
+    isUnknownWorkerTypeForRoster(worker) {
+      return typeof isUnknownWorkerType === 'function' ? isUnknownWorkerType(worker) : false;
+    },
+    isDisabledWorkerType(worker) {
+      return this.isEvalWorkerType(worker) || this.isUnknownWorkerTypeForRoster(worker);
+    },
+    isPausedWorker(worker) {
+      return worker?.paused === true;
+    },
+    isWorkingWorker(worker) {
+      return ['working', 'retrying', 'starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState(worker));
+    },
+    canConfigureWorker(worker) {
+      return !this.isUnknownWorkerTypeForRoster(worker);
+    },
+    canStartWorker(worker) {
+      if (this.isServiceWorkerType(worker)) return ['idle', 'stopped', 'crashed'].includes(this.workerState(worker));
+      if (this.isMarkerWorkerType(worker)) return false;
+      if (this.isValueWorkerType(worker)) return false;
+      return this.workerState(worker) === 'idle' && !this.isDisabledWorkerType(worker);
+    },
+    canStopWorker(worker) {
+      if (this.isServiceWorkerType(worker)) return ['starting', 'running', 'healthy', 'unhealthy'].includes(this.workerState(worker));
+      return this.isWorkingWorker(worker);
+    },
+    canRestartWorker(worker) {
+      return this.isServiceWorkerType(worker) && ['idle', 'stopped', 'running', 'healthy', 'unhealthy', 'crashed'].includes(this.workerState(worker));
+    },
+    canWatchWorker(worker) {
+      return this.isServiceWorkerType(worker) || this.isWorkingWorker(worker);
+    },
+    canPauseWorker(worker) {
+      return !this.isMarkerWorkerType(worker) && !this.isValueWorkerType(worker) && !this.isEvalWorkerType(worker) && !this.isUnknownWorkerTypeForRoster(worker);
+    },
+    canMoveWorker(worker) {
+      return this.workerState(worker) === 'idle' || (this.isServiceWorkerType(worker) && ['stopped', 'crashed'].includes(this.workerState(worker)));
+    },
+    runMenuLabel(worker) {
+      const queueCount = Number(worker?.taskQueueLength || 0);
+      if (!this.isServiceWorkerType(worker)) return queueCount > 0 ? `Run next (${queueCount})` : 'Run';
+      return queueCount > 0 ? 'Run queued order' : 'Start';
+    },
+    serviceSiteUrl(worker) {
+      return typeof window.getServiceSiteUrl === 'function' ? window.getServiceSiteUrl(worker) : '';
+    },
     workerStatusLabel(worker) {
       if (worker?.paused === true) return 'PAUSED';
-      const state = (worker?.state || 'idle').toUpperCase();
+      const state = this.workerState(worker).toUpperCase();
       if (state === 'IDLE' && worker?.activation === 'manual' && Number(worker?.taskQueueLength || 0) > 0) {
         return 'WAITING FOR RUN';
       }
@@ -366,7 +473,128 @@ const LeftPane = {
       return `${state} (${queueCount})`;
     },
     workerStatusClass(worker) {
-      return worker?.state || 'idle';
+      return this.workerState(worker);
+    },
+    toggleWorkerMenu(worker, e) {
+      if (this.openRosterWorkerMenuSlot === worker.slot) {
+        this.closeWorkerMenu();
+        return;
+      }
+      const btn = e?.currentTarget;
+      if (btn && typeof btn.getBoundingClientRect === 'function') {
+        const rect = btn.getBoundingClientRect();
+        const menuWidth = 210;
+        let left = rect.right - menuWidth;
+        if (left < 4) left = rect.left;
+        this.rosterWorkerMenuPos = { top: rect.bottom + 4, left };
+      }
+      this.openRosterWorkerMenuSlot = worker.slot;
+      this.showProjectMenu = false;
+      this.showEmptyProjectHint = false;
+      window.dispatchEvent(new Event('bullpen:menu:close-main'));
+      this.$nextTick(() => {
+        this.renderRosterWorkerMenuIcons();
+        const [first] = this.workerMenuItems();
+        if (first) first.focus();
+      });
+    },
+    closeWorkerMenu() {
+      this.openRosterWorkerMenuSlot = null;
+    },
+    renderRosterWorkerMenuIcons() {
+      const menu = Array.isArray(this.$refs.rosterWorkerMenu) ? this.$refs.rosterWorkerMenu[0] : this.$refs.rosterWorkerMenu;
+      if (menu) renderLucideIcons(menu);
+    },
+    workerMenuItems() {
+      const menu = Array.isArray(this.$refs.rosterWorkerMenu) ? this.$refs.rosterWorkerMenu[0] : this.$refs.rosterWorkerMenu;
+      if (!menu || typeof menu.querySelectorAll !== 'function') return [];
+      return Array.from(menu.querySelectorAll('.worker-menu-item:not([disabled])'));
+    },
+    onWorkerMenuKeydown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeWorkerMenu();
+        return;
+      }
+      const items = this.workerMenuItems();
+      if (!items.length) return;
+      const currentIdx = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[(currentIdx + 1) % items.length].focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[currentIdx <= 0 ? items.length - 1 : currentIdx - 1].focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[0].focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        e.stopPropagation();
+        items[items.length - 1].focus();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.stopPropagation();
+      }
+    },
+    rosterMenuEdit(slot) {
+      this.closeWorkerMenu();
+      this.$emit('configure-worker', slot);
+    },
+    rosterMenuRun(slot) {
+      this.closeWorkerMenu();
+      this.$root.startWorkerSlot(slot);
+    },
+    rosterMenuStop(slot) {
+      this.closeWorkerMenu();
+      this.$root.stopWorkerSlot(slot);
+    },
+    rosterMenuRestart(slot) {
+      this.closeWorkerMenu();
+      this.$root.restartServiceSlot(slot);
+    },
+    rosterMenuPause(slot) {
+      this.closeWorkerMenu();
+      this.$root.saveWorkerConfig({ slot, fields: { paused: true } });
+    },
+    rosterMenuUnpause(slot) {
+      this.closeWorkerMenu();
+      this.$root.saveWorkerConfig({ slot, fields: { paused: false } });
+    },
+    rosterMenuDuplicate(slot) {
+      this.closeWorkerMenu();
+      this.$root.duplicateWorker(slot);
+    },
+    rosterMenuCopyWorker(slot) {
+      this.closeWorkerMenu();
+      this.$emit('copy-worker', slot);
+    },
+    rosterMenuExportWorker(slot) {
+      this.closeWorkerMenu();
+      this.$root.exportWorker(slot);
+    },
+    rosterMenuWatch(slot) {
+      this.closeWorkerMenu();
+      this.$emit('open-focus', slot);
+    },
+    rosterMenuOpenSite(slot) {
+      this.closeWorkerMenu();
+      this.$root.openServiceSite(slot);
+    },
+    rosterMenuCopyTo(slot) {
+      this.closeWorkerMenu();
+      this.$emit('transfer-worker', { slot, mode: 'copy' });
+    },
+    rosterMenuMoveTo(slot) {
+      this.closeWorkerMenu();
+      this.$emit('transfer-worker', { slot, mode: 'move' });
+    },
+    rosterMenuDelete(slot) {
+      this.closeWorkerMenu();
+      this.$root.removeWorker(slot);
     },
     unseenCount(wsId) {
       if (!this.workspaces || !this.workspaces[wsId]) return 0;

@@ -1418,6 +1418,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
   padding: 8px 10px;
   font-size: 12px;
   font-weight: 600;
@@ -1425,6 +1426,28 @@ body {
   border-radius: var(--radius);
   transition: filter 0.15s;
   cursor: default;
+}
+
+.roster-worker-menu-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0 6px;
+  border-radius: 3px;
+  line-height: 1;
+  letter-spacing: 1px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+}
+
+.roster-worker-menu-btn:hover {
+  color: white;
+  background: rgba(255,255,255,0.15);
 }
 
 .roster-item.drag-over {
