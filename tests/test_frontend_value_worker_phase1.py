@@ -183,6 +183,124 @@ process.stdout.write(JSON.stringify(context.__parsed));
     assert parsed["emptyAfterColon"]["error"] == "Enter a value."
 
 
+def test_worksheet_clipboard_parser_handles_tabular_values():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "BullpenTab.js"))}, 'utf8');
+const context = {{
+  console,
+  localStorage: {{ getItem: () => null, setItem: () => {{}} }},
+  WorkerCard: {{}},
+  plainText: {json.dumps("a\tb\r\nc\td\r\n")},
+  quotedText: {json.dumps('"a\t1"\t"b ""two"""\n3\t4')},
+  singleText: {json.dumps("not worksheet data")},
+  raggedText: {json.dumps("a\tb\nc")},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const parse = BullpenTab.methods.parseWorksheetClipboardText;
+  globalThis.__parsed = {{
+    plain: parse(plainText),
+    quoted: parse(quotedText),
+    singleText: parse(singleText),
+    ragged: parse(raggedText),
+  }};
+`, context);
+process.stdout.write(JSON.stringify(context.__parsed));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    parsed = json.loads(result.stdout)
+
+    assert parsed["plain"] == [["a", "b"], ["c", "d"]]
+    assert parsed["quoted"] == [["a\t1", 'b "two"'], ["3", "4"]]
+    assert parsed["singleText"] is None
+    assert parsed["ragged"] == [["a", "b"], ["c", ""]]
+
+
+def test_worksheet_paste_builds_unlabeled_value_workers_and_rejects_conflicts():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "BullpenTab.js"))}, 'utf8');
+const calls = [];
+const toasts = [];
+const context = {{
+  console,
+  localStorage: {{ getItem: () => null, setItem: () => {{}} }},
+  WorkerCard: {{}},
+  GridGeometry: {{ coordKey: (col, row) => `${{col}},${{row}}` }},
+  pasteText: {json.dumps("1\t2\n3\t4\n")},
+  conflictText: {json.dumps("a\tb\n")},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = BullpenTab.methods;
+  const component = {{
+    $root: {{
+      pasteWorkerGroup(items) {{ globalThis.__calls.push(items); }},
+      addToast(message, type) {{ globalThis.__toasts.push({{ message, type }}); }},
+    }},
+    emptyMenuCoord: {{ col: 2, row: 3 }},
+    liveMessage: '',
+    parseWorksheetClipboardText: methods.parseWorksheetClipboardText,
+    worksheetPasteTargetsForCoord: methods.worksheetPasteTargetsForCoord,
+    validateWorksheetPasteTargets: methods.validateWorksheetPasteTargets,
+    showPasteError: methods.showPasteError,
+    itemAtCoord(coord) {{ return coord.col === 3 && coord.row === 2 ? {{ slotIndex: 8 }} : null; }},
+    isWritableCoord(coord) {{ return coord && coord.col >= 0 && coord.row >= 0 && coord.col <= 100 && coord.row <= 100; }},
+  }};
+  globalThis.__calls = [];
+  globalThis.__toasts = [];
+  const pasted = methods.pasteWorksheetCells.call(component, {{ col: 4, row: 6 }}, pasteText);
+  const rejected = methods.pasteWorksheetCells.call(component, {{ col: 2, row: 2 }}, conflictText);
+  globalThis.__result = {{ pasted, rejected, calls: globalThis.__calls, toasts: globalThis.__toasts, liveMessage: component.liveMessage, emptyMenuCoord: component.emptyMenuCoord }};
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["pasted"] is True
+    assert payload["rejected"] is False
+    assert payload["emptyMenuCoord"] is None
+    assert len(payload["calls"]) == 1
+    assert [item["coord"] for item in payload["calls"][0]] == [
+        {"col": 4, "row": 6},
+        {"col": 5, "row": 6},
+        {"col": 4, "row": 7},
+        {"col": 5, "row": 7},
+    ]
+    assert all(item["worker"]["type"] == "value" for item in payload["calls"][0])
+    assert all(item["worker"]["name"] == "" for item in payload["calls"][0])
+    assert [item["worker"]["value"] for item in payload["calls"][0]] == ["1", "2", "3", "4"]
+    assert payload["toasts"] == [{"message": "Worksheet paste would overwrite an occupied cell", "type": "error"}]
+    assert payload["liveMessage"] == "Worksheet paste would overwrite an occupied cell"
+
+
+def test_worker_grid_ctrl_v_uses_system_clipboard_for_worksheet_paste():
+    text = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
+
+    assert "this.pasteFromClipboard(this.selectedCell);" in text
+    assert "navigator.clipboard?.readText" in text
+    assert "this.pasteWorksheetCells(coord, clipboardText);" in text
+    assert "this.pasteWorker(coord, { allowReplaceSingle: true });" in text
+    assert "Worksheet paste would overwrite an occupied cell" in text
+    assert "this.$root.addToast(message, 'error');" in text
+
+
 def test_value_card_inline_edit_saves_and_reverts():
     text = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
 

@@ -351,17 +351,20 @@ def _nearest_empty_coord(layout, start_col, start_row, ignore_slot=None, cols=4)
 
 
 def _build_pasted_worker(source, coord, existing_names):
-    base_name = str(source.get("name") or "Worker")
-    candidate = base_name
-    suffix = 2
-    while candidate in existing_names:
-        candidate = f"{base_name} {suffix}"
-        suffix += 1
-    existing_names.add(candidate)
-
     source_type = str(source.get("type") or "").strip()
     if not source_type and "command" in source:
         source_type = "shell"
+    if source_type == "value" and not str(source.get("name") or "").strip():
+        candidate = ""
+    else:
+        base_name = str(source.get("name") or "Worker")
+        candidate = base_name
+        suffix = 2
+        while candidate in existing_names:
+            candidate = f"{base_name} {suffix}"
+            suffix += 1
+        existing_names.add(candidate)
+
     if (source_type or "ai") == "ai":
         worker = {k: v for k, v in source.items() if k in _AI_COPY_FIELDS}
     else:

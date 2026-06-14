@@ -1365,6 +1365,42 @@ class TestWorkerEvents:
         assert worker["task_queue"] == []
         assert worker["state"] == "idle"
 
+    def test_paste_group_preserves_unlabeled_value_workers(self, client):
+        c, _ = client
+        c.emit("worker:paste_group", {
+            "items": [
+                {
+                    "coord": {"col": 2, "row": 3},
+                    "worker": {
+                        "type": "value",
+                        "name": "",
+                        "value": "A1",
+                        "value_type": "auto",
+                        "format": {"kind": "auto"},
+                    },
+                },
+                {
+                    "coord": {"col": 3, "row": 3},
+                    "worker": {
+                        "type": "value",
+                        "name": "",
+                        "value": "42",
+                        "value_type": "auto",
+                        "format": {"kind": "auto"},
+                    },
+                },
+            ],
+        })
+        layout = get_event(c, "layout:updated")
+        workers = [slot for slot in layout["slots"] if slot]
+
+        assert [(worker["col"], worker["row"]) for worker in workers] == [(2, 3), (3, 3)]
+        assert [worker["type"] for worker in workers] == ["value", "value"]
+        assert [worker["name"] for worker in workers] == ["", ""]
+        assert [worker["value"] for worker in workers] == ["A1", 42]
+        assert all(worker["value_type"] == "auto" for worker in workers)
+        assert all("task_queue" not in worker for worker in workers)
+
     def test_duplicate_service_worker_reemits_running_service_state(self, client):
         c, app = client
         c.emit("worker:paste", {

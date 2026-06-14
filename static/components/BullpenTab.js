@@ -1347,6 +1347,134 @@ const BullpenTab = {
         },
       };
     },
+    parseWorksheetClipboardText(text) {
+      const raw = String(text ?? '');
+      if (!raw) return null;
+      if (!raw.includes('\t') && !raw.includes('\n') && !raw.includes('\r')) return null;
+      const rows = [];
+      let row = [];
+      let cell = '';
+      let inQuotes = false;
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (inQuotes) {
+          if (ch === '"') {
+            if (raw[i + 1] === '"') {
+              cell += '"';
+              i += 1;
+            } else {
+              inQuotes = false;
+            }
+          } else {
+            cell += ch;
+          }
+          continue;
+        }
+        if (ch === '"' && cell === '') {
+          inQuotes = true;
+        } else if (ch === '\t') {
+          row.push(cell);
+          cell = '';
+        } else if (ch === '\n' || ch === '\r') {
+          row.push(cell);
+          cell = '';
+          rows.push(row);
+          row = [];
+          if (ch === '\r' && raw[i + 1] === '\n') i += 1;
+        } else {
+          cell += ch;
+        }
+      }
+      row.push(cell);
+      rows.push(row);
+      while (rows.length && rows[rows.length - 1].length === 1 && rows[rows.length - 1][0] === '') {
+        rows.pop();
+      }
+      if (!rows.length) return null;
+      const width = Math.max(...rows.map(r => r.length));
+      if (width <= 0) return null;
+      return rows.map(r => {
+        const normalized = r.slice();
+        while (normalized.length < width) normalized.push('');
+        return normalized;
+      });
+    },
+    worksheetPasteTargetsForCoord(coord, text) {
+      const rows = this.parseWorksheetClipboardText(text);
+      if (!rows || !coord || !this.isWritableCoord(coord)) return [];
+      const targets = [];
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        for (let colIndex = 0; colIndex < rows[rowIndex].length; colIndex++) {
+          targets.push({
+            coord: {
+              col: coord.col + colIndex,
+              row: coord.row + rowIndex,
+            },
+            worker: {
+              type: 'value',
+              name: '',
+              value: rows[rowIndex][colIndex],
+              value_type: 'auto',
+              format: { kind: 'auto' },
+            },
+          });
+        }
+      }
+      return targets;
+    },
+    validateWorksheetPasteTargets(targets) {
+      if (!targets.length) return 'Clipboard does not contain worksheet cells';
+      const seen = new Set();
+      for (const target of targets) {
+        if (!this.isWritableCoord(target.coord)) return 'Worksheet paste is outside the grid';
+        const key = GridGeometry.coordKey(target.coord.col, target.coord.row);
+        if (seen.has(key)) return 'Worksheet paste contains duplicate target cells';
+        seen.add(key);
+        if (this.itemAtCoord(target.coord)) return 'Worksheet paste would overwrite an occupied cell';
+      }
+      return '';
+    },
+    showPasteError(message) {
+      if (typeof this.$root?.addToast === 'function') {
+        this.$root.addToast(message, 'error');
+      }
+      this.liveMessage = message;
+    },
+    pasteWorksheetCells(coord, text) {
+      const targets = this.worksheetPasteTargetsForCoord(coord, text);
+      const error = this.validateWorksheetPasteTargets(targets);
+      if (error) {
+        this.showPasteError(error);
+        return false;
+      }
+      if (typeof this.$root.pasteWorkerGroup === 'function') {
+        this.$root.pasteWorkerGroup(targets);
+      } else {
+        for (const target of targets) {
+          this.$root.pasteWorkerConfig({ coord: target.coord, worker: target.worker });
+        }
+      }
+      this.emptyMenuCoord = null;
+      return true;
+    },
+    async pasteFromClipboard(coord) {
+      if (!coord || !this.isWritableCoord(coord)) return;
+      let clipboardText = '';
+      try {
+        if (navigator.clipboard?.readText) {
+          clipboardText = await navigator.clipboard.readText();
+        }
+      } catch (_err) {
+        clipboardText = '';
+      }
+      if (this.parseWorksheetClipboardText(clipboardText)) {
+        this.pasteWorksheetCells(coord, clipboardText);
+        return;
+      }
+      if (this.clipboardWorker) {
+        this.pasteWorker(coord, { allowReplaceSingle: true });
+      }
+    },
     openValueShortcutEditor(coord, initialText = '') {
       if (!coord || !this.isWritableCoord(coord) || this.itemAtCoord(coord)) return;
       this.closeEmptyMenu();
@@ -1432,9 +1560,9 @@ const BullpenTab = {
         return;
       }
       if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'v') {
-        if (!this.selectedCell || !this.clipboardWorker || !this.isWritableCoord(this.selectedCell)) return;
+        if (!this.selectedCell || !this.isWritableCoord(this.selectedCell)) return;
         e.preventDefault();
-        this.pasteWorker(this.selectedCell, { allowReplaceSingle: true });
+        this.pasteFromClipboard(this.selectedCell);
         return;
       }
       if (!inTextInput && !e.metaKey && !e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
