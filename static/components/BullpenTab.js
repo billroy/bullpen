@@ -35,6 +35,7 @@ const BullpenTab = {
       dragStart: null,
       isPanning: false,
       liveMessage: '',
+      valueShortcutEditor: null,
       columnResize: null,
       draggingColumnWidth: null,
       pendingColumnWidth: null,
@@ -180,6 +181,17 @@ const BullpenTab = {
                @dragover="onEmptyDragOver($event, ghostCell)"
                @drop.stop.prevent="onDropOnEmpty($event, ghostCell)">
             <button class="empty-slot-menu-btn" draggable="false" title="Empty cell actions" @click.stop="openEmptyMenu(ghostCell, $event)">&hellip;</button>
+          </div>
+          <div v-if="valueShortcutEditor"
+               class="value-shortcut-editor"
+               :style="valueShortcutEditorStyle"
+               @click.stop>
+            <input class="value-shortcut-input"
+                   ref="valueShortcutInput"
+                   v-model="valueShortcutEditor.text"
+                   @keydown.stop="onValueShortcutKeydown"
+                   aria-label="Create value worker">
+            <div v-if="valueShortcutEditor.error" class="value-shortcut-error">{{ valueShortcutEditor.error }}</div>
           </div>
           <div v-if="ghostCell && emptyMenuOpenFor(ghostCell)"
                class="worker-menu empty-slot-menu"
@@ -561,6 +573,12 @@ const BullpenTab = {
     ghostStyle() {
       if (!this.ghostCell) return {};
       const p = GridGeometry.coordToPixel(this.ghostCell.col, this.ghostCell.row, this.viewportOrigin, this.cardSize);
+      return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight);
+    },
+    valueShortcutEditorStyle() {
+      const coord = this.valueShortcutEditor?.coord;
+      if (!coord) return {};
+      const p = GridGeometry.coordToPixel(coord.col, coord.row, this.viewportOrigin, this.cardSize);
       return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight);
     },
     visibleDropTargetOverlays() {
@@ -1142,6 +1160,87 @@ const BullpenTab = {
         this.dragOverCoord.col === coord.col &&
         this.dragOverCoord.row === coord.row);
     },
+    printableValueShortcutKey(e) {
+      if (!e || e.metaKey || e.ctrlKey || e.altKey) return '';
+      if (e.key && e.key.length === 1) return e.key;
+      return '';
+    },
+    parseValueShortcutText(text) {
+      const raw = String(text || '');
+      if (!raw.trim()) return { error: 'Enter a value.' };
+      let name = '';
+      let value = raw.trim();
+      const colon = raw.indexOf(':');
+      if (colon > 0) {
+        name = raw.slice(0, colon).trim();
+        value = raw.slice(colon + 1).trim();
+      }
+      if (!value) return { error: 'Enter a value.' };
+      return {
+        fields: {
+          name,
+          value,
+          value_type: 'auto',
+          format: { kind: 'auto' },
+        },
+      };
+    },
+    openValueShortcutEditor(coord, initialText = '') {
+      if (!coord || !this.isWritableCoord(coord) || this.itemAtCoord(coord)) return;
+      this.closeEmptyMenu();
+      this.valueShortcutEditor = {
+        coord: { ...coord },
+        text: initialText,
+        error: '',
+      };
+      this.selectedCell = { ...coord };
+      this.$nextTick(() => {
+        const input = this.$refs.valueShortcutInput;
+        if (input && typeof input.focus === 'function') {
+          input.focus();
+          const end = input.value.length;
+          input.setSelectionRange?.(end, end);
+        }
+      });
+    },
+    closeValueShortcutEditor({ focusViewport = true } = {}) {
+      this.valueShortcutEditor = null;
+      if (focusViewport) this.$nextTick(() => this.$refs.viewport?.focus());
+    },
+    commitValueShortcutEditor({ openModal = false } = {}) {
+      const editor = this.valueShortcutEditor;
+      if (!editor?.coord) return;
+      const parsed = this.parseValueShortcutText(editor.text);
+      if (parsed.error) {
+        editor.error = parsed.error;
+        return;
+      }
+      if (openModal) {
+        this.selectedAddCoord = { ...editor.coord };
+        this.closeValueShortcutEditor({ focusViewport: false });
+        this.createWorkerAndOpenConfig({ type: 'value', fields: parsed.fields });
+        return;
+      }
+      this.$emit('add-worker', {
+        coord: { ...editor.coord },
+        type: 'value',
+        fields: parsed.fields,
+      });
+      this.closeValueShortcutEditor();
+    },
+    onValueShortcutKeydown(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeValueShortcutEditor();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.commitValueShortcutEditor({ openModal: e.metaKey || e.ctrlKey });
+      }
+    },
     onKeydown(e) {
       const t = e.target;
       const inTextInput = t && (t.isContentEditable || (typeof t.matches === 'function' && t.matches('input, textarea, select')));
@@ -1245,6 +1344,15 @@ const BullpenTab = {
         } else {
           e.preventDefault();
           this.openEmptyMenu(coord);
+        }
+      }
+      if (e.defaultPrevented) return;
+      const shortcutKey = this.printableValueShortcutKey(e);
+      if (!inTextInput && shortcutKey && !this.emptyMenuCoord && !this.showLibrary && !this.showGoTo && !this.showHelp) {
+        const coord = this.selectedCell || this.ghostCell;
+        if (coord && this.isWritableCoord(coord) && !this.itemAtCoord(coord)) {
+          e.preventDefault();
+          this.openValueShortcutEditor(coord, shortcutKey);
         }
       }
     },

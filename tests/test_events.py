@@ -719,8 +719,28 @@ class TestWorkerEvents:
         assert worker["value"] == "00123"
         assert worker["resolved_value_type"] == "string"
         assert worker["format"] == {"kind": "number", "places": 10}
+        assert worker["updated_at"]
         assert "task_queue" not in worker
         assert "state" not in worker
+
+    def test_configure_value_worker_updates_value_and_timestamp(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "1", "value_type": "number"},
+        })
+        first = get_event(c, "layout:updated")
+        first_timestamp = first["slots"][0]["updated_at"]
+
+        c.emit("worker:configure", {"slot": 0, "fields": {"value": "2"}})
+        updated = get_event(c, "layout:updated")
+        worker = updated["slots"][0]
+
+        assert worker["type"] == "value"
+        assert worker["value"] == 2
+        assert worker["updated_at"]
+        assert worker["updated_at"] >= first_timestamp
 
     def test_marker_worker_start_via_socket_completes_without_deadlock(self, client):
         c, app = client

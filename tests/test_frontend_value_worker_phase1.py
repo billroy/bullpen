@@ -76,3 +76,32 @@ def test_value_worker_card_styles_exist():
     assert ".worker-card-value {" in text
     assert ".worker-card-value-meta {" in text
     assert ".worker-card-value-main {" in text
+
+
+def test_value_shortcut_editor_parses_and_creates_values():
+    text = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
+
+    assert "valueShortcutEditor: null" in text
+    assert "printableValueShortcutKey(e)" in text
+    assert "parseValueShortcutText(text)" in text
+    assert "const colon = raw.indexOf(':');" in text
+    assert "name = raw.slice(0, colon).trim();" in text
+    assert "value = raw.slice(colon + 1).trim();" in text
+    assert "this.$emit('add-worker', {" in text
+    assert "type: 'value'," in text
+    assert "this.commitValueShortcutEditor({ openModal: e.metaKey || e.ctrlKey });" in text
+    assert "this.createWorkerAndOpenConfig({ type: 'value', fields: parsed.fields });" in text
+    assert "if (e.defaultPrevented) return;" in text
+
+
+def test_value_card_inline_edit_saves_and_reverts():
+    text = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+
+    assert "valueEditing: false" in text
+    assert '@keydown.enter.prevent.stop="commitValueEdit"' in text
+    assert '@keydown.escape.prevent.stop="cancelValueEdit"' in text
+    assert "@click.stop=\"startValueEdit\"" in text
+    assert "validateValueEditText(text)" in text
+    assert "Enter a valid number." in text
+    assert "fields: { value: String(this.valueEditText) }" in text
+    assert "this.cancelValueEdit();" in text

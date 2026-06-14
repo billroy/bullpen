@@ -215,6 +215,10 @@ def _safe_legacy_cols(config):
     return cols if cols > 0 else 4
 
 
+def _now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _slot_coord(worker, index, cols):
     if isinstance(worker, dict) and "col" in worker and "row" in worker:
         try:
@@ -679,6 +683,7 @@ def register_events(socketio, app):
                 "format": fields.get("format") if isinstance(fields.get("format"), dict) else {"kind": "auto"},
                 "icon": "variable",
                 "color": "value",
+                "updated_at": _now_iso(),
             }
         else:  # marker or notification
             if worker_type == "marker":
@@ -1040,6 +1045,8 @@ def register_events(socketio, app):
         for k, v in fields.items():
             if k not in ("task_queue", "state"):
                 worker[k] = v
+        if worker.get("type") == "value" and any(k in fields for k in ("value", "value_type", "format")):
+            worker["updated_at"] = _now_iso()
         config = read_json(os.path.join(bp_dir, "config.json"))
         layout["slots"][slot_index] = normalize_worker_slot(worker, index=slot_index, config=config)
         worker = layout["slots"][slot_index]

@@ -124,9 +124,22 @@ const WorkerCard = {
             <span>{{ valueCellRef || 'Value' }}</span>
             <span>{{ valueTypeLabel }}</span>
           </div>
-          <div class="worker-card-value-main" :title="valueDisplay">
+          <template v-if="valueEditing">
+            <input class="worker-card-value-input"
+                   ref="valueEditInput"
+                   v-model="valueEditText"
+                   @keydown.stop
+                   @keydown.enter.prevent.stop="commitValueEdit"
+                   @keydown.escape.prevent.stop="cancelValueEdit"
+                   @click.stop
+                   aria-label="Edit value">
+            <div v-if="valueEditError" class="worker-card-value-error">{{ valueEditError }}</div>
+          </template>
+          <button v-else class="worker-card-value-main worker-card-value-main--button"
+                  :title="valueDisplay"
+                  @click.stop="startValueEdit">
             {{ valueDisplay || 'Empty' }}
-          </div>
+          </button>
         </div>
         <div v-else class="worker-card-empty">
           <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
@@ -155,6 +168,9 @@ const WorkerCard = {
       showTitlePort: false,
       hoveredVerticalResize: false,
       verticalResizeX: 0,
+      valueEditing: false,
+      valueEditText: '',
+      valueEditError: '',
     };
   },
   mounted() {
@@ -401,6 +417,10 @@ const WorkerCard = {
     markerNote() {
       return String(this.worker?.note || '').trim();
     },
+    storedValueText() {
+      const value = this.worker?.value;
+      return value === null || value === undefined ? '' : String(value);
+    },
     valueCellRef() {
       return window.GridGeometry?.coordToCellRef?.(this.worker) || '';
     },
@@ -549,8 +569,50 @@ const WorkerCard = {
       }
     },
     onBodyDblClick() {
+      if (this.isValue) {
+        this.startValueEdit();
+        return;
+      }
       const taskId = this.queuedTasks.length ? this.queuedTasks[0].id : null;
       if (taskId) this.$emit('select-task', taskId);
+    },
+    validateValueEditText(text) {
+      const valueType = String(this.worker?.value_type || 'auto');
+      const trimmed = String(text || '').trim();
+      if (valueType === 'number' && !/^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(trimmed)) {
+        return 'Enter a valid number.';
+      }
+      return '';
+    },
+    startValueEdit() {
+      if (!this.isValue) return;
+      this.valueEditText = this.storedValueText;
+      this.valueEditError = '';
+      this.valueEditing = true;
+      this.$nextTick(() => {
+        const input = this.$refs.valueEditInput;
+        if (input && typeof input.focus === 'function') {
+          input.focus();
+          input.select?.();
+        }
+      });
+    },
+    cancelValueEdit() {
+      this.valueEditing = false;
+      this.valueEditText = '';
+      this.valueEditError = '';
+    },
+    commitValueEdit() {
+      const error = this.validateValueEditText(this.valueEditText);
+      if (error) {
+        this.valueEditError = error;
+        return;
+      }
+      this.$root.saveWorkerConfig({
+        slot: this.slotIndex,
+        fields: { value: String(this.valueEditText) },
+      });
+      this.cancelValueEdit();
     },
     canConnect(dir) {
       return !!(this.neighborSlots && this.neighborSlots[dir] != null);

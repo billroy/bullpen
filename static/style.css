@@ -3419,6 +3419,47 @@ body.worker-singleton-dragging * {
   text-overflow: ellipsis;
 }
 
+.worker-card-value-main--button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: text;
+}
+
+.worker-card-value-input {
+  text-align: right;
+}
+
+.value-shortcut-editor {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  pointer-events: auto;
+}
+
+.value-shortcut-input,
+.worker-card-value-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.value-shortcut-error,
+.worker-card-value-error {
+  color: var(--red);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
 .worker-card-output {
   margin-top: 1px;
   flex: 1 1 0;
