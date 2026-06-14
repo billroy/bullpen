@@ -41,6 +41,7 @@ from server import service_worker as service_worker_mod
 from server import mcp_auth
 from server import opencode_models
 from server import worktrees as worktree_mod
+from server.global_settings import load_global_settings
 from server.terminal import TerminalManager
 
 
@@ -1004,6 +1005,7 @@ def create_app(
         reconcile(bp_dir)
         state = load_state(bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws.id
+        state["globalSettings"] = load_global_settings(manager.global_dir)
         socketio.emit("state:init", state, to=ws.id)
         socketio.emit("files:changed", {"workspaceId": ws.id}, to=ws.id)
 
@@ -1042,6 +1044,7 @@ def create_app(
         reconcile(bp_dir)
         state = load_state(bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws.id
+        state["globalSettings"] = load_global_settings(manager.global_dir)
         socketio.emit("state:init", state, to=ws.id)
 
     @app.route("/api/export/workspace")
@@ -1290,6 +1293,7 @@ def create_app(
             join_room(ws.id)
             state = load_state(ws.bp_dir, ws.path)
             state["workspaceId"] = ws.id
+            state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
             return
 
@@ -1300,6 +1304,7 @@ def create_app(
             join_room(ws.id)
             state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
             state["workspaceId"] = ws.id
+            state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
         socketio.emit("projects:updated", manager.list_visible_projects(include_path=False), to=request.sid)
 

@@ -8,6 +8,10 @@ const LiveAgentChatTab = {
       type: String,
       default: null,
     },
+    lastAiSelection: {
+      type: Object,
+      default: null,
+    },
   },
   data() {
     return {
@@ -24,14 +28,20 @@ const LiveAgentChatTab = {
       opencodeModelsLoading: false,
       opencodeModelProvider: '',
       opencodeModelSearch: '',
+      userSelectedProviderModel: false,
     };
   },
   computed: {
+    preferredAiSelection() {
+      return normalizedLastAiSelection(this.lastAiSelection);
+    },
     providerOptions() {
-      return ['claude', 'codex', 'gemini', 'opencode'];
+      return withPreferredOption(AI_PROVIDER_OPTIONS, this.preferredAiSelection?.agent);
     },
     modelOptions() {
-      return MODEL_OPTIONS[this.provider] || [];
+      const options = MODEL_OPTIONS[this.provider] || [];
+      const preferred = this.preferredAiSelection;
+      return withPreferredOption(options, preferred?.agent === this.provider ? preferred.model : '');
     },
     isOpenCodeProvider() {
       return this.provider === 'opencode';
@@ -78,13 +88,21 @@ const LiveAgentChatTab = {
   watch: {
     provider(newProvider) {
       if (newProvider === 'opencode') {
-        if (!String(this.model || '').includes('/')) this.model = '';
+        const preferred = this.preferredAiSelection;
+        if (!String(this.model || '').includes('/')) this.model = preferred?.agent === 'opencode' ? preferred.model : '';
         this.syncOpenCodeModelProvider();
         this.ensureOpenCodeModels();
         return;
       }
       const opts = this.modelOptions;
       if (!opts.includes(this.model)) this.model = opts[0] || '';
+    },
+    lastAiSelection: {
+      immediate: true,
+      handler(selection) {
+        if (this.busy || this.messages.length || this.userSelectedProviderModel) return;
+        this.applyPreferredSelection(selection);
+      },
     },
   },
   mounted() {
@@ -161,6 +179,22 @@ const LiveAgentChatTab = {
       if (this._onError) s.off('chat:error', this._onError);
       if (this._onCleared) s.off('chat:cleared', this._onCleared);
     },
+    applyPreferredSelection(selection) {
+      const preferred = normalizedLastAiSelection(selection);
+      if (!preferred) return;
+      this.provider = preferred.agent;
+      this.model = preferred.model;
+      if (this.provider === 'opencode') {
+        this.syncOpenCodeModelProvider();
+        this.ensureOpenCodeModels();
+      }
+    },
+    onProviderChange() {
+      this.userSelectedProviderModel = true;
+    },
+    onModelChange() {
+      this.userSelectedProviderModel = true;
+    },
     sendMessage() {
       const text = this.input.trim();
       if (!text || this.busy) return;
@@ -235,9 +269,11 @@ const LiveAgentChatTab = {
       return this.loadOpenCodeModels({ refresh: true });
     },
     onOpenCodeProviderChange() {
+      this.userSelectedProviderModel = true;
       this.opencodeModelSearch = '';
     },
     onOpenCodeModelSelect(e) {
+      this.userSelectedProviderModel = true;
       this.model = e.target.value || '';
       this.syncOpenCodeModelProvider();
     },
@@ -258,11 +294,11 @@ const LiveAgentChatTab = {
     <div class="chat-tab">
       <div class="chat-toolbar">
         <label class="chat-label">Provider</label>
-        <select class="form-select chat-select" v-model="provider" :disabled="busy">
+        <select class="form-select chat-select" v-model="provider" :disabled="busy" @change="onProviderChange">
           <option v-for="p in providerOptions" :key="p" :value="p">{{ p }}</option>
         </select>
         <label class="chat-label">Model</label>
-        <select v-if="!isOpenCodeProvider" class="form-select chat-select" v-model="model" :disabled="busy">
+        <select v-if="!isOpenCodeProvider" class="form-select chat-select" v-model="model" :disabled="busy" @change="onModelChange">
           <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
         </select>
         <template v-if="isOpenCodeProvider">
@@ -276,7 +312,7 @@ const LiveAgentChatTab = {
             <option v-if="model && !isOpenCodeModelInCatalog" :value="model">{{ model }}</option>
             <option v-for="m in filteredOpenCodeModels" :key="m.id" :value="m.id">{{ m.id }}</option>
           </select>
-          <input class="form-input chat-custom-model" v-model="model" :disabled="busy" placeholder="provider/model">
+          <input class="form-input chat-custom-model" v-model="model" :disabled="busy" placeholder="provider/model" @input="onModelChange">
           <button class="btn btn-sm" @click="refreshOpenCodeModels" :disabled="busy || opencodeModelsLoading">
             {{ opencodeModelsLoading ? 'Refreshing...' : 'Refresh' }}
           </button>

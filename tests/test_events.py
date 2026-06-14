@@ -185,6 +185,50 @@ def test_project_add_accepts_name_under_configured_projects_root(tmp_path, monke
     assert app.config["manager"].get_workspace_path(ws_id) == str(project.resolve())
 
 
+def test_last_ai_selection_is_used_for_new_workers_across_projects(tmp_path):
+    project_a = tmp_path / "project-a"
+    project_b = tmp_path / "project-b"
+    project_a.mkdir()
+    project_b.mkdir()
+    global_dir = tmp_path / "home" / ".bullpen"
+
+    app = create_app(str(project_a), no_browser=True, global_dir=str(global_dir))
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
+    client.get_received()
+    client.emit("worker:configure", {
+        "slot": 0,
+        "fields": {"agent": "codex", "model": "gpt-5.3-codex"},
+    })
+    events = client.get_received()
+    global_events = [evt["args"][0] for evt in events if evt["name"] == "global:settings"]
+    assert global_events
+    assert global_events[-1]["last_ai_selection"] == {"agent": "codex", "model": "gpt-5.3-codex"}
+
+    client.emit("project:add", {"path": str(project_b)})
+    events = client.get_received()
+    state_events = [evt["args"][0] for evt in events if evt["name"] == "state:init"]
+    project_b_id = state_events[-1]["workspaceId"]
+    assert state_events[-1]["globalSettings"]["last_ai_selection"] == {
+        "agent": "codex",
+        "model": "gpt-5.3-codex",
+    }
+
+    client.emit("worker:add", {
+        "workspaceId": project_b_id,
+        "slot": 0,
+        "profile": "feature-architect",
+    })
+    layout = get_event(client, "layout:updated")
+    client.disconnect()
+
+    worker = layout["slots"][0]
+    assert worker["agent"] == "codex"
+    assert worker["model"] == "gpt-5.3-codex"
+
+
 def test_start_without_project_refresh_requires_join_for_registered_project(tmp_path, monkeypatch):
     workspace_root = tmp_path / "workspace"
     project = workspace_root / "project-a"

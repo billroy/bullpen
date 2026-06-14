@@ -24,6 +24,7 @@ from server.usage import (
     merge_usage_max,
 )
 from server.model_aliases import normalize_model
+from server.global_settings import last_ai_selection, load_global_settings, remember_ai_selection
 from server import workers as worker_mod
 from server import service_worker as service_worker_mod
 from server import values as value_mod
@@ -152,6 +153,12 @@ def _normalize_direct_speech_payload(data):
         },
         "created_at": created_at,
     }
+
+
+def _remember_ai_selection(app, agent, model):
+    settings = remember_ai_selection(app.config["manager"].global_dir, agent, model)
+    emit("global:settings", settings, to="authenticated", namespace="/")
+    return settings
 
 
 def _harden_live_agent_argv(provider, argv):
@@ -708,14 +715,15 @@ def register_events(socketio, app):
 
         if worker_type == "ai":
             base_name = fields.get("name") or profile["name"]
+            remembered = last_ai_selection(app.config["manager"].global_dir) or {}
             worker = {
                 "type": "ai",
                 "row": row,
                 "col": col,
                 "profile": profile_id,
                 "name": _unique_name(base_name),
-                "agent": profile.get("default_agent", "claude"),
-                "model": profile.get("default_model", "claude-sonnet-4-6"),
+                "agent": remembered.get("agent") or profile.get("default_agent", "claude"),
+                "model": remembered.get("model") or profile.get("default_model", "claude-sonnet-4-6"),
                 "activation": profile.get("default_activation", "on_drop"),
                 "disposition": profile.get("default_disposition", "review"),
                 "watch_column": None,
@@ -1174,6 +1182,8 @@ def register_events(socketio, app):
         config = read_json(os.path.join(bp_dir, "config.json"))
         layout["slots"][slot_index] = normalize_worker_slot(worker, index=slot_index, config=config)
         worker = layout["slots"][slot_index]
+        if worker.get("type") == "ai" and any(k in fields for k in ("agent", "model")):
+            _remember_ai_selection(app, worker.get("agent"), worker.get("model"))
 
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
@@ -1210,6 +1220,8 @@ def register_events(socketio, app):
                     worker[k] = v
             layout["slots"][slot] = normalize_worker_slot(worker, index=slot, config=config)
             worker = layout["slots"][slot]
+            if worker.get("type") == "ai" and any(k in fields for k in ("agent", "model")):
+                _remember_ai_selection(app, worker.get("agent"), worker.get("model"))
             if ("activation" in fields or "watch_column" in fields):
                 if (worker.get("activation") == "on_queue"
                         and worker.get("watch_column")
@@ -1787,6 +1799,7 @@ def register_events(socketio, app):
         state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws_id
         state["switchTo"] = True
+        state["globalSettings"] = load_global_settings(manager.global_dir)
         emit("state:init", state)
 
         # Broadcast updated project list to authenticated clients
@@ -1826,6 +1839,7 @@ def register_events(socketio, app):
         sync_deploy_label_config(ws.bp_dir)
         state = load_state(ws.bp_dir, ws.path, workspace_display=ws.name)
         state["workspaceId"] = ws_id
+        state["globalSettings"] = load_global_settings(manager.global_dir)
         emit("state:init", state)
         _emit_chat_tabs(ws_id, sid=request.sid)
 
@@ -2465,6 +2479,7 @@ def register_events(socketio, app):
         if not adapter.available():
             emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": adapter.unavailable_message()})
             return
+        _remember_ai_selection(app, provider, model)
 
         _evict_stale_chat_sessions()
         added = _upsert_chat_tab(

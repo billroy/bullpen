@@ -81,6 +81,7 @@ const app = createApp({
     const projects = reactive([]);  // [{id, name, available}]
     const projectsLoaded = ref(false);  // true once server has delivered initial projects:updated
     const projectSettings = reactive({ projectsRoot: '' });
+    const globalSettings = reactive({ version: 1, last_ai_selection: null });
 
     function _defaultWsData() {
       return {
@@ -139,6 +140,12 @@ const app = createApp({
       safe.provider_colors = _normalizeProviderColors(safe.provider_colors);
       safe.worker_automation_paused = safe.worker_automation_paused === true;
       return safe;
+    }
+
+    function applyGlobalSettings(settings) {
+      if (!settings || typeof settings !== 'object') return;
+      globalSettings.version = Number(settings.version || 1);
+      globalSettings.last_ai_selection = normalizedLastAiSelection(settings.last_ai_selection);
     }
 
     const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -738,6 +745,7 @@ const app = createApp({
       ws.tasks = data.tasks;
       ws.profiles = data.profiles || [];
       ws.teams = data.teams || [];
+      applyGlobalSettings(data.globalSettings);
 
       // First workspace or explicitly requested switch becomes active
       if (!activeWorkspaceId.value || data.switchTo) {
@@ -824,6 +832,9 @@ const app = createApp({
         _applyWorkspaceAmbient(wsId);
         _applyWorkspaceProviderColors(wsId);
       }
+    });
+    socket.on('global:settings', (settings) => {
+      applyGlobalSettings(settings);
     });
     socket.on('profiles:updated', (profiles) => {
       // profiles is an array, workspaceId may be on any element or absent
@@ -1848,7 +1859,7 @@ const app = createApp({
     });
 
     return {
-      state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded, projectSettings,
+      state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded, projectSettings, globalSettings,
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
@@ -2037,6 +2048,7 @@ const app = createApp({
               :key="ct.id"
               :session-id="ct.sessionId"
               :workspace-id="ct.workspaceId"
+              :last-ai-selection="globalSettings.last_ai_selection"
             />
             <TerminalTab
               v-for="tt in terminalTabs"
@@ -2092,6 +2104,7 @@ const app = createApp({
         :provider-colors="currentProviderColors"
         :default-provider-colors="defaultProviderColors"
         :active-workspace-id="activeWorkspaceId"
+        :last-ai-selection="globalSettings.last_ai_selection"
         @close="closeWorkerConfig"
         @save="saveWorkerConfig"
         @remove="removeWorker"

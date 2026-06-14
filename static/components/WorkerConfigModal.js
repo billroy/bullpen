@@ -61,7 +61,7 @@ function cloneNotificationForm(raw) {
 }
 
 const WorkerConfigModal = {
-  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors', 'activeWorkspaceId'],
+  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors', 'activeWorkspaceId', 'lastAiSelection'],
   emits: ['close', 'save', 'remove', 'save-profile'],
   data() {
     return {
@@ -105,8 +105,8 @@ const WorkerConfigModal = {
             type: w.type || 'ai',
             name: w.name || '',
             note: w.note || '',
-            agent: w.agent || 'claude',
-            model: w.model || 'claude-sonnet-4-6',
+            agent: w.agent || this.preferredAiSelection?.agent || 'claude',
+            model: w.model || this.preferredDefaultModel(w.agent || this.preferredAiSelection?.agent || 'claude'),
             activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop'),
             disposition,
             random_name: randomName,
@@ -206,6 +206,13 @@ const WorkerConfigModal = {
     isOpenCodeAgent() {
       return this.isAI && this.form.agent === 'opencode';
     },
+    preferredAiSelection() {
+      return normalizedLastAiSelection(this.lastAiSelection);
+    },
+    agentOptions() {
+      const preferred = this.preferredAiSelection?.agent;
+      return withPreferredOption(AI_PROVIDER_OPTIONS, preferred);
+    },
     canPauseWorker() {
       return this.isAI || this.isShell || this.isService || this.isNotification;
     },
@@ -219,7 +226,9 @@ const WorkerConfigModal = {
         .filter(Boolean);
     },
     modelOptions() {
-      return MODEL_OPTIONS[this.form.agent] || ['default'];
+      const options = MODEL_OPTIONS[this.form.agent] || ['default'];
+      const preferred = this.preferredAiSelection;
+      return withPreferredOption(options, preferred?.agent === this.form.agent ? preferred.model : '');
     },
     opencodeProviders() {
       const providers = this.opencodeModels
@@ -418,10 +427,7 @@ const WorkerConfigModal = {
               <label class="form-label">
                 AI Provider
                 <select class="form-select" v-model="form.agent" @change="onAgentChange">
-                  <option value="claude">Claude</option>
-                  <option value="codex">Codex</option>
-                  <option value="gemini">Gemini</option>
-                  <option value="opencode">OpenCode</option>
+                  <option v-for="agent in agentOptions" :key="agent" :value="agent">{{ agentLabel(agent) }}</option>
                 </select>
               </label>
               <label v-if="!isOpenCodeAgent" class="form-label">
@@ -1103,9 +1109,19 @@ const WorkerConfigModal = {
       e.preventDefault();
       this.onSave();
     },
+    agentLabel(agent) {
+      return { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', opencode: 'OpenCode' }[agent] || agent;
+    },
+    preferredDefaultModel(agent) {
+      const preferred = this.preferredAiSelection;
+      if (preferred?.agent === agent) return preferred.model;
+      const options = MODEL_OPTIONS[agent] || ['default'];
+      return options[0] || '';
+    },
     onAgentChange() {
       if (this.form.agent === 'opencode') {
-        if (!String(this.form.model || '').includes('/')) this.form.model = '';
+        const preferred = this.preferredDefaultModel('opencode');
+        if (!String(this.form.model || '').includes('/')) this.form.model = String(preferred || '').includes('/') ? preferred : '';
         this.syncOpenCodeModelProvider();
         this.ensureOpenCodeModels();
         return;

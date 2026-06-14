@@ -45,7 +45,8 @@ def test_opencode_uses_catalog_backed_model_picker():
     app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 
     assert "opencode: []" in utils
-    assert '<option value="opencode">OpenCode</option>' in modal
+    assert "agentOptions()" in modal
+    assert "agentLabel(agent)" in modal
     assert "isOpenCodeAgent()" in modal
     assert "/api/models/opencode" in modal
     assert "opencodeModelProvider" in modal
@@ -54,13 +55,15 @@ def test_opencode_uses_catalog_backed_model_picker():
     assert 'placeholder="provider/model"' in modal
     assert "BULLPEN_OPENCODE_PATH" in modal
     assert ':active-workspace-id="activeWorkspaceId"' in app
+    assert ':last-ai-selection="globalSettings.last_ai_selection"' in app
 
 
 def test_live_agent_chat_exposes_opencode_catalog_picker():
     text = (ROOT / "static" / "components" / "LiveAgentChatTab.js").read_text(encoding="utf-8")
     css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
 
-    assert "['claude', 'codex', 'gemini', 'opencode']" in text
+    assert "AI_PROVIDER_OPTIONS" in text
+    assert "withPreferredOption" in text
     assert "isOpenCodeProvider()" in text
     assert "/api/models/opencode" in text
     assert "opencodeModelProvider" in text
@@ -82,3 +85,20 @@ def test_model_options_defined_in_shared_constant():
         # Should not have inline model arrays
         assert "codex-mini-latest" not in text, f"{component} has stale inline codex models"
         assert "o4-mini" not in text, f"{component} has stale inline codex models"
+
+
+def test_last_ai_selection_promotes_provider_and_model_options():
+    utils = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
+    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    modal = (ROOT / "static" / "components" / "WorkerConfigModal.js").read_text(encoding="utf-8")
+    chat = (ROOT / "static" / "components" / "LiveAgentChatTab.js").read_text(encoding="utf-8")
+
+    assert "function normalizedLastAiSelection" in utils
+    assert "function withPreferredOption" in utils
+    assert "socket.on('global:settings'" in app
+    assert "lastAiSelection" in modal
+    assert "withPreferredOption(AI_PROVIDER_OPTIONS" in modal
+    assert "preferred?.agent === this.form.agent ? preferred.model" in modal
+    assert "lastAiSelection" in chat
+    assert "withPreferredOption(AI_PROVIDER_OPTIONS" in chat
+    assert "preferred?.agent === this.provider ? preferred.model" in chat

@@ -13,6 +13,22 @@ const MODEL_OPTIONS = {
   opencode: [],
 };
 
+const AI_PROVIDER_OPTIONS = ['claude', 'codex', 'gemini', 'opencode'];
+
+function normalizedLastAiSelection(value) {
+  if (!value || typeof value !== 'object') return null;
+  const agent = String(value.agent || '').trim();
+  const model = String(value.model || '').trim();
+  if (!AI_PROVIDER_OPTIONS.includes(agent) || !model) return null;
+  return { agent, model };
+}
+
+function withPreferredOption(options, preferred) {
+  const values = Array.isArray(options) ? options.slice() : [];
+  if (!preferred) return values;
+  return [preferred, ...values.filter(value => value !== preferred)];
+}
+
 const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c', notification: '#d7ad4a', value: '#86efac' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
