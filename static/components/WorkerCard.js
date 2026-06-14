@@ -49,7 +49,7 @@ const WorkerCard = {
            @click="onHeaderClick"
            @dblclick="onHeaderDblClick">
         <input v-if="showCompactValue && valueEditing"
-               class="worker-card-compact-value-editor worker-card-value-input"
+               class="worker-card-compact-value-editor"
                ref="valueEditInput"
                v-model="valueEditText"
                @keydown.stop

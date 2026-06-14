@@ -81,7 +81,8 @@ def test_value_worker_small_card_shows_value_in_header():
     assert 'v-if="showCompactValue && valueEditing"' in card
     assert 'v-if="showCompactValue && !valueEditing"' in card
     assert 'class="worker-card-compact-value worker-card-compact-value-button"' in card
-    assert 'class="worker-card-compact-value-editor worker-card-value-input"' in card
+    assert 'class="worker-card-compact-value-editor"' in card
+    assert 'class="worker-card-compact-value-editor worker-card-value-input"' not in card
     assert '@click.stop="startCompactValueEdit"' in card
     assert '@dblclick.stop' in card
     assert "valueInlineDisplay()" not in card
@@ -98,6 +99,10 @@ def test_value_worker_small_card_shows_value_in_header():
     compact_button_styles = css.split(".worker-card-compact-value-button {", 1)[1].split("}", 1)[0]
     assert "flex: 1 1 auto;" not in compact_button_styles
     assert "max-width: none;" not in compact_button_styles
+    compact_editor_styles = css.split(".worker-card-compact-value-editor {", 1)[1].split("}", 1)[0]
+    assert "align-self: stretch;" in compact_editor_styles
+    assert "box-sizing: border-box;" in compact_editor_styles
+    assert "padding: 0 8px;" in compact_editor_styles
 
 
 def test_value_worker_card_rejects_ticket_drop_affordances():
