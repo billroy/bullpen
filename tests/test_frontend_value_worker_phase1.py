@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_value_worker_type_metadata_is_registered():
     text = (ROOT / "static" / "utils.js").read_text()
 
-    assert "value: '#86efac'" in text
+    assert "value: '#166534'" in text
     assert "worker?.type === 'value'" in text
     assert "'value', 'eval'" in text
     assert "function isValueWorker(worker)" in text

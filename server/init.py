@@ -15,7 +15,7 @@ DEFAULT_PROVIDER_COLORS = {
     "service": "#0f766e",
     "marker": "#c8b38c",
     "notification": "#d7ad4a",
-    "value": "#86efac",
+    "value": "#166534",
 }
 
 DEFAULT_CONFIG = {

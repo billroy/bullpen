@@ -229,8 +229,8 @@ class TestConfigUpdate:
         assert result["provider_colors"]["opencode"] == "#63b3ed"
 
     def test_value_worker_color_accepted(self):
-        result = validate_config_update({"provider_colors": {"value": "#86efac"}})
-        assert result["provider_colors"]["value"] == "#86efac"
+        result = validate_config_update({"provider_colors": {"value": "#166534"}})
+        assert result["provider_colors"]["value"] == "#166534"
 
 
 class TestWorkerMove:
