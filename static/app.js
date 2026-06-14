@@ -167,7 +167,12 @@ const app = createApp({
       if (!ws || !window.ambientAudio) return;
       const volume = _normalizeAmbientVolume(ws.config?.ambient_volume);
       const preset = _normalizeAmbientPreset(ws.config?.ambient_preset);
+      const automationPaused = ws.config?.worker_automation_paused === true;
       window.ambientAudio.setVolume(volume / 100);
+      if (automationPaused) {
+        window.ambientAudio.stopAmbient();
+        return;
+      }
       if (preset) {
         if (!(window.ambientAudio._ambientActive && window.ambientAudio._ambientPreset === preset)) {
           window.ambientAudio.startAmbient(preset, 10);
@@ -227,6 +232,22 @@ const app = createApp({
     function _updateDocumentTitle() {
       const project = _workspaceBaseName(state.workspace);
       document.title = project ? `Bullpen : ${project}` : 'Bullpen';
+    }
+
+    function _setWorkspaceAutomationPaused(wsId, paused) {
+      if (!wsId) return;
+      const ws = _getWs(wsId);
+      ws.config = _normalizeConfig({ ...(ws.config || {}), worker_automation_paused: paused });
+      if (_isActive(wsId)) {
+        state.config = ws.config;
+        _applyWorkspaceAmbient(wsId);
+      }
+    }
+
+    function _setKnownWorkspacesAutomationPaused(paused) {
+      for (const wsId of Object.keys(workspaces)) {
+        _setWorkspaceAutomationPaused(wsId, paused);
+      }
     }
 
     const ACTIVE_PROJECT_STORAGE_KEY = 'bullpen.activeWorkspaceId';
@@ -1294,21 +1315,27 @@ const app = createApp({
       socket.emit('service:restart', _wsData({ slot }));
     }
     function pauseAutomation() {
+      _setWorkspaceAutomationPaused(activeWorkspaceId.value, true);
       socket.emit('workers:pause_automation', _wsData({}));
     }
     function resumeAutomation() {
+      _setWorkspaceAutomationPaused(activeWorkspaceId.value, false);
       socket.emit('workers:resume_automation', _wsData({}));
     }
     function stopTheLine() {
+      _setWorkspaceAutomationPaused(activeWorkspaceId.value, true);
       socket.emit('workers:stop_line', _wsData({}));
     }
     function pauseAllAutomation() {
+      _setKnownWorkspacesAutomationPaused(true);
       socket.emit('workers:pause_all_automation', {});
     }
     function resumeAllAutomation() {
+      _setKnownWorkspacesAutomationPaused(false);
       socket.emit('workers:resume_all_automation', {});
     }
     function stopAllLines() {
+      _setKnownWorkspacesAutomationPaused(true);
       socket.emit('workers:stop_all_lines', {});
     }
     function openServiceSite(slot) {
