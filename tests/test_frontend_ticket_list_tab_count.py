@@ -12,7 +12,7 @@ def _read(rel_path: str) -> str:
 
 def test_ticket_list_emits_filtered_shown_count():
     text = _read("static/components/KanbanTab.js")
-    assert "emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope', 'update-task', 'update-shown-count']" in text
+    assert "emits: ['select-task', 'move-task', 'move-column-tasks', 'archive-column-tasks', 'new-task', 'update-list-scope', 'update-task', 'update-shown-count']" in text
     assert "filteredTasks: {" in text
     assert "this.$emit('update-shown-count', Array.isArray(tasks) ? tasks.length : 0);" in text
 

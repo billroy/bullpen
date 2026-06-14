@@ -1697,23 +1697,40 @@ body {
   white-space: nowrap;
 }
 
-.column-count {
-  font-size: 11px;
+.column-count-inline {
+  margin-left: 3px;
   color: var(--text-muted);
-  background: var(--bg-primary);
-  padding: 0 6px;
-  border-radius: 10px;
+  letter-spacing: 0;
+}
+
+.column-actions {
+  position: relative;
   flex-shrink: 0;
 }
 
-.column-archive-btn {
-  font-size: 10px;
-  opacity: 0.6;
-  margin-left: auto;
+.column-menu-btn {
+  width: 26px;
+  height: 26px;
+  color: var(--text-secondary);
 }
 
-.column-archive-btn:hover {
-  opacity: 1;
+.column-menu-btn i {
+  width: 16px;
+  height: 16px;
+}
+
+.column-menu-btn:hover,
+.column-menu-btn.active {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.column-action-menu {
+  position: fixed;
+  width: 220px;
+  max-height: min(360px, calc(100vh - 24px));
+  overflow-y: auto;
+  z-index: 1200;
 }
 
 .kanban-column-body {

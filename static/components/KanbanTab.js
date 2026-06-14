@@ -1,6 +1,6 @@
 const KanbanTab = {
   props: ['tasks', 'columns', 'layout', 'viewMode', 'listScope'],
-  emits: ['select-task', 'move-task', 'archive-done', 'new-task', 'update-list-scope', 'update-task', 'update-shown-count'],
+  emits: ['select-task', 'move-task', 'move-column-tasks', 'archive-column-tasks', 'new-task', 'update-list-scope', 'update-task', 'update-shown-count'],
   components: { TaskCard },
   template: `
     <div v-if="viewMode !== 'list'" class="kanban-board">
@@ -11,13 +11,52 @@ const KanbanTab = {
         <div class="kanban-column-header" :style="{ borderTopColor: col.color }">
           <div class="column-title">
             <i class="column-icon" :data-lucide="columnIcon(col)" aria-hidden="true"></i>
-            <span class="column-label">{{ col.label }}</span>
+            <span class="column-label">{{ col.label }}<span class="column-count-inline">({{ columnTasks(col.key).length }})</span></span>
           </div>
-          <span class="column-count">{{ columnTasks(col.key).length }}</span>
-          <button v-if="col.key === 'done' && columnTasks(col.key).length"
-                  class="btn btn-sm column-archive-btn"
-                  @click="$emit('archive-done')"
-                  title="Archive all done tickets">Archive</button>
+          <div class="column-actions" @click.stop>
+            <button
+              class="btn-icon column-menu-btn"
+              :class="{ active: openColumnMenuKey === col.key }"
+              @click="toggleColumnMenu(col, $event)"
+              title="Column actions"
+              aria-label="Column actions"
+              :aria-expanded="openColumnMenuKey === col.key ? 'true' : 'false'"
+            >
+              <i data-lucide="more-horizontal" aria-hidden="true"></i>
+            </button>
+            <div
+              v-if="openColumnMenuKey === col.key"
+              class="worker-menu column-action-menu"
+              :style="columnMenuStyle"
+              role="menu"
+              tabindex="-1"
+              @click.stop
+              @keydown="onColumnMenuKeydown"
+            >
+              <div class="worker-menu-section-label">Move all to...</div>
+              <button
+                v-for="target in moveTargetColumns(col.key)"
+                :key="target.key"
+                class="worker-menu-item"
+                role="menuitem"
+                :disabled="columnTasks(col.key).length === 0"
+                @click="bulkMoveColumn(col, target)"
+              >
+                <i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i>
+                <span class="menu-item-label">{{ target.label }}</span>
+              </button>
+              <div class="worker-menu-divider"></div>
+              <button
+                class="worker-menu-item worker-menu-danger"
+                role="menuitem"
+                :disabled="columnTasks(col.key).length === 0"
+                @click="bulkArchiveColumn(col)"
+              >
+                <i class="menu-item-icon" data-lucide="archive" aria-hidden="true"></i>
+                <span class="menu-item-label">Archive all</span>
+              </button>
+            </div>
+          </div>
         </div>
         <div class="kanban-column-body">
           <div v-if="columnTasks(col.key).length === 0" class="empty-state kanban-drop-zone">—</div>
@@ -156,12 +195,16 @@ const KanbanTab = {
       typeFilter: 'all',
       nowMs: Date.now(),
       taskTimeTimer: null,
+      openColumnMenuKey: null,
+      columnMenuPos: { top: 0, left: 0 },
     };
   },
   mounted() {
     this.taskTimeTimer = window.setInterval(() => {
       this.nowMs = Date.now();
     }, 1000);
+    document.addEventListener('click', this.closeColumnMenu);
+    window.addEventListener('resize', this.closeColumnMenu);
     renderLucideIcons(this.$el);
   },
   beforeUnmount() {
@@ -169,6 +212,8 @@ const KanbanTab = {
       window.clearInterval(this.taskTimeTimer);
       this.taskTimeTimer = null;
     }
+    document.removeEventListener('click', this.closeColumnMenu);
+    window.removeEventListener('resize', this.closeColumnMenu);
   },
   watch: {
     filteredTasks: {
@@ -178,6 +223,9 @@ const KanbanTab = {
       },
     },
     iconRenderToken() {
+      this.$nextTick(() => renderLucideIcons(this.$el));
+    },
+    openColumnMenuKey() {
       this.$nextTick(() => renderLucideIcons(this.$el));
     },
   },
@@ -313,6 +361,12 @@ const KanbanTab = {
         });
       });
       return cols;
+    },
+    columnMenuStyle() {
+      return {
+        top: this.columnMenuPos.top + 'px',
+        left: this.columnMenuPos.left + 'px',
+      };
     }
   },
   methods: {
@@ -362,6 +416,53 @@ const KanbanTab = {
     },
     columnIcon(col) {
       return getColumnIcon(col);
+    },
+    moveTargetColumns(sourceKey) {
+      return this.boardColumns.filter(col => col.key !== sourceKey);
+    },
+    toggleColumnMenu(col, event) {
+      if (this.openColumnMenuKey === col.key) {
+        this.closeColumnMenu();
+        return;
+      }
+      const rect = event.currentTarget.getBoundingClientRect();
+      const menuWidth = 220;
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || menuWidth;
+      const left = Math.max(8, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - 8));
+      this.columnMenuPos = { top: rect.bottom + 4, left };
+      this.openColumnMenuKey = col.key;
+      this.$nextTick(() => {
+        const menu = this.$el.querySelector('.column-action-menu');
+        if (menu && typeof menu.focus === 'function') menu.focus();
+      });
+    },
+    closeColumnMenu() {
+      this.openColumnMenuKey = null;
+    },
+    onColumnMenuKeydown(event) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.closeColumnMenu();
+      }
+    },
+    bulkMoveColumn(source, target) {
+      const tasks = this.columnTasks(source.key);
+      if (!tasks.length) return;
+      const count = tasks.length;
+      const sourceLabel = source.label || source.key;
+      const targetLabel = target.label || target.key;
+      if (!confirm(`Move ${count} ticket(s) from ${sourceLabel} to ${targetLabel}?`)) return;
+      this.closeColumnMenu();
+      this.$emit('move-column-tasks', { fromStatus: source.key, toStatus: target.key });
+    },
+    bulkArchiveColumn(col) {
+      const tasks = this.columnTasks(col.key);
+      if (!tasks.length) return;
+      const count = tasks.length;
+      const label = col.label || col.key;
+      if (!confirm(`Archive ${count} ticket(s) from ${label}?`)) return;
+      this.closeColumnMenu();
+      this.$emit('archive-column-tasks', { status: col.key });
     },
     setSort(field) {
       if (this.sortField === field) {

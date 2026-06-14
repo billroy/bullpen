@@ -1138,12 +1138,22 @@ const app = createApp({
         offlineMessage: 'Disconnected from Bullpen server. Ticket was not archived.',
       });
     }
+    function archiveColumnTasks({ status }) {
+      const affected = state.tasks.filter(t => t.status === status);
+      if (!affected.length) return false;
+      if (!socket?.connected) {
+        addToast('Disconnected from Bullpen server. Tickets were not archived.', 'error');
+        return false;
+      }
+      for (const task of affected) {
+        socket.emit('task:archive', _wsData({ id: task.id }));
+      }
+      return true;
+    }
     function archiveDone() {
       const count = state.tasks.filter(t => t.status === 'done').length;
       if (count && confirm(`Archive ${count} done task(s)?`)) {
-        return emitSocketAction('task:archive-done', {}, {
-          offlineMessage: 'Disconnected from Bullpen server. Done tickets were not archived.',
-        });
+        return archiveColumnTasks({ status: 'done' });
       }
     }
     function clearTaskOutput(id) {
@@ -1155,6 +1165,19 @@ const app = createApp({
       return emitSocketAction('task:update', { id, status }, {
         offlineMessage: 'Disconnected from Bullpen server. Ticket move was not saved.',
       });
+    }
+    function moveColumnTasks({ fromStatus, toStatus }) {
+      if (!fromStatus || !toStatus || fromStatus === toStatus) return false;
+      const affected = state.tasks.filter(t => t.status === fromStatus);
+      if (!affected.length) return false;
+      if (!socket?.connected) {
+        addToast('Disconnected from Bullpen server. Ticket moves were not saved.', 'error');
+        return false;
+      }
+      for (const task of affected) {
+        socket.emit('task:update', _wsData({ id: task.id, status: toStatus }));
+      }
+      return true;
     }
     function selectTask(payload, options = {}) {
       if (!payload) {
@@ -1727,6 +1750,7 @@ const app = createApp({
           quickCreateTask,
           openCreateModal() { showCreateModal.value = true; },
           archiveDone,
+          archiveColumnTasks,
           setTicketListScope,
           setActiveTab,
           setTicketsViewMode,
@@ -1845,7 +1869,7 @@ const app = createApp({
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
-      moveTask, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
+      moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, stopWorkerSlots, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
@@ -1979,8 +2003,9 @@ const app = createApp({
               :list-scope="ticketListScope"
               @select-task="selectTask"
               @move-task="moveTask"
+              @move-column-tasks="moveColumnTasks"
               @update-task="updateTask"
-              @archive-done="archiveDone"
+              @archive-column-tasks="archiveColumnTasks"
               @new-task="showCreateModal = true"
               @update-list-scope="setTicketListScope"
               @update-shown-count="setTicketListShownCount"
