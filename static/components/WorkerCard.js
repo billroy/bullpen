@@ -48,26 +48,16 @@ const WorkerCard = {
            :style="{ background: agentColor }"
            @click="onHeaderClick"
            @dblclick="onHeaderDblClick">
-        <template v-if="showCompactValue">
-          <input v-if="valueEditing"
-                 class="worker-card-compact-value-editor worker-card-value-input"
-                 ref="valueEditInput"
-                 v-model="valueEditText"
-                 @keydown.stop
-                 @keydown.enter.prevent.stop="commitValueEdit"
-                 @keydown.escape.prevent.stop="cancelValueEdit"
-                 @click.stop
-                 @dblclick.stop
-                 aria-label="Edit name and value">
-          <button v-else type="button"
-                  class="worker-card-compact-value worker-card-compact-value-button"
-                  :title="valueInlineDisplay"
-                  @click.stop="startCompactValueEdit"
-                  @dblclick.stop
-                  aria-label="Edit name and value">
-            {{ valueInlineDisplay }}
-          </button>
-        </template>
+        <input v-if="showCompactValue && valueEditing"
+               class="worker-card-compact-value-editor worker-card-value-input"
+               ref="valueEditInput"
+               v-model="valueEditText"
+               @keydown.stop
+               @keydown.enter.prevent.stop="commitValueEdit"
+               @keydown.escape.prevent.stop="cancelValueEdit"
+               @click.stop
+               @dblclick.stop
+               aria-label="Edit name and value">
         <div v-else class="worker-card-identity">
           <div class="worker-card-title-row" ref="titleRow">
             <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
@@ -75,6 +65,15 @@ const WorkerCard = {
             <span class="worker-card-name worker-card-name--measure" ref="nameMeasure" aria-hidden="true"></span>
           </div>
         </div>
+        <button v-if="showCompactValue && !valueEditing"
+                type="button"
+                class="worker-card-compact-value worker-card-compact-value-button"
+                :title="valueDisplay || 'Empty'"
+                @click.stop="startCompactValueEdit"
+                @dblclick.stop
+                aria-label="Edit name and value">
+          {{ valueDisplay || 'Empty' }}
+        </button>
         <div v-if="!showCompactValue || !valueEditing" class="worker-card-actions">
           <span class="worker-card-header-status">
             <span v-if="(workerState !== 'idle' || isPaused || isHeldQueue) && !pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
@@ -485,9 +484,6 @@ const WorkerCard = {
     },
     valueEditSourceText() {
       return `${String(this.worker?.name || '').trim()}:${this.storedValueText}`;
-    },
-    valueInlineDisplay() {
-      return `[${String(this.worker?.name || '').trim()}:${this.valueDisplay || 'Empty'}]`;
     },
     showCompactValue() {
       return this.isValue && this.effectiveLayoutMode === 'small';

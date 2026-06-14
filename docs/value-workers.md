@@ -390,10 +390,11 @@ label was supplied.
 
 Small layout:
 
-- The header pill shows the name and formatted value as `[name:value]`, for
-  example `[interest rate:5.3%]`.
+- The header pill keeps the standard compact display: name on the left and the
+  formatted value on the right when space allows.
 - Clicking anywhere on the small header pill converts the whole pill into a
-  single inline editor containing `name:value`.
+  single inline editor containing `name:value`, for example
+  `interest rate:5.3%`.
 - The `...` worker menu remains a separate click target and does not enter
   inline editing.
 

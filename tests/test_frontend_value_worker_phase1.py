@@ -78,19 +78,26 @@ def test_value_worker_small_card_shows_value_in_header():
     card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
     css = (ROOT / "static" / "style.css").read_text()
 
-    assert 'v-if="showCompactValue"' in card
+    assert 'v-if="showCompactValue && valueEditing"' in card
+    assert 'v-if="showCompactValue && !valueEditing"' in card
     assert 'class="worker-card-compact-value worker-card-compact-value-button"' in card
     assert 'class="worker-card-compact-value-editor worker-card-value-input"' in card
     assert '@click.stop="startCompactValueEdit"' in card
     assert '@dblclick.stop' in card
-    assert "valueInlineDisplay()" in card
+    assert "valueInlineDisplay()" not in card
+    assert "{{ valueInlineDisplay }}" not in card
     assert "parseValueEditText(text)" in card
     assert "return this.isValue && this.effectiveLayoutMode === 'small';" in card
-    assert "{{ valueInlineDisplay }}" in card
+    assert "{{ workerNameWithPort }}" in card
+    assert "{{ valueDisplay || 'Empty' }}" in card
+    assert "`${String(this.worker?.name || '').trim()}:${this.storedValueText}`" in card
     assert ".worker-card-compact-value {" in css
     assert ".worker-card-compact-value-button {" in css
     assert ".worker-card-compact-value-editor {" in css
     assert "text-overflow: ellipsis;" in css
+    compact_button_styles = css.split(".worker-card-compact-value-button {", 1)[1].split("}", 1)[0]
+    assert "flex: 1 1 auto;" not in compact_button_styles
+    assert "max-width: none;" not in compact_button_styles
 
 
 def test_value_worker_card_rejects_ticket_drop_affordances():
