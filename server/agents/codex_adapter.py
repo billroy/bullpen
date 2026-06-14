@@ -88,9 +88,9 @@ class CodexAdapter(AgentAdapter):
             "exec",
             "--model", model,
             *_codex_execution_flags(),
-            "--ask-for-approval", "never",
             "--json",
             "--skip-git-repo-check",
+            "-c", "approval_policy=\"never\"",
         ]
         if bp_dir:
             argv.extend(self._mcp_overrides(bp_dir))

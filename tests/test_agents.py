@@ -394,8 +394,8 @@ class TestCodexAdapter:
         assert "o4-mini" in argv
         assert "--sandbox" in argv
         assert "workspace-write" in argv
-        assert "--ask-for-approval" in argv
-        assert "never" in argv
+        assert "approval_policy=\"never\"" in argv
+        assert "--ask-for-approval" not in argv
         assert "--full-auto" not in argv
         assert "--skip-git-repo-check" in argv
         assert "-" in argv
