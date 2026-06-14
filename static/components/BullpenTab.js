@@ -1,3 +1,34 @@
+const WORKER_GRID_VIEWPORT_STORAGE_KEY = 'bullpen.workerGridViewportOrigins';
+
+function normalizeStoredViewportOrigin(value) {
+  if (!value || typeof value !== 'object') return null;
+  const col = Number(value.col);
+  const row = Number(value.row);
+  if (!Number.isFinite(col) || !Number.isFinite(row)) return null;
+  return { col, row };
+}
+
+function loadStoredWorkerGridViewportOrigins() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WORKER_GRID_VIEWPORT_STORAGE_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const origin = normalizeStoredViewportOrigin(value);
+      if (origin) out[key] = origin;
+    }
+    return out;
+  } catch (_err) {
+    return {};
+  }
+}
+
+function saveStoredWorkerGridViewportOrigins(origins) {
+  try {
+    localStorage.setItem(WORKER_GRID_VIEWPORT_STORAGE_KEY, JSON.stringify(origins || {}));
+  } catch (_err) { /* ignore */ }
+}
+
 const BullpenTab = {
   UNCONFIGURED_PROFILE_ID: 'unconfigured-worker',
   HEADER_WIDTH: 40,
@@ -48,7 +79,7 @@ const BullpenTab = {
       resizeTooltip: null,
       dragViewportRect: null,
       lastDropTargetKey: '',
-      workspaceViewportOrigins: {},
+      workspaceViewportOrigins: loadStoredWorkerGridViewportOrigins(),
     };
   },
   template: `
@@ -876,6 +907,7 @@ const BullpenTab = {
     rememberWorkspaceViewportOrigin() {
       const key = this.workspaceId || '__default__';
       this.workspaceViewportOrigins[key] = { ...this.viewportOrigin };
+      saveStoredWorkerGridViewportOrigins(this.workspaceViewportOrigins);
     },
     persistGrid(partial = {}) {
       const grid = {

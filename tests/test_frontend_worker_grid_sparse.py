@@ -145,8 +145,10 @@ def test_worker_grid_touch_pointer_pans_from_cards_instead_of_selecting():
 
 def test_worker_grid_viewport_origin_is_local_to_window():
     text = _read("static/components/BullpenTab.js")
-    assert "workspaceViewportOrigins: {}" in text
+    assert "const WORKER_GRID_VIEWPORT_STORAGE_KEY = 'bullpen.workerGridViewportOrigins';" in text
+    assert "workspaceViewportOrigins: loadStoredWorkerGridViewportOrigins()" in text
     assert "rememberWorkspaceViewportOrigin()" in text
+    assert "saveStoredWorkerGridViewportOrigins(this.workspaceViewportOrigins);" in text
     assert "delete grid.viewportOrigin;" in text
     assert "this.$root.updateConfig({ grid });" in text
     assert "this.persistGrid({ viewportOrigin: this.viewportOrigin })" not in text
