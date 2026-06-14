@@ -428,8 +428,7 @@ Inline direct editing is in scope for v1.
 - Cmd+Enter on macOS or Ctrl+Enter on Windows/Linux opens the full config
   modal for type/format/name changes.
 - Escape reverts.
-- Blur saves only if the UI already uses blur-save consistently elsewhere;
-  otherwise blur should not silently persist.
+- Blur or click-away aborts the inline edit without saving, matching Escape.
 - Failed validation keeps the editor open and shows an inline error.
 - Inline editing must not change type, format, color, icon, activation, or
   other value-cell attributes.

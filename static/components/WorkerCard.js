@@ -55,6 +55,7 @@ const WorkerCard = {
                @keydown.stop
                @keydown.enter.prevent.stop="commitValueEdit"
                @keydown.escape.prevent.stop="cancelValueEdit"
+               @blur="cancelValueEdit"
                @click.stop
                @dblclick.stop
                aria-label="Edit name and value">
@@ -155,6 +156,7 @@ const WorkerCard = {
                    @keydown.stop
                    @keydown.enter.prevent.stop="commitValueEdit"
                    @keydown.escape.prevent.stop="cancelValueEdit"
+                   @blur="cancelValueEdit"
                    @click.stop
                    aria-label="Edit value">
             <div v-if="valueEditError" class="worker-card-value-error">{{ valueEditError }}</div>
@@ -216,12 +218,19 @@ const WorkerCard = {
         this.showMenu = false;
       }
     };
+    this._closeValueEdit = (e) => {
+      if (!this.valueEditing) return;
+      if (this.$el?.contains?.(e.target)) return;
+      this.cancelValueEdit();
+    };
     document.addEventListener('click', this._closeMenu);
+    document.addEventListener('pointerdown', this._closeValueEdit, true);
   },
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
     if (this._titleResizeObserver) this._titleResizeObserver.disconnect();
     document.removeEventListener('click', this._closeMenu);
+    document.removeEventListener('pointerdown', this._closeValueEdit, true);
     document.body.classList.remove('worker-singleton-dragging');
     this.removeDragImage();
   },

@@ -190,6 +190,10 @@ def test_value_card_inline_edit_saves_and_reverts():
     assert "valueEditIncludesName: false" in text
     assert '@keydown.enter.prevent.stop="commitValueEdit"' in text
     assert '@keydown.escape.prevent.stop="cancelValueEdit"' in text
+    assert text.count('@blur="cancelValueEdit"') >= 2
+    assert "this._closeValueEdit = (e) => {" in text
+    assert "document.addEventListener('pointerdown', this._closeValueEdit, true);" in text
+    assert "document.removeEventListener('pointerdown', this._closeValueEdit, true);" in text
     assert "@click.stop=\"startValueEdit\"" in text
     assert "startCompactValueEdit()" in text
     assert "validateValueEditText(text)" in text
