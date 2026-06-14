@@ -27,9 +27,9 @@ def test_bullpen_tab_uses_sparse_coordinate_rendering():
     text = _read("static/components/BullpenTab.js")
     assert "v-for=\"item in visibleWorkers\"" in text
     assert "coordForSlot(worker, slotIndex)" in text
-    assert "GridGeometry.coordToPixel" in text
+    assert "coordPixel(coord)" in text
     assert "GridGeometry.visibleRange" in text
-    assert "GridGeometry.overscanRange(range, 2)" in text
+    assert "rowStart = Math.max(0, this.rowFromPixel(0) - 2)" in text
     assert "GridGeometry.coordKey(item.coord.col, item.coord.row)" in text
 
 
@@ -198,7 +198,7 @@ def test_worker_grid_cards_have_fixed_one_pixel_inset():
     assert "const minHeight = 24;" in tab
     assert "const insetX = Math.min(1, Math.max(0, (width - minWidth) / 2));" in tab
     assert "const insetY = Math.min(1, Math.max(0, (height - minHeight) / 2));" in tab
-    assert "style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight)" in tab
+    assert "style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeightForRow(c.row))" in tab
     assert "...this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex))" in tab
     assert "worker-grid-debug-inset" not in css
     assert ".worker-card.worker-card--small {\n  background: transparent !important;\n  border-color: transparent;\n}" in css

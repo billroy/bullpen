@@ -73,6 +73,7 @@ const BullpenTab = {
       rowResize: null,
       draggingRowHeight: null,
       pendingRowHeight: null,
+      pendingRowHeights: null,
       cardVerticalResize: null,
       expandedWorkerCardSlot: null,
       expandedWorkerCardDelta: 0,
@@ -127,14 +128,14 @@ const BullpenTab = {
                  'is-origin': r.row === 0,
                  'is-selected': selectedCell && r.row === selectedCell.row,
                }"
-               :style="{ top: r.y + 'px', height: rowHeight + 'px' }">
+               :style="{ top: r.y + 'px', height: r.height + 'px' }">
             <span class="worker-grid-header-label">{{ r.label }}</span>
             <div class="worker-grid-row-resize"
                  :class="{ active: rowResize }"
-                 title="Drag to resize rows"
-                 @pointerdown="onRowResizeDown"
+                 title="Drag to resize this row; hold Shift for all rows"
+                 @pointerdown="onRowResizeDown(r.row, $event)"
                  @click.stop
-                 @dblclick.stop="resetRowHeight"></div>
+                 @dblclick.stop="resetRowHeight(r.row, $event)"></div>
           </div>
         </div>
         <div class="worker-grid-canvas" :style="canvasStyle"
@@ -146,7 +147,7 @@ const BullpenTab = {
             :key="item.slotIndex"
             :ref="el => setWorkerRef(el, item.slotIndex)"
             :style="cardStyle(item)"
-            :class="{ selected: isSelected(item.coord), 'worker-card--expanded': cardHeightForSlot(item.slotIndex) > rowHeight }"
+            :class="{ selected: isSelected(item.coord), 'worker-card--expanded': cardHeightForSlot(item.slotIndex) > rowHeightForRow(item.coord.row) }"
             :worker="item.worker"
             :slot-index="item.slotIndex"
             :tasks="tasks"
@@ -492,7 +493,10 @@ const BullpenTab = {
     headerWidth() { return this.$options.HEADER_WIDTH; },
     headerHeight() { return this.$options.HEADER_HEIGHT; },
     rowHeight() {
-      if (this.draggingRowHeight !== null) {
+      if (
+        this.draggingRowHeight !== null &&
+        (this.rowResize?.mode === 'global' || this.cardVerticalResize?.mode === 'global')
+      ) {
         return this.clampRowHeight(this.draggingRowHeight);
       }
       if (this.pendingRowHeight !== null) {
@@ -503,6 +507,12 @@ const BullpenTab = {
         return this.clampRowHeight(raw);
       }
       return 140;
+    },
+    rowHeightOverrides() {
+      if (this.pendingRowHeights && typeof this.pendingRowHeights === 'object') {
+        return this.pendingRowHeights;
+      }
+      return this.normalizeRowHeights(this.gridConfig.rowHeights);
     },
     cardSize() {
       return { width: this.columnWidth, height: this.rowHeight };
@@ -531,8 +541,15 @@ const BullpenTab = {
       return map;
     },
     visibleRange() {
-      const range = GridGeometry.visibleRange(this.viewportOrigin, this.viewportPx, this.cardSize);
-      return GridGeometry.overscanRange(range, 2);
+      const colRange = GridGeometry.visibleRange(this.viewportOrigin, this.viewportPx, this.cardSize);
+      const rowStart = Math.max(0, this.rowFromPixel(0) - 2);
+      const rowEnd = Math.max(rowStart, this.rowFromPixel(this.viewportPx.height) + 2);
+      return {
+        colStart: Math.max(0, colRange.colStart - 2),
+        colEnd: colRange.colEnd + 2,
+        rowStart,
+        rowEnd,
+      };
     },
     visibleWorkers() {
       const r = this.visibleRange;
@@ -589,7 +606,8 @@ const BullpenTab = {
         out.push({
           row: rr,
           label: this.rowLabel(rr),
-          y: (rr - this.viewportOrigin.row) * this.rowHeight,
+          y: this.rowPixelTop(rr),
+          height: this.rowHeightForRow(rr),
         });
       }
       return out;
@@ -603,14 +621,14 @@ const BullpenTab = {
     },
     ghostStyle() {
       if (!this.ghostCell) return {};
-      const p = GridGeometry.coordToPixel(this.ghostCell.col, this.ghostCell.row, this.viewportOrigin, this.cardSize);
-      return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight);
+      const p = this.coordPixel(this.ghostCell);
+      return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeightForRow(this.ghostCell.row));
     },
     valueShortcutEditorStyle() {
       const coord = this.valueShortcutEditor?.coord;
       if (!coord) return {};
-      const p = GridGeometry.coordToPixel(coord.col, coord.row, this.viewportOrigin, this.cardSize);
-      return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight);
+      const p = this.coordPixel(coord);
+      return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeightForRow(coord.row));
     },
     visibleDropTargetOverlays() {
       const coords = this.dropTargetCoords;
@@ -620,11 +638,11 @@ const BullpenTab = {
       for (const c of coords) {
         if (!c) continue;
         if (c.col < r.colStart || c.col > r.colEnd || c.row < r.rowStart || c.row > r.rowEnd) continue;
-        const p = GridGeometry.coordToPixel(c.col, c.row, this.viewportOrigin, this.cardSize);
+        const p = this.coordPixel(c);
         out.push({
           col: c.col,
           row: c.row,
-          style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeight),
+          style: this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeightForRow(c.row)),
         });
       }
       return out;
@@ -657,10 +675,10 @@ const BullpenTab = {
         return { position: 'fixed', top: this.emptyMenuPos.y + 'px', left: this.emptyMenuPos.x + 'px' };
       }
       if (!this.ghostCell) return {};
-      const p = GridGeometry.coordToPixel(this.ghostCell.col, this.ghostCell.row, this.viewportOrigin, this.cardSize);
+      const p = this.coordPixel(this.ghostCell);
       const rect = this.$refs.viewport?.getBoundingClientRect();
       const x = (rect?.left || 0) + this.headerWidth + p.x + this.columnWidth / 2;
-      const y = (rect?.top || 0) + this.headerHeight + p.y + this.rowHeight / 2;
+      const y = (rect?.top || 0) + this.headerHeight + p.y + this.rowHeightForRow(this.ghostCell.row) / 2;
       return { position: 'fixed', top: y + 'px', left: x + 'px' };
     },
     sortedProfiles() {
@@ -851,6 +869,106 @@ const BullpenTab = {
       const base = Number.isFinite(n) ? n : 140;
       return Math.max(32, Math.min(480, Math.round(base)));
     },
+    normalizeRowHeights(value, baseHeight = this.rowHeight) {
+      const out = {};
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+      const globalHeight = this.clampRowHeight(baseHeight);
+      for (const [key, rawValue] of Object.entries(value)) {
+        const row = Number(key);
+        const height = Number(rawValue);
+        if (!Number.isInteger(row) || row < 0 || !Number.isFinite(height)) continue;
+        const clamped = this.clampRowHeight(height);
+        if (clamped !== globalHeight) out[String(row)] = clamped;
+      }
+      return out;
+    },
+    rowHeightForRow(row) {
+      const rowIndex = Math.max(0, Math.trunc(Number(row) || 0));
+      const globalResize = this.rowResize?.mode === 'global'
+        ? this.rowResize
+        : (this.cardVerticalResize?.mode === 'global' ? this.cardVerticalResize : null);
+      if (globalResize && this.draggingRowHeight !== null) {
+        const startOverride = Number(globalResize.startRowHeights?.[String(rowIndex)]);
+        if (Number.isFinite(startOverride)) {
+          const delta = this.clampRowHeight(this.draggingRowHeight) - this.clampRowHeight(globalResize.startGlobalHeight);
+          return this.clampRowHeight(startOverride + delta);
+        }
+      }
+      if (this.rowResize?.mode === 'single' && this.rowResize.row === rowIndex && this.draggingRowHeight !== null) {
+        return this.clampRowHeight(this.draggingRowHeight);
+      }
+      if (this.cardVerticalResize?.mode === 'single' && this.cardVerticalResize.row === rowIndex && this.draggingRowHeight !== null) {
+        return this.clampRowHeight(this.draggingRowHeight);
+      }
+      const override = Number(this.rowHeightOverrides[String(rowIndex)]);
+      return Number.isFinite(override) ? this.clampRowHeight(override) : this.rowHeight;
+    },
+    rowPixelTop(row) {
+      const target = Math.max(0, Math.trunc(Number(row) || 0));
+      const origin = Math.max(0, Number(this.viewportOrigin.row) || 0);
+      const originRow = Math.floor(origin);
+      const fraction = origin - originRow;
+      let y = -(fraction * this.rowHeightForRow(originRow));
+      if (target >= originRow) {
+        for (let rr = originRow; rr < target; rr++) y += this.rowHeightForRow(rr);
+      } else {
+        for (let rr = originRow - 1; rr >= target; rr--) y -= this.rowHeightForRow(rr);
+      }
+      return y;
+    },
+    rowFromPixel(y) {
+      const targetY = Number(y) || 0;
+      const origin = Math.max(0, Number(this.viewportOrigin.row) || 0);
+      const originRow = Math.floor(origin);
+      const fraction = origin - originRow;
+      let row = originRow;
+      let top = -(fraction * this.rowHeightForRow(row));
+      if (targetY < top) {
+        while (row > 0) {
+          row -= 1;
+          top -= this.rowHeightForRow(row);
+          if (targetY >= top) return row;
+        }
+        return 0;
+      }
+      let guard = 0;
+      while (guard < 1000) {
+        const height = this.rowHeightForRow(row);
+        if (targetY < top + height) return row;
+        top += height;
+        row += 1;
+        guard += 1;
+      }
+      return row;
+    },
+    coordPixel(coord) {
+      return {
+        x: (Number(coord.col) - this.viewportOrigin.col) * this.columnWidth,
+        y: this.rowPixelTop(coord.row),
+      };
+    },
+    rowSpanHeight(startRow, endRow) {
+      let height = 0;
+      for (let row = startRow; row <= endRow; row++) height += this.rowHeightForRow(row);
+      return height;
+    },
+    rowOffsetBetween(startRow, targetRow) {
+      let offset = 0;
+      for (let row = startRow; row < targetRow; row++) offset += this.rowHeightForRow(row);
+      return offset;
+    },
+    adjustedGlobalRowHeights(resize, finalHeight) {
+      const rowHeights = {};
+      const final = this.clampRowHeight(finalHeight);
+      const startGlobal = this.clampRowHeight(resize?.startGlobalHeight);
+      const delta = final - startGlobal;
+      const startRowHeights = resize?.startRowHeights || {};
+      for (const [row, height] of Object.entries(startRowHeights)) {
+        const adjusted = this.clampRowHeight(Number(height) + delta);
+        if (adjusted !== final) rowHeights[row] = adjusted;
+      }
+      return rowHeights;
+    },
     reconcilePendingGridSize() {
       if (this.pendingColumnWidth !== null) {
         const raw = Number(this.gridConfig.columnWidth);
@@ -863,6 +981,11 @@ const BullpenTab = {
         if (Number.isFinite(raw) && this.clampRowHeight(raw) === this.clampRowHeight(this.pendingRowHeight)) {
           this.pendingRowHeight = null;
         }
+      }
+      if (this.pendingRowHeights !== null) {
+        const current = JSON.stringify(this.normalizeRowHeights(this.gridConfig.rowHeights));
+        const pending = JSON.stringify(this.normalizeRowHeights(this.pendingRowHeights));
+        if (current === pending) this.pendingRowHeights = null;
       }
     },
     coordForSlot(worker, slotIndex) {
@@ -919,15 +1042,19 @@ const BullpenTab = {
       delete grid.viewportOrigin;
       this.$root.updateConfig({ grid });
     },
-    cardExpansionLimit() {
-      return Math.max(0, 480 - this.rowHeight);
+    cardExpansionLimit(slotIndex = null) {
+      const item = slotIndex === null ? null : this.workerItemBySlot[slotIndex];
+      const baseHeight = item ? this.rowHeightForRow(item.coord.row) : this.rowHeight;
+      return Math.max(0, 480 - baseHeight);
     },
     cardExpansionDeltaForSlot(slotIndex) {
       if (this.expandedWorkerCardSlot !== slotIndex) return 0;
-      return Math.max(0, Math.min(this.expandedWorkerCardDelta, this.cardExpansionLimit()));
+      return Math.max(0, Math.min(this.expandedWorkerCardDelta, this.cardExpansionLimit(slotIndex)));
     },
     cardHeightForSlot(slotIndex) {
-      return this.rowHeight + this.cardExpansionDeltaForSlot(slotIndex);
+      const item = this.workerItemBySlot[slotIndex];
+      const baseHeight = item ? this.rowHeightForRow(item.coord.row) : this.rowHeight;
+      return baseHeight + this.cardExpansionDeltaForSlot(slotIndex);
     },
     insetBoxStyle(x, y, width, height) {
       const minWidth = 64;
@@ -942,7 +1069,7 @@ const BullpenTab = {
       };
     },
     cardStyle(item) {
-      const p = GridGeometry.coordToPixel(item.coord.col, item.coord.row, this.viewportOrigin, this.cardSize);
+      const p = this.coordPixel(item.coord);
       const expanded = this.cardExpansionDeltaForSlot(item.slotIndex);
       return {
         position: 'absolute',
@@ -959,7 +1086,7 @@ const BullpenTab = {
       }[dir] || '';
     },
     passConnectorStyle(item, dir) {
-      const p = GridGeometry.coordToPixel(item.coord.col, item.coord.row, this.viewportOrigin, this.cardSize);
+      const p = this.coordPixel(item.coord);
       const box = this.insetBoxStyle(p.x, p.y, this.columnWidth, this.cardHeightForSlot(item.slotIndex));
       const left = parseFloat(box.left);
       const top = parseFloat(box.top);
@@ -1009,7 +1136,10 @@ const BullpenTab = {
       const rect = this.dragViewportRect || this.$refs.viewport.getBoundingClientRect();
       const x = e.clientX - rect.left - this.headerWidth;
       const y = e.clientY - rect.top - this.headerHeight;
-      return GridGeometry.pixelToCoord(x, y, this.viewportOrigin, this.cardSize);
+      return {
+        col: Math.floor((Number(this.viewportOrigin.col) || 0) + (Number(x) || 0) / this.columnWidth),
+        row: this.rowFromPixel(y),
+      };
     },
     onViewportMouseMove(e) {
       if (this.isPanning) return;
@@ -1804,17 +1934,18 @@ const BullpenTab = {
       const minRow = Math.min(...rows);
       const maxRow = Math.max(...rows);
       const width = (maxCol - minCol + 1) * this.columnWidth;
-      const height = (maxRow - minRow + 1) * this.rowHeight;
+      const height = this.rowSpanHeight(minRow, maxRow);
       const root = document.createElement('div');
       root.className = 'worker-group-drag-image';
       root.style.width = `${width}px`;
       root.style.height = `${height}px`;
       const sourceDx = (sourceItem.coord.col - minCol) * this.columnWidth;
-      const sourceDy = (sourceItem.coord.row - minRow) * this.rowHeight;
+      const sourceDy = this.rowOffsetBetween(minRow, sourceItem.coord.row);
       for (const item of items) {
         const slot = item.slotIndex;
         const left = (item.coord.col - minCol) * this.columnWidth;
-        const top = (item.coord.row - minRow) * this.rowHeight;
+        const top = this.rowOffsetBetween(minRow, item.coord.row);
+        const height = this.rowHeightForRow(item.coord.row);
         const cardEl = this.workerElementForSlot(slot);
         const node = cardEl ? cardEl.cloneNode(true) : document.createElement('div');
         if (!cardEl) {
@@ -1826,7 +1957,7 @@ const BullpenTab = {
         node.style.left = `${left}px`;
         node.style.top = `${top}px`;
         node.style.width = `${this.columnWidth}px`;
-        node.style.height = `${this.rowHeight}px`;
+        node.style.height = `${height}px`;
         node.style.margin = '0';
         root.appendChild(node);
       }
@@ -1844,7 +1975,8 @@ const BullpenTab = {
       const source = Number(slotIndex);
       const sourceEl = this.workerElementForSlot(source);
       let x = this.columnWidth / 2;
-      let y = this.rowHeight / 2;
+      const sourceItem = this.workerItemBySlot[source];
+      let y = (sourceItem ? this.rowHeightForRow(sourceItem.coord.row) : this.rowHeight) / 2;
       if (sourceEl && Number.isFinite(Number(pointer.clientX)) && Number.isFinite(Number(pointer.clientY))) {
         const rect = sourceEl.getBoundingClientRect();
         x = Math.max(0, Math.min(rect.width, Number(pointer.clientX) - rect.left));
@@ -1886,7 +2018,10 @@ const BullpenTab = {
       const rect = this.dragViewportRect || this.$refs.viewport.getBoundingClientRect();
       const x = e.clientX - rect.left - this.headerWidth - offsetX;
       const y = e.clientY - rect.top - this.headerHeight - offsetY;
-      return GridGeometry.pixelToCoord(x, y, this.viewportOrigin, this.cardSize);
+      return {
+        col: Math.floor((Number(this.viewportOrigin.col) || 0) + (Number(x) || 0) / this.columnWidth),
+        row: this.rowFromPixel(y),
+      };
     },
     buildGroupMovePlan(sourceSlot, destinationCoord, overrideSlots) {
       const source = Number(sourceSlot);
@@ -2303,18 +2438,37 @@ const BullpenTab = {
       this.resizeTooltip = null;
       this.persistGrid({ columnWidth: 220 });
     },
-    onRowResizeDown(e) {
+    persistSingleRowHeight(row, height) {
+      const rowIndex = Math.max(0, Math.trunc(Number(row) || 0));
+      const final = this.clampRowHeight(height);
+      const rowHeights = this.normalizeRowHeights(this.rowHeightOverrides);
+      if (final === this.rowHeight) {
+        delete rowHeights[String(rowIndex)];
+      } else {
+        rowHeights[String(rowIndex)] = final;
+      }
+      this.pendingRowHeights = rowHeights;
+      this.persistGrid({ rowHeights });
+    },
+    onRowResizeDown(row, e) {
       if (e.button !== 0) return;
       if (this.rowResize) return;
       e.preventDefault();
       e.stopPropagation();
+      const rowIndex = Math.max(0, Math.trunc(Number(row) || 0));
+      const mode = e.shiftKey ? 'global' : 'single';
+      const startHeight = mode === 'global' ? this.rowHeight : this.rowHeightForRow(rowIndex);
       this.rowResize = {
+        mode,
+        row: rowIndex,
         startY: e.clientY,
-        startHeight: this.rowHeight,
+        startHeight,
+        startGlobalHeight: this.rowHeight,
+        startRowHeights: this.normalizeRowHeights(this.rowHeightOverrides),
         pointerId: e.pointerId,
       };
-      this.draggingRowHeight = this.rowHeight;
-      this.updateResizeTooltip(e, `${this.rowHeight}px tall`);
+      this.draggingRowHeight = startHeight;
+      this.updateResizeTooltip(e, mode === 'global' ? `${startHeight}px all rows` : `${startHeight}px row ${this.rowLabel(rowIndex)}`);
       this._rowResizeMoveHandler = (ev) => this.onRowResizeMove(ev);
       this._rowResizeUpHandler = (ev) => this.onRowResizeUp(ev);
       window.addEventListener('pointermove', this._rowResizeMoveHandler);
@@ -2327,20 +2481,32 @@ const BullpenTab = {
       const dy = e.clientY - this.rowResize.startY;
       const next = this.rowResize.startHeight + dy;
       this.draggingRowHeight = Math.max(32, Math.min(480, Math.round(next)));
-      this.updateResizeTooltip(e, `${this.draggingRowHeight}px tall`);
+      this.updateResizeTooltip(
+        e,
+        this.rowResize.mode === 'global'
+          ? `${this.draggingRowHeight}px all rows`
+          : `${this.draggingRowHeight}px row ${this.rowLabel(this.rowResize.row)}`
+      );
     },
     onRowResizeUp(e) {
       if (!this.rowResize) return;
       if (e && e.pointerId !== this.rowResize.pointerId) return;
       this._teardownRowResizeListeners();
       const dragged = this.draggingRowHeight;
+      const resize = this.rowResize;
       this.rowResize = null;
       this.draggingRowHeight = null;
       this.resizeTooltip = null;
       if (dragged != null) {
         const final = this.clampRowHeight(dragged);
-        this.pendingRowHeight = final;
-        this.persistGrid({ rowHeight: final });
+        if (resize.mode === 'global') {
+          const rowHeights = this.adjustedGlobalRowHeights(resize, final);
+          this.pendingRowHeight = final;
+          this.pendingRowHeights = rowHeights;
+          this.persistGrid({ rowHeight: final, rowHeights });
+        } else {
+          this.persistSingleRowHeight(resize.row, final);
+        }
       }
     },
     _teardownRowResizeListeners() {
@@ -2352,28 +2518,43 @@ const BullpenTab = {
         this._rowResizeUpHandler = null;
       }
     },
-    resetRowHeight() {
+    resetRowHeight(row = null, e = null) {
       this._teardownRowResizeListeners();
       this.rowResize = null;
       this.draggingRowHeight = null;
-      this.pendingRowHeight = 140;
       this.resizeTooltip = null;
-      this.persistGrid({ rowHeight: 140 });
+      if (e?.shiftKey || row === null) {
+        const rowHeights = {};
+        this.pendingRowHeight = 140;
+        this.pendingRowHeights = rowHeights;
+        this.persistGrid({ rowHeight: 140, rowHeights });
+        return;
+      }
+      const rowHeights = this.normalizeRowHeights(this.rowHeightOverrides);
+      delete rowHeights[String(Math.max(0, Math.trunc(Number(row) || 0)))];
+      this.pendingRowHeights = rowHeights;
+      this.persistGrid({ rowHeights });
     },
     onCardVerticalResizeStart(item, e) {
       if (!item || e.button !== 0) return;
       if (this.cardVerticalResize) return;
       this.selectWorker(item);
-      const startDelta = this.cardExpansionDeltaForSlot(item.slotIndex);
-      this.expandedWorkerCardSlot = item.slotIndex;
-      this.expandedWorkerCardDelta = startDelta;
+      this.clearExpandedWorkerCard();
+      const row = Math.max(0, Math.trunc(Number(item.coord.row) || 0));
+      const mode = e.shiftKey ? 'global' : 'single';
+      const startHeight = mode === 'global' ? this.rowHeight : this.rowHeightForRow(row);
       this.cardVerticalResize = {
+        mode,
         slotIndex: item.slotIndex,
+        row,
         startY: e.clientY,
-        startDelta,
+        startHeight,
+        startGlobalHeight: this.rowHeight,
+        startRowHeights: this.normalizeRowHeights(this.rowHeightOverrides),
         pointerId: e.pointerId,
       };
-      this.updateResizeTooltip(e, `${this.cardHeightForSlot(item.slotIndex)}px visible`);
+      this.draggingRowHeight = startHeight;
+      this.updateResizeTooltip(e, mode === 'global' ? `${startHeight}px all rows` : `${startHeight}px row ${this.rowLabel(row)}`);
       this._cardResizeMoveHandler = (ev) => this.onCardVerticalResizeMove(ev);
       this._cardResizeUpHandler = (ev) => this.onCardVerticalResizeUp(ev);
       window.addEventListener('pointermove', this._cardResizeMoveHandler);
@@ -2384,17 +2565,35 @@ const BullpenTab = {
       if (!this.cardVerticalResize) return;
       if (e.pointerId !== this.cardVerticalResize.pointerId) return;
       const dy = e.clientY - this.cardVerticalResize.startY;
-      const next = this.cardVerticalResize.startDelta + dy;
-      this.expandedWorkerCardDelta = Math.max(0, Math.min(this.cardExpansionLimit(), Math.round(next)));
-      this.updateResizeTooltip(e, `${this.cardHeightForSlot(this.cardVerticalResize.slotIndex)}px visible`);
+      const next = this.cardVerticalResize.startHeight + dy;
+      this.draggingRowHeight = this.clampRowHeight(next);
+      this.updateResizeTooltip(
+        e,
+        this.cardVerticalResize.mode === 'global'
+          ? `${this.draggingRowHeight}px all rows`
+          : `${this.draggingRowHeight}px row ${this.rowLabel(this.cardVerticalResize.row)}`
+      );
     },
     onCardVerticalResizeUp(e) {
       if (!this.cardVerticalResize) return;
       if (e && e.pointerId !== this.cardVerticalResize.pointerId) return;
       this._teardownCardVerticalResizeListeners();
+      const resize = this.cardVerticalResize;
+      const dragged = this.draggingRowHeight;
       this.cardVerticalResize = null;
+      this.draggingRowHeight = null;
       this.resizeTooltip = null;
-      if (this.expandedWorkerCardDelta <= 0) this.clearExpandedWorkerCard();
+      this.clearExpandedWorkerCard();
+      if (dragged == null) return;
+      const final = this.clampRowHeight(dragged);
+      if (resize.mode === 'global') {
+        const rowHeights = this.adjustedGlobalRowHeights(resize, final);
+        this.pendingRowHeight = final;
+        this.pendingRowHeights = rowHeights;
+        this.persistGrid({ rowHeight: final, rowHeights });
+      } else {
+        this.persistSingleRowHeight(resize.row, final);
+      }
     },
     _teardownCardVerticalResizeListeners() {
       if (this._cardResizeMoveHandler) {

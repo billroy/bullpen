@@ -123,9 +123,20 @@ const app = createApp({
       const rowHeight = Number.isFinite(rawRowHeight)
         ? Math.max(32, Math.min(480, Math.round(rawRowHeight)))
         : undefined;
+      const rowHeights = {};
+      if (grid.rowHeights && typeof grid.rowHeights === 'object' && !Array.isArray(grid.rowHeights)) {
+        for (const [key, value] of Object.entries(grid.rowHeights)) {
+          const row = Number(key);
+          const rawHeight = Number(value);
+          if (!Number.isInteger(row) || row < 0 || !Number.isFinite(rawHeight)) continue;
+          const height = Math.max(32, Math.min(480, Math.round(rawHeight)));
+          if (rowHeight === undefined || height !== rowHeight) rowHeights[String(row)] = height;
+        }
+      }
       safe.grid = {
         columnWidth: Math.max(140, Math.min(480, Math.round(columnWidth / 20) * 20)),
         rowHeight,
+        rowHeights,
         viewportOrigin: {
           col: Number.isFinite(Number(grid.viewportOrigin?.col)) ? Number(grid.viewportOrigin.col) : 0,
           row: Number.isFinite(Number(grid.viewportOrigin?.row)) ? Number(grid.viewportOrigin.row) : 0,

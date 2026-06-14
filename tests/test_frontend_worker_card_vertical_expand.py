@@ -1,4 +1,4 @@
-"""Regression checks for per-card vertical expansion in the worker grid."""
+"""Regression checks for worker grid row height resizing."""
 
 from pathlib import Path
 
@@ -42,18 +42,31 @@ def test_worker_card_bottom_hover_prefers_vertical_resize_outside_pass_down_zone
     assert "if (!this.showsVerticalResizeControl || e.button !== 0) return;" in text
 
 
-def test_bullpen_tab_tracks_ephemeral_expanded_height_for_selected_card_only():
+def test_bullpen_tab_tracks_sparse_row_height_overrides():
     text = _read("static/components/BullpenTab.js")
-    assert "cardVerticalResize: null" in text
-    assert "expandedWorkerCardSlot: null" in text
-    assert "expandedWorkerCardDelta: 0" in text
-    assert "selectedWorkerSlot()" in text
-    assert "cardHeightForSlot(slotIndex)" in text
-    assert "if (next === this.expandedWorkerCardSlot) return;" in text
-    assert "this.clearExpandedWorkerCard();" in text
+    assert "pendingRowHeights: null" in text
+    assert "rowHeightOverrides()" in text
+    assert "normalizeRowHeights(value, baseHeight = this.rowHeight)" in text
+    assert "rowHeightForRow(row)" in text
+    assert "rowPixelTop(row)" in text
+    assert "rowFromPixel(y)" in text
+    assert "persistSingleRowHeight(row, height)" in text
 
 
-def test_bullpen_tab_wires_resize_events_and_clamps_to_global_height_limits():
+def test_bullpen_tab_wires_unshifted_single_row_and_shift_global_resize():
+    text = _read("static/components/BullpenTab.js")
+    app = _read("static/app.js")
+    assert "@pointerdown=\"onRowResizeDown(r.row, $event)\"" in text
+    assert "title=\"Drag to resize this row; hold Shift for all rows\"" in text
+    assert "const mode = e.shiftKey ? 'global' : 'single';" in text
+    assert "const startHeight = mode === 'global' ? this.rowHeight : this.rowHeightForRow(rowIndex);" in text
+    assert "this.persistGrid({ rowHeight: final, rowHeights });" in text
+    assert "this.persistSingleRowHeight(resize.row, final);" in text
+    assert "safe.grid = {" in app
+    assert "rowHeights," in app
+
+
+def test_bullpen_tab_positions_cards_and_overlays_with_effective_row_height():
     text = _read("static/components/BullpenTab.js")
     assert ":card-height=\"cardHeightForSlot(item.slotIndex)\"" in text
     assert ":is-vertical-resizing=\"cardVerticalResize && cardVerticalResize.slotIndex === item.slotIndex\"" in text
@@ -61,9 +74,10 @@ def test_bullpen_tab_wires_resize_events_and_clamps_to_global_height_limits():
     assert ":workspace-id=\"workspaceId\"" in text
     assert ":request-output-catchup=\"$root.requestOutputCatchup\"" in text
     assert "@vertical-resize-start=\"onCardVerticalResizeStart(item, $event)\"" in text
-    assert "cardExpansionLimit()" in text
-    assert "Math.max(0, 480 - this.rowHeight)" in text
-    assert "this.expandedWorkerCardDelta = Math.max(0, Math.min(this.cardExpansionLimit(), Math.round(next)));" in text
+    assert ":style=\"{ top: r.y + 'px', height: r.height + 'px' }\"" in text
+    assert "const p = this.coordPixel(item.coord);" in text
+    assert "return this.insetBoxStyle(p.x, p.y, this.columnWidth, this.rowHeightForRow(this.ghostCell.row));" in text
+    assert "row: this.rowFromPixel(y)," in text
 
 
 def test_card_vertical_resize_styles_exist():
