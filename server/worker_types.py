@@ -7,9 +7,10 @@ from dataclasses import dataclass
 
 from server.model_aliases import normalize_model
 from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
+from server.values import normalize_format as normalize_value_format, normalize_value_payload
 
 
-VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "notification", "eval"}
+VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "notification", "value", "eval"}
 RUNTIME_FIELDS = {"task_queue", "state", "started_at"}
 SERVICE_TICKET_ACTIONS = {"start-if-stopped-else-restart", "restart", "start-if-stopped"}
 SERVICE_HEALTH_TYPES = {"none", "http", "shell"}
@@ -181,6 +182,19 @@ class NotificationWorkerType(WorkerType):
         return True
 
 
+class ValueWorkerType(WorkerType):
+    type_id = "value"
+
+    def default_icon(self):
+        return "variable"
+
+    def default_color(self):
+        return "value"
+
+    def runnable(self):
+        return False
+
+
 class EvalWorkerType(WorkerType):
     type_id = "eval"
 
@@ -214,6 +228,7 @@ WORKER_TYPES = {
     "service": ServiceWorkerType(),
     "marker": MarkerWorkerType(),
     "notification": NotificationWorkerType(),
+    "value": ValueWorkerType(),
     "eval": EvalWorkerType(),
 }
 
@@ -465,6 +480,31 @@ def normalize_worker_slot(raw, *, index, config):
         slot["icon"] = str(slot.get("icon") or "bell-ring")
         slot["color"] = str(slot.get("color") or "notification")
         slot["max_retries"] = 0
+    elif type_id == "value":
+        payload = normalize_value_payload(slot.get("value"), slot.get("value_type"))
+        slot["name"] = str(raw.get("name") or "").strip()
+        slot["value"] = payload["value"]
+        slot["value_type"] = payload["value_type"]
+        slot["resolved_value_type"] = payload["resolved_value_type"]
+        slot["format"] = normalize_value_format(slot.get("format"))
+        slot["icon"] = str(slot.get("icon") or "variable")
+        slot["color"] = str(slot.get("color") or "value")
+        slot["updated_at"] = str(slot.get("updated_at") or "")
+        for key in (
+            "activation",
+            "disposition",
+            "watch_column",
+            "max_retries",
+            "trigger_time",
+            "trigger_interval_minutes",
+            "trigger_every_day",
+            "last_trigger_time",
+            "paused",
+            "task_queue",
+            "state",
+            "started_at",
+        ):
+            slot.pop(key, None)
 
     return slot
 
@@ -521,6 +561,16 @@ def copy_worker_slot(slot, *, reset_runtime):
     """Copy a worker slot, optionally resetting runtime-only fields."""
     copied = copy.deepcopy(slot)
     if reset_runtime:
+        if copied.get("type") == "value":
+            for key in (
+                "task_queue",
+                "state",
+                "started_at",
+                "last_trigger_time",
+                "paused",
+            ):
+                copied.pop(key, None)
+            return copied
         copied["task_queue"] = []
         copied["state"] = "idle"
         copied["last_trigger_time"] = None

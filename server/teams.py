@@ -53,6 +53,10 @@ def load_team(bp_dir, name):
         team.setdefault("slots", []).append(None)
     for slot in team.get("slots", []):
         if slot is not None:
+            if slot.get("type") == "value":
+                slot.pop("task_queue", None)
+                slot.pop("state", None)
+                continue
             slot.setdefault("task_queue", [])
             slot.setdefault("state", "idle")
             slot["task_queue"] = []

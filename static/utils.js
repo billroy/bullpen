@@ -13,7 +13,7 @@ const MODEL_OPTIONS = {
   opencode: [],
 };
 
-const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c', notification: '#d7ad4a' };
+const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c', notification: '#d7ad4a', value: '#86efac' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
   ? window.Vue.reactive({ overrides: {} })
@@ -30,6 +30,7 @@ function workerColorKey(worker) {
   if (worker?.type === 'service') return 'service';
   if (worker?.type === 'marker') return 'marker';
   if (worker?.type === 'notification') return 'notification';
+  if (worker?.type === 'value') return 'value';
   return worker?.agent;
 }
 
@@ -43,7 +44,7 @@ function isHumanWorker(worker) {
   return worker?.is_human === true || worker?.type === 'human' || worker?.agent === 'human';
 }
 
-const BUILTIN_WORKER_TYPES = new Set(['ai', 'shell', 'service', 'marker', 'notification', 'eval', 'human']);
+const BUILTIN_WORKER_TYPES = new Set(['ai', 'shell', 'service', 'marker', 'notification', 'value', 'eval', 'human']);
 
 function isShellWorker(worker) {
   return worker?.type === 'shell';
@@ -59,6 +60,10 @@ function isMarkerWorker(worker) {
 
 function isNotificationWorker(worker) {
   return worker?.type === 'notification';
+}
+
+function isValueWorker(worker) {
+  return worker?.type === 'value';
 }
 
 function getServiceSiteUrl(worker, locationLike = window.location) {
@@ -96,6 +101,7 @@ function getWorkerTypeIcon(worker) {
   if (isServiceWorker(worker)) return 'server-cog';
   if (isMarkerWorker(worker)) return 'square-dot';
   if (isNotificationWorker(worker)) return 'bell-ring';
+  if (isValueWorker(worker)) return 'variable';
   if (isEvalWorker(worker)) return 'flask-conical';
   if (isUnknownWorkerType(worker)) return 'circle-help';
   return 'bot';
@@ -106,6 +112,7 @@ function workerTypeLabel(worker) {
   if (isServiceWorker(worker)) return 'Service';
   if (isMarkerWorker(worker)) return 'Marker';
   if (isNotificationWorker(worker)) return 'Notification';
+  if (isValueWorker(worker)) return 'Value';
   if (isEvalWorker(worker)) return 'Eval';
   if (isHumanWorker(worker)) return 'Human';
   if (isUnknownWorkerType(worker)) return worker.type;
@@ -129,6 +136,7 @@ window.getWorkerTypeIcon = getWorkerTypeIcon;
 window.workerTypeLabel = workerTypeLabel;
 window.workerColor = workerColor;
 window.isHumanWorker = isHumanWorker;
+window.isValueWorker = isValueWorker;
 window.getColumnIcon = getColumnIcon;
 
 function formatTaskDuration(ms) {

@@ -299,6 +299,95 @@ def test_notification_slot_normalizes_defaults_and_preserves_config(tmp_workspac
     assert clone["state"] == "idle"
 
 
+def test_value_slot_normalizes_defaults_without_runnable_fields(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = normalize_worker_slot(
+        {
+            "type": "value",
+            "row": 4,
+            "col": 27,
+            "name": " Build Number ",
+            "value": "00123",
+            "value_type": "auto",
+            "format": {"kind": "number", "places": 99},
+            "activation": "on_drop",
+            "disposition": "done",
+            "task_queue": ["ticket-1"],
+            "state": "working",
+            "max_retries": 4,
+            "paused": True,
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["type"] == "value"
+    assert slot["name"] == "Build Number"
+    assert slot["value"] == "00123"
+    assert slot["value_type"] == "auto"
+    assert slot["resolved_value_type"] == "string"
+    assert slot["format"] == {"kind": "number", "places": 10}
+    assert slot["icon"] == "variable"
+    assert slot["color"] == "value"
+    assert slot["updated_at"] == ""
+    for field in (
+        "activation",
+        "disposition",
+        "watch_column",
+        "max_retries",
+        "trigger_time",
+        "trigger_interval_minutes",
+        "trigger_every_day",
+        "last_trigger_time",
+        "paused",
+        "task_queue",
+        "state",
+        "started_at",
+    ):
+        assert field not in slot
+
+    clone = copy_worker_slot(slot, reset_runtime=True)
+    assert clone["type"] == "value"
+    assert "task_queue" not in clone
+    assert "state" not in clone
+
+
+def test_value_slot_round_trips_through_team_without_runtime_fields(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    value = {
+        "type": "value",
+        "row": 0,
+        "col": 0,
+        "name": "Release Version",
+        "value": "2026.06",
+        "value_type": "string",
+    }
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    layout = normalize_layout({"slots": [value]}, config=config)
+
+    saved = save_team(bp_dir, "valueteam", layout)
+    loaded = load_team(bp_dir, "valueteam")
+
+    assert saved["slots"][0]["type"] == "value"
+    assert saved["slots"][0]["value"] == "2026.06"
+    assert "task_queue" not in saved["slots"][0]
+    assert "state" not in saved["slots"][0]
+    assert loaded["slots"][0]["type"] == "value"
+    assert loaded["slots"][0]["value"] == "2026.06"
+    assert "task_queue" not in loaded["slots"][0]
+    assert "state" not in loaded["slots"][0]
+
+
+def test_value_worker_type_is_registered_non_runnable():
+    worker_type = get_worker_type("value")
+
+    assert worker_type.type_id == "value"
+    assert worker_type.default_icon() == "variable"
+    assert worker_type.default_color() == "value"
+    assert worker_type.runnable() is False
+
+
 def test_unknown_worker_type_transfer_preserves_fields(tmp_path):
     ws_a = str(tmp_path / "a")
     ws_b = str(tmp_path / "b")

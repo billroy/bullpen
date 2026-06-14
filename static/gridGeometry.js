@@ -16,6 +16,44 @@
     return Math.floor(Number(row) || 0) * safeCols + Math.floor(Number(col) || 0);
   }
 
+  function colLabel(col) {
+    const n = Number(col);
+    if (!Number.isFinite(n) || n < 0) return '';
+    let label = '';
+    let x = Math.floor(n);
+    while (true) {
+      label = String.fromCharCode(65 + (x % 26)) + label;
+      x = Math.floor(x / 26) - 1;
+      if (x < 0) break;
+    }
+    return label;
+  }
+
+  function rowLabel(row) {
+    const n = Number(row);
+    if (!Number.isFinite(n) || n < 0) return '';
+    return String(Math.floor(n) + 1);
+  }
+
+  function coordToCellRef(coord) {
+    const col = colLabel(coord?.col);
+    const row = rowLabel(coord?.row);
+    return col && row ? `${col}${row}` : '';
+  }
+
+  function parseCellRef(text) {
+    const m = /^\s*([A-Za-z]+)\s*(\d+)\s*$/.exec(String(text || ''));
+    if (!m) return null;
+    let col = 0;
+    for (const ch of m[1].toUpperCase()) {
+      col = col * 26 + (ch.charCodeAt(0) - 64);
+    }
+    col -= 1;
+    const row = parseInt(m[2], 10) - 1;
+    if (col < 0 || row < 0) return null;
+    return { col, row };
+  }
+
   function _cardSize(cardSize) {
     const width = Math.max(1, Number(cardSize?.width) || 220);
     const height = Math.max(1, Number(cardSize?.height) || 140);
@@ -127,6 +165,10 @@
     coordKey,
     indexToCoord,
     coordToIndex,
+    colLabel,
+    rowLabel,
+    coordToCellRef,
+    parseCellRef,
     visibleRange,
     overscanRange,
     pixelToCoord,

@@ -1280,16 +1280,7 @@ const BullpenTab = {
       this.$nextTick(() => this.$refs.viewport?.focus());
     },
     parseCellRef(text) {
-      const m = /^\s*([A-Za-z]+)\s*(\d+)\s*$/.exec(text);
-      if (!m) return null;
-      let col = 0;
-      for (const ch of m[1].toUpperCase()) {
-        col = col * 26 + (ch.charCodeAt(0) - 64);
-      }
-      col -= 1;
-      const row = parseInt(m[2], 10) - 1;
-      if (col < 0 || row < 0) return null;
-      return { col, row };
+      return GridGeometry.parseCellRef(text);
     },
     goToCoord(coord) {
       const visibleCols = this.viewportPx.width / this.columnWidth;
@@ -2085,20 +2076,10 @@ const BullpenTab = {
       this.dragViewportRect = null;
     },
     colLabel(col) {
-      if (!Number.isFinite(col)) return '';
-      if (col < 0) return '-' + this.colLabel(-col - 1);
-      let s = '';
-      let n = Math.floor(col);
-      while (true) {
-        s = String.fromCharCode(65 + (n % 26)) + s;
-        n = Math.floor(n / 26) - 1;
-        if (n < 0) break;
-      }
-      return s;
+      return GridGeometry.colLabel(col);
     },
     rowLabel(row) {
-      if (!Number.isFinite(row)) return '';
-      return String(Math.floor(row) + 1);
+      return GridGeometry.rowLabel(row);
     },
     onColumnResizeDown(e) {
       if (e.button !== 0) return;
