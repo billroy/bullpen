@@ -121,10 +121,13 @@ def test_projects_update_restores_remembered_or_first_available_workspace():
     assert "const ACTIVE_PROJECT_STORAGE_KEY = 'bullpen.activeWorkspaceId';" in text
     assert "localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, wsId);" in text
     assert "localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY)" in text
+    assert "let pendingActiveWorkspaceRestore = _loadRememberedWorkspace();" in text
     assert "function _restoreWorkspaceAfterProjectsUpdate()" in text
-    assert "if (activeWorkspaceId.value) return;" in text
+    assert "if (activeWorkspaceId.value) return;" not in text
     assert "projects.filter(p => p.available !== false).map(p => p.id)" in text
-    assert "availableIds.includes(remembered) ? remembered : availableIds[0]" in text
+    assert "if (remembered && availableIds.includes(remembered))" in text
+    assert "if (activeWorkspaceId.value && availableIds.includes(activeWorkspaceId.value)) return;" in text
+    assert "switchWorkspace(availableIds[0]);" in text
     assert "_restoreWorkspaceAfterProjectsUpdate();" in text
 
 

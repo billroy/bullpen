@@ -246,6 +246,7 @@ const app = createApp({
         return '';
       }
     }
+    let pendingActiveWorkspaceRestore = _loadRememberedWorkspace();
 
     function _storageValueForActiveTab(tabId) {
       const id = String(tabId || '').trim();
@@ -276,12 +277,16 @@ const app = createApp({
     }
 
     function _restoreWorkspaceAfterProjectsUpdate() {
-      if (activeWorkspaceId.value) return;
       const availableIds = _availableProjectIds();
       if (!availableIds.length) return;
-      const remembered = _loadRememberedWorkspace();
-      const target = availableIds.includes(remembered) ? remembered : availableIds[0];
-      switchWorkspace(target);
+      const remembered = pendingActiveWorkspaceRestore;
+      pendingActiveWorkspaceRestore = '';
+      if (remembered && availableIds.includes(remembered)) {
+        switchWorkspace(remembered);
+        return;
+      }
+      if (activeWorkspaceId.value && availableIds.includes(activeWorkspaceId.value)) return;
+      switchWorkspace(availableIds[0]);
     }
 
     function switchWorkspace(wsId) {
