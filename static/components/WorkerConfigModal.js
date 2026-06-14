@@ -72,6 +72,12 @@ const NOTIFICATION_SOUND_OPTIONS = [
   { value: 'ripple', label: 'Ripple' },
   { value: 'upload', label: 'Upload' },
   { value: 'download', label: 'Download' },
+  { value: 'klaxon', label: 'Klaxon' },
+  { value: 'siren', label: 'Siren' },
+  { value: 'pulsed_siren', label: 'Pulsed siren' },
+  { value: 'euro_siren', label: 'Euro siren' },
+  { value: 'air_raid', label: 'Air raid' },
+  { value: 'evacuation', label: 'Evacuation' },
 ];
 
 function cloneNotificationForm(raw) {

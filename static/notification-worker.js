@@ -62,6 +62,12 @@
     ripple: 'playRipple',
     upload: 'playUpload',
     download: 'playDownload',
+    klaxon: 'playKlaxon',
+    siren: 'playSiren',
+    pulsed_siren: 'playPulsedSiren',
+    euro_siren: 'playEuroSiren',
+    air_raid: 'playAirRaid',
+    evacuation: 'playEvacuation',
   };
 
   function loadFlags() {

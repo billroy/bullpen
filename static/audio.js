@@ -101,6 +101,13 @@ class AudioEngine {
     }
   }
 
+  _alarmBurst(freqA, freqB, startDelay = 0, duration = 0.18, type = 'square', volume = 0.18) {
+    setTimeout(() => {
+      this._tone(freqA, freqB, duration, type, volume);
+      this._tone(freqA * 1.01, freqB * 1.01, duration, type, volume * 0.7);
+    }, Math.max(0, startDelay));
+  }
+
   /** Called on first user interaction to unlock AudioContext */
   unlock() {
     this._init();
@@ -498,6 +505,54 @@ class AudioEngine {
       { freq: 1250, freq2: 700, duration: 0.075, type: 'triangle', volume: 0.1, delay: 70 },
       { freq: 900, freq2: 500, duration: 0.08, type: 'triangle', volume: 0.1, delay: 140 },
     ]);
+  }
+
+  /** Klaxon: low mechanical alternating alarm honk */
+  playKlaxon() {
+    this._init();
+    this._noise(0.05, 0.035);
+    this._alarmBurst(250, 185, 0, 0.16, 'sawtooth', 0.2);
+    this._alarmBurst(250, 185, 180, 0.16, 'sawtooth', 0.18);
+  }
+
+  /** Siren: classic rising then falling emergency sweep */
+  playSiren() {
+    this._init();
+    this._alarmBurst(520, 1180, 0, 0.17, 'sawtooth', 0.16);
+    this._alarmBurst(1180, 520, 170, 0.17, 'sawtooth', 0.14);
+  }
+
+  /** Pulsed siren: clipped warning bursts with gaps between them */
+  playPulsedSiren() {
+    this._init();
+    this._noise(0.04, 0.035);
+    this._alarmBurst(740, 940, 0, 0.08, 'square', 0.14);
+    this._alarmBurst(740, 940, 120, 0.08, 'square', 0.13);
+    this._alarmBurst(740, 940, 240, 0.09, 'square', 0.13);
+  }
+
+  /** Euro siren: two-tone hi-lo emergency pattern */
+  playEuroSiren() {
+    this._init();
+    this._alarmBurst(980, 980, 0, 0.07, 'square', 0.13);
+    this._alarmBurst(660, 660, 90, 0.07, 'square', 0.13);
+    this._alarmBurst(980, 980, 180, 0.07, 'square', 0.12);
+    this._alarmBurst(660, 660, 270, 0.07, 'square', 0.12);
+  }
+
+  /** Air raid: slower long-range rising and falling horn */
+  playAirRaid() {
+    this._init();
+    this._alarmBurst(180, 560, 0, 0.17, 'sawtooth', 0.18);
+    this._alarmBurst(560, 180, 170, 0.17, 'sawtooth', 0.16);
+  }
+
+  /** Evacuation: sharp triple evacuation beeps */
+  playEvacuation() {
+    this._init();
+    this._alarmBurst(1500, 1500, 0, 0.09, 'square', 0.12);
+    this._alarmBurst(1500, 1500, 110, 0.09, 'square', 0.12);
+    this._alarmBurst(1500, 1500, 220, 0.09, 'square', 0.11);
   }
 
   /**

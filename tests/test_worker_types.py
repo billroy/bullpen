@@ -305,9 +305,20 @@ def test_notification_sound_effect_set_accepts_expanded_synth_pack(tmp_workspace
     config = read_json(os.path.join(bp_dir, "config.json"))
 
     assert len(NOTIFICATION_SOUND_EFFECTS) >= 30
-    assert {"bell", "critical", "double_tick", "ripple", "upload", "download"}.issubset(
-        NOTIFICATION_SOUND_EFFECTS
-    )
+    assert {
+        "bell",
+        "critical",
+        "double_tick",
+        "ripple",
+        "upload",
+        "download",
+        "klaxon",
+        "siren",
+        "pulsed_siren",
+        "euro_siren",
+        "air_raid",
+        "evacuation",
+    }.issubset(NOTIFICATION_SOUND_EFFECTS)
 
     slot = normalize_worker_slot(
         {

@@ -21,6 +21,26 @@ def test_value_update_sound_is_registered():
     assert "Value updated" in sounds
 
 
+def test_alarm_notification_sounds_are_wired_through_frontend():
+    audio = (ROOT / "static" / "audio.js").read_text()
+    runtime = (ROOT / "static" / "notification-worker.js").read_text()
+    modal = (ROOT / "static" / "components" / "WorkerConfigModal.js").read_text()
+
+    expected = {
+        "klaxon": ("Klaxon", "playKlaxon"),
+        "siren": ("Siren", "playSiren"),
+        "pulsed_siren": ("Pulsed siren", "playPulsedSiren"),
+        "euro_siren": ("Euro siren", "playEuroSiren"),
+        "air_raid": ("Air raid", "playAirRaid"),
+        "evacuation": ("Evacuation", "playEvacuation"),
+    }
+
+    for effect, (label, method) in expected.items():
+        assert f"{effect}: '{method}'" in runtime
+        assert f"{method}()" in audio
+        assert f"{{ value: '{effect}', label: '{label}' }}" in modal
+
+
 def test_workspace_pause_gates_ambient_audio():
     app = (ROOT / "static" / "app.js").read_text()
     audio = (ROOT / "static" / "audio.js").read_text()

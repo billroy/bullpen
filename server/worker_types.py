@@ -59,6 +59,12 @@ NOTIFICATION_SOUND_EFFECTS = {
     "ripple",
     "upload",
     "download",
+    "klaxon",
+    "siren",
+    "pulsed_siren",
+    "euro_siren",
+    "air_raid",
+    "evacuation",
 }
 DEFAULT_NOTIFICATION_CONFIG = {
     "toast": {
