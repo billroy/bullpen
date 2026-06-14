@@ -51,6 +51,9 @@ const WorkerCard = {
             <span class="worker-card-name worker-card-name--measure" ref="nameMeasure" aria-hidden="true"></span>
           </div>
         </div>
+        <span v-if="showCompactValue" class="worker-card-compact-value" :title="valueDisplay">
+          {{ valueDisplay || 'Empty' }}
+        </span>
         <div class="worker-card-actions">
           <span class="worker-card-header-status">
             <span v-if="(workerState !== 'idle' || isPaused || isHeldQueue) && !pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
@@ -458,6 +461,9 @@ const WorkerCard = {
       }
       return String(value);
     },
+    showCompactValue() {
+      return this.isValue && this.effectiveLayoutMode === 'small';
+    },
     showVerticalResizeHandle() {
       return !!(this.showsVerticalResizeControl && (this.hoveredVerticalResize || this.isVerticalResizing));
     },
@@ -628,6 +634,7 @@ const WorkerCard = {
       this.cancelValueEdit();
     },
     canConnect(dir) {
+      if (this.isValue) return false;
       return !!(this.neighborSlots && this.neighborSlots[dir] != null);
     },
     connectHandleArrow(dir) {

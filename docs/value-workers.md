@@ -89,7 +89,7 @@ shared data store in behavior.
 | `value_type` | string | `"auto"` | `auto`, `number`, or `string` in v1 |
 | `resolved_value_type` | string | `"string"` | Current effective type: `number` or `string` |
 | `format` | object | `{ "kind": "auto" }` | Display formatting only |
-| `icon` | string | `"variable"` | UI default |
+| `icon` | string | `"equal"` | UI default |
 | `color` | string | `"value"` | UI color token |
 | `row` / `col` | integer | grid position | Existing zero-based grid coordinate |
 | `updated_at` | string/null | `null` | Server timestamp for conflict/debug UI |

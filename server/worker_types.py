@@ -186,7 +186,7 @@ class ValueWorkerType(WorkerType):
     type_id = "value"
 
     def default_icon(self):
-        return "variable"
+        return "equal"
 
     def default_color(self):
         return "value"
@@ -487,7 +487,7 @@ def normalize_worker_slot(raw, *, index, config):
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
         slot["format"] = normalize_value_format(slot.get("format"))
-        slot["icon"] = str(slot.get("icon") or "variable")
+        slot["icon"] = str(slot.get("icon") or "equal")
         slot["color"] = str(slot.get("color") or "value")
         slot["updated_at"] = str(slot.get("updated_at") or "")
         for key in (

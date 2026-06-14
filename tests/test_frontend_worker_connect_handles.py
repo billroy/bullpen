@@ -26,6 +26,7 @@ def test_worker_card_accepts_neighbor_slots_prop():
     assert "'neighborSlots'" in text
     assert "canConnect(dir)" in text
     assert "passConnectsToNeighbor" in text
+    assert "if (this.isValue) return false;" in text
 
 
 def test_worker_card_renders_drag_handles_only_for_existing_neighbors():

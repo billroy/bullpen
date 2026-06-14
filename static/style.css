@@ -3120,6 +3120,10 @@ body.worker-singleton-dragging * {
   cursor: grab;
 }
 
+.worker-card--small .worker-card-header {
+  align-items: center;
+}
+
 .worker-card-header:active,
 .worker-card.is-dragging .worker-card-header {
   cursor: grabbing;
@@ -3157,6 +3161,10 @@ body.worker-singleton-dragging * {
   gap: 2px;
   min-width: 0;
   flex: 1;
+}
+
+.worker-card--small .worker-card-identity {
+  flex: 1 1 auto;
 }
 
 .worker-card-service-meta {
@@ -3202,8 +3210,28 @@ body.worker-singleton-dragging * {
   display: flex;
   gap: 4px;
   align-items: center;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   align-self: flex-start;
+}
+
+.worker-card--small .worker-card-actions {
+  align-self: center;
+}
+
+.worker-card-compact-value {
+  color: rgba(255, 255, 255, 0.95);
+  flex: 0 1 auto;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+  margin-left: auto;
+  max-width: 50%;
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .worker-card-header-status {

@@ -328,7 +328,7 @@ def test_value_slot_normalizes_defaults_without_runnable_fields(tmp_workspace):
     assert slot["value_type"] == "auto"
     assert slot["resolved_value_type"] == "string"
     assert slot["format"] == {"kind": "number", "places": 10}
-    assert slot["icon"] == "variable"
+    assert slot["icon"] == "equal"
     assert slot["color"] == "value"
     assert slot["updated_at"] == ""
     for field in (
@@ -383,7 +383,7 @@ def test_value_worker_type_is_registered_non_runnable():
     worker_type = get_worker_type("value")
 
     assert worker_type.type_id == "value"
-    assert worker_type.default_icon() == "variable"
+    assert worker_type.default_icon() == "equal"
     assert worker_type.default_color() == "value"
     assert worker_type.runnable() is False
 

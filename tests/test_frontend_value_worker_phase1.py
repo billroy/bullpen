@@ -12,7 +12,7 @@ def test_value_worker_type_metadata_is_registered():
     assert "worker?.type === 'value'" in text
     assert "'value', 'eval'" in text
     assert "function isValueWorker(worker)" in text
-    assert "return 'variable';" in text
+    assert "return 'equal';" in text
     assert "return 'Value';" in text
 
 
@@ -35,7 +35,7 @@ def test_value_worker_can_be_created_from_library():
     text = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
 
     assert "libraryMode === 'value'" in text
-    assert 'data-lucide="variable"' in text
+    assert 'data-lucide="equal"' in text
     assert "Blank value worker" in text
     assert "addValueWorker()" in text
     assert "type: 'value'" in text
@@ -68,6 +68,19 @@ def test_value_worker_card_displays_value_without_run_controls():
     assert "if (this.isValue) return false;" in text
     assert "return !this.isMarker && !this.isValue && !this.isEval && !this.isUnknownType;" in text
     assert "window.GridGeometry?.coordToCellRef?.(this.worker)" in text
+    assert "if (this.isValue) return false;" in text
+
+
+def test_value_worker_small_card_shows_value_in_header():
+    card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+    css = (ROOT / "static" / "style.css").read_text()
+
+    assert 'v-if="showCompactValue" class="worker-card-compact-value"' in card
+    assert "return this.isValue && this.effectiveLayoutMode === 'small';" in card
+    assert "{{ valueDisplay || 'Empty' }}" in card
+    assert ".worker-card-compact-value {" in css
+    assert "text-align: right;" in css
+    assert "text-overflow: ellipsis;" in css
 
 
 def test_value_worker_card_rejects_ticket_drop_affordances():

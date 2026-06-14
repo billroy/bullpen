@@ -394,6 +394,8 @@ class TestCodexAdapter:
         assert "o4-mini" in argv
         assert "--sandbox" in argv
         assert "workspace-write" in argv
+        assert "--ask-for-approval" in argv
+        assert "never" in argv
         assert "--full-auto" not in argv
         assert "--skip-git-repo-check" in argv
         assert "-" in argv
@@ -461,6 +463,7 @@ class TestCodexAdapter:
         assert "mcp_servers.bullpen.args=" in joined
         assert "mcp_servers.bullpen.env.PYTHONPATH=" in joined
         assert "mcp_servers.bullpen.cwd=" in joined
+        assert "mcp_servers.bullpen.default_tools_approval_mode=\"approve\"" in joined
         assert "mcp_servers.bullpen.tool_timeout_sec=120" in joined
         assert "--host" in joined
         assert "127.0.0.1" in joined

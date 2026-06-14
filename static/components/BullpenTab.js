@@ -365,7 +365,7 @@ const BullpenTab = {
             <button class="worker-type-tab" :class="{ active: libraryMode === 'value' }"
                     role="tab" :aria-selected="libraryMode === 'value'"
                     @click="libraryMode = 'value'">
-              <i data-lucide="variable" aria-hidden="true"></i>
+              <i data-lucide="equal" aria-hidden="true"></i>
               <span>Value</span>
             </button>
           </div>

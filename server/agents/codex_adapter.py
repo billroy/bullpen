@@ -88,6 +88,7 @@ class CodexAdapter(AgentAdapter):
             "exec",
             "--model", model,
             *_codex_execution_flags(),
+            "--ask-for-approval", "never",
             "--json",
             "--skip-git-repo-check",
         ]
@@ -116,6 +117,7 @@ class CodexAdapter(AgentAdapter):
             "-c", f"mcp_servers.bullpen.args={json.dumps(args)}",
             "-c", f"mcp_servers.bullpen.cwd={json.dumps(project_root)}",
             "-c", f"mcp_servers.bullpen.env.PYTHONPATH={json.dumps(project_root)}",
+            "-c", "mcp_servers.bullpen.default_tools_approval_mode=\"approve\"",
             "-c", "mcp_servers.bullpen.tool_timeout_sec=120",
         ]
 

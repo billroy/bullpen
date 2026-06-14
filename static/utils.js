@@ -101,7 +101,7 @@ function getWorkerTypeIcon(worker) {
   if (isServiceWorker(worker)) return 'server-cog';
   if (isMarkerWorker(worker)) return 'square-dot';
   if (isNotificationWorker(worker)) return 'bell-ring';
-  if (isValueWorker(worker)) return 'variable';
+  if (isValueWorker(worker)) return 'equal';
   if (isEvalWorker(worker)) return 'flask-conical';
   if (isUnknownWorkerType(worker)) return 'circle-help';
   return 'bot';
