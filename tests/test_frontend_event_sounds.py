@@ -23,9 +23,14 @@ def test_value_update_sound_is_registered():
 
 def test_workspace_pause_gates_ambient_audio():
     app = (ROOT / "static" / "app.js").read_text()
+    audio = (ROOT / "static" / "audio.js").read_text()
 
     assert "const automationPaused = ws.config?.worker_automation_paused === true;" in app
-    assert "if (automationPaused) {\n        window.ambientAudio.stopAmbient();\n        return;\n      }" in app
+    assert "window.ambientAudio.muteAmbient();" in app
+    assert "window.ambientAudio.unmuteAmbient();" in app
+    assert "muteAmbient()" in audio
+    assert "unmuteAmbient()" in audio
+    assert "if (this._ambientMuted) return;" in audio
     assert "_setWorkspaceAutomationPaused(activeWorkspaceId.value, true);" in app
     assert "_setWorkspaceAutomationPaused(activeWorkspaceId.value, false);" in app
     assert "_setKnownWorkspacesAutomationPaused(true);" in app

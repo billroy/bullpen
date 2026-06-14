@@ -14,6 +14,8 @@ class AudioEngine {
     this._ambientNodes = null;
     this._ambientGain = null;
     this._ambientActive = false;
+    this._ambientMuted = false;
+    this._ambientIntensity = 10;
   }
 
   _init() {
@@ -137,6 +139,8 @@ class AudioEngine {
 
     const now = ctx.currentTime;
     const targetVol = this._ambientVolume(intensity);
+    this._ambientIntensity = intensity;
+    this._ambientMuted = false;
 
     // Master ambient gain — fade in
     this._ambientGain = ctx.createGain();
@@ -160,9 +164,29 @@ class AudioEngine {
     this._teardownAmbient();
   }
 
+  muteAmbient() {
+    if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
+    const now = this._ctx.currentTime;
+    this._ambientMuted = true;
+    this._ambientGain.gain.cancelScheduledValues(now);
+    this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
+    this._ambientGain.gain.linearRampToValueAtTime(0, now + 0.3);
+  }
+
+  unmuteAmbient() {
+    if (!this._ambientActive || !this._ambientGain || !this._ctx || !this._ambientMuted) return;
+    const now = this._ctx.currentTime;
+    const targetVol = this._ambientVolume(this._ambientIntensity || 10);
+    this._ambientMuted = false;
+    this._ambientGain.gain.cancelScheduledValues(now);
+    this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
+    this._ambientGain.gain.linearRampToValueAtTime(targetVol, now + 0.5);
+  }
+
   _teardownAmbient() {
     if (!this._ambientGain || !this._ctx) {
       this._ambientActive = false;
+      this._ambientMuted = false;
       return;
     }
     const ctx = this._ctx;
@@ -186,10 +210,13 @@ class AudioEngine {
     this._ambientGain = null;
     this._ambientActive = false;
     this._ambientPreset = null;
+    this._ambientMuted = false;
   }
 
   updateAmbientIntensity(intensity) {
     if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
+    this._ambientIntensity = intensity;
+    if (this._ambientMuted) return;
     const now = this._ctx.currentTime;
     const vol = this._ambientVolume(intensity);
     this._ambientGain.gain.cancelScheduledValues(now);

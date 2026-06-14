@@ -170,8 +170,15 @@ const app = createApp({
       const automationPaused = ws.config?.worker_automation_paused === true;
       window.ambientAudio.setVolume(volume / 100);
       if (automationPaused) {
-        window.ambientAudio.stopAmbient();
+        if (typeof window.ambientAudio.muteAmbient === 'function') {
+          window.ambientAudio.muteAmbient();
+        } else {
+          window.ambientAudio.stopAmbient();
+        }
         return;
+      }
+      if (typeof window.ambientAudio.unmuteAmbient === 'function') {
+        window.ambientAudio.unmuteAmbient();
       }
       if (preset) {
         if (!(window.ambientAudio._ambientActive && window.ambientAudio._ambientPreset === preset)) {
