@@ -29,6 +29,15 @@ if _PROJECT_ROOT not in sys.path:
 
 from server import mcp_auth
 from server import tasks as task_store
+from server.persistence import read_json
+from server.values import (
+    coord_to_cell_ref,
+    find_value_by_ref,
+    format_value,
+    iter_value_slots,
+    value_ref_warning,
+)
+from server.worker_types import normalize_layout
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
 VALID_PRIORITIES = ("low", "normal", "high", "urgent")
@@ -121,6 +130,62 @@ TOOLS = [
                 "tags": {"type": "array", "items": {"type": "string"}},
             },
             "required": ["id"],
+        },
+    },
+    {
+        "name": "get_value",
+        "description": "Get a Value worker by coordinate alias (A1) or name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Value coordinate alias or name"},
+            },
+            "required": ["ref"],
+        },
+    },
+    {
+        "name": "set_value",
+        "description": "Set an existing Value worker by coordinate alias (A1) or name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Value coordinate alias or name"},
+                "value": {"description": "New raw value"},
+                "value_type": {"type": "string", "enum": ["auto", "number", "string"]},
+            },
+            "required": ["ref", "value"],
+        },
+    },
+    {
+        "name": "increment_value",
+        "description": "Increment a numeric Value worker.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Value coordinate alias or name"},
+                "amount": {"type": "number", "default": 1},
+            },
+            "required": ["ref"],
+        },
+    },
+    {
+        "name": "decrement_value",
+        "description": "Decrement a numeric Value worker.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Value coordinate alias or name"},
+                "amount": {"type": "number", "default": 1},
+            },
+            "required": ["ref"],
+        },
+    },
+    {
+        "name": "list_values",
+        "description": "List all Value workers in row/column order.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
         },
     },
 ]
@@ -277,6 +342,10 @@ class BullpenClient:
         def _on_task_updated(data: dict[str, Any]) -> None:
             self._resolve("update", result=data)
 
+        @self.sio.on("layout:updated")
+        def _on_layout_updated(data: dict[str, Any]) -> None:
+            self._resolve("layout", result=data)
+
         @self.sio.on("error")
         def _on_error(data: dict[str, Any]) -> None:
             message = "Unknown error"
@@ -432,6 +501,52 @@ class BullpenClient:
             return None, "Missing task:update response payload"
         return pending.result, None
 
+    def _emit_value_mutation(self, event_name: str, payload: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+        if not self._connect_best_effort():
+            return None, self._connection_failure_message(event_name)
+        if not self.workspace_id:
+            return None, "MCP client has no workspace_id — server did not identify a workspace for this token"
+
+        pending = self._prepare_pending("layout")
+        payload = dict(payload)
+        payload["workspaceId"] = self.workspace_id
+        self.sio.emit(event_name, payload)
+        if not pending.event.wait(timeout=self.operation_timeout_seconds):
+            with self._lock:
+                self._pending.pop("layout", None)
+            return None, f"Timed out waiting for {event_name} response"
+        if pending.error:
+            return None, pending.error
+        if pending.result is None:
+            return None, f"Missing {event_name} response payload"
+        return pending.result, None
+
+    def set_value(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+        payload = {"ref": args.get("ref"), "value": args.get("value")}
+        if "value_type" in args:
+            payload["value_type"] = args["value_type"]
+        layout, err = self._emit_value_mutation("value:set", payload)
+        if err:
+            return None, err
+        match = find_value_by_ref((layout or {}).get("slots", []), args.get("ref"))
+        if not match:
+            return None, "Value was updated but could not be read back"
+        return _value_summary(match), None
+
+    def increment_value(self, args: dict[str, Any], *, sign: int = 1) -> tuple[dict[str, Any] | None, str | None]:
+        amount = args.get("amount", 1)
+        try:
+            amount = float(amount) * sign
+        except (TypeError, ValueError):
+            return None, "amount must be numeric"
+        layout, err = self._emit_value_mutation("value:increment", {"ref": args.get("ref"), "amount": amount})
+        if err:
+            return None, err
+        match = find_value_by_ref((layout or {}).get("slots", []), args.get("ref"))
+        if not match:
+            return None, "Value was updated but could not be read back"
+        return _value_summary(match), None
+
     def disconnect(self) -> None:
         try:
             if self.connected:
@@ -448,6 +563,59 @@ def _render_ticket_summary(ticket: dict[str, Any]) -> dict[str, Any]:
         "type": ticket.get("type"),
         "priority": ticket.get("priority"),
     }
+
+
+def _load_layout(bp_dir: str) -> dict[str, Any]:
+    try:
+        layout = read_json(os.path.join(bp_dir, "layout.json"))
+    except Exception:
+        layout = {"slots": []}
+    try:
+        config = read_json(os.path.join(bp_dir, "config.json"))
+    except Exception:
+        config = {}
+    return normalize_layout(layout, config=config)
+
+
+def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
+    slot = match.get("slot") or {}
+    coord = match.get("coord") or {}
+    payload = {
+        "ref": coord_to_cell_ref(coord),
+        "coordinate": {"col": coord.get("col"), "row": coord.get("row")},
+        "name": slot.get("name", ""),
+        "value": slot.get("value", ""),
+        "value_type": slot.get("value_type", "auto"),
+        "resolved_value_type": slot.get("resolved_value_type", "string"),
+        "formatted_value": format_value(slot.get("value", ""), slot.get("format")),
+        "format": slot.get("format", {"kind": "auto"}),
+        "updated_at": slot.get("updated_at", ""),
+    }
+    warning = value_ref_warning(match)
+    if warning:
+        payload["warnings"] = [warning]
+    return payload
+
+
+def _list_value_summaries(bp_dir: str) -> list[dict[str, Any]]:
+    layout = _load_layout(bp_dir)
+    matches = [
+        {"index": index, "slot": slot, "coord": coord, "ambiguous": False}
+        for index, slot, coord in iter_value_slots(layout.get("slots", []))
+    ]
+    matches.sort(key=lambda item: (item["coord"]["row"], item["coord"]["col"], item["index"]))
+    return [_value_summary(match) for match in matches]
+
+
+def _get_value_summary(bp_dir: str, ref: object) -> tuple[dict[str, Any] | None, str | None]:
+    ref_text = str(ref if ref is not None else "").strip()
+    if not ref_text:
+        return None, "ref is required"
+    layout = _load_layout(bp_dir)
+    match = find_value_by_ref(layout.get("slots", []), ref_text)
+    if not match:
+        return None, f"Value not found: {ref_text}"
+    return _value_summary(match), None
 
 
 def _normalize_query_text(value: str) -> str:
@@ -536,6 +704,51 @@ def handle_call(
             _tool_result(msg_id, f"Error: {err}", is_error=True, mode=io_mode)
             return
         _tool_result(msg_id, json.dumps(_render_ticket_summary(updated or {})), mode=io_mode)
+        return
+
+    if name == "list_values":
+        _tool_result(msg_id, json.dumps(_list_value_summaries(bp_dir), indent=2), mode=io_mode)
+        return
+
+    if name == "get_value":
+        payload, err = _get_value_summary(bp_dir, args.get("ref"))
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "not_found", "message": err}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name == "set_value":
+        ref = str(args.get("ref", "")).strip()
+        if not ref:
+            _tool_result(msg_id, "Error: ref is required", is_error=True, mode=io_mode)
+            return
+        if "value" not in args:
+            _tool_result(msg_id, "Error: value is required", is_error=True, mode=io_mode)
+            return
+        if client is None:
+            _tool_result(msg_id, "Error: set_value unavailable", is_error=True, mode=io_mode)
+            return
+        payload, err = client.set_value(args)
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "validation", "message": err}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name in {"increment_value", "decrement_value"}:
+        ref = str(args.get("ref", "")).strip()
+        if not ref:
+            _tool_result(msg_id, "Error: ref is required", is_error=True, mode=io_mode)
+            return
+        if client is None:
+            _tool_result(msg_id, f"Error: {name} unavailable", is_error=True, mode=io_mode)
+            return
+        payload, err = client.increment_value(args, sign=-1 if name == "decrement_value" else 1)
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "validation", "message": err}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
         return
 
     _error(msg_id, -32602, f"Unknown tool: {name}", mode=io_mode)

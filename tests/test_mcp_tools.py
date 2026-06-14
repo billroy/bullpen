@@ -9,6 +9,7 @@ import sys
 from server import mcp_auth
 from server import mcp_tools
 from server.init import init_workspace
+from server.persistence import write_json
 from server.tasks import create_task
 
 
@@ -76,6 +77,21 @@ class _ConnectedClient:
 
     def disconnect(self):
         return None
+
+
+class _ValueClient:
+    def __init__(self, payload=None, err=None):
+        self.payload = payload or {"ref": "A1", "value": 2}
+        self.err = err
+        self.calls = []
+
+    def set_value(self, args):
+        self.calls.append(("set", args))
+        return self.payload, self.err
+
+    def increment_value(self, args, *, sign=1):
+        self.calls.append(("increment", args, sign))
+        return self.payload, self.err
 
 
 class _RecordingSio:
@@ -257,6 +273,72 @@ def test_list_tickets_by_title_requires_title(tmp_workspace, monkeypatch):
     assert captured["id"] == 9
     assert captured["is_error"] is True
     assert captured["text"] == "Error: title is required"
+
+
+def test_value_tools_list_and_get_values(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    write_json(os.path.join(bp_dir, "layout.json"), {
+        "slots": [
+            {"type": "value", "row": 1, "col": 0, "name": "Build", "value": "alpha", "value_type": "string"},
+            {"type": "value", "row": 0, "col": 1, "name": "Build", "value": "42", "value_type": "number"},
+        ]
+    })
+
+    captured = []
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.append({"id": msg_id, "text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=11, name="list_values", args={})
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=12, name="get_value", args={"ref": "Build"})
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=13, name="get_value", args={"ref": "B1"})
+
+    listed = json.loads(captured[0]["text"])
+    assert [item["ref"] for item in listed] == ["B1", "A2"]
+    by_name = json.loads(captured[1]["text"])
+    assert by_name["ref"] == "B1"
+    assert by_name["value"] == 42
+    assert "warnings" in by_name
+    by_coord = json.loads(captured[2]["text"])
+    assert by_coord["ref"] == "B1"
+    assert by_coord["value"] == 42
+
+
+def test_get_value_returns_structured_not_found(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured["text"] = text
+        captured["is_error"] = is_error
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=14, name="get_value", args={"ref": "missing"})
+
+    assert captured["is_error"] is True
+    assert json.loads(captured["text"])["error"] == "not_found"
+
+
+def test_set_and_increment_value_dispatch_through_client(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    client = _ValueClient(payload={"ref": "A1", "value": 3})
+    captured = []
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.append({"id": msg_id, "text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+
+    mcp_tools.handle_call(bp_dir, client=client, msg_id=15, name="set_value", args={"ref": "A1", "value": "2"})
+    mcp_tools.handle_call(bp_dir, client=client, msg_id=16, name="decrement_value", args={"ref": "A1", "amount": 2})
+
+    assert client.calls[0] == ("set", {"ref": "A1", "value": "2"})
+    assert client.calls[1] == ("increment", {"ref": "A1", "amount": 2}, -1)
+    assert captured[0]["is_error"] is False
+    assert captured[1]["is_error"] is False
 
 
 def test_bullpen_client_degrades_when_socket_unavailable(monkeypatch):
@@ -538,6 +620,7 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
     tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
+    assert "get_value" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
     assert created["id"] in ids
@@ -600,6 +683,7 @@ def test_main_processes_line_json_initialize_tools_and_list_tasks(tmp_workspace,
     tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
+    assert "get_value" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
     assert created["id"] in ids

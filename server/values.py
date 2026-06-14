@@ -120,7 +120,18 @@ def find_value_by_ref(slots: object, ref: object, *, cols: int = 4) -> dict | No
     matches.sort(key=lambda item: (item["coord"]["row"], item["coord"]["col"], item["index"]))
     result = matches[0]
     result["ambiguous"] = len(matches) > 1
+    result["matches"] = matches
     return result
+
+
+def value_ref_warning(match: dict | None) -> str | None:
+    if not match or not match.get("ambiguous"):
+        return None
+    coords = [coord_to_cell_ref(item.get("coord")) for item in match.get("matches") or []]
+    coords = [coord for coord in coords if coord]
+    if not coords:
+        return None
+    return f"Duplicate value name matched {coords[0]}; other matches: {', '.join(coords[1:])}"
 
 
 def normalize_value_type(value_type: object) -> str:
@@ -147,6 +158,20 @@ def normalize_format(raw: object) -> dict:
     return out
 
 
+def format_value(value: object, raw_format: object = None) -> str:
+    fmt = normalize_format(raw_format)
+    kind = fmt.get("kind")
+    if kind in {"number", "currency"}:
+        parsed = _parse_plain_number(value)
+        if parsed is not None:
+            places = int(fmt.get("places", 2))
+            rendered = f"{float(parsed):,.{places}f}"
+            if isinstance(parsed, int) and places == 0:
+                rendered = f"{parsed:,}"
+            return f"{fmt.get('symbol', '$')}{rendered}" if kind == "currency" else rendered
+    return str(value if value is not None else "")
+
+
 def _normalize_string(value: object) -> str:
     return str(value if value is not None else "").replace("\r\n", "\n").replace("\r", "\n")
 
@@ -171,6 +196,10 @@ def _parse_plain_number(value: object):
         return int(text)
     except ValueError:
         return None
+
+
+def is_plain_number(value: object) -> bool:
+    return _parse_plain_number(value) is not None
 
 
 def normalize_value_payload(value: object, value_type: object = "auto") -> dict:

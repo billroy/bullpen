@@ -742,6 +742,37 @@ class TestWorkerEvents:
         assert worker["updated_at"]
         assert worker["updated_at"] >= first_timestamp
 
+    def test_value_increment_event_updates_numeric_value(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:increment", {"ref": "Counter", "amount": 2})
+        updated = get_event(c, "layout:updated")
+        worker = updated["slots"][0]
+
+        assert worker["type"] == "value"
+        assert worker["value"] == 7
+        assert worker["resolved_value_type"] == "number"
+
+    def test_value_set_event_rejects_non_numeric_number(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Counter", "value": "oops", "value_type": "number"})
+        error = get_event(c, "error")
+
+        assert error["message"] == "value must be numeric"
+
     def test_marker_worker_start_via_socket_completes_without_deadlock(self, client):
         c, app = client
         c.emit("worker:add", {

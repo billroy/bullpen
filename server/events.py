@@ -26,6 +26,7 @@ from server.usage import (
 from server.model_aliases import normalize_model
 from server import workers as worker_mod
 from server import service_worker as service_worker_mod
+from server import values as value_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server import mcp_auth
@@ -1098,6 +1099,82 @@ def register_events(socketio, app):
 
         for watch_column in changed_watch_columns:
             worker_mod.check_watch_columns(bp_dir, watch_column, socketio, ws_id)
+
+    def _resolve_value_slot(layout, ref, cols):
+        match = value_mod.find_value_by_ref(layout.get("slots", []), ref, cols=cols)
+        if not match:
+            emit("error", {"message": f"Value not found: {ref}"})
+            return None
+        return match
+
+    @socketio.on("value:set")
+    @with_lock
+    def on_value_set(data):
+        data = data or {}
+        ws_id, bp_dir = _resolve(data)
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+        ref = str(data.get("ref") or "").strip()
+        if not ref:
+            emit("error", {"message": "value:set requires ref"})
+            return
+        match = _resolve_value_slot(layout, ref, cols)
+        if not match:
+            return
+        slot = match["slot"]
+        value_type = data.get("value_type", slot.get("value_type", "auto"))
+        if value_mod.normalize_value_type(value_type) == "number" and not value_mod.is_plain_number(data.get("value")):
+            emit("error", {"message": "value must be numeric"})
+            return
+        payload = value_mod.normalize_value_payload(data.get("value", ""), value_type)
+        slot["value"] = payload["value"]
+        slot["value_type"] = payload["value_type"]
+        slot["resolved_value_type"] = payload["resolved_value_type"]
+        slot["updated_at"] = _now_iso()
+        layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+
+    @socketio.on("value:increment")
+    @with_lock
+    def on_value_increment(data):
+        data = data or {}
+        ws_id, bp_dir = _resolve(data)
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+        ref = str(data.get("ref") or "").strip()
+        if not ref:
+            emit("error", {"message": "value:increment requires ref"})
+            return
+        match = _resolve_value_slot(layout, ref, cols)
+        if not match:
+            return
+        slot = match["slot"]
+        if slot.get("resolved_value_type") != "number" or isinstance(slot.get("value"), bool):
+            emit("error", {"message": f"Value is not numeric: {ref}"})
+            return
+        try:
+            amount = float(data.get("amount", 1))
+        except (TypeError, ValueError):
+            emit("error", {"message": "amount must be numeric"})
+            return
+        current = slot.get("value")
+        if not isinstance(current, (int, float)):
+            emit("error", {"message": f"Value is not numeric: {ref}"})
+            return
+        next_value = current + amount
+        if isinstance(current, int) and float(next_value).is_integer():
+            next_value = int(next_value)
+        payload = value_mod.normalize_value_payload(next_value, slot.get("value_type", "auto"))
+        slot["value"] = payload["value"]
+        slot["value_type"] = payload["value_type"]
+        slot["resolved_value_type"] = payload["resolved_value_type"]
+        slot["updated_at"] = _now_iso()
+        layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
 
     @socketio.on("layout:update")
     @with_lock
