@@ -5,6 +5,9 @@ worker-shaped so they can live on the same sparse canvas as AI, Shell, Service,
 Marker, and Notification workers, but they are not runnable and they do not
 participate in the ticket lifecycle.
 
+Eval remains a disabled/stub worker type and has no special interaction with
+Value workers in v1.
+
 The intended mental model is "spreadsheet cells for the worker grid":
 
 ```text
@@ -84,12 +87,12 @@ shared data store in behavior.
 | `name` | string | `""` | Optional human label and value alias |
 | `value` | string/number | `""` | Raw stored value |
 | `value_type` | string | `"auto"` | `auto`, `number`, or `string` in v1 |
+| `resolved_value_type` | string | `"string"` | Current effective type: `number` or `string` |
 | `format` | object | `{ "kind": "auto" }` | Display formatting only |
 | `icon` | string | `"variable"` | UI default |
 | `color` | string | `"value"` | UI color token |
-| `row` / `col` | positive integer | grid position | Used to derive coordinate alias |
+| `row` / `col` | integer | grid position | Existing zero-based grid coordinate |
 | `updated_at` | string/null | `null` | Server timestamp for conflict/debug UI |
-| `updated_by` | string/null | `null` | Optional actor label: `ui`, `mcp`, worker name |
 
 Fields that do not apply to Value workers should be absent from newly-created
 slots. Normalization should tolerate old or pasted data containing unrelated
@@ -103,25 +106,33 @@ location. Coordinates are the only required reference path; names are optional.
 
 Coordinate rules:
 
-- Bullpen should adopt a product-wide positive-coordinate policy: worker cells
-  use positive integer coordinates only.
-- Zero and negative coordinates are prohibited for all workers and all worker
-  grid uses.
+- Value worker coordinate aliases use the same cell-address semantics as the
+  existing Go to dialog.
+- Bullpen's internal grid coordinates remain unchanged and zero-based.
+- User-facing cell addresses are spreadsheet-style and one-based.
+- `A1` maps to internal `{ col: 0, row: 0 }`.
+- `B1` maps to internal `{ col: 1, row: 0 }`.
+- `A2` maps to internal `{ col: 0, row: 1 }`.
 - Columns use spreadsheet letters: `A`, `B`, ..., `Z`, `AA`, `AB`, etc.
-- Rows are 1-based: row `1` is the first row.
-- `A1` means `{ col: 1, row: 1 }`.
 - Coordinate aliases are case-insensitive: `A27` and `a27` are equivalent.
 - Moving a Value worker changes its coordinate alias.
 - The card name, when present, is stable across moves.
 
-Architecture issue: the existing sparse-grid spec and parts of the current
-implementation use zero-based coordinates and allow negative coordinates. The
-positive-coordinate policy is broader than Value workers and should be handled
-as a separate remediation phase with its own commit before or alongside the
-Value worker implementation. That phase should update grid validation,
-viewport origin defaults, migration rules, minimap math, keyboard navigation,
-drag/drop target validation, tests, and documentation so the whole product uses
-one coordinate model.
+Implementation requirement: do not introduce a second cell-address parser or a
+Value-specific coordinate model. Extract or reuse the Go to dialog's cell-ref
+helpers (`parseCellRef`, `colLabel`, and `rowLabel`) so Go to, Value
+interpolation, MCP refs, and card display all agree.
+
+Normal Value aliases are defined only for non-negative internal coordinates.
+For v1, `parseCellRef` accepts the same shape Go to accepts today: letters plus
+a positive row number, such as `A1` or `AA122`.
+
+Negative coordinates are not a v1 concern for normal UI-created Value workers.
+The current UI clamps writable coordinates to non-negative internal coordinates.
+If import, tests, or future tooling introduce a Value worker at a negative
+coordinate, it should keep its stored coordinate but have no normal
+spreadsheet-style alias in v1; move it back into the normal grid or reference
+it by name.
 
 ---
 
@@ -208,6 +219,17 @@ referenced with plain `{ticket.title}` syntax. Use its coordinate alias instead.
 A future explicit namespace such as `{value:ticket.title}` or
 `{value.ticket.title}` is deferred.
 
+Renderer decision: v1 replaces the current Notification-only placeholder
+renderer with a shared server-side renderer. The shared renderer must support
+the existing dotted built-in placeholders and the wider Value placeholder
+syntax needed for names with spaces. Existing valid notification templates must
+render the same way after the replacement. Missing Value placeholders are
+preserved and warned; existing notification fields that intentionally use only
+built-in placeholders may keep their current empty-string behavior for missing
+built-in paths if compatibility requires it. The implementation should make
+that behavior an explicit renderer option rather than duplicating template
+logic in each worker type.
+
 ---
 
 ## Value Types
@@ -219,6 +241,14 @@ V1 supports two stored value types plus automatic inference:
 | `auto` | Infer number vs string from input, preserve enough raw text for display |
 | `number` | Store as numeric JSON value after validation |
 | `string` | Store as string exactly as entered, except for line-ending normalization |
+
+`value_type` is the declared type policy and persists until changed in the
+config modal or through an explicit typed write. When `value_type` is `auto`,
+each write stores both the raw value and the resolved current type used for
+validation, formatting, interpolation, and MCP responses. Inline edits to an
+auto value may therefore change the resolved type, but they do not change the
+declared `value_type: "auto"` policy. Operators who need a stable numeric
+counter should set `value_type: "number"`.
 
 Auto parsing rules:
 
@@ -310,6 +340,12 @@ It should hide:
 
 When the grid has focus and the current cell is empty, typing a printable
 character starts an in-cell Value worker creation editor.
+
+The shortcut only applies when focus is on an actionable empty grid cell and no
+text input, modal, menu, command palette, Go to dialog, or help overlay is
+active. Existing global shortcuts such as command palette, Go to, help, Escape,
+Delete/Backspace, Enter menu actions, Home/Fit, and arrow navigation keep their
+current precedence.
 
 Shortcut syntax:
 
@@ -485,6 +521,18 @@ Shell interpolation implementation plan:
   because it currently promises that Bullpen never interpolates command
   strings.
 
+Interpolation pipeline:
+
+- Value interpolation is single-pass for each field: the renderer scans the
+  field once and does not recursively expand placeholders that appear inside a
+  substituted Value string.
+- For Service workers, existing command-source resolution and `$NAME` /
+  `${NAME}` environment-reference interpolation run before Value interpolation.
+- Value interpolation runs last in Bullpen's server-side preparation pipeline.
+- Shells and subprocesses may still interpret the rendered text after Bullpen
+  starts the command. That is part of the raw shell interpolation caveat, not a
+  second Bullpen template pass.
+
 Do not add shell escaping in v1 unless it is designed as a separate explicit
 syntax. The first implementation should be simple and inspectable: `{A1}` and
 `{name}` become raw value text. Escaping rules such as shell-quoted,
@@ -541,10 +589,15 @@ list_values()
 - a coordinate alias, such as `A23`,
 - or a Value worker name, such as `interest rate`.
 
+MCP ref resolution uses the same precedence as templates: coordinate aliases
+win over names. If a Value worker is named `A23`, `get_value("A23")` and
+`set_value("A23", ...)` address coordinate `A23`, not the worker named `A23`.
+Use the named worker's coordinate to address it.
+
 Tool behavior:
 
-- `get_value` returns raw value, value type, formatted value, coordinate, name,
-  updated timestamp, and updated actor.
+- `get_value` returns raw value, declared value type, resolved value type,
+  formatted value, coordinate, name, and updated timestamp.
 - `set_value` validates and stores a new value.
 - `increment_value` and `decrement_value` require the current value to be
   numeric and are atomic.
@@ -555,6 +608,9 @@ Tool behavior:
 - Attempts to write non-numeric data through increment/decrement return a
   validation error and do not mutate state.
 
+Creation and deletion are not available through MCP in v1. Workers can mutate
+existing Value workers but cannot allocate or remove grid cells programmatically.
+
 Atomicity requirements:
 
 - Increment/decrement must hold the same workspace/layout lock used for worker
@@ -564,6 +620,11 @@ Atomicity requirements:
   event the UI uses.
 - If layout persistence fails, the MCP call fails and the in-memory value is
   not reported as successful.
+
+V1 treats Value workers as durable workflow configuration and light shared
+state, not as a high-frequency metrics store. Whole-layout locking and
+persistence are acceptable for this scope. If user testing produces rapid
+counter/tally workloads, revisit storage granularity and event fanout.
 
 Authorization:
 
@@ -592,7 +653,8 @@ Requirements:
 - Include Value workers in export/import and team save/load.
 - Copy/paste should copy the value and format.
 - Duplicating or copy/pasting a named Value worker should auto-suffix the name
-  the same way existing worker copy/paste does.
+  through the same server helper used by worker paste/duplicate flows. Do not
+  add a Value-specific suffix algorithm.
 - Duplicating or copy/pasting a nameless Value worker keeps it nameless.
 - Moving a Value worker changes coordinate lookup immediately.
 
@@ -608,7 +670,7 @@ Minimum event behavior:
   worker type.
 - Updating a value emits a layout update or a smaller `value:updated` event.
 - The event payload includes coordinate, name, raw value, formatted value,
-  updated timestamp, and actor.
+  and updated timestamp.
 - Simultaneous edits use Bullpen's existing worker update behavior. Value
   workers do not introduce optimistic concurrency or revision checks in v1.
 
@@ -666,32 +728,130 @@ pattern as Marker and Notification workers.
 - Treat simultaneous edits like existing worker configuration edits. Do not add
   a special concurrency model for Value workers in v1.
 
-### Issues To Resolve During Implementation
+### Proposed Resolutions
 
-- **Coordinate remediation**: positive-only worker coordinates affect the whole
-  grid and should be implemented as a separate phase/commit. Value workers
-  should not invent a private coordinate system.
-- **Renderer ownership**: decide whether the shared placeholder renderer lives
-  in a new `server/templates.py`, under worker utilities, or under a broader
-  services layer.
-- **Event granularity**: decide whether value writes emit only `layout:updated`
-  or also a smaller `value:updated` event. `layout:updated` is simpler;
-  `value:updated` may avoid noisy full-layout refreshes during frequent
-  increments.
-- **Lookup index**: v1 can scan slots for each lookup. If value counts grow,
-  maintain derived indexes by coordinate and normalized name, rebuilt whenever
-  layout changes.
-- **Shell spec conflict**: update `docs/shell-worker.md` in the implementation
-  phase because that spec currently states that Shell commands are never
-  interpolated.
-- **Copy suffix convention**: use the existing duplicate/copy naming convention
-  exactly. The Value spec should not invent a separate suffix algorithm.
+- **Cell-address semantics**: reuse the existing Go to behavior exactly. `A1`
+  is a user-facing alias for internal `{ col: 0, row: 0 }`; no coordinate
+  migration or product-wide coordinate policy change is required.
+- **Shared helper ownership**: move frontend cell-address helpers into
+  `static/gridGeometry.js`, and add matching server helpers in `server/values.py`
+  or a small adjacent module used by `server/values.py`. Keep frontend and
+  server tests on the same examples.
+- **Value service ownership**: create `server/values.py` for Value slot
+  detection, coordinate/name lookup, type parsing, formatting, mutation, and
+  MCP response shaping.
+- **Template renderer ownership**: create `server/templates.py` with explicit
+  options for missing-placeholder behavior and built-in namespace contexts. Use
+  it for Notification templates and Value interpolation.
+- **Event strategy**: start with `layout:updated` for all value changes. Add
+  `value:updated` only if UI performance or excessive layout refreshes show up
+  during testing.
+- **Lookup indexing**: scan normalized slots in v1. Do not maintain a persistent
+  index until value counts or profiling justify it.
+- **Shell/Service interpolation**: update `docs/shell-worker.md` in the same
+  implementation phase that changes behavior. The value spec alone is not
+  enough because the Shell spec currently promises no command interpolation.
+- **MCP write surface**: ship only tools that mutate existing values. Defer
+  MCP create/delete until users demonstrate a real need for agent-created
+  scratch cells.
+- **Audit trail**: keep `updated_at` in v1. Defer update actor and history.
+
+### Issues To Watch During Implementation
+
+- **Renderer compatibility**: migrating Notification templates to the shared
+  renderer must preserve current valid `{ticket.title}` / `{worker.name}` /
+  `{workspace.name}` behavior and current max-length/single-line behavior.
+- **Copy suffix convention**: route Value duplicate/paste through existing
+  worker copy helpers. If those helpers diverge today, consolidate enough to
+  avoid a third naming convention.
 - **MCP tool contract location**: value tools should be documented alongside
   existing Bullpen MCP ticket tools and should use the same auth/connect
   diagnostics.
-- **Audit trail**: v1 records `updated_at` and `updated_by`, but not a full
-  history. Decide during implementation whether run records and MCP responses
-  are enough for debugging value changes.
+- **Audit trail**: v1 records `updated_at`, but not update actor or full
+  history. Decide after user testing whether run records and MCP responses are
+  enough for debugging value changes.
+
+---
+
+## Phased Implementation Plan
+
+### Phase 1: Shared Helpers And Server Model
+
+- Add `type: "value"` to worker type registry, frontend built-in type list, and
+  worker color validation.
+- Add Value normalization defaults: `name`, `value`, `value_type`,
+  `resolved_value_type`, `format`, `icon`, `color`, and `updated_at`.
+- Ensure Value workers do not receive runnable fields such as activation,
+  disposition, queues, retries, or scheduled trigger state.
+- Extract or share cell-address helpers so Value refs and Go to agree on
+  `A1` semantics.
+- Add frontend helper tests for `A1`, `B1`, `A2`, `Z1`, `AA1`, and `AA122`.
+- Add matching server helper tests for the same examples so MCP and
+  interpolation cannot drift from Go to.
+- Add server value helpers for coordinate/name lookup, duplicate-name warnings,
+  type parsing, formatting, and slot mutation.
+- Add unit tests for normalization, lookup, type resolution, and cell-address
+  parsing/formatting.
+
+### Phase 2: Value Creation And Display UI
+
+- Add Value entries to the Add Worker library.
+- Add Value-specific config modal fields and hide runnable-worker fields.
+- Render Value cards in Small, Medium, and Large layouts with stable card
+  dimensions.
+- Add worker color UI support for the `value` color key.
+- Implement duplicate/paste behavior through existing worker copy helpers.
+- Add frontend tests for modal fields, card rendering, color support, and
+  copy/paste naming behavior.
+
+### Phase 3: Inline Editing And Spreadsheet Shortcut
+
+- Implement the in-cell creation editor on actionable empty cells.
+- Support Enter for direct create and Cmd/Ctrl+Enter for opening the prefilled
+  config modal.
+- Implement inline value editing on Value cards.
+- Preserve existing keyboard shortcut precedence and focus behavior.
+- Add validation/error states for invalid numbers and parse failures.
+- Add frontend tests for shortcut parsing, direct create, modal create,
+  inline edit save/revert, and keyboard conflicts.
+
+### Phase 4: MCP Value Tools
+
+- Add `get_value`, `set_value`, `increment_value`, `decrement_value`, and
+  `list_values`.
+- Resolve MCP refs using coordinate-before-name precedence.
+- Return duplicate-name warnings where applicable.
+- Ensure increments/decrements hold the layout mutation lock and persist
+  atomically.
+- Emit `layout:updated` after successful writes.
+- Add tests for successful writes, missing refs, duplicate names, numeric
+  validation, atomic increments, and absence of create/delete in v1.
+
+### Phase 5: Shared Renderer And Interpolation
+
+- Implement the shared server-side placeholder renderer.
+- Migrate Notification template rendering onto the shared renderer while
+  preserving existing valid template behavior.
+- Add Value interpolation for AI prompt fields, Shell fields, Service fields,
+  and Notification templates.
+- Enforce single-pass Value interpolation.
+- Run Service command/env reference interpolation before Value interpolation.
+- Add rendered command previews and run-record warnings.
+- Update `docs/shell-worker.md` to reflect the new interpolation behavior.
+- Add tests for names with spaces, duplicate names, missing values,
+  coordinate refs, built-in namespace precedence, and Shell/Service pipeline
+  ordering.
+
+### Phase 6: Ticket Routing, Polish, And Documentation
+
+- Ensure Value workers are not valid ticket drop targets.
+- Ensure disposition, pass, and random routing exclude or fail closed on Value
+  workers as specified.
+- Add accessibility labels and keyboard affordance tests.
+- Update user-facing docs for Value workers, MCP tools, interpolation caveats,
+  and Shell/Service security notes.
+- Run focused frontend and server regression tests for worker add/configure,
+  grid navigation, Go to, Shell, Service, Notification, and MCP.
 
 ---
 
@@ -708,8 +868,12 @@ Server:
 - Duplicate value names are valid and resolve by deterministic row-major first
   match with warnings.
 - Coordinate aliases resolve after create and after move.
+- Auto values persist `value_type: "auto"` and update `resolved_value_type` on
+  each write.
 - `get_value`, `set_value`, `increment_value`, `decrement_value`, and
   `list_values` use server-backed state and emit updates.
+- MCP refs resolve coordinates before names when a name looks like `A23`.
+- MCP create/delete tools are absent in v1.
 - Concurrent increment/decrement calls do not lose updates.
 - Ticket disposition to a Value worker fails closed with a clear Blocked
   reason.
@@ -739,9 +903,10 @@ Template/interpolation:
 
 Architecture:
 
-- Product-wide positive-coordinate validation rejects zero and negative worker
-  coordinates after the coordinate remediation phase.
-- Coordinate aliases use `A1` for `{ col: 1, row: 1 }`.
+- Value worker coordinate aliases reuse the existing Go to cell-address
+  mapping: `A1` maps to internal `{ col: 0, row: 0 }`.
+- Go to, MCP refs, interpolation, card labels, and tests use the same
+  cell-address helper.
 
 ---
 
@@ -807,6 +972,9 @@ Follow-up design questions:
 
 Stable worker IDs are not part of the v1 Value worker design. The mainline spec
 uses coordinates and names because those match the current worker-grid model.
+Stable IDs are an internal architecture aid, not a replacement for natural
+user-facing references. Users should still be able to refer to values by
+coordinates and duplicate natural names.
 
 A future stable ID architecture would help in several places:
 
@@ -831,6 +999,26 @@ Open questions for that future architecture:
 - Are IDs user-visible, copyable, or purely internal?
 - How are collisions repaired during import?
 - Do IDs become part of the public MCP and template syntax?
+
+### MCP Create/Delete And Update Attribution
+
+V1 MCP tools mutate existing Value workers only. Future MCP expansion may add:
+
+- `create_value(coord, value, name?, value_type?, format?)`,
+- `delete_value(ref)`,
+- a way for agents to allocate scratch values in an empty cell,
+- update actor attribution for UI edits and MCP writes,
+- optional update history per Value worker.
+
+Design issues:
+
+- Creation needs collision handling with existing occupied cells.
+- Deletion needs clear behavior when a Shell/Service/Notification template
+  still references the deleted value.
+- Agent-created cells need a naming/display convention that does not clutter
+  the human grid.
+- Update attribution should not rely on worker names alone because names are
+  optional and non-unique.
 
 ### Expressions
 
