@@ -20,6 +20,7 @@
     start: 4,
     create: 3,
     delete: 2,
+    value: 1,
     revert: 1,
     move: 0,
     toast: 0,
@@ -33,6 +34,7 @@
     taskDeleted: true,
     taskReverted: false,
     taskMoved: true,
+    valueUpdated: true,
     workerError: true,
     serverError: true,
     toast: true,
@@ -64,9 +66,19 @@
     _taskStatus: new Map(),      // taskId → last-known status
     _taskAssigned: new Map(),    // taskId → last-known assigned_to
     _layoutStates: new Map(),    // slotIndex → last-known worker state
+    _valueSnapshots: new Map(),  // slotIndex → last-known value worker data
 
     getFlags() {
       return { ...this.flags };
+    },
+
+    _valueSnapshot(slot) {
+      if (!slot || slot.type !== 'value') return null;
+      return JSON.stringify({
+        value: slot.value ?? null,
+        value_type: slot.value_type || 'auto',
+        resolved_value_type: slot.resolved_value_type || null,
+      });
     },
 
     setFlag(key, value) {
@@ -90,8 +102,15 @@
         }
       }
       const slots = Array.isArray(data?.layout?.slots) ? data.layout.slots : [];
+      this._valueSnapshots.clear();
       slots.forEach((slot, i) => {
         this._layoutStates.set(i, slot ? (slot.state || 'idle') : null);
+        const valueSnapshot = this._valueSnapshot(slot);
+        if (valueSnapshot === null) {
+          this._valueSnapshots.delete(i);
+        } else {
+          this._valueSnapshots.set(i, valueSnapshot);
+        }
       });
       // Delay briefly so trailing replay messages don't squeak through.
       setTimeout(() => { this._ready = true; }, READY_DELAY_MS);
@@ -146,6 +165,27 @@
         this._layoutStates.set(i, next);
       });
       return transitions;
+    },
+
+    /** Diff value workers in a layout update; returns slots whose stored value changed. */
+    diffValues(layout) {
+      const slots = Array.isArray(layout?.slots) ? layout.slots : [];
+      const changes = [];
+      for (const index of Array.from(this._valueSnapshots.keys())) {
+        if (index >= slots.length) this._valueSnapshots.delete(index);
+      }
+      slots.forEach((slot, i) => {
+        const next = this._valueSnapshot(slot);
+        const hadPrev = this._valueSnapshots.has(i);
+        const prev = this._valueSnapshots.get(i);
+        if (next === null) {
+          this._valueSnapshots.delete(i);
+          return;
+        }
+        this._valueSnapshots.set(i, next);
+        if (hadPrev && prev !== next) changes.push({ slot: i });
+      });
+      return changes;
     },
 
     /**
@@ -245,11 +285,15 @@
 
       socket.on('layout:updated', (layout) => {
         const transitions = this.diffLayout(layout);
+        const valueChanges = this.diffValues(layout);
         for (const t of transitions) {
           if (t.prev === 'idle' && t.next === 'working') {
             this._fire('start', `slot:${t.slot}`, 'taskStarted', () => window.ambientAudio.playStart());
             return;   // one sound per layout event
           }
+        }
+        if (valueChanges.length) {
+          this._fire('value', `slot:${valueChanges[0].slot}`, 'valueUpdated', () => window.ambientAudio.playValueUpdate());
         }
       });
 
@@ -277,6 +321,7 @@
     { key: 'taskDeleted',  label: 'Ticket deleted',  preview: 'playDespawn' },
     { key: 'taskReverted', label: 'Ticket reverted to inbox', preview: 'playRevert' },
     { key: 'taskMoved',    label: 'Ticket moved',    preview: 'playMove' },
+    { key: 'valueUpdated', label: 'Value updated',   preview: 'playValueUpdate' },
     { key: 'workerError',  label: 'Worker error',  preview: 'playError' },
     { key: 'serverError',  label: 'Server error',  preview: 'playError' },
     { key: 'toast',        label: 'Toast notification', preview: 'playToast' },

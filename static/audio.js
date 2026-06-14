@@ -249,6 +249,13 @@ class AudioEngine {
     this._tone(520, 520, 0.04, 'triangle', 0.12);
   }
 
+  /** Value worker updated: small data blip */
+  playValueUpdate() {
+    this._init();
+    this._tone(880, 1320, 0.06, 'triangle', 0.14);
+    setTimeout(() => this._tone(1760, 1760, 0.035, 'sine', 0.08), 55);
+  }
+
   /** Task reverted to inbox: descending minor third A4→F4 */
   playRevert() {
     this._init();
