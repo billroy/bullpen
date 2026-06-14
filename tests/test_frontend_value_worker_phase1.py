@@ -1,6 +1,9 @@
 """Source-level checks for initial value worker frontend wiring."""
 
+import json
 from pathlib import Path
+import shutil
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -112,13 +115,53 @@ def test_value_shortcut_editor_parses_and_creates_values():
     assert "printableValueShortcutKey(e)" in text
     assert "parseValueShortcutText(text)" in text
     assert "const colon = raw.indexOf(':');" in text
-    assert "name = raw.slice(0, colon).trim();" in text
-    assert "value = raw.slice(colon + 1).trim();" in text
     assert "this.$emit('add-worker', {" in text
     assert "type: 'value'," in text
     assert "this.commitValueShortcutEditor({ openModal: e.metaKey || e.ctrlKey });" in text
     assert "this.createWorkerAndOpenConfig({ type: 'value', fields: parsed.fields });" in text
     assert "if (e.defaultPrevented) return;" in text
+
+
+def test_value_shortcut_parser_handles_label_less_colon_values():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "BullpenTab.js"))}, 'utf8');
+const context = {{
+  console,
+  localStorage: {{ getItem: () => null, setItem: () => {{}} }},
+  WorkerCard: {{}},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  globalThis.__parsed = {{
+    labelLessNumber: BullpenTab.methods.parseValueShortcutText(':40'),
+    labelLessText: BullpenTab.methods.parseValueShortcutText(':foo'),
+    named: BullpenTab.methods.parseValueShortcutText('tax rate: 5.5'),
+    plain: BullpenTab.methods.parseValueShortcutText('foo'),
+    emptyAfterColon: BullpenTab.methods.parseValueShortcutText('name:'),
+  }};
+`, context);
+process.stdout.write(JSON.stringify(context.__parsed));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    parsed = json.loads(result.stdout)
+
+    assert parsed["labelLessNumber"]["fields"]["name"] == ""
+    assert parsed["labelLessNumber"]["fields"]["value"] == "40"
+    assert parsed["labelLessText"]["fields"]["name"] == ""
+    assert parsed["labelLessText"]["fields"]["value"] == "foo"
+    assert parsed["named"]["fields"]["name"] == "tax rate"
+    assert parsed["named"]["fields"]["value"] == "5.5"
+    assert parsed["plain"]["fields"]["name"] == ""
+    assert parsed["plain"]["fields"]["value"] == "foo"
+    assert parsed["emptyAfterColon"]["error"] == "Enter a value."
 
 
 def test_value_card_inline_edit_saves_and_reverts():

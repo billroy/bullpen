@@ -1203,7 +1203,7 @@ const BullpenTab = {
       let name = '';
       let value = raw.trim();
       const colon = raw.indexOf(':');
-      if (colon > 0) {
+      if (colon >= 0) {
         name = raw.slice(0, colon).trim();
         value = raw.slice(colon + 1).trim();
       }
