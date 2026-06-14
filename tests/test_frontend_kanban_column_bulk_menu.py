@@ -41,7 +41,11 @@ def test_app_wires_column_bulk_events_to_existing_ticket_events():
     assert "function moveColumnTasks({ fromStatus, toStatus })" in text
     assert "socket.emit('task:update', _wsData({ id: task.id, status: toStatus }))" in text
     assert "function archiveColumnTasks({ status })" in text
-    assert "socket.emit('task:archive', _wsData({ id: task.id }))" in text
+    assert "socket.emit('task:archive-column', _wsData({ status }))" in text
+    assert "archiveTask, archiveColumnTasks, archiveDone" in text
+    assert "emitSocketAction('task:archive-done', {}" in text
+    assert "socket.emit('task:archive', _wsData({ id: task.id }))" not in text
+    assert "transports: ['polling', 'websocket']" in text
 
 
 def test_column_bulk_menu_styles_exist():

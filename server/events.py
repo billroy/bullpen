@@ -459,6 +459,18 @@ def register_events(socketio, app):
             if bp_dir:
                 service_worker_mod.emit_workspace_states(bp_dir, ws_id, socketio=socketio)
 
+    def _archive_tasks_by_status(bp_dir, status, ws_id):
+        """Archive live tasks with a matching status and clean worker references."""
+        task_ids = [
+            task["id"]
+            for task in task_mod.list_tasks(bp_dir)
+            if task.get("status") == status
+        ]
+        for task_id in task_ids:
+            worker_mod.yank_from_worker(bp_dir, task_id, socketio, ws_id)
+            task_mod.archive_task(bp_dir, task_id)
+        return task_ids
+
     def _default_service_command_source(fields, workspace_path):
         explicit = str(fields.get("command_source") or "").strip()
         if explicit:
@@ -606,7 +618,19 @@ def register_events(socketio, app):
     @with_lock
     def on_task_archive_done(data):
         ws_id, bp_dir = _resolve(data)
-        archived = task_mod.archive_done_tasks(bp_dir)
+        archived = _archive_tasks_by_status(bp_dir, "done", ws_id)
+        for task_id in archived:
+            _emit("task:deleted", {"id": task_id}, ws_id)
+
+    @socketio.on("task:archive-column")
+    @with_lock
+    def on_task_archive_column(data):
+        ws_id, bp_dir = _resolve(data)
+        status = str((data or {}).get("status", "")).strip()
+        if not status or len(status) > 100:
+            emit("error", {"message": "task:archive-column requires status"})
+            return
+        archived = _archive_tasks_by_status(bp_dir, status, ws_id)
         for task_id in archived:
             _emit("task:deleted", {"id": task_id}, ws_id)
 

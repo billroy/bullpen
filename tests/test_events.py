@@ -700,6 +700,27 @@ class TestTaskEvents:
         active_path = os.path.join(app.config["bp_dir"], "tasks", f"{t2['id']}.md")
         assert os.path.exists(active_path)
 
+    def test_archive_column_archives_many_done_tasks(self, client):
+        c, app = client
+        done_tasks = []
+        for i in range(53):
+            c.emit("task:create", {"title": f"Done Task {i}", "status": "done"})
+            done_tasks.append(get_event(c, "task:created"))
+        c.emit("task:create", {"title": "Active Task", "status": "inbox"})
+        active = get_event(c, "task:created")
+
+        c.emit("task:archive-column", {"status": "done"})
+
+        archived_events = get_all_events(c, "task:deleted")
+        archived_ids = {event["id"] for event in archived_events}
+        expected_ids = {task["id"] for task in done_tasks}
+        assert archived_ids == expected_ids
+        assert active["id"] not in archived_ids
+        for task in done_tasks:
+            assert not os.path.exists(os.path.join(app.config["bp_dir"], "tasks", f"{task['id']}.md"))
+            assert os.path.exists(os.path.join(app.config["bp_dir"], "tasks", "archive", f"{task['id']}.md"))
+        assert os.path.exists(os.path.join(app.config["bp_dir"], "tasks", f"{active['id']}.md"))
+
     def test_task_list_scope_live_vs_archived(self, client):
         c, _ = client
         c.emit("task:create", {"title": "Live Task"})

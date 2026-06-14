@@ -12,6 +12,7 @@ from server.tasks import (
     delete_task,
     archive_task,
     archive_done_tasks,
+    archive_tasks_by_status,
     clear_task_output,
     list_tasks,
     generate_slug,
@@ -162,6 +163,19 @@ class TestArchive:
         remaining = list_tasks(bp_dir)
         assert len(remaining) == 1
         assert remaining[0]["id"] == t3["id"]
+
+    def test_archive_tasks_by_status(self, bp_dir):
+        done = create_task(bp_dir, "Done Task")
+        update_task(bp_dir, done["id"], {"status": "done"})
+        blocked = create_task(bp_dir, "Blocked Task")
+        update_task(bp_dir, blocked["id"], {"status": "blocked"})
+
+        archived = archive_tasks_by_status(bp_dir, "blocked")
+
+        assert archived == [blocked["id"]]
+        remaining_ids = {task["id"] for task in list_tasks(bp_dir)}
+        assert done["id"] in remaining_ids
+        assert blocked["id"] not in remaining_ids
 
     def test_list_excludes_archived(self, bp_dir):
         t1 = create_task(bp_dir, "Keep")

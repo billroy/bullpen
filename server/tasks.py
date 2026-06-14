@@ -135,10 +135,16 @@ def archive_task(bp_dir, task_id):
 
 def archive_done_tasks(bp_dir):
     """Archive all tasks with status 'done'. Returns list of archived IDs."""
+    return archive_tasks_by_status(bp_dir, "done")
+
+
+def archive_tasks_by_status(bp_dir, status):
+    """Archive all tasks with a matching status. Returns list of archived IDs."""
+    status = str(status)
     tasks = list_tasks(bp_dir)
     archived = []
     for t in tasks:
-        if t.get("status") == "done":
+        if t.get("status") == status:
             archive_task(bp_dir, t["id"])
             archived.append(t["id"])
     return archived

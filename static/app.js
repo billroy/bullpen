@@ -683,7 +683,7 @@ const app = createApp({
 
     // Socket.io
     const socket = io({
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
     });
     window._bullpenSocket = socket;
 
@@ -1136,15 +1136,15 @@ const app = createApp({
         addToast('Disconnected from Bullpen server. Tickets were not archived.', 'error');
         return false;
       }
-      for (const task of affected) {
-        socket.emit('task:archive', _wsData({ id: task.id }));
-      }
+      socket.emit('task:archive-column', _wsData({ status }));
       return true;
     }
     function archiveDone() {
       const count = state.tasks.filter(t => t.status === 'done').length;
       if (count && confirm(`Archive ${count} done task(s)?`)) {
-        return archiveColumnTasks({ status: 'done' });
+        return emitSocketAction('task:archive-done', {}, {
+          offlineMessage: 'Disconnected from Bullpen server. Done tickets were not archived.',
+        });
       }
     }
     function clearTaskOutput(id) {
@@ -1852,7 +1852,7 @@ const app = createApp({
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
-      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveDone, clearTaskOutput,
+      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
