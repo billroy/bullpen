@@ -131,6 +131,7 @@ class AntigravityAdapter(AgentAdapter):
             env[_PLUGIN_DIR_ENV] = plugin_dir
             return env, run_tmp
         except Exception:
+            self._uninstall_plugin(plugin_name)
             shutil.rmtree(run_tmp, ignore_errors=True)
             raise
 
@@ -138,13 +139,22 @@ class AntigravityAdapter(AgentAdapter):
         plugin_name = (env or {}).get(_PLUGIN_ENV)
         if not plugin_name:
             return None
+        self._uninstall_plugin(plugin_name)
+        return None
+
+    def _uninstall_plugin(self, plugin_name):
+        if not plugin_name:
+            return None
         agy_bin = _find_agy() or "agy"
-        subprocess.run(
-            [agy_bin, "plugin", "uninstall", plugin_name],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        try:
+            subprocess.run(
+                [agy_bin, "plugin", "uninstall", plugin_name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception:
+            pass
         return None
 
     def _plugin_name(self, task_id=None):

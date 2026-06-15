@@ -667,6 +667,42 @@ class TestAntigravityAdapter:
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
+    def test_prepare_env_uninstalls_after_partial_install_failure(self, tmp_workspace, monkeypatch):
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((list(argv), kwargs))
+
+            class Completed:
+                stdout = ""
+
+            completed = Completed()
+            if argv[1:3] == ["plugin", "install"]:
+                completed.returncode = 1
+                completed.stderr = "install failed after partial registration"
+            else:
+                completed.returncode = 0
+                completed.stderr = ""
+            return completed
+
+        monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        monkeypatch.setattr(antigravity_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(antigravity_mod.secrets, "token_hex", lambda _n: "deadbeef")
+        monkeypatch.setattr(antigravity_mod.os, "getpid", lambda: 12345)
+
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+        with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"server_host": "127.0.0.1", "server_port": 5050}, f)
+
+        adapter = AntigravityAdapter()
+        with pytest.raises(RuntimeError, match="Failed to install Antigravity MCP plugin"):
+            adapter.prepare_env(tmp_workspace, bp_dir=bp_dir, task_id="ticket-2")
+
+        plugin_name = "bullpen-antigravity-runtime-12345-deadbeef-ticket-2"
+        assert calls[0][0][1:3] == ["plugin", "install"]
+        assert calls[-1][0] == ["/usr/local/bin/agy", "plugin", "uninstall", plugin_name]
+
     def test_parse_output_plain_text(self):
         adapter = AntigravityAdapter()
         result = adapter.parse_output("line 1\nline 2\n", "", 0)

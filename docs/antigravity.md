@@ -298,7 +298,9 @@ The first local adapter slice is implemented.
   `list_tickets`, `list_tasks`, `list_tickets_by_title`, `create_ticket`, and
   `update_ticket`.
 - The adapter installs the plugin before invoking `agy` and uninstalls it
-  during cleanup.
+  during cleanup. If plugin installation fails, the adapter also attempts a
+  best-effort uninstall of the generated plugin name before removing temporary
+  files.
 - `antigravity` is registered as the active Google provider.
 - `gemini` is removed from active provider registration, validation, UI
   provider lists, default colors, default labels, and deploy-facing model
@@ -573,8 +575,8 @@ Manual checks on an authenticated `agy` install:
 
 1. **MCP configuration currently mutates the real Antigravity profile.** The
    local build can manage this with uniquely named temporary plugins and
-   best-effort cleanup. Production-quality support still needs a scoped
-   config/auth strategy.
+   best-effort cleanup, including cleanup after partial install failure.
+   Production-quality support still needs a scoped config/auth strategy.
 2. **Provider-specific failure handling is still thin.** `list_tickets`,
    `create_ticket`, `update_ticket`, worker execution, and live chat passed
    against the real Bullpen server. The next local hardening work is to capture
@@ -604,6 +606,7 @@ Manual checks on an authenticated `agy` install:
 - [x] Replace provider validation, colors, labels, dropdowns, and model lists.
 - [x] Update worker and live-chat stale-provider error handling.
 - [x] Add conservative Antigravity auth/model/plugin failure classification.
+- [x] Add best-effort Antigravity plugin cleanup after install failures.
 - [ ] Update runtime hardening for Antigravity trust modes.
 - [x] Update usage handling based on real `agy` output.
 - [ ] Defer Gemini deploy/install/auth replacement until Antigravity headless
