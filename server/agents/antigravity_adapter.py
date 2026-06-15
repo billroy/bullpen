@@ -28,6 +28,7 @@ else:
 
 _PLUGIN_ENV = "BULLPEN_ANTIGRAVITY_PLUGIN_NAME"
 _PLUGIN_DIR_ENV = "BULLPEN_ANTIGRAVITY_PLUGIN_DIR"
+_GEMINI_DIR_ENV = "BULLPEN_ANTIGRAVITY_GEMINI_DIR"
 
 
 def _is_executable(path):
@@ -52,6 +53,21 @@ def _find_agy():
         if _is_executable(path):
             return path
     return None
+
+
+def _configured_gemini_dir():
+    configured = os.environ.get(_GEMINI_DIR_ENV)
+    if not configured:
+        return None
+    return os.path.abspath(os.path.expanduser(configured))
+
+
+def _agy_argv():
+    argv = [_find_agy() or "agy"]
+    gemini_dir = _configured_gemini_dir()
+    if gemini_dir:
+        argv.extend(["--gemini_dir", gemini_dir])
+    return argv
 
 
 def _run_tmpdir():
@@ -90,12 +106,13 @@ class AntigravityAdapter(AgentAdapter):
         )
 
     def build_argv(self, prompt, model, workspace, bp_dir=None):
-        agy_bin = _find_agy() or "agy"
-        argv = [
-            agy_bin,
+        argv = _agy_argv()
+        argv.extend(
+            [
             "--print-timeout",
             "10m",
-        ]
+            ]
+        )
         if model:
             argv.extend(["--model", model])
         argv.extend(["--print", prompt])
@@ -111,9 +128,9 @@ class AntigravityAdapter(AgentAdapter):
         try:
             os.makedirs(plugin_dir, mode=0o700, exist_ok=True)
             self._write_plugin(plugin_dir, plugin_name, bp_dir)
-            agy_bin = _find_agy() or "agy"
+            agy_argv = _agy_argv()
             completed = subprocess.run(
-                [agy_bin, "plugin", "install", plugin_dir],
+                [*agy_argv, "plugin", "install", plugin_dir],
                 cwd=workspace or os.path.dirname(os.path.abspath(bp_dir)),
                 capture_output=True,
                 text=True,
@@ -145,10 +162,10 @@ class AntigravityAdapter(AgentAdapter):
     def _uninstall_plugin(self, plugin_name):
         if not plugin_name:
             return None
-        agy_bin = _find_agy() or "agy"
+        agy_argv = _agy_argv()
         try:
             subprocess.run(
-                [agy_bin, "plugin", "uninstall", plugin_name],
+                [*agy_argv, "plugin", "uninstall", plugin_name],
                 capture_output=True,
                 text=True,
                 timeout=30,

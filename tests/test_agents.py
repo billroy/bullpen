@@ -610,6 +610,15 @@ class TestAntigravityAdapter:
         assert "test prompt" in argv
         assert adapter.prompt_via_stdin() is False
 
+    def test_build_argv_accepts_isolated_gemini_dir(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(tmp_path / "agy-home" / ".gemini"))
+
+        argv = AntigravityAdapter().build_argv("test prompt", None, "/workspace")
+
+        assert argv[:3] == ["/usr/local/bin/agy", "--gemini_dir", str(tmp_path / "agy-home" / ".gemini")]
+        assert argv[3:5] == ["--print-timeout", "10m"]
+
     def test_mcp_config_uses_loopback_for_wildcard_host(self, tmp_workspace):
         adapter = AntigravityAdapter()
         bp_dir = os.path.join(tmp_workspace, ".bullpen")
@@ -664,6 +673,58 @@ class TestAntigravityAdapter:
 
             adapter.finalize_env(env, cleanup_path)
             assert calls[-1][0] == ["/usr/local/bin/agy", "plugin", "uninstall", plugin_name]
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
+
+    def test_prepare_env_uses_isolated_gemini_dir_for_plugin_lifecycle(
+        self, tmp_workspace, monkeypatch, tmp_path
+    ):
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((list(argv), kwargs))
+
+            class Completed:
+                returncode = 0
+                stdout = "ok"
+                stderr = ""
+
+            return Completed()
+
+        gemini_dir = tmp_path / "agy-home" / ".gemini"
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(gemini_dir))
+        monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        monkeypatch.setattr(antigravity_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(antigravity_mod.secrets, "token_hex", lambda _n: "abc123ef")
+
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+        with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"server_host": "127.0.0.1", "server_port": 5050}, f)
+
+        adapter = AntigravityAdapter()
+        env, cleanup_path = adapter.prepare_env(tmp_workspace, bp_dir=bp_dir, task_id="ticket-1")
+        try:
+            plugin_dir = env["BULLPEN_ANTIGRAVITY_PLUGIN_DIR"]
+            plugin_name = env["BULLPEN_ANTIGRAVITY_PLUGIN_NAME"]
+            assert calls[0][0] == [
+                "/usr/local/bin/agy",
+                "--gemini_dir",
+                str(gemini_dir),
+                "plugin",
+                "install",
+                plugin_dir,
+            ]
+
+            adapter.finalize_env(env, cleanup_path)
+            assert calls[-1][0] == [
+                "/usr/local/bin/agy",
+                "--gemini_dir",
+                str(gemini_dir),
+                "plugin",
+                "uninstall",
+                plugin_name,
+            ]
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
