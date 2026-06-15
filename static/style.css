@@ -3479,6 +3479,11 @@ body.worker-singleton-dragging * {
   padding: 8px 0;
 }
 
+.worker-card-empty--idle-detail {
+  padding-top: 0;
+  padding-bottom: 4px;
+}
+
 .worker-card-idle-detail {
   width: 100%;
   min-width: 0;

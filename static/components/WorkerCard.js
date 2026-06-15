@@ -167,7 +167,7 @@ const WorkerCard = {
             {{ valueDisplay || 'Empty' }}
           </button>
         </div>
-        <div v-else class="worker-card-empty">
+        <div v-else class="worker-card-empty" :class="{ 'worker-card-empty--idle-detail': idleDetail }">
           <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
             {{ statusLabel }}
           </span>
