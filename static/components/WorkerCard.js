@@ -171,7 +171,10 @@ const WorkerCard = {
           <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
             {{ statusLabel }}
           </span>
-          <div v-else-if="idleDetail" class="worker-card-idle-detail" :title="idleDetail">{{ idleDetail }}</div>
+          <div v-else-if="idleDetail"
+               class="worker-card-idle-detail worker-card-idle-detail--clickable"
+               :title="idleDetail"
+               @click.stop="openConfigFromIdleDetail">{{ idleDetail }}</div>
           <template v-else>{{ emptyLabel }}</template>
         </div>
         <div v-if="showOutputPane && (isWorking || isService) && lastOutput" class="worker-card-output">
@@ -653,6 +656,10 @@ const WorkerCard = {
       if (this.isWorking || this.isService) {
         this.$emit('open-focus', this.slotIndex);
       }
+    },
+    openConfigFromIdleDetail() {
+      if (!this.idleDetail || !this.canConfigure) return;
+      this.$emit('configure', this.slotIndex);
     },
     onBodyDblClick() {
       if (this.isValue) {

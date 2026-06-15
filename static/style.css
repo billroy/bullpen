@@ -3497,6 +3497,10 @@ body.worker-singleton-dragging * {
   overflow-wrap: anywhere;
 }
 
+.worker-card-idle-detail--clickable {
+  cursor: pointer;
+}
+
 .worker-card-empty--marker {
   text-align: left;
   padding: 8px 4px;

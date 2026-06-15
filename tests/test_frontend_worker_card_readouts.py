@@ -34,13 +34,18 @@ def test_worker_card_shows_idle_prompt_and_interpolated_shell_command():
     tab = _read("static/components/BullpenTab.js")
     style = _read("static/style.css")
 
-    assert 'v-else-if="idleDetail" class="worker-card-idle-detail"' in card
+    assert 'v-else-if="idleDetail"' in card
+    assert 'class="worker-card-idle-detail worker-card-idle-detail--clickable"' in card
+    assert '@click.stop="openConfigFromIdleDetail"' in card
+    assert "openConfigFromIdleDetail()" in card
+    assert "this.$emit('configure', this.slotIndex);" in card
     assert "idleDetail()" in card
     assert "if (this.isShell) return this.interpolateValuePlaceholders(this.worker?.command);" in card
     assert "return String(this.worker?.expertise_prompt || '').trim();" in card
     assert "findValueWorkerForRef(rawRef)" in card
     assert ":all-workers=\"layout.slots\"" in tab
     assert ".worker-card-idle-detail {" in style
+    assert ".worker-card-idle-detail--clickable {" in style
 
 
 def test_worker_card_readouts_have_styles():
