@@ -2005,16 +2005,23 @@ def test_prepare_base_validates_codex_helper_before_and_after_snapshot(sb, monke
     snapshot_command = next(entry[2] for entry in commands if entry[0] == "Validating prepared base snapshot")
     assert "bubblewrap" in install_command
     assert "opencode-ai" in agent_install_command
+    assert "@google/antigravity-cli" not in agent_install_command
+    assert "https://antigravity.google/cli/install.sh" in agent_install_command
+    assert "bash -s -- --dir /usr/local/bin" in agent_install_command
+    assert "command -v agy" in agent_install_command
+    assert "agy --version" in agent_install_command
     assert "command -v bwrap >/dev/null" in verify_command
     assert 'createRequire("/usr/local/lib/node_modules/@openai/codex/bin/codex.js")' in verify_command
     assert 'require.resolve(`${packageName}/package.json`)' in verify_command
     assert "packageJsonStat.size <= 0" in verify_command
     assert "codex --version" in verify_command
+    assert "agy --version" in verify_command
     assert "opencode --version" in verify_command
     assert "\n            sync\n" in verify_command
     assert "command -v bwrap >/dev/null" in snapshot_command
     assert 'createRequire("/usr/local/lib/node_modules/@openai/codex/bin/codex.js")' in snapshot_command
     assert "codex --version" in snapshot_command
+    assert "agy --version" in snapshot_command
     assert "opencode --version" in snapshot_command
     assert commands.index(("snapshot", "bullpen-microsandbox-local-prepare", "bullpen-microsandbox-local")) < commands.index(
         ("create-validation", "bullpen-microsandbox-local-v", "bullpen-microsandbox-local", "bullpen-microsandbox-local")

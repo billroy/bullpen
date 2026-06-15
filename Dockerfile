@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       > /etc/apt/sources.list.d/nodesource.list && \
     apt-get update && apt-get install -y --no-install-recommends nodejs && \
     npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai && \
+    curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin && \
+    command -v agy && agy --version && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

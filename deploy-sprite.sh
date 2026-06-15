@@ -108,8 +108,14 @@ ok
 
 # ── install AI agent CLIs ───────────────────────────────────────
 
-step "Installing AI agent CLIs (claude, codex, opencode)"
-CLI_OUT=$(sprite exec $S -- npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai 2>&1) || {
+step "Installing AI agent CLIs (claude, codex, antigravity, opencode)"
+CLI_OUT=$(sprite exec $S -- bash -c "
+    set -euo pipefail
+    npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai
+    curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin
+    command -v agy
+    agy --version
+" 2>&1) || {
     printf '\033[31mfailed\033[0m\n'
     echo "$CLI_OUT"
     die "CLI installation failed."
@@ -145,6 +151,8 @@ step "Configuring production environment"
 sprite exec $S -- bash -c "
     grep -q BULLPEN_PRODUCTION ~/.bashrc 2>/dev/null || \
         echo 'export BULLPEN_PRODUCTION=1' >> ~/.bashrc
+    grep -q BULLPEN_ANTIGRAVITY_GEMINI_DIR ~/.bashrc 2>/dev/null || \
+        echo 'export BULLPEN_ANTIGRAVITY_GEMINI_DIR=~/.gemini' >> ~/.bashrc
     # Disable Codex bubblewrap sandbox — Sprites are already isolated VMs
     mkdir -p ~/.config/codex
     cat > ~/.config/codex/config.yaml <<'YAML'
@@ -219,8 +227,8 @@ if [[ "$DO_CODEX" == [yY] ]]; then
     echo ""
 fi
 
-echo "Antigravity CLI setup is not automated here yet."
-echo "Install agy on the Sprite, authenticate it there, and keep Bullpen configured with:"
+echo "Antigravity CLI is installed as agy."
+echo "Authenticate it on the Sprite and keep Bullpen configured with:"
 echo "  export BULLPEN_ANTIGRAVITY_GEMINI_DIR=~/.gemini"
 
 # ── resolve URL ──────────────────────────────────────────────────────
@@ -263,4 +271,5 @@ printf '  sprite exec %s -- sprite-env services restart bullpen\n\n' "$S"
 printf 'To log in to an agent later:\n'
 printf '  claude setup-token  # then set CLAUDE_CODE_OAUTH_TOKEN on Sprite\n'
 printf '  sprite exec %s -- codex auth login --device-auth\n' "$S"
-printf '  install and authenticate agy on the Sprite, then set BULLPEN_ANTIGRAVITY_GEMINI_DIR=~/.gemini\n\n'
+printf '  sprite exec %s -- agy\n' "$S"
+printf '  set BULLPEN_ANTIGRAVITY_GEMINI_DIR=~/.gemini for Bullpen Antigravity runs\n\n'

@@ -96,6 +96,10 @@ def test_deploy_docker_uses_antigravity_config_dir_and_removes_gemini_cli():
 
     assert '@google/gemini-cli' not in dockerfile
     assert '@google/gemini-cli' not in text
+    assert '@google/antigravity-cli' not in dockerfile
+    assert 'https://antigravity.google/cli/install.sh' in dockerfile
+    assert 'bash -s -- --dir /usr/local/bin' in dockerfile
+    assert 'command -v agy && agy --version' in dockerfile
     assert 'seed_dir_if_missing "$HOME/.gemini" "$DOCKER_HOME/.gemini"' in text
     assert 'BULLPEN_ANTIGRAVITY_GEMINI_DIR=/home/bullpen/.gemini' in text
     assert '[[ -d "$DOCKER_HOME/.gemini" ]]' in text
@@ -114,6 +118,19 @@ def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():
     assert 'local gh_hosts_file="$HOME/.config/gh/hosts.yml"' in text
     assert "gh auth setup-git" in text
     assert 'credential.https://${host}.helper' in text
+
+
+def test_deploy_sprite_installs_antigravity_with_official_installer():
+    text = _read("deploy-sprite.sh")
+
+    assert "@google/gemini-cli" not in text
+    assert "@google/antigravity-cli" not in text
+    assert "https://antigravity.google/cli/install.sh" in text
+    assert "bash -s -- --dir /usr/local/bin" in text
+    assert "command -v agy" in text
+    assert "agy --version" in text
+    assert "BULLPEN_ANTIGRAVITY_GEMINI_DIR=~/.gemini" in text
+    assert "gemini auth login" not in text
 
 
 def test_docker_compose_hides_unavailable_projects_in_container():

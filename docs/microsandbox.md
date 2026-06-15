@@ -52,12 +52,18 @@ behavior for operators who want setup to be explicit.
 - GitHub CLI
 - Claude Code CLI
 - Codex CLI
+- Antigravity CLI
 - OpenCode CLI
 
-Antigravity CLI installation is not automated in the prepared base until an
-official Linux install source for `agy` is verified. Runtime config already
-sets `BULLPEN_ANTIGRAVITY_GEMINI_DIR=/home/bullpen/.gemini` and expects an
-operator-supplied `/usr/local/bin/agy` when Antigravity is used.
+Antigravity is installed with Google's official CLI installer, not npm:
+
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin
+```
+
+The installed executable is `agy`; the prepared base verifies both
+`command -v agy` and `agy --version`. Runtime config sets
+`BULLPEN_ANTIGRAVITY_GEMINI_DIR=/home/bullpen/.gemini`.
 
 The prepare phase should support users who have not cloned the Bullpen repo yet. A user should be able to run a single downloaded shell script, or an equivalent command documented in the README, and have it fetch whatever Bullpen files are needed.
 
@@ -79,6 +85,7 @@ git --version
 gh --version
 claude --version
 codex --version
+agy --version
 opencode --version
 ```
 

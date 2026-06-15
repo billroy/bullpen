@@ -291,9 +291,10 @@ Current readiness decision:
 - **Config isolation ready for local runtime.** Bullpen can pass
   `BULLPEN_ANTIGRAVITY_GEMINI_DIR=/path/to/.gemini`; the adapter then supplies
   `--gemini_dir <absolute path>` to `agy --print` and plugin install/uninstall.
-- **Keep production/deploy blocked behind container auth follow-up.** The local
-  isolated path is proven, but Docker and Microsandbox still need a credential
-  bootstrap story.
+- **Deploy installation ready; container auth smoke still pending.** Docker,
+  Sprite, and Microsandbox install `agy` with Google's official installer and
+  set the isolated `.gemini` path. Docker and Microsandbox still need a live
+  authenticated smoke using `/home/bullpen/.gemini`.
 - **Treat usage accounting as unavailable until proven otherwise.** `agy`
   help does not expose a structured output mode, and the successful tests used
   plain text.
@@ -323,15 +324,15 @@ The first local adapter slice is implemented.
 - Stale Gemini workers and stale Gemini live-chat requests fail clearly without
   spawning either `gemini` or `agy`.
 
-Do not update Docker, Microsandbox, or deploy scripts in this slice. Those
-remain blocked until Antigravity has a documented or observed non-interactive
-auth path suitable for headless environments.
+Docker, Sprite, and Microsandbox deploy paths have since been updated to remove
+Gemini install/auth, install `agy` through Google's official installer, and
+forward `BULLPEN_ANTIGRAVITY_GEMINI_DIR`. The remaining deploy verification is
+a real container auth smoke using `/home/bullpen/.gemini`.
 
 Recommended next step: capture common Antigravity failure outputs and decide
 whether to add provider-specific error classification. Use controlled local
 probes for missing binary, unauthenticated profile, invalid model, timeout, and
-plugin install/uninstall failures. Keep deploy work blocked until a headless
-auth/config isolation path is proven.
+plugin install/uninstall failures.
 
 Implemented local hardening:
 
@@ -525,20 +526,38 @@ Update usage:
 
 ### Phase 3: Deploy and Runtime Setup
 
-Status: partially implemented. Gemini install/auth has been removed from Docker,
-Sprite, and Microsandbox flows, and Docker/Microsandbox now set
-`BULLPEN_ANTIGRAVITY_GEMINI_DIR` to `/home/bullpen/.gemini`. Official Linux
-installation packaging for `agy` remains unverified, so automated container
-installation is still blocked.
+Status: implemented for Docker, Sprite, and Microsandbox base preparation.
+Gemini install/auth has been removed from those flows. They install `agy` with
+Google's official Antigravity CLI installer and set
+`BULLPEN_ANTIGRAVITY_GEMINI_DIR` to `/home/bullpen/.gemini`.
+
+Verified installer shape:
+
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin
+command -v agy
+agy --version
+```
+
+Do not install `@google/antigravity-cli`; that npm package is not the working
+official installer and does not provide the `agy` executable. The installer
+fetches Google's platform manifest, downloads the native CLI payload, verifies
+SHA-512, extracts it, and writes `agy` into the requested target directory.
+For manifest/version checks, use curl:
+
+```bash
+curl -fsSL https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_amd64.json
+```
+
+The adjacent-agent probe observed manifest version `1.0.8`.
 
 Replace install/auth flows:
 
-- [Dockerfile](../Dockerfile): stop installing `@google/gemini-cli`.
-  Implemented. Installing `agy` remains blocked until an official Linux
-  install mechanism is verified.
+- [Dockerfile](../Dockerfile): stop installing `@google/gemini-cli`; install
+  `agy` into `/usr/local/bin` with Google's official installer. Implemented.
 - [deploy-sprite.sh](../deploy-sprite.sh): remove Gemini install and
-  `gemini auth login`. Implemented. Antigravity setup is documented as manual
-  until an install/auth flow is verified for Sprites.
+  `gemini auth login`; install `agy` into `/usr/local/bin` with Google's
+  official installer. Implemented.
 - [deploy-docker.sh](../deploy-docker.sh) and
   [docker-compose.yml](../docker-compose.yml): replace Gemini config mounts/env
   forwarding with `BULLPEN_ANTIGRAVITY_GEMINI_DIR` and a verified copied or
@@ -611,10 +630,10 @@ Manual checks on an authenticated `agy` install:
 
 ## Risks
 
-1. **Container auth is still unproven.** Local config isolation is now proven
-   with `--gemini_dir`, but Docker and Microsandbox still need a credential
-   bootstrap or mount strategy that lets `agy` refresh OAuth without an
-   interactive browser.
+1. **Container auth still needs a real smoke.** Container install packaging is
+   now wired through Google's official installer and local config isolation is
+   proven with `--gemini_dir`, but Docker and Microsandbox still need a live
+   authenticated smoke using `/home/bullpen/.gemini`.
 2. **Provider-specific failure handling is still thin.** `list_tickets`,
    `create_ticket`, `update_ticket`, worker execution, and live chat passed
    against the real Bullpen server. The next local hardening work is to capture
@@ -652,8 +671,8 @@ Manual checks on an authenticated `agy` install:
 - [x] Remove Gemini deploy install/auth paths from Docker, Sprite, and
       Microsandbox.
 - [x] Wire container config isolation through `BULLPEN_ANTIGRAVITY_GEMINI_DIR`.
-- [ ] Defer automated Antigravity container installation until official Linux
-      `agy` packaging is verified.
+- [x] Install `agy` in Docker, Sprite, and Microsandbox base prep with Google's
+      official Antigravity CLI installer.
 - [x] Add tests for Antigravity paths.
 - [x] Add tests for stale Gemini graceful rejection.
 - [x] Run focused tests and full suite after final cleanup.

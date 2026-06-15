@@ -1498,7 +1498,7 @@ timeout 45s bash -lc '"$BULLPEN_ANTIGRAVITY_PATH" --gemini_dir "$BULLPEN_ANTIGRA
         output = result_output_text(result)
         raise DeployError(
             "Antigravity auth preflight failed inside Microsandbox. "
-            "Install the Antigravity CLI as /usr/local/bin/agy, run `python3 deploy-sandbox.py auth antigravity`, "
+            "Confirm /usr/local/bin/agy exists, run `python3 deploy-sandbox.py auth antigravity`, "
             "and confirm `agy --gemini_dir /home/bullpen/.gemini models` works there.\n"
             f"{output}"
         )
@@ -1629,7 +1629,7 @@ async def auth_opencode(runtime: MicrosandboxRuntime, sandbox: Any, config: Depl
 
 async def auth_antigravity(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
     print(
-        "Antigravity setup runs inside the sandbox. The Antigravity CLI must already be installed as /usr/local/bin/agy.",
+        "Antigravity setup runs inside the sandbox using agy and /home/bullpen/.gemini.",
         flush=True,
     )
     await attach_as_bullpen(
@@ -1937,7 +1937,7 @@ async def validate_prepared_base_snapshot(runtime: MicrosandboxRuntime, config: 
     try:
         await run_logged_sandbox_shell(
             sandbox,
-            "set -euo pipefail\n" + codex_cli_integrity_command() + "\nopencode --version\n",
+            "set -euo pipefail\n" + codex_cli_integrity_command() + "\nagy --version\nopencode --version\n",
             label="Validating prepared base snapshot",
         )
     finally:
@@ -1998,6 +1998,9 @@ PY
             npm install -g --no-audit --no-fund --no-progress --omit=dev @anthropic-ai/claude-code
             npm install -g --no-audit --no-fund --no-progress --omit=dev @openai/codex
             npm install -g --no-audit --no-fund --no-progress --omit=dev opencode-ai
+            curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin
+            command -v agy
+            agy --version
             """,
             label="Installing agent CLIs",
         )
@@ -2015,6 +2018,7 @@ PY
               npm --version
               claude --version
               {codex_cli_integrity_command()}
+              agy --version
               opencode --version
             }} > "$versions_file"
             cat "$versions_file"
