@@ -250,6 +250,9 @@ Observed:
   smoke. A temporary Antigravity worker completed disposable ticket
   `agy-worker-smoke-20260615-113424-16nS`, and the server-backed Bullpen ticket
   CLI listed that ticket in `done` status.
+- The user then ran the live-agent chat smoke successfully. `chat:send` with
+  provider `antigravity` returned live chat output and completed with
+  `chat:done` while using the Bullpen MCP read path.
 
 Not yet proven:
 
@@ -270,9 +273,9 @@ Important caveat:
 
 Current readiness decision:
 
-- **Proceed with a local-development adapter build.** The minimum viable
-  worker contract is proven for authenticated local `agy --print`, Bullpen MCP
-  read/write access, and the Bullpen worker lifecycle.
+- **Local runtime ready.** The minimum viable local contract is proven for
+  authenticated `agy --print`, Bullpen MCP read/write access, the Bullpen
+  worker lifecycle, and live-agent chat.
 - **Keep production/deploy blocked behind auth and isolation follow-up.** The
   working path uses the real authenticated Antigravity profile and installs a
   temporary plugin into real `~/.gemini/config/plugins`.
@@ -307,10 +310,11 @@ Do not update Docker, Microsandbox, or deploy scripts in this slice. Those
 remain blocked until Antigravity has a documented or observed non-interactive
 auth path suitable for headless environments.
 
-Recommended next step: run a live-agent chat smoke using Antigravity. The smoke
-should send `chat:send` with provider `antigravity`, call a Bullpen MCP read
-tool, receive `chat:output`, and finish with `chat:done` without leaving a
-temporary Antigravity plugin installed.
+Recommended next step: capture common Antigravity failure outputs and decide
+whether to add provider-specific error classification. Use controlled local
+probes for missing binary, unauthenticated profile, invalid model, timeout, and
+plugin install/uninstall failures. Keep deploy work blocked until a headless
+auth/config isolation path is proven.
 
 ### Phase 0: MCP Spike and Go/No-Go
 
@@ -384,11 +388,12 @@ Phase 0 must answer four questions in this order.
      permission-denied outputs for user-facing error classification.
    - Confirm whether `--sandbox` still permits the required MCP workflow.
 
-   Result: sufficient for a local adapter prototype. The known invocation shape
-   is `agy --print <prompt> --print-timeout <duration>` with a temporary
-   Antigravity plugin installed into the authenticated real profile. Remaining
-   limitations are no proven structured output, no isolated auth path, no
-   container auth path, and untested write-tool behavior.
+   Result: sufficient for local runtime use. The known invocation shape is
+   `agy --print <prompt> --print-timeout <duration>` with a temporary
+   Antigravity plugin installed into the authenticated real profile. Worker and
+   live-chat execution both passed. Remaining limitations are no proven
+   structured output, no isolated auth path, no container auth path, and limited
+   provider-specific failure samples.
 
 Phase 0 final deliverable:
 
@@ -526,7 +531,8 @@ Keep only:
 
 ### Phase 5: Verification
 
-Status: automated verification passed for the implemented local adapter slice.
+Status: automated verification and manual local runtime smokes passed for the
+implemented adapter slice.
 
 Automated checks:
 
@@ -548,6 +554,7 @@ Manual checks on an authenticated `agy` install:
   Verified by write smoke:
   `agy-mcp-write-smoke-20260615-111929-ce9e71-ZasH`.
 - Live-agent chat with Antigravity returns text and can use Bullpen MCP.
+  Verified by user-run live-chat smoke.
 - Stale Gemini worker blocks cleanly without spawning a subprocess.
 - Stale live-agent request with `provider: gemini` returns a clear error.
 - Focus view shows useful streaming or buffered output.
@@ -560,11 +567,11 @@ Manual checks on an authenticated `agy` install:
    local build can manage this with uniquely named temporary plugins and
    best-effort cleanup. Production-quality support still needs a scoped
    config/auth strategy.
-2. **The worker path is verified locally but live chat is not yet manually
-   proven.** `list_tickets`, `create_ticket`, `update_ticket`, and a full
-   disposable worker run passed against the real Bullpen server. The next risk
-   is whether the live-chat runner completes reliably around `agy` subprocess
-   execution and plugin cleanup.
+2. **Provider-specific failure handling is still thin.** `list_tickets`,
+   `create_ticket`, `update_ticket`, worker execution, and live chat passed
+   against the real Bullpen server. The next local hardening work is to capture
+   real Antigravity outputs for auth failure, invalid model, timeout, and plugin
+   failure so Bullpen can show sharper error messages.
 3. **Structured output may not exist.** Plain text is acceptable because MCP
    works; Bullpen will lose Gemini-style stream event parsing and token usage
    until Antigravity exposes a machine-readable mode.
@@ -597,4 +604,5 @@ Manual checks on an authenticated `agy` install:
 - [x] Run focused tests and full suite after final cleanup.
 - [x] Manually verify MCP read and write tools through `agy --print`.
 - [x] Manually verify worker lifecycle through an Antigravity worker smoke.
-- [ ] Manually verify live chat and common failure modes.
+- [x] Manually verify live chat through an Antigravity chat smoke.
+- [ ] Manually verify common failure modes.
