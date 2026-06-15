@@ -238,7 +238,7 @@ const BullpenTab = {
           </div>
         </div>
 
-        <div class="worker-minimap" :class="{ collapsed: minimapCollapsed }">
+        <div class="worker-minimap" :class="{ collapsed: minimapCollapsed }" @pointerdown.stop>
           <button
             class="worker-minimap-toggle"
             @click="toggleMinimap"
@@ -804,6 +804,12 @@ const BullpenTab = {
         top: ((this.viewportOrigin.row - b.rowMin) * scale.y) + 'px',
         width: Math.max(2, (this.viewportPx.width / this.columnWidth) * scale.x) + 'px',
         height: Math.max(2, (this.viewportPx.height / this.rowHeight) * scale.y) + 'px',
+      };
+    },
+    minimapVisibleCells() {
+      return {
+        cols: this.viewportPx.width / this.columnWidth,
+        rows: this.viewportPx.height / this.rowHeight,
       };
     },
   },
@@ -2743,11 +2749,12 @@ const BullpenTab = {
       const rect = e.currentTarget.getBoundingClientRect();
       const b = this.minimapBounds;
       const scale = this.minimapScale;
+      const visible = this.minimapVisibleCells;
       const col = b.colMin + (e.clientX - rect.left) / scale.x;
       const row = b.rowMin + (e.clientY - rect.top) / scale.y;
       this.setOrigin({
-        col: col - (this.viewportPx.width / this.columnWidth) / 2,
-        row: row - (this.viewportPx.height / this.rowHeight) / 2,
+        col: col - visible.cols / 2,
+        row: row - visible.rows / 2,
       });
     },
   }

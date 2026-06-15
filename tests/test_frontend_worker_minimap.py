@@ -34,3 +34,17 @@ def test_collapsed_minimap_uses_compact_aligned_control():
     assert "height: 28px;" in text
     assert ".worker-minimap.collapsed .worker-minimap-toggle" in text
     assert "position: static;" in text
+
+
+def test_minimap_clicks_do_not_start_grid_pointer_interactions():
+    text = _read("static/components/BullpenTab.js")
+    assert '<div class="worker-minimap" :class="{ collapsed: minimapCollapsed }" @pointerdown.stop>' in text
+    assert "@click=\"onMinimapClick\"" in text
+
+
+def test_minimap_click_navigation_uses_shared_visible_cell_math():
+    text = _read("static/components/BullpenTab.js")
+    assert "minimapVisibleCells()" in text
+    assert "const visible = this.minimapVisibleCells;" in text
+    assert "col: col - visible.cols / 2" in text
+    assert "row: row - visible.rows / 2" in text
