@@ -40,6 +40,8 @@ def test_worker_card_shows_idle_prompt_and_interpolated_shell_command():
     assert "openConfigFromIdleDetail()" in card
     assert "this.$emit('configure', this.slotIndex);" in card
     assert "idleDetail()" in card
+    assert "this.workerState !== 'idle' || this.isHeldQueue || this.isPaused" not in card
+    assert "this.workerState !== 'idle' || this.isHeldQueue" in card
     assert "if (this.isShell) return this.interpolateValuePlaceholders(this.worker?.command);" in card
     assert "return String(this.worker?.expertise_prompt || '').trim();" in card
     assert "findValueWorkerForRef(rawRef)" in card

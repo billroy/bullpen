@@ -465,7 +465,7 @@ const WorkerCard = {
       return 'Idle';
     },
     idleDetail() {
-      if (this.workerState !== 'idle' || this.isHeldQueue || this.isPaused) return '';
+      if (this.workerState !== 'idle' || this.isHeldQueue) return '';
       if (this.isShell) return this.interpolateValuePlaceholders(this.worker?.command);
       if (this.isService || this.isMarker || this.isNotification || this.isValue || this.isDisabledType) return '';
       return String(this.worker?.expertise_prompt || '').trim();
