@@ -2395,6 +2395,16 @@ def _resolve_worker_requested_status(bp_dir, status):
     )
 
 
+def _is_branch_disposition(disposition):
+    """Return True when a disposition routes into the worker graph."""
+    folded = str(disposition or "").strip().casefold()
+    return (
+        folded.startswith("worker:")
+        or folded.startswith("pass:")
+        or folded.startswith("random:")
+    )
+
+
 def _validate_shell_ticket_updates(updates):
     if updates is None:
         return None
@@ -3267,13 +3277,16 @@ def _on_agent_success(
             task = task_mod.read_task(bp_dir, task_id)
             worker_requested_status = (task or {}).get("worker_requested_status")
             requested_status_warning = None
-            if worker_requested_status and not disposition_override:
+            disposition = disposition_override or worker.get("disposition", "review")
+            if (
+                worker_requested_status
+                and not disposition_override
+                and not _is_branch_disposition(disposition)
+            ):
                 disposition, requested_status_warning = _resolve_worker_requested_status(
                     bp_dir,
                     worker_requested_status,
                 )
-            else:
-                disposition = disposition_override or worker.get("disposition", "review")
             handed_off = False
             if disposition.startswith("worker:"):
                 target_name = disposition[len("worker:"):].strip()
