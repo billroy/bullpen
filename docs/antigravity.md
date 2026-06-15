@@ -239,11 +239,16 @@ Observed:
   it, ran `agy --print`, and uninstalled it.
 - The user confirmed that the script worked and that `agy` printed the actual
   Bullpen inbox.
+- The user then ran a controlled write smoke against the real Bullpen MCP
+  server. `agy` created a disposable ticket through `create_ticket`, updated it
+  through `update_ticket`, and the ticket appeared in the Bullpen UI as
+  `agy-mcp-write-smoke-20260615-111929-ce9e71-ZasH`.
+- The server-backed Bullpen ticket CLI subsequently listed that ticket in
+  `done` status, confirming the write path went through the running Bullpen
+  server rather than direct task-file edits.
 
 Not yet proven:
 
-- `agy --print` can call Bullpen's real write MCP tools (`create_ticket` and
-  `update_ticket`) through the running Bullpen Flask/Socket.IO server.
 - A fully isolated temporary `HOME` can also satisfy Antigravity
   authentication; the observed auth path appears tied to the real
   profile/keyring.
@@ -263,7 +268,7 @@ Current readiness decision:
 
 - **Proceed with a local-development adapter build.** The minimum viable
   worker contract is proven for authenticated local `agy --print` plus Bullpen
-  MCP read access.
+  MCP read and write access.
 - **Keep production/deploy blocked behind auth and isolation follow-up.** The
   working path uses the real authenticated Antigravity profile and installs a
   temporary plugin into real `~/.gemini/config/plugins`.
@@ -298,12 +303,11 @@ Do not update Docker, Microsandbox, or deploy scripts in this slice. Those
 remain blocked until Antigravity has a documented or observed non-interactive
 auth path suitable for headless environments.
 
-Recommended next step: run a controlled local smoke test with a disposable
-Bullpen ticket through `agy` and the real MCP server. The smoke should verify
-`list_tickets`, `create_ticket`, and `update_ticket` through the server-backed
-MCP tools, then leave the test ticket in a harmless terminal state. This is the
-right next confidence gate before treating Antigravity as ready for normal local
-worker use.
+Recommended next step: run a real local worker smoke using the Bullpen
+Antigravity adapter. Assign a disposable ticket to an Antigravity worker, let
+the worker call Bullpen MCP as needed, and verify the task reaches a terminal
+state with useful output and without leaving a temporary Antigravity plugin
+installed.
 
 ### Phase 0: MCP Spike and Go/No-Go
 
@@ -358,11 +362,12 @@ Phase 0 must answer four questions in this order.
    - Verify browser clients receive normal task events; do not inspect success
      only by reading `.bullpen/tasks`.
 
-   Result: read path passed. The real Bullpen `list_tickets(status="inbox")`
-   path worked via user-run script. Write path still needs a controlled smoke
-   test that creates and updates a disposable ticket through MCP, verifies the
-   running Bullpen server emits normal events, and cleans up or marks the test
-   ticket done. Direct `.bullpen/tasks` writes remain forbidden.
+   Result: passed for local development. The real Bullpen
+   `list_tickets(status="inbox")` path worked via user-run script. The write
+   path also passed: the user-run smoke created and updated a disposable ticket
+   through `create_ticket` and `update_ticket`, the ticket appeared in the UI,
+   and the server-backed CLI later listed it as `done`. Direct `.bullpen/tasks`
+   writes remain forbidden.
 
 4. **Can the remaining CLI contract support Bullpen acceptably?**
 
@@ -535,7 +540,9 @@ helpers: `1172 passed, 1 skipped`.
 Manual checks on an authenticated `agy` install:
 
 - New Antigravity worker can complete a ticket.
-- Antigravity worker can create and update tickets through Bullpen MCP.
+- Antigravity can create and update tickets through Bullpen MCP.
+  Verified by write smoke:
+  `agy-mcp-write-smoke-20260615-111929-ce9e71-ZasH`.
 - Live-agent chat with Antigravity returns text and can use Bullpen MCP.
 - Stale Gemini worker blocks cleanly without spawning a subprocess.
 - Stale live-agent request with `provider: gemini` returns a clear error.
@@ -549,9 +556,10 @@ Manual checks on an authenticated `agy` install:
    local build can manage this with uniquely named temporary plugins and
    best-effort cleanup. Production-quality support still needs a scoped
    config/auth strategy.
-2. **The write-tool path is not yet verified.** `list_tickets` passed against
-   the real Bullpen MCP server, but `create_ticket` and `update_ticket` still
-   need a controlled smoke test through the running Flask/Socket.IO server.
+2. **The write-tool path is verified locally but not yet worker-integrated.**
+   `list_tickets`, `create_ticket`, and `update_ticket` passed against the real
+   Bullpen MCP server. The next risk is whether the full worker lifecycle
+   completes reliably around `agy` subprocess execution and plugin cleanup.
 3. **Structured output may not exist.** Plain text is acceptable because MCP
    works; Bullpen will lose Gemini-style stream event parsing and token usage
    until Antigravity exposes a machine-readable mode.
@@ -582,4 +590,5 @@ Manual checks on an authenticated `agy` install:
 - [x] Add tests for Antigravity paths.
 - [x] Add tests for stale Gemini graceful rejection.
 - [x] Run focused tests and full suite after final cleanup.
-- [ ] Manually verify worker, live chat, MCP, and common failure modes.
+- [x] Manually verify MCP read and write tools through `agy --print`.
+- [ ] Manually verify worker, live chat, and common failure modes.
