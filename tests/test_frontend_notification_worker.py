@@ -1,6 +1,11 @@
 """Frontend regression checks for Notification workers."""
 
+import json
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,10 +85,14 @@ def test_notification_worker_card_summarizes_enabled_modes():
     style = _read("static/style.css")
 
     assert "function notificationSummaryItems(worker)" in utils
-    assert 'items.push(`speech 1) say "${text || \'notification text\'}"`);' in utils
-    assert "items.push(`sound 2) sound effect: ${effect}`);" in utils
-    assert "items.push(`flash 3) flash ${color} ${count} ${count === 1 ? 'time' : 'times'}`);" in utils
-    assert 'items.push(`toast 4) toast "${text || \'notification text\'}"`);' in utils
+    assert 'items.push(`Say "${text || \'notification text\'}"`);' in utils
+    assert "items.push(`Play ${effect.replaceAll('_', ' ')} sound`);" in utils
+    assert "items.push(`Flash ${color} ${count} ${count === 1 ? 'time' : 'times'}`);" in utils
+    assert 'items.push(`Show toast "${text || \'notification text\'}"`);' in utils
+    assert "speech 1)" not in utils
+    assert "sound 2)" not in utils
+    assert "flash 3)" not in utils
+    assert "toast 4)" not in utils
     assert "window.notificationSummaryItems = notificationSummaryItems;" in utils
 
     assert 'v-else-if="isNotification" class="worker-card-notification"' in card
@@ -93,3 +102,39 @@ def test_notification_worker_card_summarizes_enabled_modes():
 
     assert ".worker-card-notification {" in style
     assert ".worker-card-notification-list {" in style
+
+
+def test_notification_worker_card_summary_is_human_readable():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static/utils.js"))}, 'utf8');
+const context = {{
+  window: {{ location: {{ href: 'http://127.0.0.1:5050/', hostname: '127.0.0.1' }} }},
+  URL,
+}};
+vm.createContext(context);
+vm.runInContext(source, context);
+const items = context.window.notificationSummaryItems({{
+  type: 'notification',
+  notification: {{
+    speech: {{ enabled: true, template: 'Build finished' }},
+    sound: {{ enabled: true, effect: 'double_tick' }},
+    flash: {{ enabled: true, sequence: [{{ color: '#22c55e' }}, {{ color: '#22c55e' }}] }},
+    toast: {{ enabled: true, template: 'Deploy {{ticket.title}}' }},
+  }},
+}});
+console.log(JSON.stringify(items));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [
+        'Say "Build finished"',
+        "Play double tick sound",
+        "Flash #22c55e 2 times",
+        'Show toast "Deploy {ticket.title}"',
+    ]

@@ -155,22 +155,22 @@ function notificationSummaryItems(worker) {
 
   if (speech.enabled) {
     const text = String(speech.template || '').trim();
-    items.push(`speech 1) say "${text || 'notification text'}"`);
+    items.push(`Say "${text || 'notification text'}"`);
   }
   if (sound.enabled) {
     const effect = String(sound.effect || 'done').trim() || 'done';
-    items.push(`sound 2) sound effect: ${effect}`);
+    items.push(`Play ${effect.replaceAll('_', ' ')} sound`);
   }
   if (flash.enabled) {
     const sequence = Array.isArray(flash.sequence) ? flash.sequence : [];
     const first = sequence.find(step => step && typeof step === 'object') || {};
     const color = String(first.color || '#facc15').trim() || '#facc15';
     const count = Math.max(1, sequence.length || 1);
-    items.push(`flash 3) flash ${color} ${count} ${count === 1 ? 'time' : 'times'}`);
+    items.push(`Flash ${color} ${count} ${count === 1 ? 'time' : 'times'}`);
   }
   if (toast.enabled) {
     const text = String(toast.template || '').trim();
-    items.push(`toast 4) toast "${text || 'notification text'}"`);
+    items.push(`Show toast "${text || 'notification text'}"`);
   }
   return items;
 }
