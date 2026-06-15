@@ -316,6 +316,14 @@ probes for missing binary, unauthenticated profile, invalid model, timeout, and
 plugin install/uninstall failures. Keep deploy work blocked until a headless
 auth/config isolation path is proven.
 
+Implemented local hardening:
+
+- Worker and live-chat paths now classify likely Antigravity invalid-model,
+  authentication, permission, and MCP plugin setup failures with provider-
+  specific messages.
+- Capacity/quota text is intentionally not treated as non-retryable until real
+  Antigravity quota/capacity output is captured.
+
 ### Phase 0: MCP Spike and Go/No-Go
 
 This phase is a stop-and-wait decision point. Do not implement the Antigravity
@@ -468,9 +476,9 @@ Update model aliases:
 
 Update provider errors:
 
-- Worker quota/auth/model-not-found classification should use real Antigravity
-  stderr/stdout strings captured in Phase 0. Deferred until more real failure
-  samples are captured.
+- Worker and live-chat auth/model/plugin failure classification is implemented
+  conservatively for Antigravity. Quota/capacity handling remains deferred until
+  real Antigravity stderr/stdout samples are captured.
 - `_observe_provider_failure()` should be provider-aware and must not hard-code
   "Gemini model capacity exhausted."
 - Live-agent model errors should say `Antigravity CLI did not accept model ...`.
@@ -571,7 +579,7 @@ Manual checks on an authenticated `agy` install:
    `create_ticket`, `update_ticket`, worker execution, and live chat passed
    against the real Bullpen server. The next local hardening work is to capture
    real Antigravity outputs for auth failure, invalid model, timeout, and plugin
-   failure so Bullpen can show sharper error messages.
+   failure and compare them against the conservative classifier now in place.
 3. **Structured output may not exist.** Plain text is acceptable because MCP
    works; Bullpen will lose Gemini-style stream event parsing and token usage
    until Antigravity exposes a machine-readable mode.
@@ -595,6 +603,7 @@ Manual checks on an authenticated `agy` install:
       useful.
 - [x] Replace provider validation, colors, labels, dropdowns, and model lists.
 - [x] Update worker and live-chat stale-provider error handling.
+- [x] Add conservative Antigravity auth/model/plugin failure classification.
 - [ ] Update runtime hardening for Antigravity trust modes.
 - [x] Update usage handling based on real `agy` output.
 - [ ] Defer Gemini deploy/install/auth replacement until Antigravity headless
@@ -605,4 +614,4 @@ Manual checks on an authenticated `agy` install:
 - [x] Manually verify MCP read and write tools through `agy --print`.
 - [x] Manually verify worker lifecycle through an Antigravity worker smoke.
 - [x] Manually verify live chat through an Antigravity chat smoke.
-- [ ] Manually verify common failure modes.
+- [ ] Capture and manually verify real Antigravity failure-mode outputs.

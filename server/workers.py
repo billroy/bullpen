@@ -2664,6 +2664,28 @@ def is_non_retryable_provider_error(provider, *texts):
     if not haystack:
         return False
 
+    if provider == "antigravity":
+        phrases = (
+            "requested entity was not found",
+            "modelnotfound",
+            "model_not_found",
+            "model not found",
+            "unknown model",
+            "invalid model",
+            "not authenticated",
+            "authentication",
+            "authentication failed",
+            "unauthorized",
+            "oauth",
+            "log in",
+            "login",
+            "permission_denied",
+            "permission denied",
+            "forbidden",
+            "failed to install antigravity mcp plugin",
+        )
+        return any(phrase in haystack for phrase in phrases) or ("404" in haystack and "model" in haystack)
+
     if provider == "opencode":
         phrases = (
             "no endpoints found that support tool use",
@@ -2679,6 +2701,41 @@ def is_non_retryable_provider_error(provider, *texts):
         return any(phrase in haystack for phrase in phrases)
 
     return False
+
+
+def _provider_non_retryable_message(provider, *texts):
+    provider = (provider or "").strip().lower()
+    haystack = "\n".join([t for t in texts if isinstance(t, str)]).lower()
+    if provider == "antigravity":
+        if (
+            "requested entity was not found" in haystack
+            or "modelnotfound" in haystack
+            or "model_not_found" in haystack
+            or "model not found" in haystack
+            or "unknown model" in haystack
+            or "invalid model" in haystack
+            or ("404" in haystack and "model" in haystack)
+        ):
+            return "Antigravity CLI did not accept the selected model. Choose a listed Antigravity model or an exact `agy models` name."
+        if (
+            "not authenticated" in haystack
+            or "authentication" in haystack
+            or "authentication failed" in haystack
+            or "unauthorized" in haystack
+            or "oauth" in haystack
+            or "log in" in haystack
+            or "login" in haystack
+        ):
+            return "Antigravity CLI is not authenticated. Authenticate with `agy` in a terminal and retry."
+        if (
+            "permission_denied" in haystack
+            or "permission denied" in haystack
+            or "forbidden" in haystack
+        ):
+            return "Antigravity CLI reported permission denied. Check the selected model and account access."
+        if "failed to install antigravity mcp plugin" in haystack:
+            return "Antigravity could not load the Bullpen MCP plugin. Restart Bullpen and retry."
+    return "Provider reported a non-retryable error."
 
 
 def get_output_buffer(ws_id, slot_index):
@@ -2720,7 +2777,7 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message):
         return
     if not is_non_retryable_provider_error(adapter.name, line):
         return
-    force_fail_message[0] = "Provider reported a non-retryable error."
+    force_fail_message[0] = _provider_non_retryable_message(adapter.name, line)
     if proc.poll() is None:
         try:
             _terminate_proc(proc)

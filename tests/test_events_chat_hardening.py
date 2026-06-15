@@ -80,3 +80,24 @@ def test_claude_mcp_startup_state_error_when_server_missing():
 def test_classify_chat_provider_error_has_no_removed_gemini_compatibility():
     msg = _classify_chat_provider_error("gemini", "ModelNotFoundError: Requested entity was not found.")
     assert msg is None
+
+
+def test_classify_chat_provider_error_for_antigravity_model_failure():
+    msg = _classify_chat_provider_error(
+        "antigravity",
+        "ModelNotFoundError: Requested entity was not found.",
+        model="not-a-real-model",
+    )
+    assert msg is not None
+    assert "Antigravity CLI did not accept model not-a-real-model" in msg
+    assert "agy models" in msg
+
+
+def test_classify_chat_provider_error_for_antigravity_auth_failure():
+    msg = _classify_chat_provider_error("antigravity", "OAuth login required: not authenticated.")
+    assert msg == "Antigravity CLI is not authenticated. Authenticate with `agy` in a terminal and retry."
+
+
+def test_classify_chat_provider_error_for_antigravity_mcp_plugin_failure():
+    msg = _classify_chat_provider_error("antigravity", "Failed to install Antigravity MCP plugin: invalid mcpServers")
+    assert msg == "Antigravity could not load the Bullpen MCP plugin. Restart Bullpen and retry."

@@ -37,6 +37,7 @@ from server.workers import (
     _setup_worktree,
     _stop_proc_with_timeout,
     _ticket_body_for_prompt,
+    _provider_non_retryable_message,
     is_non_retryable_provider_error,
 )
 from server.agents import get_adapter, register_adapter
@@ -759,6 +760,21 @@ class TestStartWorker:
         assert is_non_retryable_provider_error("opencode", "model not found")
         assert is_non_retryable_provider_error("opencode", "not authenticated")
         assert not is_non_retryable_provider_error("opencode", "Temporary upstream timeout")
+
+    def test_non_retryable_antigravity_provider_error_is_classified_conservatively(self):
+        assert is_non_retryable_provider_error("antigravity", "ModelNotFoundError: model not found")
+        assert is_non_retryable_provider_error("antigravity", "OAuth login required: not authenticated")
+        assert is_non_retryable_provider_error("antigravity", "Failed to install Antigravity MCP plugin")
+        assert not is_non_retryable_provider_error("antigravity", "Temporary upstream timeout")
+        assert not is_non_retryable_provider_error("antigravity", "capacity unavailable, retry later")
+
+    def test_antigravity_non_retryable_message_is_specific(self):
+        assert "selected model" in _provider_non_retryable_message("antigravity", "model not found")
+        assert "not authenticated" in _provider_non_retryable_message("antigravity", "OAuth login required")
+        assert "Bullpen MCP plugin" in _provider_non_retryable_message(
+            "antigravity",
+            "Failed to install Antigravity MCP plugin",
+        )
 
     def test_start_transitions_to_working(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Test task")

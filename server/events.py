@@ -237,6 +237,48 @@ def _classify_chat_provider_error(provider, *texts, model=None):
     if not haystack:
         return None
 
+    if provider == "antigravity":
+        if (
+            "requested entity was not found" in haystack
+            or "modelnotfound" in haystack
+            or "model_not_found" in haystack
+            or "model not found" in haystack
+            or ("404" in haystack and "model" in haystack)
+            or "invalid model" in haystack
+            or "unknown model" in haystack
+        ):
+            if model:
+                return (
+                    f"Antigravity CLI did not accept model {model}. "
+                    "Choose a listed Antigravity model or enter an exact model name from `agy models`."
+                )
+            return (
+                "Antigravity CLI did not accept the selected model. "
+                "Choose a listed Antigravity model or enter an exact model name from `agy models`."
+            )
+        if (
+            "authentication" in haystack
+            or "not authenticated" in haystack
+            or "unauthorized" in haystack
+            or "oauth" in haystack
+            or "log in" in haystack
+            or "login" in haystack
+        ):
+            return "Antigravity CLI is not authenticated. Authenticate with `agy` in a terminal and retry."
+        if (
+            "permission_denied" in haystack
+            or "permission denied" in haystack
+            or "forbidden" in haystack
+            or ("403" in haystack and "permission" in haystack)
+        ):
+            return "Antigravity CLI reported permission denied for this request. Check the selected model and account access."
+        if (
+            "failed to install antigravity mcp plugin" in haystack
+            or "plugin" in haystack and "mcp" in haystack and "failed" in haystack
+            or "mcpservers" in haystack and "error" in haystack
+        ):
+            return "Antigravity could not load the Bullpen MCP plugin. Restart Bullpen and retry."
+
     return None
 
 
