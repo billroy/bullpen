@@ -7,9 +7,9 @@ from server.persistence import write_json, atomic_write
 
 
 DEFAULT_PROVIDER_COLORS = {
+    "antigravity": "#0f8b8d",
     "claude": "#da7756",
     "codex": "#5b6fd6",
-    "gemini": "#3c7bf4",
     "opencode": "#63b3ed",
     "shell": "#64748b",
     "service": "#0f766e",

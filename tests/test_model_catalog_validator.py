@@ -98,25 +98,23 @@ def test_validate_model_catalog_classifies_not_found(tmp_workspace):
     assert row["error_class"] == "not_found"
 
 
-def test_fetch_provider_api_catalog_skips_without_key(monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-
-    result = fetch_provider_api_catalog("gemini")
+def test_fetch_provider_api_catalog_reports_unsupported_for_antigravity():
+    result = fetch_provider_api_catalog("antigravity")
 
     assert result == {
-        "status": "skipped",
-        "reason": "GEMINI_API_KEY is not set",
+        "status": "unsupported",
+        "reason": "No API catalog fetcher for antigravity",
         "models": [],
     }
 
 
 def test_classify_model_error_common_cases():
-    assert classify_model_error("gemini", "[API Error: Requested entity was not found.]") == "not_found"
+    assert classify_model_error("antigravity", "[API Error: Requested entity was not found.]") == "not_found"
     assert classify_model_error("claude", "rate_limit_error: too many requests") == "quota"
     assert classify_model_error("codex", "Unauthorized: API key missing") == "auth"
     assert (
         classify_model_error(
-            "gemini",
+            "antigravity",
             '{"code":403,"message":"Your project has been denied access. Please contact support.","status":"PERMISSION_DENIED"}',
         )
         == "permission_denied"
@@ -157,7 +155,7 @@ def test_model_catalog_cli_rejects_missing_workspace(tmp_path, capsys):
         missing_workspace,
         "validate",
         "--provider",
-        "gemini",
+        "antigravity",
     ])
 
     assert bullpen.run_model_catalog_cli(args) == 1

@@ -23,15 +23,15 @@ def test_claude_model_options_do_not_include_removed_haiku_slug():
     assert "'claude-haiku-4-5-20251001'" in text
 
 
-def test_gemini_model_options_present():
+def test_antigravity_model_options_present_and_gemini_provider_absent():
     text = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
-    assert "gemini:" in text
-    assert "'flash'" in text
-    assert "'flash-lite'" in text
-    assert "'gemini-3-flash-preview'" in text
+    assert "antigravity:" in text
+    assert "'Gemini 3.5 Flash (Medium)'" in text
+    assert "'Claude Sonnet 4.6 (Thinking)'" in text
+    assert "'GPT-OSS 120B (Medium)'" in text
+    assert "gemini:" not in text
     assert "'gemini-2.5-flash'" not in text
     assert "'gemini-2.5-flash-lite'" not in text
-    assert "'gemini-3.5-flash'" not in text
     assert "'gemini-2.5-pro'" not in text
     assert "'gemini-3-pro-preview'" not in text
     assert "'pro'" not in text

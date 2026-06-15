@@ -17,6 +17,16 @@ DEFAULT_PROBE_PROMPT = "Reply with exactly: OK"
 OUTPUT_PREVIEW_CHARS = 2000
 
 PROVIDER_MODEL_CANDIDATES = {
+    "antigravity": [
+        "Gemini 3.5 Flash (Medium)",
+        "Gemini 3.5 Flash (High)",
+        "Gemini 3.5 Flash (Low)",
+        "Gemini 3.1 Pro (Low)",
+        "Gemini 3.1 Pro (High)",
+        "Claude Sonnet 4.6 (Thinking)",
+        "Claude Opus 4.6 (Thinking)",
+        "GPT-OSS 120B (Medium)",
+    ],
     "claude": [
         "claude-opus-4-7",
         "claude-opus-4-6",
@@ -31,11 +41,6 @@ PROVIDER_MODEL_CANDIDATES = {
         "gpt-5.4-mini",
         "gpt-5.3-codex",
         "gpt-5.2",
-    ],
-    "gemini": [
-        "flash",
-        "flash-lite",
-        "gemini-3-flash-preview",
     ],
 }
 
@@ -105,8 +110,6 @@ def classify_model_error(provider, text):
         return "quota"
     if "no such file" in haystack or "not found" in haystack:
         return "unavailable"
-    if provider == "gemini" and "api error" in haystack:
-        return "provider_error"
     return "unknown"
 
 
@@ -118,14 +121,7 @@ def fetch_provider_api_catalog(provider, timeout_seconds=10):
     auth and model routing.
     """
     provider = (provider or "").lower()
-    if provider == "gemini":
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            return {"status": "skipped", "reason": "GEMINI_API_KEY is not set", "models": []}
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-        req = urllib.request.Request(url)
-        parser = _parse_gemini_models
-    elif provider == "codex":
+    if provider == "codex":
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             return {"status": "skipped", "reason": "OPENAI_API_KEY is not set", "models": []}
@@ -153,18 +149,6 @@ def fetch_provider_api_catalog(provider, timeout_seconds=10):
         return {"status": "ok", "reason": None, "models": models}
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as e:
         return {"status": "error", "reason": _safe_error_message(e), "models": []}
-
-
-def _parse_gemini_models(data):
-    models = set()
-    for model in data.get("models", []):
-        name = model.get("name")
-        if isinstance(name, str) and name.startswith("models/"):
-            models.add(name.split("/", 1)[1])
-        base = model.get("baseModelId")
-        if isinstance(base, str) and base:
-            models.add(base)
-    return models
 
 
 def _parse_openai_models(data):

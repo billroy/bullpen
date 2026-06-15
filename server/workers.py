@@ -879,6 +879,16 @@ def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
     # clean setup error instead of a raw FileNotFoundError and does not leave
     # the task stuck in `in_progress`.
     agent_name = worker.get("agent", "claude")
+    if str(agent_name).strip().lower() == "gemini":
+        _block_agent_start_failure(
+            bp_dir,
+            slot_index,
+            task_id,
+            "Gemini CLI support has been removed. Reconfigure this worker to Antigravity or another supported provider.",
+            socketio,
+            ws_id,
+        )
+        return
     adapter = get_adapter(agent_name)
     if not adapter:
         _block_agent_start_failure(
@@ -2654,18 +2664,6 @@ def is_non_retryable_provider_error(provider, *texts):
     if not haystack:
         return False
 
-    if provider == "gemini":
-        phrases = (
-            "you have exhausted your capacity on this model",
-            "exhausted your capacity",
-            "resource has been exhausted",
-            "quota exceeded",
-            "exceeded your current quota",
-            "retrying with exponential backoff",
-            "exponential backoff",
-        )
-        return any(phrase in haystack for phrase in phrases)
-
     if provider == "opencode":
         phrases = (
             "no endpoints found that support tool use",
@@ -2722,10 +2720,7 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message):
         return
     if not is_non_retryable_provider_error(adapter.name, line):
         return
-    force_fail_message[0] = (
-        "Gemini model capacity exhausted. "
-        "Try flash or wait and retry later."
-    )
+    force_fail_message[0] = "Provider reported a non-retryable error."
     if proc.poll() is None:
         try:
             _terminate_proc(proc)

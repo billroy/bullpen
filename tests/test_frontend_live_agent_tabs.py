@@ -37,9 +37,12 @@ def test_live_agent_component_uses_injected_session_id():
     assert "sessionId: this.activeSessionId" in text
 
 
-def test_live_agent_provider_options_include_gemini():
+def test_live_agent_provider_options_include_antigravity_and_exclude_gemini():
     text = _read("static/components/LiveAgentChatTab.js")
-    assert "['claude', 'codex', 'gemini', 'opencode']" in text
+    utils = _read("static/utils.js")
+    assert "AI_PROVIDER_OPTIONS" in text
+    assert "['antigravity', 'claude', 'codex', 'opencode']" in utils
+    assert "['claude', 'codex', 'gemini', 'opencode']" not in utils
 
 
 def test_live_agent_component_syncs_user_messages_between_windows():

@@ -1797,6 +1797,21 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 13, "outpu
         assert "Requested entity was not found" in error["message"]
         assert done is False
 
+    def test_chat_rejects_stale_gemini_provider(self, client):
+        c, _ = client
+
+        c.emit("chat:send", {
+            "sessionId": "session-stale-gemini",
+            "provider": "gemini",
+            "model": "gemini-2.5-pro",
+            "message": "hello",
+        })
+
+        error = _wait_for_event(c, "chat:error")
+        assert error is not None, "chat:error not received"
+        assert "Gemini CLI support has been removed" in error["message"]
+        assert "Antigravity" in error["message"]
+
     def test_chat_times_out_silent_provider_process(self, client, tmp_path):
         c, app = client
         pid_file = tmp_path / "chat-hanging.pid"

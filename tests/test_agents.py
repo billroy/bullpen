@@ -11,11 +11,11 @@ import pytest
 from server.agents import get_adapter, register_adapter, list_adapters
 from server.agents.claude_adapter import ClaudeAdapter
 from server.agents.codex_adapter import CodexAdapter
-from server.agents.gemini_adapter import GeminiAdapter
+from server.agents.antigravity_adapter import AntigravityAdapter
 from server.agents.opencode_adapter import OpenCodeAdapter
+import server.agents.antigravity_adapter as antigravity_mod
 import server.agents.claude_adapter as claude_mod
 import server.agents.codex_adapter as codex_mod
-import server.agents.gemini_adapter as gemini_mod
 import server.agents.opencode_adapter as opencode_mod
 from tests.conftest import MockAdapter
 
@@ -579,301 +579,106 @@ class TestCodexAdapter:
         assert result["usage"]["total_tokens"] == 205
 
 
-class TestGeminiAdapter:
+class TestAntigravityAdapter:
     def test_name(self):
-        adapter = GeminiAdapter()
-        assert adapter.name == "gemini"
+        adapter = AntigravityAdapter()
+        assert adapter.name == "antigravity"
 
-    def test_build_argv(self):
-        adapter = GeminiAdapter()
-        argv = adapter.build_argv("test prompt", "gemini-2.5-pro", "/workspace")
-        assert any("gemini" in arg for arg in argv)
-        assert "--model" in argv
-        assert "gemini-2.5-pro" in argv
-        assert "--output-format" in argv
-        assert "stream-json" in argv
-        assert "--allowed-mcp-server-names" in argv
-        assert "bullpen" in argv
-        assert "--approval-mode" in argv
-        assert "yolo" in argv
-        assert "--prompt" in argv
-        assert "test prompt" in argv
-        assert "" not in argv
+    def test_find_agy_honors_configured_path(self, monkeypatch):
+        configured = "/opt/bullpen/bin/agy"
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_PATH", configured)
+        monkeypatch.setattr(antigravity_mod, "_is_executable", lambda path: path == configured)
 
-    def test_gemini_prompt_is_not_written_to_stdin(self):
-        adapter = GeminiAdapter()
-        assert adapter.prompt_via_stdin() is False
-
-    def test_prepare_env_injects_bullpen_mcp_settings(self, tmp_path):
-        workspace = tmp_path / "project"
-        bp_dir = workspace / ".bullpen"
-        bp_dir.mkdir(parents=True)
-        (bp_dir / "config.json").write_text(
-            json.dumps({"server_host": "0.0.0.0", "server_port": 5050}),
-            encoding="utf-8",
-        )
-
-        adapter = GeminiAdapter()
-        env, run_tmp = adapter.prepare_env(os.fspath(workspace), bp_dir=os.fspath(bp_dir))
-        try:
-            settings_path = env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"]
-            settings = json.loads(Path(settings_path).read_text(encoding="utf-8"))
-            server = settings["mcpServers"]["bullpen"]
-            assert settings["security"]["folderTrust"]["enabled"] is False
-            assert settings["mcp"]["allowed"] == ["bullpen"]
-            assert server["command"] == sys.executable
-            assert server["args"][:3] == [
-                os.path.abspath(os.path.join("server", "mcp_tools.py")),
-                "--bp-dir",
-                os.fspath(bp_dir),
-            ]
-            assert "--host" in server["args"]
-            assert "127.0.0.1" in server["args"]
-            assert "--port" in server["args"]
-            assert "5050" in server["args"]
-            assert server["trust"] is True
-            assert "update_ticket" in server["includeTools"]
-            assert server["env"]["PYTHONPATH"] == os.getcwd()
-        finally:
-            shutil.rmtree(run_tmp, ignore_errors=True)
-
-    def test_prepare_env_loads_sandbox_gemini_env_file(self, tmp_path, monkeypatch):
-        workspace = tmp_path / "project"
-        bp_dir = workspace / ".bullpen"
-        bp_dir.mkdir(parents=True)
-        (bp_dir / "config.json").write_text("{}", encoding="utf-8")
-        gemini_dir = tmp_path / ".gemini"
-        gemini_dir.mkdir()
-        (gemini_dir / ".env").write_text(
-            'GEMINI_API_KEY="secret-key"\nIGNORED=value\nGOOGLE_GENAI_USE_VERTEXAI=true\n',
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("HOME", os.fspath(tmp_path))
-
-        adapter = GeminiAdapter()
-        env, run_tmp = adapter.prepare_env(os.fspath(workspace), bp_dir=os.fspath(bp_dir))
-        try:
-            assert env["GEMINI_API_KEY"] == "secret-key"
-            assert env["GOOGLE_GENAI_USE_VERTEXAI"] == "true"
-            assert "IGNORED" not in env
-        finally:
-            shutil.rmtree(run_tmp, ignore_errors=True)
-
-    def test_find_gemini_honors_configured_path(self, monkeypatch):
-        configured = "/opt/bullpen/bin/gemini"
-        monkeypatch.setenv("BULLPEN_GEMINI_PATH", configured)
-        monkeypatch.setattr(gemini_mod, "_is_executable", lambda path: path == configured)
-
-        assert gemini_mod._find_gemini() == configured
+        assert antigravity_mod._find_agy() == configured
 
     def test_unavailable_message_mentions_configured_bad_path(self, monkeypatch):
-        monkeypatch.setenv("BULLPEN_GEMINI_PATH", "/missing/gemini")
-        msg = GeminiAdapter().unavailable_message()
-        assert "BULLPEN_GEMINI_PATH" in msg
-        assert "/missing/gemini" in msg
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_PATH", "/missing/agy")
+        msg = AntigravityAdapter().unavailable_message()
+        assert "BULLPEN_ANTIGRAVITY_PATH" in msg
+        assert "/missing/agy" in msg
 
-    def test_format_stream_line_text_json(self):
-        adapter = GeminiAdapter()
-        line = json.dumps({"type": "message", "text": "hello from gemini"})
-        assert adapter.format_stream_line(line) == "hello from gemini"
+    def test_build_argv_uses_print_mode_and_prompt_flag(self, monkeypatch):
+        monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
 
-    def test_format_stream_line_response_stats_json(self):
-        adapter = GeminiAdapter()
-        line = json.dumps({
-            "session_id": "6746315d-4574-495a-a0ea-229bb8c43d09",
-            "response": "Aloha. How can I help you today?",
-            "stats": {
-                "models": {
-                    "gemini-2.5-flash": {
-                        "tokens": {
-                            "input": 9058,
-                            "prompt": 9058,
-                            "candidates": 10,
-                            "total": 9111,
-                            "cached": 0,
-                            "thoughts": 43,
-                            "tool": 0,
-                        }
-                    }
-                }
-            },
-            "tools": {"totalCalls": 0},
-            "files": {"totalLinesAdded": 0, "totalLinesRemoved": 0},
-        })
-        assert adapter.format_stream_line(line) == "Aloha. How can I help you today?"
+        adapter = AntigravityAdapter()
+        argv = adapter.build_argv("test prompt", "Gemini 3.5 Flash (Medium)", "/workspace")
 
-    def test_format_stream_line_skips_echoed_user_message(self):
-        adapter = GeminiAdapter()
-        line = json.dumps({
-            "type": "message",
-            "role": "user",
-            "content": "Human: Aloha",
-        })
-        assert adapter.format_stream_line(line) is None
+        assert argv[:3] == ["/usr/local/bin/agy", "--print-timeout", "10m"]
+        assert "--model" in argv
+        assert "Gemini 3.5 Flash (Medium)" in argv
+        assert "--print" in argv
+        assert "test prompt" in argv
+        assert adapter.prompt_via_stdin() is False
 
-    def test_format_stream_line_assistant_stream_content(self):
-        adapter = GeminiAdapter()
-        line = json.dumps({
-            "type": "message",
-            "role": "assistant",
-            "content": "Aloha",
-            "delta": True,
-        })
-        assert adapter.format_stream_line(line) == "Aloha"
+    def test_mcp_config_uses_loopback_for_wildcard_host(self, tmp_workspace):
+        adapter = AntigravityAdapter()
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+        with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"server_host": "0.0.0.0", "server_port": 5050}, f)
 
-    def test_format_stream_line_skips_tool_events(self):
-        adapter = GeminiAdapter()
-        tool_use = json.dumps({
-            "type": "tool_use",
-            "tool_name": "google_web_search",
-            "parameters": {"query": "UTC offset of Perth, AU"},
-        })
-        tool_result = json.dumps({
-            "type": "tool_result",
-            "status": "success",
-            "output": "Search results returned.",
-        })
-        assert adapter.format_stream_line(tool_use) is None
-        assert adapter.format_stream_line(tool_result) is None
+        cfg = adapter._mcp_config(bp_dir)
+        server = cfg["mcpServers"]["bullpen"]
+        assert server["command"] == sys.executable
+        assert server["args"][0].endswith(os.path.join("server", "mcp_tools.py"))
+        assert "--bp-dir" in server["args"]
+        assert os.path.abspath(bp_dir) in server["args"]
+        assert "--host" in server["args"]
+        assert "127.0.0.1" in server["args"]
+        assert "--port" in server["args"]
+        assert "5050" in server["args"]
+        assert "update_ticket" in server["enabledTools"]
+        assert server["env"]["PYTHONPATH"] == os.getcwd()
 
-    def test_parse_output_json_result_with_usage(self):
-        adapter = GeminiAdapter()
-        stdout = "\n".join([
-            json.dumps({"type": "message", "text": "partial"}),
-            json.dumps({
-                "type": "result",
-                "is_error": False,
-                "result": "done",
-                "usage": {"prompt_tokens": 10, "completion_tokens": 4},
-            }),
-        ])
-        result = adapter.parse_output(stdout, "", 0)
-        assert result["success"] is True
-        assert result["output"] == "done"
-        assert result["usage"]["input_tokens"] == 10
-        assert result["usage"]["output_tokens"] == 4
+    def test_prepare_env_installs_unique_plugin_and_finalize_uninstalls(self, tmp_workspace, monkeypatch):
+        calls = []
 
-    def test_parse_output_plain_text_fallback(self):
-        adapter = GeminiAdapter()
+        def fake_run(argv, **kwargs):
+            calls.append((list(argv), kwargs))
+            class Completed:
+                returncode = 0
+                stdout = "ok"
+                stderr = ""
+            return Completed()
+
+        monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        monkeypatch.setattr(antigravity_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(antigravity_mod.secrets, "token_hex", lambda _n: "abc123ef")
+
+        bp_dir = os.path.join(tmp_workspace, ".bullpen")
+        os.makedirs(bp_dir, exist_ok=True)
+        with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"server_host": "127.0.0.1", "server_port": 5050}, f)
+
+        adapter = AntigravityAdapter()
+        env, cleanup_path = adapter.prepare_env(tmp_workspace, bp_dir=bp_dir, task_id="ticket-1")
+        try:
+            plugin_name = env["BULLPEN_ANTIGRAVITY_PLUGIN_NAME"]
+            assert plugin_name.startswith("bullpen-antigravity-runtime-")
+            plugin_dir = env["BULLPEN_ANTIGRAVITY_PLUGIN_DIR"]
+            plugin_json = json.loads(Path(plugin_dir, "plugin.json").read_text(encoding="utf-8"))
+            mcp_json = json.loads(Path(plugin_dir, "mcp_config.json").read_text(encoding="utf-8"))
+            assert plugin_json["name"] == plugin_name
+            assert "bullpen" in mcp_json["mcpServers"]
+            assert calls[0][0] == ["/usr/local/bin/agy", "plugin", "install", plugin_dir]
+
+            adapter.finalize_env(env, cleanup_path)
+            assert calls[-1][0] == ["/usr/local/bin/agy", "plugin", "uninstall", plugin_name]
+        finally:
+            shutil.rmtree(cleanup_path, ignore_errors=True)
+
+    def test_parse_output_plain_text(self):
+        adapter = AntigravityAdapter()
         result = adapter.parse_output("line 1\nline 2\n", "", 0)
-        assert result["success"] is True
-        assert result["output"] == "line 1\nline 2"
+        assert result == {"success": True, "output": "line 1\nline 2", "error": None, "usage": {}}
 
-    def test_parse_output_tool_only_json_does_not_echo_raw_stream(self):
-        adapter = GeminiAdapter()
-        stdout = "\n".join([
-            json.dumps({"type": "init", "model": "gemini-2.5-flash"}),
-            json.dumps({"type": "message", "role": "user", "content": "prompt"}),
-            json.dumps({"type": "tool_use", "tool_name": "mcp_bullpen_update_ticket"}),
-            json.dumps({"type": "tool_result", "status": "success", "output": "{}"}),
-        ])
-
-        result = adapter.parse_output(stdout, "", 0)
-
-        assert result["success"] is True
-        assert result["output"] == ""
-
-    def test_parse_output_response_stats_json(self):
-        adapter = GeminiAdapter()
-        stdout = json.dumps({
-            "session_id": "6746315d-4574-495a-a0ea-229bb8c43d09",
-            "response": "Aloha. How can I help you today?",
-            "stats": {
-                "models": {
-                    "gemini-2.5-flash": {
-                        "tokens": {
-                            "input": 9058,
-                            "prompt": 9058,
-                            "candidates": 10,
-                            "total": 9111,
-                            "cached": 0,
-                            "thoughts": 43,
-                            "tool": 0,
-                        }
-                    }
-                }
-            },
-            "tools": {"totalCalls": 0},
-            "files": {"totalLinesAdded": 0, "totalLinesRemoved": 0},
-        })
-        result = adapter.parse_output(stdout, "", 0)
-        assert result["success"] is True
-        assert result["output"] == "Aloha. How can I help you today?"
-        assert result["usage"]["input_tokens"] == 9058
-        assert result["usage"]["output_tokens"] == 53
-        assert result["usage"]["reasoning_output_tokens"] == 43
-        assert result["usage"]["total_tokens"] == 9111
-
-    def test_parse_output_stream_json_skips_user_echo_and_keeps_usage(self):
-        adapter = GeminiAdapter()
-        stdout = "\n".join([
-            json.dumps({
-                "type": "init",
-                "session_id": "s1",
-                "model": "gemini-2.5-flash",
-            }),
-            json.dumps({
-                "type": "message",
-                "role": "user",
-                "content": "Human: Aloha",
-            }),
-            json.dumps({
-                "type": "message",
-                "role": "assistant",
-                "content": "Aloha",
-                "delta": True,
-            }),
-            json.dumps({
-                "type": "result",
-                "status": "success",
-                "stats": {
-                    "total_tokens": 6812,
-                    "input_tokens": 6791,
-                    "output_tokens": 2,
-                    "cached": 0,
-                    "models": {
-                        "gemini-2.5-flash": {
-                            "total_tokens": 6812,
-                            "input_tokens": 6791,
-                            "output_tokens": 2,
-                            "cached": 0,
-                        }
-                    },
-                },
-            }),
-        ])
-        result = adapter.parse_output(stdout, "", 0)
-        assert result["success"] is True
-        assert result["output"] == "Aloha"
-        assert "Human: Aloha" not in result["output"]
-        assert result["usage"]["input_tokens"] == 6791
-        assert result["usage"]["output_tokens"] == 2
-        assert result["usage"]["total_tokens"] == 6812
-
-    def test_parse_output_stream_json_skips_tool_events(self):
-        adapter = GeminiAdapter()
-        stdout = "\n".join([
-            json.dumps({
-                "type": "tool_use",
-                "tool_name": "google_web_search",
-                "parameters": {"query": "UTC offset of Perth, AU"},
-            }),
-            json.dumps({
-                "type": "tool_result",
-                "status": "success",
-                "output": "Search results returned.",
-            }),
-            json.dumps({
-                "type": "message",
-                "role": "assistant",
-                "content": "The UTC offset of Perth is +8 hours.",
-            }),
-        ])
-        result = adapter.parse_output(stdout, "", 0)
-        assert result["success"] is True
-        assert result["output"] == "The UTC offset of Perth is +8 hours."
-        assert "tool_use" not in result["output"]
-        assert "tool_result" not in result["output"]
+    def test_parse_output_failure_uses_stderr(self):
+        adapter = AntigravityAdapter()
+        result = adapter.parse_output("partial", "auth failed", 1)
+        assert result["success"] is False
+        assert result["output"] == "partial"
+        assert result["error"] == "auth failed"
+        assert result["usage"] == {}
 
 
 class TestMockAdapter:
@@ -998,10 +803,13 @@ class TestRegistry:
         assert adapter is not None
         assert adapter.name == "codex"
 
-    def test_get_gemini(self):
-        adapter = get_adapter("gemini")
+    def test_get_antigravity(self):
+        adapter = get_adapter("antigravity")
         assert adapter is not None
-        assert adapter.name == "gemini"
+        assert adapter.name == "antigravity"
+
+    def test_gemini_is_not_registered(self):
+        assert get_adapter("gemini") is None
 
     def test_get_opencode(self):
         adapter = get_adapter("opencode")

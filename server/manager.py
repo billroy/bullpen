@@ -42,9 +42,9 @@ DEFAULT_MICROSANDBOX_BASE = "bullpen-microsandbox-local"
 LOCALHOST = "127.0.0.1"
 PROFILE_ID_RE = re.compile(r"[^a-z0-9-]+")
 AI_PROVIDER_LABELS = {
+    "antigravity": "Antigravity",
     "claude": "Claude",
     "codex": "Codex",
-    "gemini": "Gemini",
     "opencode": "OpenCode",
 }
 

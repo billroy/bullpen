@@ -1164,7 +1164,7 @@ const WorkerConfigModal = {
       this.onSave();
     },
     agentLabel(agent) {
-      return { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', opencode: 'OpenCode' }[agent] || agent;
+      return { antigravity: 'Antigravity', claude: 'Claude', codex: 'Codex', opencode: 'OpenCode' }[agent] || agent;
     },
     preferredDefaultModel(agent) {
       const preferred = this.preferredAiSelection;

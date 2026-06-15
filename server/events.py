@@ -237,37 +237,6 @@ def _classify_chat_provider_error(provider, *texts, model=None):
     if not haystack:
         return None
 
-    if provider == "gemini":
-        if "requested entity was not found" in haystack or "modelnotfounderror" in haystack:
-            if model:
-                return (
-                    f"Gemini CLI did not accept model {model}. "
-                    "Try flash."
-                )
-            return (
-                "Gemini CLI did not accept the selected model. "
-                "Try flash."
-            )
-        if worker_mod.is_non_retryable_provider_error(provider, haystack):
-            if model == "gemini-2.5-flash":
-                return (
-                    "Gemini says capacity or quota is exhausted for gemini-2.5-flash. "
-                    "Try gemini-2.5-flash-lite or wait and retry later."
-                )
-            if model == "gemini-2.5-flash-lite":
-                return (
-                    "Gemini says capacity or quota is exhausted for gemini-2.5-flash-lite. "
-                    "Wait and retry later, or check your Gemini CLI quota/account status."
-                )
-            if model:
-                return (
-                    f"Gemini says capacity or quota is exhausted for {model}. "
-                    "Try flash or wait and retry later."
-                )
-            return (
-                "Gemini model capacity exhausted. "
-                "Try flash or wait and retry later."
-            )
     return None
 
 
@@ -2473,6 +2442,17 @@ def register_events(socketio, app):
             return
         if len(message) > 100_000:
             emit("chat:error", {"sessionId": session_id, "workspaceId": ws_id, "message": "Message too long"})
+            return
+
+        if str(provider or "").strip().lower() == "gemini":
+            emit(
+                "chat:error",
+                {
+                    "sessionId": session_id,
+                    "workspaceId": ws_id,
+                    "message": "Gemini CLI support has been removed. Choose Antigravity or another supported provider.",
+                },
+            )
             return
 
         adapter = _get_adapter(provider)

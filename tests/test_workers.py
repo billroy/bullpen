@@ -101,19 +101,6 @@ class ModelExpectingAdapter(MockAdapter):
         return super().build_argv(prompt, model, workspace, bp_dir=bp_dir)
 
 
-class GeminiCapacityExceededAdapter(MockAdapter):
-    @property
-    def name(self):
-        return "gemini"
-
-    def parse_output(self, stdout, stderr, exit_code):
-        return {
-            "success": False,
-            "output": stdout.strip(),
-            "error": "You have exhausted your capacity on this model.",
-        }
-
-
 class LiveTokenStreamAdapter(MockAdapter):
     @property
     def name(self):
@@ -758,9 +745,9 @@ class TestWorkerReconcile:
 
 
 class TestStartWorker:
-    def test_non_retryable_gemini_capacity_error_is_classified(self):
-        assert is_non_retryable_provider_error("gemini", "You have exhausted your capacity on this model.")
-        assert is_non_retryable_provider_error("gemini", "Error: RESOURCE HAS BEEN EXHAUSTED for this request.")
+    def test_removed_gemini_capacity_error_is_not_provider_classified(self):
+        assert not is_non_retryable_provider_error("gemini", "You have exhausted your capacity on this model.")
+        assert not is_non_retryable_provider_error("gemini", "Error: RESOURCE HAS BEEN EXHAUSTED for this request.")
         assert not is_non_retryable_provider_error("gemini", "Temporary upstream timeout")
         assert not is_non_retryable_provider_error("claude", "You have exhausted your capacity on this model.")
 
@@ -1230,8 +1217,7 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 11, "outpu
         layout = _load_layout(bp_dir)
         assert "started_at" not in layout["slots"][worker_slot]
 
-    def test_non_retryable_capacity_error_blocks_without_retry(self, bp_dir, worker_slot):
-        register_adapter("gemini", GeminiCapacityExceededAdapter(output="capacity fail"))
+    def test_stale_gemini_worker_blocks_without_subprocess_or_retry(self, bp_dir, worker_slot):
         layout = _load_layout(bp_dir)
         layout["slots"][worker_slot]["agent"] = "gemini"
         layout["slots"][worker_slot]["model"] = "gemini-2.5-pro"
@@ -1248,7 +1234,11 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 11, "outpu
         assert updated["status"] == "blocked"
         history = updated.get("history", [])
         assert sum(1 for h in history if h.get("event") == "retry") == 0
-        assert "exhausted your capacity on this model" in (updated.get("body") or "").lower()
+        body = (updated.get("body") or "").lower()
+        assert "gemini cli support has been removed" in body
+        layout = _load_layout(bp_dir)
+        assert layout["slots"][worker_slot]["state"] == "idle"
+        assert task["id"] not in layout["slots"][worker_slot].get("task_queue", [])
 
     def test_stream_usage_emits_live_task_token_updates(self, bp_dir, worker_slot):
         previous = get_adapter("codex")

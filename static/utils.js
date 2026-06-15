@@ -2,6 +2,16 @@ window.BULLPEN_TASK_DND_MIME = 'application/x-bullpen-task-id';
 window.BULLPEN_TASK_DRAG_ACTIVE = false;
 
 const MODEL_OPTIONS = {
+  antigravity: [
+    'Gemini 3.5 Flash (Medium)',
+    'Gemini 3.5 Flash (High)',
+    'Gemini 3.5 Flash (Low)',
+    'Gemini 3.1 Pro (Low)',
+    'Gemini 3.1 Pro (High)',
+    'Claude Sonnet 4.6 (Thinking)',
+    'Claude Opus 4.6 (Thinking)',
+    'GPT-OSS 120B (Medium)',
+  ],
   claude: [
     'claude-opus-4-7',
     'claude-opus-4-6', 'claude-opus-4-5-20250514',
@@ -9,11 +19,10 @@ const MODEL_OPTIONS = {
     'claude-haiku-4-5-20251001',
   ],
   codex: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'],
-  gemini: ['flash', 'flash-lite', 'gemini-3-flash-preview'],
   opencode: [],
 };
 
-const AI_PROVIDER_OPTIONS = ['claude', 'codex', 'gemini', 'opencode'];
+const AI_PROVIDER_OPTIONS = ['antigravity', 'claude', 'codex', 'opencode'];
 
 function normalizedLastAiSelection(value) {
   if (!value || typeof value !== 'object') return null;
@@ -29,7 +38,7 @@ function withPreferredOption(options, preferred) {
   return [preferred, ...values.filter(value => value !== preferred)];
 }
 
-const DEFAULT_AGENT_COLORS = { claude: '#da7756', codex: '#5b6fd6', gemini: '#3c7bf4', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c', notification: '#d7ad4a', value: '#166534' };
+const DEFAULT_AGENT_COLORS = { antigravity: '#0f8b8d', claude: '#da7756', codex: '#5b6fd6', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c', notification: '#d7ad4a', value: '#166534' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
   ? window.Vue.reactive({ overrides: {} })

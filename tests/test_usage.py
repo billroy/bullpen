@@ -8,7 +8,6 @@ from server.usage import (
     build_usage_update,
     elapsed_task_time_ms,
     extract_codex_usage_event,
-    extract_gemini_usage_event,
     extract_opencode_usage_event,
     extract_stream_usage_event,
     normalize_usage,
@@ -79,63 +78,6 @@ def test_extract_codex_token_count_event_prefers_nested_totals_without_double_co
     assert normalized["reasoning_output_tokens"] == 10
     assert normalized["total_tokens"] == 205
     assert usage_to_legacy_tokens(normalized) == 205
-
-
-def test_extract_gemini_stats_models_usage_event():
-    event = {
-        "session_id": "s1",
-        "response": "Aloha. How can I help you today?",
-        "stats": {
-            "models": {
-                "gemini-2.5-flash": {
-                    "tokens": {
-                        "input": 9058,
-                        "prompt": 9058,
-                        "candidates": 10,
-                        "total": 9111,
-                        "cached": 0,
-                        "thoughts": 43,
-                        "tool": 0,
-                    }
-                }
-            }
-        },
-    }
-
-    normalized = extract_gemini_usage_event(event)
-    assert normalized["input_tokens"] == 9058
-    assert normalized["output_tokens"] == 53
-    assert normalized["reasoning_output_tokens"] == 43
-    assert normalized["total_tokens"] == 9111
-    assert normalized["cached_input_tokens"] == 0
-    assert usage_to_legacy_tokens(normalized) == 9111
-
-
-def test_extract_gemini_stream_result_usage_event():
-    event = {
-        "type": "result",
-        "status": "success",
-        "stats": {
-            "total_tokens": 6812,
-            "input_tokens": 6791,
-            "output_tokens": 2,
-            "cached": 0,
-            "models": {
-                "gemini-2.5-flash": {
-                    "total_tokens": 6812,
-                    "input_tokens": 6791,
-                    "output_tokens": 2,
-                    "cached": 0,
-                }
-            },
-        },
-    }
-
-    normalized = extract_gemini_usage_event(event)
-    assert normalized["input_tokens"] == 6791
-    assert normalized["output_tokens"] == 2
-    assert normalized["total_tokens"] == 6812
-    assert normalized["cached_input_tokens"] == 0
 
 
 def test_extract_opencode_step_finish_usage_event():

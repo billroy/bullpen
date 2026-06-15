@@ -138,9 +138,13 @@ class TestWorkerConfigureValidation:
         with pytest.raises(ValidationError, match="Invalid agent"):
             validate_worker_configure({"slot": 0, "fields": {"agent": "gpt4"}})
 
-    def test_gemini_agent_allowed(self):
-        _, fields = validate_worker_configure({"slot": 0, "fields": {"agent": "gemini"}})
-        assert fields["agent"] == "gemini"
+    def test_antigravity_agent_allowed(self):
+        _, fields = validate_worker_configure({"slot": 0, "fields": {"agent": "antigravity"}})
+        assert fields["agent"] == "antigravity"
+
+    def test_gemini_agent_rejected(self):
+        with pytest.raises(ValidationError, match="Invalid agent"):
+            validate_worker_configure({"slot": 0, "fields": {"agent": "gemini"}})
 
     def test_opencode_agent_allowed(self):
         _, fields = validate_worker_configure({"slot": 0, "fields": {"agent": "opencode"}})

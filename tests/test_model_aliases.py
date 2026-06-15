@@ -13,13 +13,6 @@ def test_normalize_keeps_unknown_models_unchanged():
     assert normalize_model("codex", "gpt-5.4") == "gpt-5.4"
 
 
-def test_normalize_legacy_gemini_models():
-    assert normalize_model("gemini", "auto-gemini-2.5") == "flash"
-    assert normalize_model("gemini", "gemini-2.0-flash") == "flash"
-    assert normalize_model("gemini", "gemini-2.5-flash") == "flash"
-    assert normalize_model("gemini", "gemini-2.5-flash-lite") == "flash-lite"
-    assert normalize_model("gemini", "gemini-3.5-flash") == "flash"
-    assert normalize_model("gemini", "gemini-pro-2.5") == "flash"
-    assert normalize_model("gemini", "gemini-2.5-pro") == "flash"
-    assert normalize_model("gemini", "gemini-3-pro-preview") == "flash"
-    assert normalize_model("gemini", "pro") == "flash"
+def test_removed_gemini_aliases_are_not_rewritten():
+    assert normalize_model("gemini", "gemini-2.5-pro") == "gemini-2.5-pro"
+    assert normalize_model("gemini", "auto-gemini-2.5") == "auto-gemini-2.5"

@@ -67,7 +67,8 @@ def test_worker_colors_menu_includes_opencode_marker_and_notification():
     text = _read("static/components/TopToolbar.js")
     utils = _read("static/utils.js")
     assert "class=\"provider-colors-title\">Worker colors</div>" in text
-    assert "v-for=\"agent in ['claude','codex','gemini','opencode','shell','service','marker','notification','value']\"" in text
+    assert "v-for=\"agent in ['antigravity','claude','codex','opencode','shell','service','marker','notification','value']\"" in text
+    assert "antigravity: '#0f8b8d'" in utils
     assert "opencode: '#63b3ed'" in utils
     assert "notification: '#d7ad4a'" in utils
 
