@@ -155,6 +155,7 @@ const BullpenTab = {
             :output-lines="$root.outputLinesForSlot(item.slotIndex, workspaceId)"
             :multiple-workspaces="multipleWorkspaces"
             :neighbor-slots="neighborSlotsMap[item.slotIndex]"
+            :all-workers="layout.slots"
             :layout-mode="layoutMode"
             :card-height="cardHeightForSlot(item.slotIndex)"
             :is-selected="isSelected(item.coord)"

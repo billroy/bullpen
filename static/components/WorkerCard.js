@@ -1,5 +1,5 @@
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
+  props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'allWorkers', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'worker-scope-action', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
@@ -171,6 +171,7 @@ const WorkerCard = {
           <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
             {{ statusLabel }}
           </span>
+          <div v-else-if="idleDetail" class="worker-card-idle-detail" :title="idleDetail">{{ idleDetail }}</div>
           <template v-else>{{ emptyLabel }}</template>
         </div>
         <div v-if="showOutputPane && (isWorking || isService) && lastOutput" class="worker-card-output">
@@ -460,6 +461,12 @@ const WorkerCard = {
       if (this.isHeldQueue) return 'Waiting for Run';
       return 'Idle';
     },
+    idleDetail() {
+      if (this.workerState !== 'idle' || this.isHeldQueue || this.isPaused) return '';
+      if (this.isShell) return this.interpolateValuePlaceholders(this.worker?.command);
+      if (this.isService || this.isMarker || this.isNotification || this.isValue || this.isDisabledType) return '';
+      return String(this.worker?.expertise_prompt || '').trim();
+    },
     markerNote() {
       return String(this.worker?.note || '').trim();
     },
@@ -579,6 +586,33 @@ const WorkerCard = {
     lookupTask(id) {
       return (this.taskById && this.taskById[id])
         || (this.tasks || []).find(task => task.id === id);
+    },
+    interpolateValuePlaceholders(template) {
+      const text = String(template || '').trim();
+      if (!text) return '';
+      return text.replace(/\{([A-Za-z0-9][A-Za-z0-9 _.\-]{0,127})\}/g, (match, rawRef) => {
+        const found = this.findValueWorkerForRef(rawRef);
+        if (!found) return match;
+        const value = found.value;
+        return value === null || value === undefined ? '' : String(value);
+      });
+    },
+    findValueWorkerForRef(rawRef) {
+      const ref = String(rawRef || '').trim();
+      if (!ref || !Array.isArray(this.allWorkers)) return null;
+      const parsed = window.GridGeometry?.parseCellRef?.(ref);
+      if (parsed) {
+        return this.allWorkers.find(slot =>
+          isValueWorker(slot) &&
+          Number(slot?.col) === parsed.col &&
+          Number(slot?.row) === parsed.row
+        ) || null;
+      }
+      const needle = ref.toLocaleLowerCase();
+      return this.allWorkers.find(slot =>
+        isValueWorker(slot) &&
+        String(slot?.name || '').trim().toLocaleLowerCase() === needle
+      ) || null;
     },
     syncElapsedTimer() {
       if (!this.needsElapsedTimer) {
