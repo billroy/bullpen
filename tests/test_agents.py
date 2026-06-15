@@ -17,6 +17,7 @@ import server.agents.antigravity_adapter as antigravity_mod
 import server.agents.claude_adapter as claude_mod
 import server.agents.codex_adapter as codex_mod
 import server.agents.opencode_adapter as opencode_mod
+from server import mcp_tools
 from tests.conftest import MockAdapter
 
 
@@ -86,6 +87,7 @@ class TestClaudeAdapter:
             args = cfg["mcpServers"]["bullpen"]["args"]
             host = args[args.index("--host") + 1]
             assert host == "127.0.0.1"
+            assert "enabledTools" not in cfg["mcpServers"]["bullpen"]
         finally:
             if os.path.exists(cfg_path):
                 os.unlink(cfg_path)
@@ -465,6 +467,8 @@ class TestCodexAdapter:
         assert "mcp_servers.bullpen.cwd=" in joined
         assert "mcp_servers.bullpen.default_tools_approval_mode=\"approve\"" in joined
         assert "mcp_servers.bullpen.tool_timeout_sec=120" in joined
+        assert "enabledTools" not in joined
+        assert "enabled_tools" not in joined
         assert "--host" in joined
         assert "127.0.0.1" in joined
         assert os.path.abspath(bp_dir) in joined
@@ -636,7 +640,14 @@ class TestAntigravityAdapter:
         assert "127.0.0.1" in server["args"]
         assert "--port" in server["args"]
         assert "5050" in server["args"]
+        assert server["enabledTools"] == [tool["name"] for tool in mcp_tools.TOOLS]
         assert "update_ticket" in server["enabledTools"]
+        assert "list_values" in server["enabledTools"]
+        assert "get_value" in server["enabledTools"]
+        assert "set_value" in server["enabledTools"]
+        assert "increment_value" in server["enabledTools"]
+        assert "decrement_value" in server["enabledTools"]
+        assert "speak_text" in server["enabledTools"]
         assert server["env"]["PYTHONPATH"] == os.getcwd()
 
     def test_prepare_env_installs_unique_plugin_and_finalize_uninstalls(self, tmp_workspace, monkeypatch):
@@ -846,6 +857,8 @@ class TestOpenCodeAdapter:
             assert "127.0.0.1" in server["command"]
             assert "--port" in server["command"]
             assert "5050" in server["command"]
+            assert "enabledTools" not in server
+            assert "enabled_tools" not in server
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 

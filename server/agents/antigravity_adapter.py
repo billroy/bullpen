@@ -203,6 +203,7 @@ class AntigravityAdapter(AgentAdapter):
         server_script = os.path.join(project_root, "server", "mcp_tools.py")
         bp_dir = os.path.abspath(bp_dir)
 
+        from server import mcp_tools
         from server.persistence import read_json
 
         bp_config = read_json(os.path.join(bp_dir, "config.json"))
@@ -228,13 +229,7 @@ class AntigravityAdapter(AgentAdapter):
                     "env": {
                         "PYTHONPATH": project_root,
                     },
-                    "enabledTools": [
-                        "list_tickets",
-                        "list_tasks",
-                        "list_tickets_by_title",
-                        "create_ticket",
-                        "update_ticket",
-                    ],
+                    "enabledTools": [tool["name"] for tool in mcp_tools.TOOLS],
                 },
             },
         }
