@@ -558,12 +558,15 @@ not from run history.
 
 Sidecar artifacts:
 
-- Store stdout/stderr under
+- Store non-empty stdout/stderr under
   `.bullpen/logs/worker-runs/{task_id}/{output_block_id}.stdout.log` and
   `.bullpen/logs/worker-runs/{task_id}/{output_block_id}.stderr.log`.
   `output_block_id` must include enough precision to avoid same-slot rapid
   rerun collisions, using either millisecond timestamp precision or a short
   monotonic suffix after the timestamp.
+- Do not create zero-byte sidecar artifacts. Empty streams still record
+  `*_bytes`, `*_observed_bytes`, and `*_truncated` values in history, but their
+  artifact path is empty and metadata stubs display the stream as empty.
 - Capture at most 1 MiB per stream. Truncate with visible markers and set the
   `*_truncated` flags in history.
 - `stdout_bytes` and `stderr_bytes` record the stored artifact bytes after
@@ -571,11 +574,13 @@ Sidecar artifacts:
   stream bytes observed before capping when the platform can measure them
   cheaply; otherwise they equal the stored byte counts.
 - The artifacts are plaintext server-managed logs. They are not scrubbed,
-  encrypted, or automatically committed.
+  encrypted, or automatically committed. Bullpen keeps the newest 100 Shell
+  worker runs per task by default; `BULLPEN_WORKER_RUN_RETENTION_PER_TASK`
+  overrides the cap.
 
 Markdown output block:
 
-- Always write sidecar artifacts first.
+- Write non-empty sidecar artifacts before updating ticket history.
 - Build the newest run's output block with full stdout/stderr when the new
   ticket body would remain at or below 1 MiB.
 - If the newest run's full block would exceed the ticket cap, reduce that block
@@ -586,7 +591,8 @@ Markdown output block:
   compact the oldest existing Worker Output blocks into summary stubs until the
   body fits. A compacted stub preserves timestamp, worker name/type, outcome,
   disposition, reason, duration, delivery mode, output byte counts, and sidecar
-  artifact paths. Compaction must not delete sidecar artifacts.
+  artifact paths when present. Compaction must not delete sidecar artifacts;
+  retention may prune older sidecar artifacts later.
 - If the newest run's metadata-only stub would itself push the ticket body over
   1 MiB after older blocks have been compacted, keep the sidecar artifacts and
   fail the run-record write with a visible server error. Do not write a partial
@@ -1005,11 +1011,10 @@ Done when:
    treatment and short copy that makes synthetic tickets obvious on the board
    without making them feel like user-authored work.
 
-3. **Artifact retention policy.** Sidecar stdout/stderr artifacts keep ticket
-   bodies bounded, but the spec does not yet define retention age, maximum
-   workspace log size, pruning behavior, or whether export should include
-   worker-run artifacts. Pick defaults before enabling high-frequency scheduled
-   Shell workers.
+3. **Workspace-wide artifact size policy.** Sidecar stdout/stderr artifacts keep
+   ticket bodies bounded, and Bullpen prunes each task to the newest 100 Shell
+   worker runs by default. The spec still does not define maximum total
+   workspace log size or whether export should include worker-run artifacts.
 
 4. **Workspace export warning UX.** The spec requires warnings for Shell config
    exposure in export/team/transfer flows. The exact UI copy and confirmation

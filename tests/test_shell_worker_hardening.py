@@ -285,6 +285,29 @@ class TestRapidReruns:
             assign_task(bp_dir, 0, task["id"])
         assert len(seen) == 3
 
+    def test_worker_run_artifacts_are_pruned_per_task_retention(self, bp_dir, monkeypatch):
+        monkeypatch.setenv("BULLPEN_WORKER_RUN_RETENTION_PER_TASK", "2")
+        _set_shell_worker(
+            bp_dir,
+            command=_python_command("print('run')"),
+            activation="manual",
+        )
+        task = create_task(bp_dir, "Retain latest")
+        assign_task(bp_dir, 0, task["id"])
+
+        seen = []
+        for _ in range(3):
+            start_worker(bp_dir, 0)
+            _wait_for_worker_done(bp_dir)
+            updated = read_task(bp_dir, task["id"])
+            latest = [r for r in updated.get("history", []) if r.get("event") == "worker_run"][-1]
+            seen.append(os.path.join(os.path.dirname(bp_dir), latest["stdout_artifact"]))
+            assign_task(bp_dir, 0, task["id"])
+
+        assert not os.path.exists(seen[0])
+        assert os.path.exists(seen[1])
+        assert os.path.exists(seen[2])
+
 
 class TestArgvFallback:
     def test_argv_fallback_emits_prelude_and_switches_delivery(self, bp_dir, monkeypatch):

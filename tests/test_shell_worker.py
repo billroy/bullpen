@@ -264,8 +264,13 @@ def test_shell_command_does_not_interpolate_ticket_fields(bp_dir):
     updated = read_task(bp_dir, task["id"])
     assert updated["status"] == "review"
     latest = [row for row in updated.get("history", []) if row.get("event") == "worker_run"][-1]
-    artifact = os.path.join(os.path.dirname(bp_dir), latest["stdout_artifact"])
-    assert open(artifact).read() == ""
+    assert latest["stdout_bytes"] == 0
+    assert latest["stderr_bytes"] == 0
+    assert latest["stdout_artifact"] == ""
+    assert latest["stderr_artifact"] == ""
+    assert "stdout artifact: empty" in updated["body"]
+    artifact_dir = os.path.join(bp_dir, "logs", "worker-runs", task["id"])
+    assert not os.path.exists(artifact_dir)
 
 
 def test_shell_worker_interpolates_value_placeholders_in_command_and_env(bp_dir):

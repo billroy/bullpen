@@ -131,21 +131,24 @@ Rules:
 
 ## Run records
 
-Each Shell run produces three artifacts:
+Each Shell run records three things:
 
 1. A **frontmatter history row** on the ticket (`event: worker_run`) with
    outcome, disposition, exit code, duration, delivery mode, stdout/stderr
-   byte counts, truncation flags, and paths to the sidecar logs.
+   byte counts, truncation flags, and paths to any non-empty sidecar logs.
 2. A **Markdown block** appended to the ticket body under `## Worker Output`.
    When the body would exceed 1 MiB, the block is first excerpted
    (head/tail 64 KiB per stream); older output blocks are compacted to
    summary stubs if still needed.
-3. **Plaintext sidecar logs** under
+3. **Plaintext sidecar logs** for non-empty streams under
    `.bullpen/logs/worker-runs/<task_id>/shell-run-<timestamp>-slot<n>.{stdout,stderr}.log`,
    capped at 1 MiB each.
 
 `.bullpen/logs/` is covered by the default `.bullpen/.gitignore` so these
 artifacts are not accidentally committed.
+
+Bullpen keeps the newest 100 Shell worker runs per task by default. Override
+the per-task cap with `BULLPEN_WORKER_RUN_RETENTION_PER_TASK`.
 
 ---
 

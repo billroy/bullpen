@@ -49,6 +49,7 @@ SHELL_WORKER_EXIT_BLOCKED = 78
 SHELL_OUTPUT_ARTIFACT_LIMIT = 1_048_576
 TASK_BODY_LIMIT = 1_048_576
 SHELL_OUTPUT_EXCERPT_BYTES = 65_536
+SHELL_WORKER_RUN_RETENTION_PER_TASK = 100
 SHELL_SECRET_ENV_MARKERS = (
     "TOKEN", "SECRET", "KEY", "PASSWORD", "CREDENTIAL", "PASSPHRASE",
 )
@@ -2449,6 +2450,57 @@ def _decode_artifact(data):
     return data.decode("utf-8", errors="replace")
 
 
+def _shell_worker_run_retention_limit():
+    raw = os.environ.get("BULLPEN_WORKER_RUN_RETENTION_PER_TASK")
+    if raw is None:
+        return SHELL_WORKER_RUN_RETENTION_PER_TASK
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return SHELL_WORKER_RUN_RETENTION_PER_TASK
+
+
+def _write_shell_artifact(artifact_dir, output_block_id, stream_name, data):
+    if not data:
+        return None
+    os.makedirs(artifact_dir, exist_ok=True)
+    path = os.path.join(artifact_dir, f"{output_block_id}.{stream_name}.log")
+    atomic_write(path, _decode_artifact(data))
+    return path
+
+
+def _shell_output_block_id(filename):
+    for suffix in (".stdout.log", ".stderr.log"):
+        if filename.endswith(suffix):
+            return filename[: -len(suffix)]
+    return None
+
+
+def _prune_shell_worker_runs(artifact_dir):
+    keep = _shell_worker_run_retention_limit()
+    if keep <= 0 or not os.path.isdir(artifact_dir):
+        return
+    run_ids = sorted({
+        block_id
+        for name in os.listdir(artifact_dir)
+        for block_id in [_shell_output_block_id(name)]
+        if block_id
+    })
+    stale_ids = set(run_ids[: max(0, len(run_ids) - keep)])
+    for name in os.listdir(artifact_dir):
+        block_id = _shell_output_block_id(name)
+        if block_id not in stale_ids:
+            continue
+        try:
+            os.remove(os.path.join(artifact_dir, name))
+        except OSError:
+            pass
+    try:
+        os.rmdir(artifact_dir)
+    except OSError:
+        pass
+
+
 def _output_excerpt(text):
     data = (text or "").encode("utf-8", errors="replace")
     if len(data) <= SHELL_OUTPUT_EXCERPT_BYTES * 2:
@@ -2465,17 +2517,27 @@ def _append_shell_run_record(bp_dir, task_id, worker, slot_index, result, comple
 
     output_block_id = f"shell-run-{_timestamp_id()}-slot{slot_index}"
     artifact_dir = os.path.join(bp_dir, "logs", "worker-runs", task_id)
-    os.makedirs(artifact_dir, exist_ok=True)
 
     stdout_data, stdout_truncated, stdout_observed = _cap_bytes(completed.stdout)
     stderr_data, stderr_truncated, stderr_observed = _cap_bytes(completed.stderr)
-    stdout_path = os.path.join(artifact_dir, f"{output_block_id}.stdout.log")
-    stderr_path = os.path.join(artifact_dir, f"{output_block_id}.stderr.log")
-    atomic_write(stdout_path, _decode_artifact(stdout_data))
-    atomic_write(stderr_path, _decode_artifact(stderr_data))
+    stdout_path = _write_shell_artifact(
+        artifact_dir, output_block_id, "stdout", stdout_data
+    )
+    stderr_path = _write_shell_artifact(
+        artifact_dir, output_block_id, "stderr", stderr_data
+    )
+    _prune_shell_worker_runs(artifact_dir)
 
-    stdout_rel = os.path.relpath(stdout_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
-    stderr_rel = os.path.relpath(stderr_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
+    stdout_rel = (
+        os.path.relpath(stdout_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
+        if stdout_path
+        else ""
+    )
+    stderr_rel = (
+        os.path.relpath(stderr_path, os.path.dirname(bp_dir)).replace(os.sep, "/")
+        if stderr_path
+        else ""
+    )
     timestamp = _now_iso()
     history = _normalize_history_rows(task.get("history") or [])
     row = {
@@ -2565,8 +2627,8 @@ def _build_shell_description_stub(timestamp, worker, row, stdout_rel, stderr_rel
         f"### {timestamp} - {worker.get('name', 'Shell')} (shell)\n\n"
         f"stdout bytes: {row['stdout_bytes']} (observed {row['stdout_observed_bytes']})\n"
         f"stderr bytes: {row['stderr_bytes']} (observed {row['stderr_observed_bytes']})\n"
-        f"stdout artifact: {stdout_rel}\n"
-        f"stderr artifact: {stderr_rel}\n"
+        f"stdout artifact: {stdout_rel or 'empty'}\n"
+        f"stderr artifact: {stderr_rel or 'empty'}\n"
         "[Output omitted from ticket body; see artifacts.]\n"
     )
 
@@ -2580,8 +2642,8 @@ def _build_shell_metadata_block(timestamp, worker, result, completed, prepared, 
         f"Exit code: {completed.returncode}\n"
         f"Duration: {row['duration_ms'] / 1000:.3f}s\n"
         f"Delivery: {prepared.delivery}\n"
-        f"stdout artifact: {stdout_rel}\n"
-        f"stderr artifact: {stderr_rel}\n"
+        f"stdout artifact: {stdout_rel or 'empty'}\n"
+        f"stderr artifact: {stderr_rel or 'empty'}\n"
     )
 
 
