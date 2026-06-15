@@ -601,13 +601,21 @@ class TestAntigravityAdapter:
         assert "BULLPEN_ANTIGRAVITY_PATH" in msg
         assert "/missing/agy" in msg
 
-    def test_build_argv_uses_print_mode_and_prompt_flag(self, monkeypatch):
+    def test_build_argv_uses_print_mode_and_prompt_flag(self, monkeypatch, tmp_path):
         monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        gemini_dir = tmp_path / "agy-home" / ".gemini"
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(gemini_dir))
 
         adapter = AntigravityAdapter()
         argv = adapter.build_argv("test prompt", "Gemini 3.5 Flash (Medium)", "/workspace")
 
-        assert argv[:3] == ["/usr/local/bin/agy", "--print-timeout", "10m"]
+        assert argv[:5] == [
+            "/usr/local/bin/agy",
+            "--gemini_dir",
+            str(gemini_dir),
+            "--print-timeout",
+            "10m",
+        ]
         assert "--model" in argv
         assert "Gemini 3.5 Flash (Medium)" in argv
         assert "--print" in argv
@@ -615,13 +623,50 @@ class TestAntigravityAdapter:
         assert adapter.prompt_via_stdin() is False
 
     def test_build_argv_accepts_isolated_gemini_dir(self, monkeypatch, tmp_path):
+        home = tmp_path / "home"
+        source = home / ".gemini"
+        source.mkdir(parents=True)
+        (source / "oauth_creds.json").write_text('{"token":"redacted"}', encoding="utf-8")
+        gemini_dir = tmp_path / "agy-home" / ".gemini"
+
         monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
-        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(tmp_path / "agy-home" / ".gemini"))
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(gemini_dir))
 
         argv = AntigravityAdapter().build_argv("test prompt", None, "/workspace")
 
-        assert argv[:3] == ["/usr/local/bin/agy", "--gemini_dir", str(tmp_path / "agy-home" / ".gemini")]
+        assert argv[:3] == ["/usr/local/bin/agy", "--gemini_dir", str(gemini_dir)]
         assert argv[3:5] == ["--print-timeout", "10m"]
+        assert (
+            gemini_dir / "oauth_creds.json"
+        ).read_text(encoding="utf-8") == '{"token":"redacted"}'
+
+    def test_build_argv_defaults_to_managed_gemini_dir_and_seeds_minimal_auth(
+        self, monkeypatch, tmp_path
+    ):
+        home = tmp_path / "home"
+        source = home / ".gemini"
+        source.mkdir(parents=True)
+        (source / "oauth_creds.json").write_text('{"token":"redacted"}', encoding="utf-8")
+        (source / "google_accounts.json").write_text('["account"]', encoding="utf-8")
+        (source / "settings.json").write_text('{"theme":"dark"}', encoding="utf-8")
+        (source / "history.log").write_text("do not copy", encoding="utf-8")
+
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+
+        argv = AntigravityAdapter().build_argv("test prompt", None, "/workspace")
+
+        managed = home / ".bullpen" / "antigravity" / ".gemini"
+        assert argv[:3] == ["/usr/local/bin/agy", "--gemini_dir", str(managed)]
+        assert (
+            managed / "oauth_creds.json"
+        ).read_text(encoding="utf-8") == '{"token":"redacted"}'
+        assert (
+            managed / "google_accounts.json"
+        ).read_text(encoding="utf-8") == '["account"]'
+        assert (managed / "settings.json").read_text(encoding="utf-8") == '{"theme":"dark"}'
+        assert not (managed / "history.log").exists()
 
     def test_mcp_config_uses_loopback_for_wildcard_host(self, tmp_workspace):
         adapter = AntigravityAdapter()
@@ -650,8 +695,9 @@ class TestAntigravityAdapter:
         assert "speak_text" in server["enabledTools"]
         assert server["env"]["PYTHONPATH"] == os.getcwd()
 
-    def test_prepare_env_installs_unique_plugin_and_finalize_uninstalls(self, tmp_workspace, monkeypatch):
+    def test_prepare_env_installs_unique_plugin_and_finalize_uninstalls(self, tmp_workspace, monkeypatch, tmp_path):
         calls = []
+        gemini_dir = tmp_path / "agy-home" / ".gemini"
 
         def fake_run(argv, **kwargs):
             calls.append((list(argv), kwargs))
@@ -662,6 +708,7 @@ class TestAntigravityAdapter:
             return Completed()
 
         monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(gemini_dir))
         monkeypatch.setattr(antigravity_mod.subprocess, "run", fake_run)
         monkeypatch.setattr(antigravity_mod.secrets, "token_hex", lambda _n: "abc123ef")
 
@@ -680,10 +727,31 @@ class TestAntigravityAdapter:
             mcp_json = json.loads(Path(plugin_dir, "mcp_config.json").read_text(encoding="utf-8"))
             assert plugin_json["name"] == plugin_name
             assert "bullpen" in mcp_json["mcpServers"]
-            assert calls[0][0] == ["/usr/local/bin/agy", "plugin", "install", plugin_dir]
+            assert [
+                "/usr/local/bin/agy",
+                "--gemini_dir",
+                str(gemini_dir),
+                "plugin",
+                "list",
+            ] in [call[0] for call in calls]
+            assert [
+                "/usr/local/bin/agy",
+                "--gemini_dir",
+                str(gemini_dir),
+                "plugin",
+                "install",
+                plugin_dir,
+            ] in [call[0] for call in calls]
 
             adapter.finalize_env(env, cleanup_path)
-            assert calls[-1][0] == ["/usr/local/bin/agy", "plugin", "uninstall", plugin_name]
+            assert calls[-1][0] == [
+                "/usr/local/bin/agy",
+                "--gemini_dir",
+                str(gemini_dir),
+                "plugin",
+                "uninstall",
+                plugin_name,
+            ]
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
@@ -718,14 +786,21 @@ class TestAntigravityAdapter:
         try:
             plugin_dir = env["BULLPEN_ANTIGRAVITY_PLUGIN_DIR"]
             plugin_name = env["BULLPEN_ANTIGRAVITY_PLUGIN_NAME"]
-            assert calls[0][0] == [
+            assert [
+                "/usr/local/bin/agy",
+                "--gemini_dir",
+                str(gemini_dir),
+                "plugin",
+                "list",
+            ] in [call[0] for call in calls]
+            assert [
                 "/usr/local/bin/agy",
                 "--gemini_dir",
                 str(gemini_dir),
                 "plugin",
                 "install",
                 plugin_dir,
-            ]
+            ] in [call[0] for call in calls]
 
             adapter.finalize_env(env, cleanup_path)
             assert calls[-1][0] == [
@@ -739,8 +814,9 @@ class TestAntigravityAdapter:
         finally:
             shutil.rmtree(cleanup_path, ignore_errors=True)
 
-    def test_prepare_env_uninstalls_after_partial_install_failure(self, tmp_workspace, monkeypatch):
+    def test_prepare_env_uninstalls_after_partial_install_failure(self, tmp_workspace, monkeypatch, tmp_path):
         calls = []
+        gemini_dir = tmp_path / "agy-home" / ".gemini"
 
         def fake_run(argv, **kwargs):
             calls.append((list(argv), kwargs))
@@ -749,7 +825,8 @@ class TestAntigravityAdapter:
                 stdout = ""
 
             completed = Completed()
-            if argv[1:3] == ["plugin", "install"]:
+            plugin_idx = argv.index("plugin") if "plugin" in argv else -1
+            if plugin_idx >= 0 and argv[plugin_idx + 1] == "install":
                 completed.returncode = 1
                 completed.stderr = "install failed after partial registration"
             else:
@@ -758,6 +835,7 @@ class TestAntigravityAdapter:
             return completed
 
         monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(gemini_dir))
         monkeypatch.setattr(antigravity_mod.subprocess, "run", fake_run)
         monkeypatch.setattr(antigravity_mod.secrets, "token_hex", lambda _n: "deadbeef")
         monkeypatch.setattr(antigravity_mod.os, "getpid", lambda: 12345)
@@ -772,8 +850,55 @@ class TestAntigravityAdapter:
             adapter.prepare_env(tmp_workspace, bp_dir=bp_dir, task_id="ticket-2")
 
         plugin_name = "bullpen-antigravity-runtime-12345-deadbeef-ticket-2"
-        assert calls[0][0][1:3] == ["plugin", "install"]
-        assert calls[-1][0] == ["/usr/local/bin/agy", "plugin", "uninstall", plugin_name]
+        assert any(call[0][-3:-1] == ["plugin", "install"] for call in calls)
+        assert calls[-1][0] == [
+            "/usr/local/bin/agy",
+            "--gemini_dir",
+            str(gemini_dir),
+            "plugin",
+            "uninstall",
+            plugin_name,
+        ]
+
+    def test_plugin_manager_cleans_stale_dead_pid_plugins(self, monkeypatch, tmp_path):
+        calls = []
+        gemini_dir = tmp_path / "agy-home" / ".gemini"
+
+        def fake_run(argv, **kwargs):
+            calls.append(list(argv))
+
+            class Completed:
+                returncode = 0
+                stdout = (
+                    "bullpen-antigravity-runtime-111-deadbeef-old\n"
+                    f"bullpen-antigravity-runtime-{os.getpid()}-cafebabe-active\n"
+                    "unrelated-plugin\n"
+                )
+                stderr = ""
+
+            return Completed()
+
+        monkeypatch.setattr(antigravity_mod, "_find_agy", lambda: "/usr/local/bin/agy")
+        monkeypatch.setenv("BULLPEN_ANTIGRAVITY_GEMINI_DIR", str(gemini_dir))
+        monkeypatch.setattr(antigravity_mod.subprocess, "run", fake_run)
+        monkeypatch.setattr(antigravity_mod, "_pid_is_alive", lambda pid: pid == os.getpid())
+
+        cleaned = antigravity_mod.AntigravityPluginManager().cleanup_stale_runtime_plugins()
+
+        assert cleaned == ["bullpen-antigravity-runtime-111-deadbeef-old"]
+        assert [
+            "/usr/local/bin/agy",
+            "--gemini_dir",
+            str(gemini_dir),
+            "plugin",
+            "uninstall",
+            "bullpen-antigravity-runtime-111-deadbeef-old",
+        ] in calls
+        assert not any(
+            "cafebabe-active" in " ".join(call)
+            for call in calls
+            if "uninstall" in call
+        )
 
     def test_parse_output_plain_text(self):
         adapter = AntigravityAdapter()

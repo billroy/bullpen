@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -11,6 +13,7 @@ import sys
 import tempfile
 
 from server.agents.base import AgentAdapter
+from server.agents.mcp_config import antigravity_mcp_config
 
 
 if sys.platform == "win32":
@@ -29,6 +32,16 @@ else:
 _PLUGIN_ENV = "BULLPEN_ANTIGRAVITY_PLUGIN_NAME"
 _PLUGIN_DIR_ENV = "BULLPEN_ANTIGRAVITY_PLUGIN_DIR"
 _GEMINI_DIR_ENV = "BULLPEN_ANTIGRAVITY_GEMINI_DIR"
+_MANAGED_GEMINI_DIR_ENV = "BULLPEN_ANTIGRAVITY_MANAGED_GEMINI_DIR"
+_MINIMAL_GEMINI_AUTH_FILES = (
+    "oauth_creds.json",
+    "google_accounts.json",
+    "settings.json",
+    os.path.join("antigravity-cli", "settings.json"),
+)
+_RUNTIME_PLUGIN_RE = re.compile(
+    r"\bbullpen-antigravity-runtime-(\d+)-[A-Za-z0-9]+(?:-[A-Za-z0-9_-]+)?\b"
+)
 
 
 def _is_executable(path):
@@ -57,9 +70,50 @@ def _find_agy():
 
 def _configured_gemini_dir():
     configured = os.environ.get(_GEMINI_DIR_ENV)
-    if not configured:
-        return None
-    return os.path.abspath(os.path.expanduser(configured))
+    if configured:
+        target = os.path.abspath(os.path.expanduser(configured))
+        _ensure_gemini_dir(target)
+        return target
+    return _managed_gemini_dir()
+
+
+def _managed_gemini_dir():
+    configured = os.environ.get(_MANAGED_GEMINI_DIR_ENV)
+    if configured:
+        target = os.path.abspath(os.path.expanduser(configured))
+    else:
+        target = os.path.abspath(os.path.expanduser("~/.bullpen/antigravity/.gemini"))
+    _ensure_gemini_dir(target)
+    return target
+
+
+def _ensure_gemini_dir(target):
+    os.makedirs(target, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(target, 0o700)
+    except OSError:
+        pass
+
+    source = os.path.abspath(os.path.expanduser("~/.gemini"))
+    if source == target or not os.path.isdir(source):
+        return
+
+    for relative_path in _MINIMAL_GEMINI_AUTH_FILES:
+        source_path = os.path.join(source, relative_path)
+        target_path = os.path.join(target, relative_path)
+        if not os.path.isfile(source_path) or os.path.exists(target_path):
+            continue
+        try:
+            os.makedirs(os.path.dirname(target_path), mode=0o700, exist_ok=True)
+            shutil.copy2(source_path, target_path)
+            if sys.platform != "win32":
+                os.chmod(target_path, 0o600)
+        except OSError:
+            logging.debug(
+                "Unable to seed Antigravity managed Gemini auth file %s",
+                relative_path,
+                exc_info=True,
+            )
 
 
 def _agy_argv():
@@ -68,6 +122,18 @@ def _agy_argv():
     if gemini_dir:
         argv.extend(["--gemini_dir", gemini_dir])
     return argv
+
+
+def _pid_is_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def _run_tmpdir():
@@ -83,6 +149,90 @@ def _run_tmpdir():
         except OSError:
             continue
     return tempfile.mkdtemp(prefix="bullpen-antigravity-")
+
+
+class AntigravityPluginManager:
+    def __init__(self, workspace=None, bp_dir=None):
+        self.workspace = workspace
+        self.bp_dir = bp_dir
+
+    def install(self, plugin_dir):
+        completed = subprocess.run(
+            [*_agy_argv(), "plugin", "install", plugin_dir],
+            cwd=self.workspace or os.path.dirname(os.path.abspath(self.bp_dir or ".")),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            raise RuntimeError(
+                "Failed to install Antigravity MCP plugin"
+                + (f": {detail}" if detail else ".")
+            )
+        return completed
+
+    def uninstall(self, plugin_name):
+        if not plugin_name:
+            return False
+        try:
+            completed = subprocess.run(
+                [*_agy_argv(), "plugin", "uninstall", plugin_name],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception:
+            logging.exception("Failed to uninstall Antigravity MCP plugin %s", plugin_name)
+            return False
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            logging.warning(
+                "Failed to uninstall Antigravity MCP plugin %s%s",
+                plugin_name,
+                f": {detail}" if detail else ".",
+            )
+            return False
+        return True
+
+    def cleanup_stale_runtime_plugins(self):
+        try:
+            completed = subprocess.run(
+                [*_agy_argv(), "plugin", "list"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception:
+            logging.debug("Unable to list Antigravity plugins for stale cleanup", exc_info=True)
+            return []
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            logging.debug(
+                "Unable to list Antigravity plugins for stale cleanup%s",
+                f": {detail}" if detail else ".",
+            )
+            return []
+
+        cleaned = []
+        seen = set()
+        output = (completed.stdout or "") + "\n" + (completed.stderr or "")
+        for match in _RUNTIME_PLUGIN_RE.finditer(output):
+            plugin_name = match.group(0)
+            if plugin_name in seen:
+                continue
+            seen.add(plugin_name)
+            try:
+                pid = int(match.group(1))
+            except ValueError:
+                continue
+            if _pid_is_alive(pid):
+                continue
+            if self.uninstall(plugin_name):
+                cleaned.append(plugin_name)
+        if cleaned:
+            logging.info("Cleaned up stale Antigravity MCP plugins: %s", ", ".join(cleaned))
+        return cleaned
 
 
 class AntigravityAdapter(AgentAdapter):
@@ -109,8 +259,8 @@ class AntigravityAdapter(AgentAdapter):
         argv = _agy_argv()
         argv.extend(
             [
-            "--print-timeout",
-            "10m",
+                "--print-timeout",
+                "10m",
             ]
         )
         if model:
@@ -125,30 +275,19 @@ class AntigravityAdapter(AgentAdapter):
         run_tmp = _run_tmpdir()
         plugin_name = self._plugin_name(task_id)
         plugin_dir = os.path.join(run_tmp, plugin_name)
+        plugin_manager = AntigravityPluginManager(workspace=workspace, bp_dir=bp_dir)
         try:
+            plugin_manager.cleanup_stale_runtime_plugins()
             os.makedirs(plugin_dir, mode=0o700, exist_ok=True)
             self._write_plugin(plugin_dir, plugin_name, bp_dir)
-            agy_argv = _agy_argv()
-            completed = subprocess.run(
-                [*agy_argv, "plugin", "install", plugin_dir],
-                cwd=workspace or os.path.dirname(os.path.abspath(bp_dir)),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if completed.returncode != 0:
-                detail = (completed.stderr or completed.stdout or "").strip()
-                raise RuntimeError(
-                    "Failed to install Antigravity MCP plugin"
-                    + (f": {detail}" if detail else ".")
-                )
+            plugin_manager.install(plugin_dir)
 
             env = os.environ.copy()
             env[_PLUGIN_ENV] = plugin_name
             env[_PLUGIN_DIR_ENV] = plugin_dir
             return env, run_tmp
         except Exception:
-            self._uninstall_plugin(plugin_name)
+            plugin_manager.uninstall(plugin_name)
             shutil.rmtree(run_tmp, ignore_errors=True)
             raise
 
@@ -156,22 +295,11 @@ class AntigravityAdapter(AgentAdapter):
         plugin_name = (env or {}).get(_PLUGIN_ENV)
         if not plugin_name:
             return None
-        self._uninstall_plugin(plugin_name)
+        AntigravityPluginManager().uninstall(plugin_name)
         return None
 
     def _uninstall_plugin(self, plugin_name):
-        if not plugin_name:
-            return None
-        agy_argv = _agy_argv()
-        try:
-            subprocess.run(
-                [*agy_argv, "plugin", "uninstall", plugin_name],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except Exception:
-            pass
+        AntigravityPluginManager().uninstall(plugin_name)
         return None
 
     def _plugin_name(self, task_id=None):
@@ -199,40 +327,7 @@ class AntigravityAdapter(AgentAdapter):
             json.dump(self._mcp_config(bp_dir), f, indent=2)
 
     def _mcp_config(self, bp_dir):
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        server_script = os.path.join(project_root, "server", "mcp_tools.py")
-        bp_dir = os.path.abspath(bp_dir)
-
-        from server import mcp_tools
-        from server.persistence import read_json
-
-        bp_config = read_json(os.path.join(bp_dir, "config.json"))
-        host = bp_config.get("server_host", "127.0.0.1")
-        if host == "0.0.0.0":
-            host = "127.0.0.1"
-        port = str(bp_config.get("server_port", 5000))
-
-        return {
-            "mcpServers": {
-                "bullpen": {
-                    "command": sys.executable,
-                    "args": [
-                        server_script,
-                        "--bp-dir",
-                        bp_dir,
-                        "--host",
-                        host,
-                        "--port",
-                        port,
-                    ],
-                    "cwd": project_root,
-                    "env": {
-                        "PYTHONPATH": project_root,
-                    },
-                    "enabledTools": [tool["name"] for tool in mcp_tools.TOOLS],
-                },
-            },
-        }
+        return antigravity_mcp_config(bp_dir)
 
     def prompt_via_stdin(self):
         return False

@@ -288,9 +288,12 @@ Current readiness decision:
 - **Local runtime ready.** The minimum viable local contract is proven for
   authenticated `agy --print`, Bullpen MCP read/write access, the Bullpen
   worker lifecycle, and live-agent chat.
-- **Config isolation ready for local runtime.** Bullpen can pass
-  `BULLPEN_ANTIGRAVITY_GEMINI_DIR=/path/to/.gemini`; the adapter then supplies
-  `--gemini_dir <absolute path>` to `agy --print` and plugin install/uninstall.
+- **Config isolation ready for local runtime.** Bullpen now passes
+  `--gemini_dir <absolute path>` to every managed `agy` invocation. If
+  `BULLPEN_ANTIGRAVITY_GEMINI_DIR` is set, Bullpen uses that path. Otherwise,
+  local runs use a Bullpen-managed profile at
+  `~/.bullpen/antigravity/.gemini` and seed only minimal auth/config files from
+  `~/.gemini` on first use.
 - **Deploy installation ready; container auth smoke still pending.** Docker,
   Sprite, and Microsandbox install `agy` with Google's official installer and
   set the isolated `.gemini` path. Docker and Microsandbox still need a live
@@ -308,15 +311,28 @@ The first local adapter slice is implemented.
 - [server/agents/antigravity_adapter.py](../server/agents/antigravity_adapter.py)
   adds a local authenticated `agy --print` provider.
 - The adapter treats `agy` output as plain text and returns empty usage.
+- [server/agents/mcp_config.py](../server/agents/mcp_config.py) centralizes the
+  Bullpen MCP server command, env, host/port normalization, and tool profile
+  policy for all AI-worker adapters. Claude, Codex, and OpenCode receive the
+  same Bullpen MCP server spec without an Antigravity-style static tool allow
+  list.
 - Each run generates a unique temporary Antigravity plugin containing
   `plugin.json` and `mcp_config.json`.
-- The plugin exposes Bullpen's MCP stdio server with the required ticket tools:
-  `list_tickets`, `list_tasks`, `list_tickets_by_title`, `create_ticket`, and
-  `update_ticket`.
+- The plugin exposes Bullpen's full MCP stdio tool surface. This is required
+  because Antigravity's plugin config requires an explicit `enabledTools` list;
+  deriving it from [server/mcp_tools.py](../server/mcp_tools.py) prevents the
+  adapter from silently omitting newly added Bullpen tools such as values or
+  speech.
 - The adapter installs the plugin before invoking `agy` and uninstalls it
   during cleanup. If plugin installation fails, the adapter also attempts a
   best-effort uninstall of the generated plugin name before removing temporary
   files.
+- The adapter lists installed Antigravity plugins before setup and removes dead
+  Bullpen runtime plugins whose embedded owner PID is no longer alive. Active
+  runtime plugin names are left alone.
+- Local runs default to the Bullpen-managed Antigravity/Gemini profile at
+  `~/.bullpen/antigravity/.gemini`. Deploys and advanced local setups can set
+  `BULLPEN_ANTIGRAVITY_GEMINI_DIR` to use an explicit isolated profile.
 - `antigravity` is registered as the active Google provider.
 - `gemini` is removed from active provider registration, validation, UI
   provider lists, default colors, default labels, and deploy-facing model
@@ -346,10 +362,15 @@ Implemented local hardening:
   with no `--sandbox` flag. Set `BULLPEN_ANTIGRAVITY_SANDBOX=untrusted` to add
   `--sandbox` for untrusted workers and live chat, or `always` to add it for
   all Antigravity runs.
-- Antigravity config isolation is opt-in through
-  `BULLPEN_ANTIGRAVITY_GEMINI_DIR`. When set, Bullpen passes
+- Antigravity config isolation is always enabled. It can be directed through
+  `BULLPEN_ANTIGRAVITY_GEMINI_DIR`, and otherwise defaults to
+  `~/.bullpen/antigravity/.gemini`. Bullpen passes
   `--gemini_dir <absolute path>` to every managed `agy` invocation, including
-  plugin install, plugin uninstall, and print mode.
+  plugin list, plugin install, plugin uninstall, and print mode.
+- Prompt transport remains an upstream Antigravity CLI limitation. `agy` 1.0.8
+  exposes `--print <prompt>`/`--prompt <prompt>` but no confirmed stdin prompt
+  mode, so Bullpen marks the adapter as `prompt_via_stdin() == False` and keeps
+  this limitation explicit in tests.
 
 ### Phase 0: MCP Spike and Go/No-Go
 
@@ -388,11 +409,14 @@ Phase 0 must answer four questions in this order.
    Result: passed for local development. A temporary plugin can be installed and
    uninstalled around a run. Authenticated runs can be pointed at an isolated
    copied Gemini directory with the hidden `--gemini_dir <absolute path>` flag,
-   avoiding mutation of the real `~/.gemini` profile when
-   `BULLPEN_ANTIGRAVITY_GEMINI_DIR` is configured. The first local adapter
-   implementation installs a uniquely named Bullpen runtime plugin, cleans it
-   up reliably, and best-effort uninstalls the generated plugin name after
-   partial install failure.
+   avoiding mutation of the real `~/.gemini` profile. The adapter now always
+   supplies a Gemini directory: explicit
+   `BULLPEN_ANTIGRAVITY_GEMINI_DIR` when configured, otherwise a
+   Bullpen-managed local profile at `~/.bullpen/antigravity/.gemini`. The
+   adapter installs a uniquely named Bullpen runtime plugin, cleans it up
+   reliably, best-effort uninstalls the generated plugin name after partial
+   install failure, and removes stale Bullpen runtime plugins left by dead
+   processes.
 
 3. **Can `agy --print` call the real Bullpen MCP server?**
 
@@ -425,7 +449,7 @@ Phase 0 must answer four questions in this order.
    - Confirm whether `--sandbox` still permits the required MCP workflow.
 
    Result: sufficient for local runtime use. The known invocation shape is
-   `agy [--gemini_dir <isolated-dir>] --print-timeout <duration> --model <model>
+   `agy --gemini_dir <isolated-dir> --print-timeout <duration> --model <model>
    --print <prompt>` with a temporary Antigravity plugin installed into the
    same Antigravity config directory. Worker and live-chat execution both
    passed. Remaining limitations are no proven structured output, no container
@@ -455,12 +479,12 @@ The adapter should:
   after verifying the installer layout. Implemented for current known local
   paths.
 - Build argv from observed flags:
-  `agy [--gemini_dir <isolated-dir>] --print-timeout <timeout> --model <model>
+  `agy --gemini_dir <isolated-dir> --print-timeout <timeout> --model <model>
   --print <prompt>`. Implemented.
 - Prepare per-run MCP config exactly as proven in Phase 0. Implemented through
   a generated temporary plugin.
-- When `BULLPEN_ANTIGRAVITY_GEMINI_DIR` is set, pass `--gemini_dir` to plugin
-  install, plugin uninstall, and print mode. Implemented.
+- Pass `--gemini_dir` to plugin list, plugin install, plugin uninstall, and
+  print mode. Implemented.
 - Use `--sandbox` for untrusted/chat paths only if Phase 0 proves MCP still
   works under sandbox restrictions. Implemented as an opt-in runtime switch
   through `BULLPEN_ANTIGRAVITY_SANDBOX`; default stays off because the verified
@@ -642,11 +666,15 @@ Manual checks on an authenticated `agy` install:
 3. **Structured output may not exist.** Plain text is acceptable because MCP
    works; Bullpen will lose Gemini-style stream event parsing and token usage
    until Antigravity exposes a machine-readable mode.
-4. **Auth may not fit containers.** Local keyring/OAuth flows may not work in
+4. **Prompt text is still passed in argv.** This is visible to process-listing
+   tools while a run is active. Claude, Codex, and OpenCode use Bullpen's stdin
+   prompt path; Antigravity cannot until `agy` exposes or documents an
+   equivalent prompt transport.
+5. **Auth may not fit containers.** Local keyring/OAuth flows may not work in
    Docker or Microsandbox without an API-key or service-account path.
-5. **Model names are likely to churn.** Keep Antigravity model IDs centralized
+6. **Model names are likely to churn.** Keep Antigravity model IDs centralized
    in the frontend model list and `model_aliases.py`.
-6. **Permission semantics changed.** Gemini's `--approval-mode yolo` plus
+7. **Permission semantics changed.** Gemini's `--approval-mode yolo` plus
    settings-file MCP allow-list does not map cleanly to `agy`. The adapter must
    use only flags and plugin config that were actually observed.
 
@@ -668,6 +696,11 @@ Manual checks on an authenticated `agy` install:
 - [x] Update usage handling based on real `agy` output.
 - [x] Prove local Antigravity headless config/auth isolation with
       `--gemini_dir`.
+- [x] Default local Antigravity runs to a Bullpen-managed profile instead of
+      mutating the user's real `~/.gemini` profile.
+- [x] Centralize Bullpen MCP server config and Antigravity tool allow-list
+      policy.
+- [x] Clean stale Antigravity runtime plugins from dead Bullpen processes.
 - [x] Remove Gemini deploy install/auth paths from Docker, Sprite, and
       Microsandbox.
 - [x] Wire container config isolation through `BULLPEN_ANTIGRAVITY_GEMINI_DIR`.

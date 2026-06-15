@@ -6,6 +6,7 @@ import shutil
 import sys
 
 from server.agents.base import AgentAdapter
+from server.agents.mcp_config import codex_mcp_overrides
 from server.usage import extract_codex_usage_event, merge_usage_dicts, merge_usage_max
 
 if sys.platform == "win32":
@@ -100,26 +101,7 @@ class CodexAdapter(AgentAdapter):
 
     def _mcp_overrides(self, bp_dir):
         """Return -c overrides to register the bullpen MCP server for this run."""
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        server_script = os.path.join(project_root, "server", "mcp_tools.py")
-        bp_dir = os.path.abspath(bp_dir)
-        from server.persistence import read_json
-
-        bp_config = read_json(os.path.join(bp_dir, "config.json"))
-        host = bp_config.get("server_host", "127.0.0.1")
-        if host == "0.0.0.0":
-            host = "127.0.0.1"
-        port = str(bp_config.get("server_port", 5000))
-        args = [server_script, "--bp-dir", bp_dir, "--host", host, "--port", port]
-
-        return [
-            "-c", f"mcp_servers.bullpen.command={json.dumps(sys.executable)}",
-            "-c", f"mcp_servers.bullpen.args={json.dumps(args)}",
-            "-c", f"mcp_servers.bullpen.cwd={json.dumps(project_root)}",
-            "-c", f"mcp_servers.bullpen.env.PYTHONPATH={json.dumps(project_root)}",
-            "-c", "mcp_servers.bullpen.default_tools_approval_mode=\"approve\"",
-            "-c", "mcp_servers.bullpen.tool_timeout_sec=120",
-        ]
+        return codex_mcp_overrides(bp_dir)
 
     def format_stream_line(self, line):
         """Extract display text from a Codex --json JSONL line."""

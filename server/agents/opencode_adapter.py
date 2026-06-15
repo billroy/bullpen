@@ -7,6 +7,7 @@ import sys
 import tempfile
 
 from server.agents.base import AgentAdapter
+from server.agents.mcp_config import opencode_mcp_config
 from server.usage import extract_opencode_usage_event, merge_usage_dicts
 
 
@@ -128,38 +129,7 @@ class OpenCodeAdapter(AgentAdapter):
 
     def _mcp_config(self, bp_dir):
         """Return an OpenCode config object for Bullpen MCP tools."""
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        server_script = os.path.join(project_root, "server", "mcp_tools.py")
-        bp_dir = os.path.abspath(bp_dir)
-
-        from server.persistence import read_json
-
-        bp_config = read_json(os.path.join(bp_dir, "config.json"))
-        host = bp_config.get("server_host", "127.0.0.1")
-        if host == "0.0.0.0":
-            host = "127.0.0.1"
-        port = str(bp_config.get("server_port", 5000))
-
-        return {
-            "$schema": "https://opencode.ai/config.json",
-            "mcp": {
-                "bullpen": {
-                    "type": "local",
-                    "enabled": True,
-                    "command": [
-                        sys.executable,
-                        server_script,
-                        "--bp-dir", bp_dir,
-                        "--host", host,
-                        "--port", port,
-                    ],
-                    "cwd": project_root,
-                    "environment": {
-                        "PYTHONPATH": project_root,
-                    },
-                },
-            },
-        }
+        return opencode_mcp_config(bp_dir)
 
     def format_stream_line(self, line):
         """Extract readable text from OpenCode JSON events."""
