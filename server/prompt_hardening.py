@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 TRUST_MODE_TRUSTED = "trusted"
 TRUST_MODE_UNTRUSTED = "untrusted"
 VALID_TRUST_MODES = {TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED}
@@ -77,6 +79,14 @@ def harden_agent_argv(provider, argv, trust_mode=TRUST_MODE_TRUSTED, *, chat=Fal
         trust_mode,
         default=TRUST_MODE_UNTRUSTED if chat else TRUST_MODE_TRUSTED,
     )
+    if provider == "antigravity":
+        sandbox_mode = os.environ.get("BULLPEN_ANTIGRAVITY_SANDBOX", "").strip().lower()
+        sandbox_untrusted = sandbox_mode in {"1", "true", "yes", "on", "untrusted"}
+        sandbox_always = sandbox_mode in {"always", "all"}
+        if (sandbox_always or (sandbox_untrusted and (chat or normalized == TRUST_MODE_UNTRUSTED))):
+            if "--sandbox" not in hardened:
+                hardened.append("--sandbox")
+        return hardened
     if provider != "claude":
         if provider == "opencode" and not chat and normalized == TRUST_MODE_TRUSTED:
             if "--dangerously-skip-permissions" not in hardened:

@@ -325,6 +325,11 @@ Implemented local hardening:
   specific messages.
 - Capacity/quota text is intentionally not treated as non-retryable until real
   Antigravity quota/capacity output is captured.
+- Antigravity runtime sandboxing is opt-in through
+  `BULLPEN_ANTIGRAVITY_SANDBOX`. The default remains the verified local path
+  with no `--sandbox` flag. Set `BULLPEN_ANTIGRAVITY_SANDBOX=untrusted` to add
+  `--sandbox` for untrusted workers and live chat, or `always` to add it for
+  all Antigravity runs.
 
 ### Phase 0: MCP Spike and Go/No-Go
 
@@ -434,7 +439,9 @@ The adapter should:
 - Prepare per-run MCP config exactly as proven in Phase 0. Implemented through
   a generated temporary plugin.
 - Use `--sandbox` for untrusted/chat paths only if Phase 0 proves MCP still
-  works under sandbox restrictions. Deferred; not yet proven.
+  works under sandbox restrictions. Implemented as an opt-in runtime switch
+  through `BULLPEN_ANTIGRAVITY_SANDBOX`; default stays off because the verified
+  local smokes did not use `--sandbox`.
 - Add `--dangerously-skip-permissions` only for trusted worker runs where
   Bullpen intentionally permits autonomous edits. Deferred; not enabled in the
   first slice.
@@ -607,7 +614,7 @@ Manual checks on an authenticated `agy` install:
 - [x] Update worker and live-chat stale-provider error handling.
 - [x] Add conservative Antigravity auth/model/plugin failure classification.
 - [x] Add best-effort Antigravity plugin cleanup after install failures.
-- [ ] Update runtime hardening for Antigravity trust modes.
+- [x] Update runtime hardening for Antigravity trust modes with opt-in sandbox.
 - [x] Update usage handling based on real `agy` output.
 - [ ] Defer Gemini deploy/install/auth replacement until Antigravity headless
       auth is proven.

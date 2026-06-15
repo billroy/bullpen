@@ -39,3 +39,34 @@ def test_harden_claude_untrusted_still_gets_strict_mcp_config():
 
     assert "--strict-mcp-config" in hardened
     assert "--disallowedTools" in hardened
+
+
+def test_harden_antigravity_default_does_not_add_sandbox(monkeypatch):
+    monkeypatch.delenv("BULLPEN_ANTIGRAVITY_SANDBOX", raising=False)
+    argv = ["agy", "--print", "hello"]
+
+    hardened = harden_agent_argv("antigravity", argv, trust_mode=TRUST_MODE_UNTRUSTED)
+
+    assert hardened == argv
+
+
+def test_harden_antigravity_opt_in_sandbox_for_untrusted(monkeypatch):
+    monkeypatch.setenv("BULLPEN_ANTIGRAVITY_SANDBOX", "untrusted")
+    argv = ["agy", "--print", "hello"]
+
+    trusted = harden_agent_argv("antigravity", argv, trust_mode=TRUST_MODE_TRUSTED)
+    untrusted = harden_agent_argv("antigravity", argv, trust_mode=TRUST_MODE_UNTRUSTED)
+    chat = harden_agent_argv("antigravity", argv, trust_mode=TRUST_MODE_TRUSTED, chat=True)
+
+    assert "--sandbox" not in trusted
+    assert "--sandbox" in untrusted
+    assert "--sandbox" in chat
+
+
+def test_harden_antigravity_opt_in_sandbox_always(monkeypatch):
+    monkeypatch.setenv("BULLPEN_ANTIGRAVITY_SANDBOX", "always")
+    argv = ["agy", "--print", "hello"]
+
+    hardened = harden_agent_argv("antigravity", argv, trust_mode=TRUST_MODE_TRUSTED)
+
+    assert "--sandbox" in hardened
