@@ -72,3 +72,24 @@ def test_notification_worker_runtime_caps_and_settings_exist():
     assert "window.ambientAudio.setVolume?.(volume)" in text
     assert "Notification workers" in toolbar
     assert "onToggleNotificationFlag" in toolbar
+
+
+def test_notification_worker_card_summarizes_enabled_modes():
+    utils = _read("static/utils.js")
+    card = _read("static/components/WorkerCard.js")
+    style = _read("static/style.css")
+
+    assert "function notificationSummaryItems(worker)" in utils
+    assert 'items.push(`speech 1) say "${text || \'notification text\'}"`);' in utils
+    assert "items.push(`sound 2) sound effect: ${effect}`);" in utils
+    assert "items.push(`flash 3) flash ${color} ${count} ${count === 1 ? 'time' : 'times'}`);" in utils
+    assert 'items.push(`toast 4) toast "${text || \'notification text\'}"`);' in utils
+    assert "window.notificationSummaryItems = notificationSummaryItems;" in utils
+
+    assert 'v-else-if="isNotification" class="worker-card-notification"' in card
+    assert 'v-for="item in notificationSummaryItems"' in card
+    assert "No notification modes enabled" in card
+    assert "notificationSummaryItems()" in card
+
+    assert ".worker-card-notification {" in style
+    assert ".worker-card-notification-list {" in style

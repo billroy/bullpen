@@ -167,6 +167,12 @@ const WorkerCard = {
             {{ valueDisplay || 'Empty' }}
           </button>
         </div>
+        <div v-else-if="isNotification" class="worker-card-notification">
+          <ul v-if="notificationSummaryItems.length" class="worker-card-notification-list">
+            <li v-for="item in notificationSummaryItems" :key="item">{{ item }}</li>
+          </ul>
+          <div v-else class="worker-card-notification-empty">No notification modes enabled</div>
+        </div>
         <div v-else class="worker-card-empty" :class="{ 'worker-card-empty--idle-detail': idleDetail }">
           <span v-if="pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
             {{ statusLabel }}
@@ -472,6 +478,9 @@ const WorkerCard = {
     },
     markerNote() {
       return String(this.worker?.note || '').trim();
+    },
+    notificationSummaryItems() {
+      return window.notificationSummaryItems ? window.notificationSummaryItems(this.worker) : [];
     },
     storedValueText() {
       const value = this.worker?.value;

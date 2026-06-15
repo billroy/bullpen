@@ -144,6 +144,37 @@ function workerTypeLabel(worker) {
   return 'AI';
 }
 
+function notificationSummaryItems(worker) {
+  if (!isNotificationWorker(worker)) return [];
+  const config = worker?.notification && typeof worker.notification === 'object' ? worker.notification : {};
+  const items = [];
+  const speech = config.speech && typeof config.speech === 'object' ? config.speech : {};
+  const sound = config.sound && typeof config.sound === 'object' ? config.sound : {};
+  const flash = config.flash && typeof config.flash === 'object' ? config.flash : {};
+  const toast = config.toast && typeof config.toast === 'object' ? config.toast : {};
+
+  if (speech.enabled) {
+    const text = String(speech.template || '').trim();
+    items.push(`speech 1) say "${text || 'notification text'}"`);
+  }
+  if (sound.enabled) {
+    const effect = String(sound.effect || 'done').trim() || 'done';
+    items.push(`sound 2) sound effect: ${effect}`);
+  }
+  if (flash.enabled) {
+    const sequence = Array.isArray(flash.sequence) ? flash.sequence : [];
+    const first = sequence.find(step => step && typeof step === 'object') || {};
+    const color = String(first.color || '#facc15').trim() || '#facc15';
+    const count = Math.max(1, sequence.length || 1);
+    items.push(`flash 3) flash ${color} ${count} ${count === 1 ? 'time' : 'times'}`);
+  }
+  if (toast.enabled) {
+    const text = String(toast.template || '').trim();
+    items.push(`toast 4) toast "${text || 'notification text'}"`);
+  }
+  return items;
+}
+
 function getColumnIcon(col) {
   const workerColumns = new Set(['assigned', 'in_progress']);
   return col?.icon || (workerColumns.has(col?.key) ? 'bot' : 'user');
@@ -159,6 +190,7 @@ window.getServiceSiteUrl = getServiceSiteUrl;
 window.renderLucideIcons = renderLucideIcons;
 window.getWorkerTypeIcon = getWorkerTypeIcon;
 window.workerTypeLabel = workerTypeLabel;
+window.notificationSummaryItems = notificationSummaryItems;
 window.workerColor = workerColor;
 window.isHumanWorker = isHumanWorker;
 window.isValueWorker = isValueWorker;
