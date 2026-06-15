@@ -108,8 +108,8 @@ ok
 
 # ── install AI agent CLIs ───────────────────────────────────────
 
-step "Installing AI agent CLIs (claude, codex, gemini)"
-CLI_OUT=$(sprite exec $S -- npm install -g @anthropic-ai/claude-code @openai/codex @google/gemini-cli 2>&1) || {
+step "Installing AI agent CLIs (claude, codex, opencode)"
+CLI_OUT=$(sprite exec $S -- npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai 2>&1) || {
     printf '\033[31mfailed\033[0m\n'
     echo "$CLI_OUT"
     die "CLI installation failed."
@@ -219,11 +219,9 @@ if [[ "$DO_CODEX" == [yY] ]]; then
     echo ""
 fi
 
-read -rp "Log in to Gemini CLI? [y/N]: " DO_GEMINI
-if [[ "$DO_GEMINI" == [yY] ]]; then
-    sprite exec $S -- gemini auth login
-    echo ""
-fi
+echo "Antigravity CLI setup is not automated here yet."
+echo "Install agy on the Sprite, authenticate it there, and keep Bullpen configured with:"
+echo "  export BULLPEN_ANTIGRAVITY_GEMINI_DIR=~/.gemini"
 
 # ── resolve URL ──────────────────────────────────────────────────────
 
@@ -265,4 +263,4 @@ printf '  sprite exec %s -- sprite-env services restart bullpen\n\n' "$S"
 printf 'To log in to an agent later:\n'
 printf '  claude setup-token  # then set CLAUDE_CODE_OAUTH_TOKEN on Sprite\n'
 printf '  sprite exec %s -- codex auth login --device-auth\n' "$S"
-printf '  sprite exec %s -- gemini auth login\n\n' "$S"
+printf '  install and authenticate agy on the Sprite, then set BULLPEN_ANTIGRAVITY_GEMINI_DIR=~/.gemini\n\n'

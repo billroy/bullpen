@@ -2,7 +2,9 @@
 
 ## Objective
 
-Provide a secure Microsandbox deployment path for Bullpen where Claude, Codex, Gemini, GitHub CLI, and project commands run inside a microVM, with only the intended host paths mounted.
+Provide a secure Microsandbox deployment path for Bullpen where Antigravity,
+Claude, Codex, OpenCode, GitHub CLI, and project commands run inside a microVM,
+with only the intended host paths mounted.
 
 Microsandbox should become the preferred secure local deployment path.
 `deploy-docker.sh` remains the behavior model for prompts, defaults, workspace
@@ -50,7 +52,12 @@ behavior for operators who want setup to be explicit.
 - GitHub CLI
 - Claude Code CLI
 - Codex CLI
-- Gemini CLI
+- OpenCode CLI
+
+Antigravity CLI installation is not automated in the prepared base until an
+official Linux install source for `agy` is verified. Runtime config already
+sets `BULLPEN_ANTIGRAVITY_GEMINI_DIR=/home/bullpen/.gemini` and expects an
+operator-supplied `/usr/local/bin/agy` when Antigravity is used.
 
 The prepare phase should support users who have not cloned the Bullpen repo yet. A user should be able to run a single downloaded shell script, or an equivalent command documented in the README, and have it fetch whatever Bullpen files are needed.
 
@@ -72,7 +79,7 @@ git --version
 gh --version
 claude --version
 codex --version
-gemini --version
+opencode --version
 ```
 
 The prepare phase must keep tool installation separate from user auth/config state. Do not install npm global packages into `/home/bullpen`; use image filesystem paths or a dedicated tooling path baked into the prepared base.
@@ -417,7 +424,9 @@ Then open `http://127.0.0.1:$BULLPEN_PORT` in the host browser unless `--no-open
 - Creating or editing files through Bullpen changes the matching host project directory
 - Bullpen and client app ports are both exposed on host localhost
 - Bullpen starts with authentication enabled using the requested admin credentials
-- Claude, Codex, Gemini, and GitHub credentials are available inside the sandbox when current credentials are present on the host
+- Antigravity, Claude, Codex, OpenCode, and GitHub credentials are available
+  inside the sandbox when current credentials are present on the host and the
+  relevant provider CLI is installed
 - The script refuses invalid ports and refuses to use the same port for Bullpen and the app
 - `--no-replace` exits nonzero without modifying an existing sandbox
 - Answering no to the replacement prompt exits successfully without modifying an existing sandbox

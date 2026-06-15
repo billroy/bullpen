@@ -106,7 +106,6 @@ SECRET_ENV_NAMES = {
     "ANTHROPIC_API_KEY",
     "BULLPEN_BOOTSTRAP_PASSWORD",
     "CLAUDE_CODE_OAUTH_TOKEN",
-    "GEMINI_API_KEY",
     "GH_TOKEN",
     "GITHUB_TOKEN",
     "GOOGLE_API_KEY",
@@ -382,9 +381,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
     auth_parser = subparsers.add_parser("auth", help="Run sandbox-native setup/auth for one item")
-    auth_parser.add_argument("target", choices=("claude", "codex", "opencode", "git"))
+    auth_parser.add_argument("target", choices=("antigravity", "claude", "codex", "opencode", "git"))
     test_parser = subparsers.add_parser("test-provider", help="Run sandbox-native verification for one item")
-    test_parser.add_argument("target", choices=("claude", "codex", "opencode", "git"))
+    test_parser.add_argument("target", choices=("antigravity", "claude", "codex", "opencode", "git"))
     first_light_parser = subparsers.add_parser(
         "first-light",
         help="Create a minimal sandbox and prove one provider works end-to-end",
@@ -706,6 +705,8 @@ def build_runtime_env(config: DeployConfig) -> None:
             "BULLPEN_CODEX_SANDBOX": os.environ.get("BULLPEN_CODEX_SANDBOX", "none"),
             "BULLPEN_CODEX_PATH": "/usr/local/bin/codex",
             "BULLPEN_OPENCODE_PATH": "/usr/local/bin/opencode",
+            "BULLPEN_ANTIGRAVITY_PATH": "/usr/local/bin/agy",
+            "BULLPEN_ANTIGRAVITY_GEMINI_DIR": "/home/bullpen/.gemini",
             "BULLPEN_MICROSANDBOX_HOST_NOFILE": str(config.host_nofile),
             "BULLPEN_MICROSANDBOX_GUEST_NOFILE": str(config.guest_nofile),
             "BULLPEN_MICROSANDBOX_MAX_CONNECTIONS": str(config.network_max_connections),
@@ -1227,12 +1228,12 @@ if [ "$actual_uid" != "$uid" ]; then
   echo "Existing bullpen user has uid $actual_uid, expected $uid." >&2
   exit 1
 fi
-mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.local/share/opencode /var/lib/bullpen
-chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.local /home/bullpen/.local/share /home/bullpen/.local/share/opencode
+mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini /home/bullpen/.local/share/opencode /var/lib/bullpen
+chown bullpen:"$group_name" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini /home/bullpen/.local /home/bullpen/.local/share /home/bullpen/.local/share/opencode
 chown -R bullpen:"$group_name" /var/lib/bullpen
 chmod 700 /var/lib/bullpen 2>/dev/null || true
 # Lift FD ceiling for bullpen via pam_limits. Default soft 1024 / hard 4096
-# is too tight when many claude/codex/gemini subprocesses each churn FDs
+# is too tight when many claude/codex/antigravity subprocesses each churn FDs
 # through TLS handshakes, MCP wires, and per-run tmp dirs; pressure surfaces
 # as misclassified TLS or DNS errors that look like API retry storms.
 mkdir -p /etc/security/limits.d
@@ -1241,7 +1242,7 @@ bullpen soft nofile __GUEST_NOFILE__
 bullpen hard nofile __GUEST_NOFILE__
 LIMITS_EOF
 chmod 644 /etc/security/limits.d/bullpen-fd.conf
-su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex && test -w /home/bullpen/.local/share/opencode'
+su -s /bin/bash bullpen -c 'test -w /home/bullpen && test -w /home/bullpen/logs && test -w /home/bullpen/bin && test -w /home/bullpen/.codex && test -w /home/bullpen/.gemini && test -w /home/bullpen/.local/share/opencode'
 soft_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Sn')"
 hard_nofile="$(su -s /bin/bash bullpen -c 'ulimit -Hn')"
 if [ "$soft_nofile" -lt __GUEST_NOFILE__ ] || [ "$hard_nofile" -lt __GUEST_NOFILE__ ]; then
@@ -1480,6 +1481,29 @@ timeout 45s bash -lc 'printf "Reply OK only." | HOME=/home/bullpen "$BULLPEN_OPE
         )
 
 
+async def verify_antigravity_auth(sandbox: Any, config: DeployConfig) -> None:
+    workspace = shlex.quote(container_workspace_path(config))
+    command = f'''set -e
+cd {workspace}
+test -x "$BULLPEN_ANTIGRAVITY_PATH"
+test -d "$BULLPEN_ANTIGRAVITY_GEMINI_DIR"
+timeout 45s bash -lc '"$BULLPEN_ANTIGRAVITY_PATH" --gemini_dir "$BULLPEN_ANTIGRAVITY_GEMINI_DIR" models'
+'''
+    result = await run_as_bullpen(sandbox, config, command, check=False, label="verify Antigravity auth")
+    returncode = getattr(result, "returncode", None)
+    if returncode is None:
+        returncode = getattr(result, "exit_code", None)
+    success = getattr(result, "success", None)
+    if returncode not in (None, 0) or success is False:
+        output = result_output_text(result)
+        raise DeployError(
+            "Antigravity auth preflight failed inside Microsandbox. "
+            "Install the Antigravity CLI as /usr/local/bin/agy, run `python3 deploy-sandbox.py auth antigravity`, "
+            "and confirm `agy --gemini_dir /home/bullpen/.gemini models` works there.\n"
+            f"{output}"
+        )
+
+
 async def clear_codex_auth(sandbox: Any, config: DeployConfig) -> None:
     command = r'''set -e
 timestamp="$(date +%Y%m%d%H%M%S)"
@@ -1603,6 +1627,22 @@ async def auth_opencode(runtime: MicrosandboxRuntime, sandbox: Any, config: Depl
     )
 
 
+async def auth_antigravity(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
+    print(
+        "Antigravity setup runs inside the sandbox. The Antigravity CLI must already be installed as /usr/local/bin/agy.",
+        flush=True,
+    )
+    await attach_as_bullpen(
+        runtime,
+        sandbox,
+        config,
+        '"$BULLPEN_ANTIGRAVITY_PATH"',
+        label="authenticate Antigravity",
+        bridge_localhost_callback=True,
+        prefer_exec_stream=False,
+    )
+
+
 async def auth_git(runtime: MicrosandboxRuntime, sandbox: Any, config: DeployConfig) -> None:
     name, email = resolve_git_identity()
     setup_command = (
@@ -1627,6 +1667,7 @@ class SetupItem:
 
 def setup_items() -> list[SetupItem]:
     return [
+        SetupItem("antigravity", "Antigravity", auth_antigravity, verify_antigravity_auth),
         SetupItem("claude", "Claude", auth_claude, verify_claude_auth),
         SetupItem("codex", "Codex", auth_codex, verify_codex_auth),
         SetupItem("opencode", "OpenCode", auth_opencode, verify_opencode_auth),
@@ -1956,7 +1997,6 @@ PY
             export npm_config_progress=false
             npm install -g --no-audit --no-fund --no-progress --omit=dev @anthropic-ai/claude-code
             npm install -g --no-audit --no-fund --no-progress --omit=dev @openai/codex
-            npm install -g --no-audit --no-fund --no-progress --omit=dev @google/gemini-cli
             npm install -g --no-audit --no-fund --no-progress --omit=dev opencode-ai
             """,
             label="Installing agent CLIs",
@@ -1975,7 +2015,6 @@ PY
               npm --version
               claude --version
               {codex_cli_integrity_command()}
-              gemini --version
               opencode --version
             }} > "$versions_file"
             cat "$versions_file"

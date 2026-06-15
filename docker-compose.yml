@@ -13,6 +13,7 @@ services:
       BULLPEN_WORKSPACE: /workspace
       BULLPEN_DEPLOY_LABEL: "(Docker:bullpen)"
       BULLPEN_PRODUCTION: ${BULLPEN_PRODUCTION:-0}
+      BULLPEN_ANTIGRAVITY_GEMINI_DIR: /home/bullpen/.gemini
     ports:
       - "${BULLPEN_PORT:-8080}:${BULLPEN_PORT:-8080}"
       - "${APP_PORT:-3000}:${APP_PORT:-3000}"
@@ -21,8 +22,8 @@ services:
       # Optional provider auth mounts. See docs/docker.md for risks.
       # - ${HOME}/.claude:/home/bullpen/.claude:ro
       # - ${HOME}/.claude.json:/home/bullpen/.claude.json:ro
+      # - ${HOME}/.gemini:/home/bullpen/.gemini:ro
       # - ${HOME}/.config/codex:/home/bullpen/.config/codex:ro
-      # - ${HOME}/.config/gemini:/home/bullpen/.config/gemini:ro
       # - ${HOME}/.local/share/opencode:/home/bullpen/.local/share/opencode:ro
       # - ${HOME}/.gitconfig:/home/bullpen/.gitconfig.host:ro
       # - ${HOME}/.config/gh:/home/bullpen/.config/gh:ro

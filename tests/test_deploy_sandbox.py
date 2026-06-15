@@ -212,9 +212,31 @@ def test_cli_accepts_opencode_setup_targets(sb, tmp_path, monkeypatch):
     assert test_config.target == "opencode"
 
 
-def test_setup_items_include_opencode(sb):
+def test_cli_accepts_antigravity_setup_targets(sb, tmp_path, monkeypatch):
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.chdir(ROOT)
+
+    auth_config = sb.config_from_args(
+        ["--workspace-root", str(workspace), "--no-open", "auth", "antigravity"]
+    )
+    test_config = sb.config_from_args(
+        ["--workspace-root", str(workspace), "--no-open", "test-provider", "antigravity"]
+    )
+
+    assert auth_config.action == "auth"
+    assert auth_config.target == "antigravity"
+    assert test_config.action == "test-provider"
+    assert test_config.target == "antigravity"
+
+
+def test_setup_items_include_antigravity_and_opencode(sb):
     items = {item.key: item for item in sb.setup_items()}
 
+    assert "antigravity" in items
+    assert items["antigravity"].label == "Antigravity"
+    assert items["antigravity"].auth_func is sb.auth_antigravity
+    assert items["antigravity"].verify_func is sb.verify_antigravity_auth
     assert "opencode" in items
     assert items["opencode"].label == "OpenCode"
     assert items["opencode"].auth_func is sb.auth_opencode
@@ -283,6 +305,8 @@ def test_runtime_env_passes_microsandbox_label_to_server(sb, tmp_path, monkeypat
     sb.build_runtime_env(config)
 
     assert config.runtime_env["BULLPEN_DEPLOY_LABEL"] == "(Microsandbox:bullpen-3)"
+    assert config.runtime_env["BULLPEN_ANTIGRAVITY_PATH"] == "/usr/local/bin/agy"
+    assert config.runtime_env["BULLPEN_ANTIGRAVITY_GEMINI_DIR"] == "/home/bullpen/.gemini"
 
 
 def test_run_install_tui_processes_items_sequentially(sb, monkeypatch):
@@ -1129,10 +1153,10 @@ def test_bullpen_start_and_verification_use_venv_python(sb):
     assert "useradd --uid" in prepare_command
     assert "BULLPEN_UID=" in prepare_command
     assert "Existing bullpen user has uid" in prepare_command
-    assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.local/share/opencode /var/lib/bullpen" in prepare_command
+    assert "mkdir -p /workspace /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini /home/bullpen/.local/share/opencode /var/lib/bullpen" in prepare_command
     assert "bullpen soft nofile 65536" in prepare_command
     assert "bullpen hard nofile 65536" in prepare_command
-    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.local /home/bullpen/.local/share /home/bullpen/.local/share/opencode" in prepare_command
+    assert "chown bullpen:\"$group_name\" /home/bullpen/logs /home/bullpen/bin /home/bullpen/.codex /home/bullpen/.gemini /home/bullpen/.local /home/bullpen/.local/share /home/bullpen/.local/share/opencode" in prepare_command
     assert "chown bullpen:\"$group_name\" /workspace" not in prepare_command
     assert "chown -R bullpen:\"$group_name\" /var/lib/bullpen" in prepare_command
     assert "chown -R bullpen:\"$group_name\" /home/bullpen\n" not in prepare_command

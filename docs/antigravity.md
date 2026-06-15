@@ -525,21 +525,28 @@ Update usage:
 
 ### Phase 3: Deploy and Runtime Setup
 
-Status: blocked only on container credential bootstrap and install packaging;
-local config isolation is proven.
+Status: partially implemented. Gemini install/auth has been removed from Docker,
+Sprite, and Microsandbox flows, and Docker/Microsandbox now set
+`BULLPEN_ANTIGRAVITY_GEMINI_DIR` to `/home/bullpen/.gemini`. Official Linux
+installation packaging for `agy` remains unverified, so automated container
+installation is still blocked.
 
 Replace install/auth flows:
 
-- [Dockerfile](../Dockerfile): stop installing `@google/gemini-cli`; install
-  `agy` using the verified Antigravity install mechanism.
-- [deploy-sprite.sh](../deploy-sprite.sh): replace Gemini install and
-  `gemini auth login` with the verified Antigravity setup/auth flow.
+- [Dockerfile](../Dockerfile): stop installing `@google/gemini-cli`.
+  Implemented. Installing `agy` remains blocked until an official Linux
+  install mechanism is verified.
+- [deploy-sprite.sh](../deploy-sprite.sh): remove Gemini install and
+  `gemini auth login`. Implemented. Antigravity setup is documented as manual
+  until an install/auth flow is verified for Sprites.
 - [deploy-docker.sh](../deploy-docker.sh) and
   [docker-compose.yml](../docker-compose.yml): replace Gemini config mounts/env
   forwarding with `BULLPEN_ANTIGRAVITY_GEMINI_DIR` and a verified copied or
-  mounted Antigravity/Gemini directory.
+  mounted Antigravity/Gemini directory. Implemented for `/home/bullpen/.gemini`.
 - [deploy-sandbox.py](../deploy-sandbox.py): forward only verified Antigravity
-  auth environment variables.
+  auth environment variables. Implemented for
+  `BULLPEN_ANTIGRAVITY_GEMINI_DIR=/home/bullpen/.gemini` and
+  `BULLPEN_ANTIGRAVITY_PATH=/usr/local/bin/agy`.
 
 Do not document or rely on `ANTIGRAVITY_API_KEY` until Phase 0 confirms it. If
 OAuth/keyring is the only supported auth path, Docker and Microsandbox setup need
@@ -642,8 +649,11 @@ Manual checks on an authenticated `agy` install:
 - [x] Update usage handling based on real `agy` output.
 - [x] Prove local Antigravity headless config/auth isolation with
       `--gemini_dir`.
-- [ ] Defer Gemini deploy/install/auth replacement until Antigravity container
-      auth and install packaging are proven.
+- [x] Remove Gemini deploy install/auth paths from Docker, Sprite, and
+      Microsandbox.
+- [x] Wire container config isolation through `BULLPEN_ANTIGRAVITY_GEMINI_DIR`.
+- [ ] Defer automated Antigravity container installation until official Linux
+      `agy` packaging is verified.
 - [x] Add tests for Antigravity paths.
 - [x] Add tests for stale Gemini graceful rejection.
 - [x] Run focused tests and full suite after final cleanup.

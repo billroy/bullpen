@@ -89,6 +89,26 @@ def test_deploy_docker_forwards_opencode_provider_env_and_home():
     assert "${HOME}/.local/share/opencode:/home/bullpen/.local/share/opencode:ro" in compose
 
 
+def test_deploy_docker_uses_antigravity_config_dir_and_removes_gemini_cli():
+    text = _read("deploy-docker.sh")
+    compose = _read("docker-compose.yml")
+    dockerfile = _read("Dockerfile")
+
+    assert '@google/gemini-cli' not in dockerfile
+    assert '@google/gemini-cli' not in text
+    assert 'seed_dir_if_missing "$HOME/.gemini" "$DOCKER_HOME/.gemini"' in text
+    assert 'BULLPEN_ANTIGRAVITY_GEMINI_DIR=/home/bullpen/.gemini' in text
+    assert '[[ -d "$DOCKER_HOME/.gemini" ]]' in text
+    assert 'seed_dir_if_missing "$HOME/.config/gemini"' not in text
+    assert 'seed_dir_if_missing "$HOME/.config/google-gemini"' not in text
+    assert 'add_env_if_set "GEMINI_API_KEY"' not in text
+    assert 'prompt_optional_credential "GEMINI_API_KEY"' not in text
+    assert 'BULLPEN_ANTIGRAVITY_GEMINI_DIR=/home/bullpen/.gemini' in dockerfile
+    assert 'BULLPEN_ANTIGRAVITY_GEMINI_DIR: /home/bullpen/.gemini' in compose
+    assert "${HOME}/.gemini:/home/bullpen/.gemini:ro" in compose
+    assert "${HOME}/.config/gemini:/home/bullpen/.config/gemini:ro" not in compose
+
+
 def test_docker_entrypoint_sets_up_git_for_copied_github_cli_auth():
     text = _read("deploy/docker/entrypoint.sh")
     assert 'local gh_hosts_file="$HOME/.config/gh/hosts.yml"' in text
