@@ -645,6 +645,7 @@ def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
         "resolved_value_type": slot.get("resolved_value_type", "string"),
         "formatted_value": format_value(slot.get("value", ""), slot.get("format")),
         "format": slot.get("format", {"kind": "auto"}),
+        "save_history": bool(slot.get("save_history", False)),
         "updated_at": slot.get("updated_at", ""),
         "history": slot.get("history", []),
     }

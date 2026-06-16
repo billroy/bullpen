@@ -1976,6 +1976,7 @@ const BullpenTab = {
           value: '',
           value_type: 'auto',
           format: { kind: 'auto' },
+          save_history: false,
         },
       });
     },
@@ -1992,7 +1993,7 @@ const BullpenTab = {
         'health_type', 'health_url', 'health_command', 'health_interval_seconds',
         'health_timeout_seconds', 'health_failure_threshold', 'on_crash',
         'stop_timeout_seconds', 'log_max_bytes', 'color', 'avatar'];
-      fields.push('value', 'value_type', 'resolved_value_type', 'format', 'icon', 'updated_at');
+      fields.push('value', 'value_type', 'resolved_value_type', 'format', 'save_history', 'icon', 'updated_at');
       fields.push('notification');
       const copy = {};
       for (const key of fields) {

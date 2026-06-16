@@ -51,7 +51,7 @@ def test_value_payload_auto_detects_plain_numbers_without_erasing_strings():
 
 
 def test_value_history_entries_normalize_values_and_timestamps():
-    slot = {"value": "42", "value_type": "auto", "updated_at": "2026-06-16T12:00:00Z"}
+    slot = {"value": "42", "value_type": "auto", "save_history": True, "updated_at": "2026-06-16T12:00:00Z"}
 
     append_value_history(slot)
     slot["value"] = "007"
@@ -72,6 +72,13 @@ def test_value_history_entries_normalize_values_and_timestamps():
             "updated_at": "2026-06-16T12:01:00Z",
         },
     ]
+
+
+def test_value_history_append_noops_when_history_is_disabled():
+    slot = {"value": "42", "value_type": "auto", "save_history": False, "updated_at": "2026-06-16T12:00:00Z"}
+
+    assert append_value_history(slot) is None
+    assert "history" not in slot
 
 
 def test_value_history_normalization_discards_invalid_entries():

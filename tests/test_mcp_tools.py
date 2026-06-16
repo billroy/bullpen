@@ -303,6 +303,7 @@ def test_value_tools_list_and_get_values(tmp_workspace, monkeypatch):
                 "name": "Build",
                 "value": "42",
                 "value_type": "number",
+                "save_history": True,
                 "history": [{"value": "41", "value_type": "number", "updated_at": "t1"}],
             },
         ]
@@ -324,6 +325,7 @@ def test_value_tools_list_and_get_values(tmp_workspace, monkeypatch):
     by_name = json.loads(captured[1]["text"])
     assert by_name["ref"] == "B1"
     assert by_name["value"] == 42
+    assert by_name["save_history"] is True
     assert by_name["history"] == [
         {
             "value": 41,

@@ -191,6 +191,7 @@ const WorkerConfigModal = {
             value_type: w.value_type || 'auto',
             resolved_value_type: w.resolved_value_type || 'string',
             format: w.format && typeof w.format === 'object' ? { ...w.format } : { kind: 'auto' },
+            save_history: w.save_history !== undefined ? !!w.save_history : Array.isArray(w.history) && w.history.length > 0,
             notification: cloneNotificationForm(w.notification),
           };
           this.servicePreview = null;
@@ -451,6 +452,10 @@ const WorkerConfigModal = {
               <label class="form-label" v-if="form.format.kind === 'currency'">
                 Symbol
                 <input class="form-input" v-model="form.format.symbol" maxlength="8">
+              </label>
+              <label class="form-label form-label-inline">
+                <input type="checkbox" v-model="form.save_history">
+                Save history
               </label>
             </div>
           </template>
@@ -1364,6 +1369,7 @@ const WorkerConfigModal = {
         fields.name = String(fields.name || '').trim();
         fields.value_type = String(fields.value_type || 'auto');
         fields.format = fields.format && typeof fields.format === 'object' ? { ...fields.format } : { kind: 'auto' };
+        fields.save_history = !!fields.save_history;
         delete fields.resolved_value_type;
         delete fields.note;
         delete fields.agent;

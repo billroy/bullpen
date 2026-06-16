@@ -523,15 +523,18 @@ def normalize_worker_slot(raw, *, index, config):
         slot["max_retries"] = 0
     elif type_id == "value":
         payload = normalize_value_payload(slot.get("value"), slot.get("value_type"))
+        history = normalize_value_history(slot.get("history"))
+        save_history = bool(slot.get("save_history", bool(history)))
         slot["name"] = str(raw.get("name") or "").strip()
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
         slot["format"] = normalize_value_format(slot.get("format"))
+        slot["save_history"] = save_history
         slot["icon"] = str(slot.get("icon") or "equal")
         slot["color"] = str(slot.get("color") or "value")
         slot["updated_at"] = str(slot.get("updated_at") or "")
-        slot["history"] = normalize_value_history(slot.get("history"))
+        slot["history"] = history if save_history else []
         for key in (
             "activation",
             "disposition",

@@ -261,6 +261,8 @@ def normalize_value_history(history: object) -> list[dict]:
 
 
 def append_value_history(slot: dict | None, updated_at: object = None) -> dict | None:
+    if not isinstance(slot, dict) or not slot.get("save_history"):
+        return None
     entry = value_history_entry(slot, updated_at)
     if entry is None:
         return None

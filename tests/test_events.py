@@ -820,24 +820,31 @@ class TestWorkerEvents:
         assert worker["value"] == "00123"
         assert worker["resolved_value_type"] == "string"
         assert worker["format"] == {"kind": "number", "places": 10}
+        assert worker["save_history"] is False
         assert worker["updated_at"]
-        assert worker["history"] == [
-            {
-                "value": "00123",
-                "value_type": "auto",
-                "resolved_value_type": "string",
-                "updated_at": worker["updated_at"],
-            }
-        ]
+        assert worker["history"] == []
         assert "task_queue" not in worker
         assert "state" not in worker
+
+    def test_add_value_worker_can_save_initial_history(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "1", "value_type": "number", "save_history": True},
+        })
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+
+        assert worker["save_history"] is True
+        assert [entry["value"] for entry in worker["history"]] == [1]
 
     def test_configure_value_worker_updates_value_and_timestamp(self, client):
         c, app = client
         c.emit("worker:add", {
             "slot": 0,
             "type": "value",
-            "fields": {"name": "Counter", "value": "1", "value_type": "number"},
+            "fields": {"name": "Counter", "value": "1", "value_type": "number", "save_history": True},
         })
         first = get_event(c, "layout:updated")
         first_timestamp = first["slots"][0]["updated_at"]
@@ -858,7 +865,7 @@ class TestWorkerEvents:
         c.emit("worker:add", {
             "slot": 0,
             "type": "value",
-            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+            "fields": {"name": "Counter", "value": "5", "value_type": "number", "save_history": True},
         })
         assert get_event(c, "layout:updated") is not None
 
@@ -875,7 +882,7 @@ class TestWorkerEvents:
         c.emit("worker:add", {
             "slot": 0,
             "type": "value",
-            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+            "fields": {"name": "Counter", "value": "5", "value_type": "number", "save_history": True},
         })
         assert get_event(c, "layout:updated") is not None
 

@@ -43,6 +43,7 @@ def test_value_worker_can_be_created_from_library():
     assert "addValueWorker()" in text
     assert "type: 'value'" in text
     assert "value_type: 'auto'" in text
+    assert "save_history: false" in text
 
 
 def test_value_worker_config_modal_has_value_fields_only():
@@ -54,6 +55,8 @@ def test_value_worker_config_modal_has_value_fields_only():
     assert 'v-model="form.value"' in text
     assert 'v-model="form.value_type"' in text
     assert 'v-model="form.format.kind"' in text
+    assert 'v-model="form.save_history"' in text
+    assert "fields.save_history = !!fields.save_history;" in text
     assert 'v-if="!isService && !isValue"' in text
     value_save_branch = text.split("if (this.isValue) {", 1)[1].split("} else if (this.isMarker || this.isNotification) {", 1)[0]
     assert "delete fields.activation;" in value_save_branch
@@ -137,9 +140,11 @@ def test_numeric_value_worker_card_has_sparkline_and_graph_modal():
     assert "numericValueHistory()" in card
     assert "valueGraphOpen" in card
     assert 'class="modal value-graph-modal"' in card
+    assert 'v-if="valueHistoryEnabled"' in card
     assert "Show History" in card
     assert "menuShowValueHistory()" in card
     assert "valueHistoryRows()" in card
+    assert "if (!this.valueHistoryEnabled) return [];" in card
     assert "exportValueHistoryCsv()" in card
     assert 'class="value-history-table"' in card
     assert 'a.download = `${this.valueHistoryFilenameBase()}.csv`;' in card

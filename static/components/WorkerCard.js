@@ -98,7 +98,7 @@ const WorkerCard = {
           <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
           <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
           <button class="worker-menu-item" @click="menuExportWorker"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Worker</span></button>
-          <button v-if="isValue" class="worker-menu-item" @click="menuShowValueHistory"><i class="menu-item-icon" data-lucide="history" aria-hidden="true"></i><span class="menu-item-label">Show History</span></button>
+          <button v-if="valueHistoryEnabled" class="worker-menu-item" @click="menuShowValueHistory"><i class="menu-item-icon" data-lucide="history" aria-hidden="true"></i><span class="menu-item-label">Show History</span></button>
           <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
           <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
           <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Worker&hellip;</span></button>
@@ -588,7 +588,11 @@ const WorkerCard = {
       }
       return points;
     },
+    valueHistoryEnabled() {
+      return this.isValue && !!this.worker?.save_history;
+    },
     valueHistoryRows() {
+      if (!this.valueHistoryEnabled) return [];
       const history = Array.isArray(this.worker?.history) ? this.worker.history : [];
       return history.map(entry => {
         const updatedAt = String(entry?.updated_at || '').trim();
@@ -609,7 +613,7 @@ const WorkerCard = {
       return this.numericValueHistory.length > 0;
     },
     hasNumericValueSparkline() {
-      return this.isValue && this.valueTypeLabel === 'number' && this.numericValueHistory.length > 0;
+      return this.valueHistoryEnabled && this.valueTypeLabel === 'number' && this.numericValueHistory.length > 0;
     },
     valueSparklineTitle() {
       const count = this.numericValueHistory.length;
@@ -899,7 +903,7 @@ const WorkerCard = {
       this.cancelValueEdit();
     },
     openValueHistory() {
-      if (!this.isValue) return;
+      if (!this.valueHistoryEnabled) return;
       this.valueGraphOpen = true;
       this.$nextTick(() => this.$refs.valueGraphOverlay?.focus?.());
     },
