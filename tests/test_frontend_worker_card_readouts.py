@@ -55,3 +55,13 @@ def test_worker_card_readouts_have_styles():
     assert '.worker-card-output {' in text
     assert 'flex: 1 1 0;' in text
     assert 'max-height: none;' in text
+
+
+def test_worker_card_prioritizes_live_output_while_busy():
+    text = _read("static/components/WorkerCard.js")
+    output_idx = text.index('class="worker-card-output"')
+    queue_idx = text.index('class="worker-card-queue"')
+    assert output_idx < queue_idx
+    assert "v-else-if=\"effectiveLayoutMode !== 'small' && visibleQueuedTasks.length\"" in text
+    assert "visibleQueuedTasks()" in text
+    assert "return this.queuedTasks.slice(1);" in text

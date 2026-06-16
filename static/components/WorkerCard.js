@@ -135,8 +135,11 @@ const WorkerCard = {
         <div v-if="isDisabledType" class="worker-card-disabled-badge" :title="disabledTypeMessage">
           {{ disabledTypeMessage }}
         </div>
-        <div class="worker-card-queue" v-if="effectiveLayoutMode !== 'small' && queuedTasks.length">
-          <div v-for="t in queuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
+        <div v-if="showActiveOutputPane" class="worker-card-output">
+          <pre>{{ lastOutput }}</pre>
+        </div>
+        <div class="worker-card-queue" v-else-if="effectiveLayoutMode !== 'small' && visibleQueuedTasks.length">
+          <div v-for="t in visibleQueuedTasks" :key="t.id" class="worker-queue-item" :title="t.title"
                @click.stop="$emit('select-task', t.id)">
             <i class="ticket-type-icon ticket-type-icon--worker-queue" data-lucide="tag" aria-hidden="true"></i>
             <span class="worker-queue-title">{{ t.title }}</span>
@@ -197,9 +200,6 @@ const WorkerCard = {
                :title="idleDetail"
                @click.stop="openConfigFromIdleDetail">{{ idleDetail }}</div>
           <template v-else>{{ emptyLabel }}</template>
-        </div>
-        <div v-if="showOutputPane && (isWorking || isService) && lastOutput" class="worker-card-output">
-          <pre>{{ lastOutput }}</pre>
         </div>
       </div>
       <Teleport to="body">
@@ -330,6 +330,9 @@ const WorkerCard = {
     },
     showOutputPane() {
       return this.effectiveLayoutMode !== 'small';
+    },
+    showActiveOutputPane() {
+      return this.showOutputPane && (this.isWorking || this.isService) && !!this.lastOutput;
     },
     pillInBody() {
       return this.effectiveLayoutMode !== 'small' && this.isService && (this.workerState !== 'idle' || this.isPaused);
@@ -488,6 +491,10 @@ const WorkerCard = {
         const t = this.lookupTask(id);
         return t || { id, title: id };
       });
+    },
+    visibleQueuedTasks() {
+      if (!this.showActiveOutputPane) return this.queuedTasks;
+      return this.queuedTasks.slice(1);
     },
     menuIconToken() {
       return [
