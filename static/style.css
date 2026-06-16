@@ -3544,18 +3544,9 @@ body.worker-singleton-dragging * {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-  padding: 5px 4px 6px;
-}
-
-.worker-card-value-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: 10px;
-  text-transform: uppercase;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 7px 4px 6px;
 }
 
 .worker-card-value-main {

@@ -150,10 +150,6 @@ const WorkerCard = {
           <template v-else>{{ emptyLabel }}</template>
         </div>
         <div v-else-if="isValue" class="worker-card-value">
-          <div class="worker-card-value-meta">
-            <span>{{ valueCellRef || 'Value' }}</span>
-            <span>{{ valueTypeLabel }}</span>
-          </div>
           <template v-if="valueEditing">
             <input class="worker-card-value-input"
                    ref="valueEditInput"

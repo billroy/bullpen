@@ -68,7 +68,10 @@ def test_value_worker_card_displays_value_without_run_controls():
     text = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
 
     assert 'v-else-if="isValue" class="worker-card-value"' in text
-    assert "{{ valueCellRef || 'Value' }}" in text
+    value_card = text.split('v-else-if="isValue" class="worker-card-value"', 1)[1].split('v-else-if="isNotification"', 1)[0]
+    assert "worker-card-value-meta" not in value_card
+    assert "{{ valueCellRef || 'Value' }}" not in value_card
+    assert "{{ valueTypeLabel }}" not in value_card
     assert "{{ valueDisplay || 'Empty' }}" in text
     assert "return isValueWorker(this.worker);" in text
     assert "if (this.isValue) return false;" in text
@@ -126,7 +129,7 @@ def test_value_worker_card_styles_exist():
     text = (ROOT / "static" / "style.css").read_text()
 
     assert ".worker-card-value {" in text
-    assert ".worker-card-value-meta {" in text
+    assert ".worker-card-value-meta {" not in text
     assert ".worker-card-value-main {" in text
 
 
