@@ -3577,6 +3577,45 @@ body.worker-singleton-dragging * {
   cursor: text;
 }
 
+.worker-card-value-sparkline-button {
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  cursor: pointer;
+  padding: 3px 5px;
+}
+
+.worker-card-value-sparkline-button:hover,
+.worker-card-value-sparkline-button:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  outline: none;
+}
+
+.worker-card-value-sparkline {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.worker-card-value-sparkline-base {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.worker-card-value-sparkline-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.worker-card-value-sparkline-dot {
+  fill: var(--accent);
+}
+
 .worker-card-value-input {
   text-align: right;
 }
@@ -4314,6 +4353,84 @@ body.worker-singleton-dragging * {
 
 .modal-wide {
   width: 560px;
+}
+
+.value-graph-modal {
+  width: 720px;
+}
+
+.value-graph-body {
+  gap: 10px;
+}
+
+.value-graph-current {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.value-graph-current-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.value-graph-current-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 650;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value-graph-chart {
+  display: block;
+  width: 100%;
+  height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.value-graph-grid {
+  stroke: color-mix(in srgb, var(--border) 70%, transparent);
+  stroke-width: 1;
+}
+
+.value-graph-axis {
+  stroke: var(--border);
+  stroke-width: 1.2;
+}
+
+.value-graph-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.value-graph-dot {
+  fill: var(--accent);
+}
+
+.value-graph-y-label {
+  fill: var(--text-muted);
+  font-size: 11px;
+  text-anchor: end;
+}
+
+.value-graph-axis-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal-header {

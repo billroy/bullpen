@@ -166,6 +166,19 @@ const WorkerCard = {
                   @click.stop="startValueEdit">
             {{ valueDisplay || 'Empty' }}
           </button>
+          <button v-if="hasNumericValueSparkline"
+                  type="button"
+                  class="worker-card-value-sparkline-button"
+                  :title="valueSparklineTitle"
+                  @click.stop="openValueGraph"
+                  @dblclick.stop
+                  aria-label="Open value history graph">
+            <svg class="worker-card-value-sparkline" viewBox="0 0 120 32" preserveAspectRatio="none" aria-hidden="true">
+              <line x1="0" y1="31" x2="120" y2="31" class="worker-card-value-sparkline-base"></line>
+              <polyline v-if="valueSparklinePoints" :points="valueSparklinePoints" class="worker-card-value-sparkline-line"></polyline>
+              <circle v-if="valueSparklineSinglePoint" :cx="valueSparklineSinglePoint.x" :cy="valueSparklineSinglePoint.y" r="2.2" class="worker-card-value-sparkline-dot"></circle>
+            </svg>
+          </button>
         </div>
         <div v-else-if="isNotification" class="worker-card-notification">
           <ul v-if="notificationSummaryItems.length" class="worker-card-notification-list">
@@ -187,6 +200,34 @@ const WorkerCard = {
           <pre>{{ lastOutput }}</pre>
         </div>
       </div>
+      <Teleport to="body">
+        <div v-if="valueGraphOpen" class="modal-overlay value-graph-overlay" @click.self="closeValueGraph" @keydown.escape="closeValueGraph" tabindex="0" ref="valueGraphOverlay">
+          <div class="modal value-graph-modal">
+            <div class="modal-header">
+              <h2>{{ valueGraphTitle }}</h2>
+              <button class="btn btn-icon" type="button" @click="closeValueGraph">&times;</button>
+            </div>
+            <div class="modal-body value-graph-body">
+              <div class="value-graph-current">
+                <span class="value-graph-current-label">{{ valueCellRef || 'Value' }}</span>
+                <span class="value-graph-current-value">{{ valueDisplay || 'Empty' }}</span>
+              </div>
+              <svg class="value-graph-chart" viewBox="0 0 640 260" preserveAspectRatio="none" role="img" :aria-label="valueGraphAriaLabel">
+                <line v-for="tick in valueGraphYTicks" :key="'y-' + tick.y" x1="54" :y1="tick.y" x2="626" :y2="tick.y" class="value-graph-grid"></line>
+                <line x1="54" y1="18" x2="54" y2="226" class="value-graph-axis"></line>
+                <line x1="54" y1="226" x2="626" y2="226" class="value-graph-axis"></line>
+                <polyline v-if="valueGraphPoints" :points="valueGraphPoints" class="value-graph-line"></polyline>
+                <circle v-if="valueGraphSinglePoint" :cx="valueGraphSinglePoint.x" :cy="valueGraphSinglePoint.y" r="4" class="value-graph-dot"></circle>
+                <text v-for="tick in valueGraphYTicks" :key="'label-' + tick.y" x="46" :y="tick.y + 4" class="value-graph-y-label">{{ tick.label }}</text>
+              </svg>
+              <div class="value-graph-axis-labels">
+                <span>{{ valueGraphStartLabel }}</span>
+                <span>{{ valueGraphEndLabel }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Teleport>
     </div>
   `,
   data() {
@@ -208,6 +249,7 @@ const WorkerCard = {
       valueEditText: '',
       valueEditError: '',
       valueEditIncludesName: false,
+      valueGraphOpen: false,
     };
   },
   mounted() {
@@ -510,6 +552,68 @@ const WorkerCard = {
       }
       return String(value);
     },
+    numericValueHistory() {
+      const history = Array.isArray(this.worker?.history) ? this.worker.history : [];
+      const points = [];
+      for (const entry of history) {
+        const value = entry?.value;
+        const numeric = typeof value === 'number' ? value : Number(value);
+        if (!Number.isFinite(numeric) || value === true || value === false) continue;
+        if (entry?.resolved_value_type && String(entry.resolved_value_type) !== 'number') continue;
+        const rawUpdatedAt = String(entry?.updated_at || '').trim();
+        const time = rawUpdatedAt ? Date.parse(rawUpdatedAt) : NaN;
+        points.push({
+          value: numeric,
+          updatedAt: rawUpdatedAt,
+          time: Number.isFinite(time) ? time : null,
+        });
+      }
+      return points;
+    },
+    hasNumericValueSparkline() {
+      return this.isValue && this.valueTypeLabel === 'number' && this.numericValueHistory.length > 0;
+    },
+    valueSparklineTitle() {
+      const count = this.numericValueHistory.length;
+      return count === 1 ? 'Open graph for 1 recorded value' : `Open graph for ${count} recorded values`;
+    },
+    valueSparklinePoints() {
+      return this.buildChartPoints(this.numericValueHistory, 120, 32, { top: 3, right: 2, bottom: 3, left: 2 });
+    },
+    valueSparklineSinglePoint() {
+      return this.buildSingleChartPoint(this.numericValueHistory, 120, 32, { top: 3, right: 2, bottom: 3, left: 2 });
+    },
+    valueGraphTitle() {
+      const name = String(this.worker?.name || '').trim();
+      const ref = this.valueCellRef || 'Value';
+      return name ? `${name} history` : `${ref} history`;
+    },
+    valueGraphAriaLabel() {
+      return `Value history graph for ${this.valueGraphTitle}`;
+    },
+    valueGraphPoints() {
+      return this.buildChartPoints(this.numericValueHistory, 640, 260, { top: 18, right: 14, bottom: 34, left: 54 });
+    },
+    valueGraphSinglePoint() {
+      return this.buildSingleChartPoint(this.numericValueHistory, 640, 260, { top: 18, right: 14, bottom: 34, left: 54 });
+    },
+    valueGraphYTicks() {
+      const values = this.numericValueHistory.map(point => point.value);
+      if (!values.length) return [];
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || 1;
+      return [max, min + range / 2, min].map(value => ({
+        y: this.valueToChartY(value, min, max, 260, { top: 18, bottom: 34 }),
+        label: this.formatCompactNumber(value),
+      }));
+    },
+    valueGraphStartLabel() {
+      return this.formatHistoryTime(this.numericValueHistory[0]);
+    },
+    valueGraphEndLabel() {
+      return this.formatHistoryTime(this.numericValueHistory[this.numericValueHistory.length - 1]);
+    },
     valueEditSourceText() {
       return `${String(this.worker?.name || '').trim()}:${this.storedValueText}`;
     },
@@ -755,6 +859,65 @@ const WorkerCard = {
           : { value: parsed.value },
       });
       this.cancelValueEdit();
+    },
+    openValueGraph() {
+      if (!this.hasNumericValueSparkline) return;
+      this.valueGraphOpen = true;
+      this.$nextTick(() => this.$refs.valueGraphOverlay?.focus?.());
+    },
+    closeValueGraph() {
+      this.valueGraphOpen = false;
+    },
+    chartXForIndex(index, count, width, inset) {
+      const left = inset.left || 0;
+      const right = inset.right || 0;
+      if (count <= 1) return left + ((width - left - right) / 2);
+      return left + (index / (count - 1)) * (width - left - right);
+    },
+    valueToChartY(value, min, max, height, inset) {
+      const top = inset.top || 0;
+      const bottom = inset.bottom || 0;
+      const chartHeight = height - top - bottom;
+      if (max === min) return top + chartHeight / 2;
+      return top + (1 - ((value - min) / (max - min))) * chartHeight;
+    },
+    buildChartPoints(points, width, height, inset) {
+      if (!Array.isArray(points) || points.length < 2) return '';
+      const values = points.map(point => point.value);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      return points.map((point, index) => {
+        const x = this.chartXForIndex(index, points.length, width, inset);
+        const y = this.valueToChartY(point.value, min, max, height, inset);
+        return `${x.toFixed(2)},${y.toFixed(2)}`;
+      }).join(' ');
+    },
+    buildSingleChartPoint(points, width, height, inset) {
+      if (!Array.isArray(points) || points.length !== 1) return null;
+      return {
+        x: this.chartXForIndex(0, 1, width, inset),
+        y: this.valueToChartY(points[0].value, points[0].value, points[0].value, height, inset),
+      };
+    },
+    formatCompactNumber(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return '';
+      return new Intl.NumberFormat(undefined, {
+        notation: Math.abs(numeric) >= 10000 ? 'compact' : 'standard',
+        maximumFractionDigits: Math.abs(numeric) >= 100 ? 0 : 2,
+      }).format(numeric);
+    },
+    formatHistoryTime(point) {
+      if (!point) return '';
+      if (point.time) {
+        return new Intl.DateTimeFormat(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        }).format(new Date(point.time));
+      }
+      return point.updatedAt || '';
     },
     canConnect(dir) {
       if (this.isValue) return false;

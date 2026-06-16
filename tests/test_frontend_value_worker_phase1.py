@@ -127,6 +127,22 @@ def test_value_worker_card_styles_exist():
     assert ".worker-card-value-main {" in text
 
 
+def test_numeric_value_worker_card_has_sparkline_and_graph_modal():
+    card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+    css = (ROOT / "static" / "style.css").read_text()
+
+    assert 'v-if="hasNumericValueSparkline"' in card
+    assert 'class="worker-card-value-sparkline-button"' in card
+    assert '@click.stop="openValueGraph"' in card
+    assert "numericValueHistory()" in card
+    assert "valueGraphOpen" in card
+    assert 'class="modal value-graph-modal"' in card
+    assert "buildChartPoints(points, width, height, inset)" in card
+    assert ".worker-card-value-sparkline-button {" in css
+    assert ".value-graph-modal {" in css
+    assert ".value-graph-chart {" in css
+
+
 def test_value_shortcut_editor_parses_and_creates_values():
     text = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
 
