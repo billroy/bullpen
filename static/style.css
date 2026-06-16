@@ -4754,6 +4754,137 @@ body.worker-singleton-dragging * {
   opacity: 0.7;
 }
 
+.detail-metric-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.detail-metric-button:hover,
+.detail-metric-button:focus-visible {
+  color: var(--text-primary);
+  opacity: 1;
+  text-decoration: underline;
+  outline: none;
+}
+
+.usage-report-overlay {
+  z-index: 940;
+}
+
+.usage-report-modal {
+  width: 760px;
+}
+
+.usage-report-body {
+  gap: 16px;
+}
+
+.usage-report-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.usage-report-summary > div {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+  padding: 10px;
+  min-width: 0;
+}
+
+.usage-report-summary span,
+.usage-report-section h3 {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.usage-report-summary strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 16px;
+}
+
+.usage-report-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usage-report-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.usage-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.usage-report-table th,
+.usage-report-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.usage-report-table th {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.usage-report-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.usage-report-table td:not(:first-child):not(:nth-child(2)) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-report-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 10px;
+}
+
+.usage-report-provider-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.usage-report-provider-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.usage-report-provider-row:last-child {
+  border-bottom: 0;
+}
+
+.usage-report-provider-row strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .detail-body {
   padding: 12px 16px;
   flex: 1;

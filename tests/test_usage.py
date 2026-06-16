@@ -158,6 +158,17 @@ def test_build_usage_update_appends_entry_and_increments_tokens():
     assert codex["tokens"] == 25
 
 
+def test_build_usage_entry_records_elapsed_ms_when_available():
+    entry = build_usage_entry(
+        source="worker",
+        provider="codex",
+        usage={"input_tokens": 12, "output_tokens": 3},
+        elapsed_ms=2500,
+    )
+
+    assert entry["elapsed_ms"] == 2500
+
+
 def test_build_usage_update_separates_provider_and_model_totals():
     task = {
         "tokens": 0,

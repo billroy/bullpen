@@ -3217,6 +3217,7 @@ def _on_agent_success(
                         model=worker.get("model"),
                         slot=slot_index,
                         usage=usage,
+                        elapsed_ms=elapsed_task_time_ms(task.get(ACTIVE_TASK_TIME_FIELD)),
                     )
                     if usage_entry:
                         usage_update = build_usage_update(task, usage_entry)

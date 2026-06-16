@@ -14,6 +14,7 @@ const TaskDetailPanel = {
       draggingWidth: null,
       nowMs: Date.now(),
       taskTimeTimer: null,
+      usageReportOpen: false,
     };
   },
   computed: {
@@ -67,6 +68,61 @@ const TaskDetailPanel = {
       const startedMs = Date.parse(this.task?.active_task_started_at || '');
       if (!Number.isFinite(startedMs)) return base;
       return base + Math.max(this.nowMs - startedMs, 0);
+    },
+    usageEntries() {
+      return Array.isArray(this.task?.usage) ? this.task.usage.filter(entry => entry && typeof entry === 'object') : [];
+    },
+    tokenProviderRows() {
+      const rows = Array.isArray(this.task?.tokens_by_provider_model) && this.task.tokens_by_provider_model.length
+        ? this.task.tokens_by_provider_model
+        : this.aggregateTokensByProviderModel(this.usageEntries);
+      return rows.map(row => ({
+        key: `${row.provider || 'unknown'}:${row.model || ''}`,
+        provider: row.provider || 'unknown',
+        model: row.model || '',
+        input: this.tokenFieldValue(row, 'input_tokens'),
+        cached: this.tokenFieldValue(row, 'cached_input_tokens'),
+        output: this.tokenFieldValue(row, 'output_tokens'),
+        reasoning: this.tokenFieldValue(row, 'reasoning_output_tokens'),
+        total: this.usageTotalTokens(row),
+      })).filter(row => row.total || row.input || row.cached || row.output || row.reasoning);
+    },
+    timeRunRows() {
+      const rows = this.usageEntries.map((entry, index) => ({
+        key: `${entry.timestamp || 'run'}:${index}`,
+        run: index + 1,
+        provider: entry.provider || 'unknown',
+        model: entry.model || '',
+        when: this.formatUsageTimestamp(entry.timestamp),
+        elapsedMs: this.usageElapsedMs(entry),
+      }));
+      if (rows.some(row => row.elapsedMs > 0)) return rows;
+      if (this.displayedTaskTimeMs > 0) {
+        return [{
+          key: 'reported-total',
+          run: '-',
+          provider: this.usageEntries.length ? 'All providers' : 'unknown',
+          model: '',
+          when: this.usageEntries.length ? 'usage span' : 'reported',
+          elapsedMs: this.displayedTaskTimeMs,
+        }];
+      }
+      return rows;
+    },
+    timeProviderRows() {
+      const buckets = new Map();
+      this.timeRunRows.forEach(row => {
+        if (!row.elapsedMs) return;
+        const key = `${row.provider || 'unknown'}:${row.model || ''}`;
+        const existing = buckets.get(key) || { key, provider: row.provider || 'unknown', model: row.model || '', elapsedMs: 0, runs: 0 };
+        existing.elapsedMs += row.elapsedMs;
+        existing.runs += 1;
+        buckets.set(key, existing);
+      });
+      return Array.from(buckets.values()).sort((a, b) => b.elapsedMs - a.elapsedMs);
+    },
+    hasUsageReport() {
+      return this.displayedTaskTimeMs > 0 || this.tokenValue(this.task?.tokens) > 0 || this.usageEntries.length > 0;
     }
   },
   watch: {
@@ -74,6 +130,7 @@ const TaskDetailPanel = {
       this.editing = false;
       this.editingTitle = false;
       this.editingTags = false;
+      this.usageReportOpen = false;
       this.$nextTick(() => renderLucideIcons(this.$el));
     },
     readOnly(nextValue) {
@@ -158,8 +215,120 @@ const TaskDetailPanel = {
         <div class="detail-id">
           <code>{{ task.id }}</code>
           <button class="btn btn-sm detail-copy-id" @click="copyId" title="Copy ticket ID">Copy ID</button>
-          <span class="detail-metric-pill" title="Total active worker time">{{ formatTaskTime(displayedTaskTimeMs) }}</span>
-          <span v-if="task.tokens" class="token-count" title="Total tokens used by agents">{{ formatTokens(task.tokens) }}</span>
+          <button
+            class="detail-metric-pill detail-metric-button"
+            type="button"
+            title="Open time and token report"
+            @click="openUsageReport"
+          >{{ formatTaskTime(displayedTaskTimeMs) }}</button>
+          <button
+            v-if="task.tokens"
+            class="token-count detail-metric-button"
+            type="button"
+            title="Open token and time report"
+            @click="openUsageReport"
+          >{{ formatTokens(task.tokens) }}</button>
+        </div>
+
+        <div
+          v-if="usageReportOpen"
+          class="modal-overlay usage-report-overlay"
+          tabindex="0"
+          @click.self="closeUsageReport"
+          @keydown.escape="closeUsageReport"
+          ref="usageReportOverlay"
+        >
+          <div class="modal usage-report-modal">
+            <div class="modal-header">
+              <h2>Usage Report</h2>
+              <button class="btn btn-icon" type="button" @click="closeUsageReport">&times;</button>
+            </div>
+            <div class="modal-body usage-report-body">
+              <section class="usage-report-summary">
+                <div>
+                  <span>Total time</span>
+                  <strong>{{ formatTaskTime(displayedTaskTimeMs) }}</strong>
+                </div>
+                <div>
+                  <span>Total tokens</span>
+                  <strong>{{ formatTokens(tokenValue(task.tokens)) }}</strong>
+                </div>
+                <div>
+                  <span>Runs</span>
+                  <strong>{{ usageEntries.length }}</strong>
+                </div>
+              </section>
+
+              <section class="usage-report-section">
+                <h3>Tokens by Provider</h3>
+                <div v-if="tokenProviderRows.length === 0" class="usage-report-empty">No token details recorded</div>
+                <div v-else class="usage-report-table-wrap">
+                  <table class="usage-report-table">
+                    <thead>
+                      <tr>
+                        <th>Provider</th>
+                        <th>Model</th>
+                        <th>Input</th>
+                        <th>Cached</th>
+                        <th>Output</th>
+                        <th>Reasoning</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in tokenProviderRows" :key="row.key">
+                        <td>{{ row.provider }}</td>
+                        <td>{{ row.model || '-' }}</td>
+                        <td>{{ formatNumber(row.input) }}</td>
+                        <td>{{ formatNumber(row.cached) }}</td>
+                        <td>{{ formatNumber(row.output) }}</td>
+                        <td>{{ formatNumber(row.reasoning) }}</td>
+                        <td><strong>{{ formatNumber(row.total) }}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="usage-report-section">
+                <h3>Time by Run</h3>
+                <div v-if="timeRunRows.length === 0" class="usage-report-empty">No run time details recorded</div>
+                <div v-else class="usage-report-table-wrap">
+                  <table class="usage-report-table">
+                    <thead>
+                      <tr>
+                        <th>Run</th>
+                        <th>Provider</th>
+                        <th>Model</th>
+                        <th>Recorded</th>
+                        <th>Time</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in timeRunRows" :key="row.key">
+                        <td>{{ row.run }}</td>
+                        <td>{{ row.provider }}</td>
+                        <td>{{ row.model || '-' }}</td>
+                        <td>{{ row.when }}</td>
+                        <td><strong>{{ formatTaskTime(row.elapsedMs) }}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="usage-report-section">
+                <h3>Time by Provider</h3>
+                <div v-if="timeProviderRows.length === 0" class="usage-report-empty">No provider time details recorded</div>
+                <div v-else class="usage-report-provider-list">
+                  <div v-for="row in timeProviderRows" :key="row.key" class="usage-report-provider-row">
+                    <span>{{ row.provider }}<template v-if="row.model"> / {{ row.model }}</template></span>
+                    <strong>{{ formatTaskTime(row.elapsedMs) }}</strong>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
 
         <div class="detail-body">
@@ -293,6 +462,61 @@ const TaskDetailPanel = {
     },
     formatTaskTime(ms) {
       return formatTaskDuration(ms);
+    },
+    formatNumber(value) {
+      return this.tokenValue(value).toLocaleString();
+    },
+    tokenValue(value) {
+      const n = Number(value);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    },
+    tokenFieldValue(entry, field) {
+      return this.tokenValue(entry?.[field]);
+    },
+    usageTotalTokens(entry) {
+      const explicit = this.tokenValue(entry?.total_tokens || entry?.tokens);
+      if (explicit) return explicit;
+      return this.tokenFieldValue(entry, 'input_tokens') + this.tokenFieldValue(entry, 'output_tokens');
+    },
+    usageElapsedMs(entry) {
+      return this.tokenValue(entry?.elapsed_ms || entry?.task_time_ms || entry?.duration_ms);
+    },
+    formatUsageTimestamp(value) {
+      const millis = Date.parse(value || '');
+      if (!Number.isFinite(millis)) return '-';
+      return new Date(millis).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    },
+    aggregateTokensByProviderModel(entries) {
+      const buckets = new Map();
+      (entries || []).forEach(entry => {
+        const provider = entry?.provider || 'unknown';
+        const model = entry?.model || '';
+        const key = `${provider}:${model}`;
+        const bucket = buckets.get(key) || { provider, model };
+        ['input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_output_tokens', 'total_tokens'].forEach(field => {
+          bucket[field] = this.tokenValue(bucket[field]) + this.tokenFieldValue(entry, field);
+        });
+        bucket.tokens = this.tokenValue(bucket.tokens) + this.usageTotalTokens(entry);
+        buckets.set(key, bucket);
+      });
+      return Array.from(buckets.values()).sort((a, b) => {
+        const providerCompare = String(a.provider).localeCompare(String(b.provider));
+        if (providerCompare) return providerCompare;
+        return String(a.model || '').localeCompare(String(b.model || ''));
+      });
+    },
+    openUsageReport() {
+      if (!this.hasUsageReport) return;
+      this.usageReportOpen = true;
+      this.$nextTick(() => this.$refs.usageReportOverlay?.focus());
+    },
+    closeUsageReport() {
+      this.usageReportOpen = false;
     },
     columnLabel(key) {
       const col = (this.columns || []).find(c => c.key === key);

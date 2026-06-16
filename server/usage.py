@@ -334,7 +334,7 @@ def extract_stream_usage_event(provider, event_obj):
     return {}
 
 
-def build_usage_entry(source, provider, model=None, slot=None, usage=None, occurred_at=None):
+def build_usage_entry(source, provider, model=None, slot=None, usage=None, occurred_at=None, elapsed_ms=None):
     """Build one structured per-run ticket usage entry."""
     normalized = normalize_usage(usage)
     if not normalized:
@@ -351,6 +351,9 @@ def build_usage_entry(source, provider, model=None, slot=None, usage=None, occur
         slot_int = _coerce_non_negative_int(slot)
         if slot_int is not None:
             entry["slot"] = slot_int
+    elapsed_int = _coerce_non_negative_int(elapsed_ms)
+    if elapsed_int is not None:
+        entry["elapsed_ms"] = elapsed_int
 
     entry.update(normalized)
     return entry
