@@ -53,6 +53,16 @@ def test_bullpen_tab_tracks_sparse_row_height_overrides():
     assert "persistSingleRowHeight(row, height)" in text
 
 
+def test_bullpen_tab_toolbar_can_reset_all_rows_small():
+    text = _read("static/components/BullpenTab.js")
+    assert '<button class="btn btn-sm" @click="jumpHome">Home</button>' in text
+    assert '<button class="btn btn-sm" @click="resetRowsSmall" title="Reset all row heights to small">Small Rows</button>' in text
+    assert "resetRowsSmall()" in text
+    assert "this.pendingRowHeight = 32;" in text
+    assert "this.pendingRowHeights = {};" in text
+    assert "this.persistGrid({ rowHeight: 32, rowHeights: {} });" in text
+
+
 def test_bullpen_tab_wires_unshifted_single_row_and_shift_global_resize():
     text = _read("static/components/BullpenTab.js")
     app = _read("static/app.js")

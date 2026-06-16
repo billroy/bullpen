@@ -87,6 +87,7 @@ const BullpenTab = {
     <div class="bullpen-grid-container">
       <Teleport to="#worker-tab-toolbar-slot">
         <button class="btn btn-sm" @click="jumpHome">Home</button>
+        <button class="btn btn-sm" @click="resetRowsSmall" title="Reset all row heights to small">Small Rows</button>
         <button class="btn btn-sm" @click="fitOccupied">Fit</button>
       </Teleport>
 
@@ -2675,6 +2676,18 @@ const BullpenTab = {
       delete rowHeights[String(Math.max(0, Math.trunc(Number(row) || 0)))];
       this.pendingRowHeights = rowHeights;
       this.persistGrid({ rowHeights });
+    },
+    resetRowsSmall() {
+      this._teardownRowResizeListeners();
+      this._teardownCardVerticalResizeListeners();
+      this.rowResize = null;
+      this.cardVerticalResize = null;
+      this.draggingRowHeight = null;
+      this.pendingRowHeight = 32;
+      this.pendingRowHeights = {};
+      this.resizeTooltip = null;
+      this.clearExpandedWorkerCard();
+      this.persistGrid({ rowHeight: 32, rowHeights: {} });
     },
     onCardVerticalResizeStart(item, e) {
       if (!item || e.button !== 0) return;
