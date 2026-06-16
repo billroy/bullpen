@@ -137,10 +137,18 @@ def test_numeric_value_worker_card_has_sparkline_and_graph_modal():
     assert "numericValueHistory()" in card
     assert "valueGraphOpen" in card
     assert 'class="modal value-graph-modal"' in card
+    assert "Show History" in card
+    assert "menuShowValueHistory()" in card
+    assert "valueHistoryRows()" in card
+    assert "exportValueHistoryCsv()" in card
+    assert 'class="value-history-table"' in card
+    assert 'a.download = `${this.valueHistoryFilenameBase()}.csv`;' in card
     assert "buildChartPoints(points, width, height, inset)" in card
     assert ".worker-card-value-sparkline-button {" in css
     assert ".value-graph-modal {" in css
     assert ".value-graph-chart {" in css
+    assert ".value-history-pane {" in css
+    assert ".value-history-table {" in css
 
 
 def test_value_shortcut_editor_parses_and_creates_values():

@@ -4363,6 +4363,12 @@ body.worker-singleton-dragging * {
   gap: 10px;
 }
 
+.value-history-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .value-graph-current {
   display: flex;
   align-items: baseline;
@@ -4431,6 +4437,59 @@ body.worker-singleton-dragging * {
   color: var(--text-muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.value-history-pane {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.value-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.value-history-table th,
+.value-history-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value-history-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.value-history-table th:first-child,
+.value-history-table td:first-child {
+  width: 44%;
+  font-variant-numeric: tabular-nums;
+}
+
+.value-history-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.value-history-empty {
+  padding: 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .modal-header {

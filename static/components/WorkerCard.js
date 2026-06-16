@@ -98,6 +98,7 @@ const WorkerCard = {
           <button class="worker-menu-item" @click="menuDuplicate"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Duplicate</span></button>
           <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
           <button class="worker-menu-item" @click="menuExportWorker"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Worker</span></button>
+          <button v-if="isValue" class="worker-menu-item" @click="menuShowValueHistory"><i class="menu-item-icon" data-lucide="history" aria-hidden="true"></i><span class="menu-item-label">Show History</span></button>
           <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
           <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
           <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Worker&hellip;</span></button>
@@ -205,14 +206,17 @@ const WorkerCard = {
           <div class="modal value-graph-modal">
             <div class="modal-header">
               <h2>{{ valueGraphTitle }}</h2>
-              <button class="btn btn-icon" type="button" @click="closeValueGraph">&times;</button>
+              <div class="value-history-header-actions">
+                <button class="btn btn-secondary" type="button" @click="exportValueHistoryCsv" :disabled="!valueHistoryRows.length">Export CSV</button>
+                <button class="btn btn-icon" type="button" @click="closeValueGraph">&times;</button>
+              </div>
             </div>
             <div class="modal-body value-graph-body">
               <div class="value-graph-current">
                 <span class="value-graph-current-label">{{ valueCellRef || 'Value' }}</span>
                 <span class="value-graph-current-value">{{ valueDisplay || 'Empty' }}</span>
               </div>
-              <svg class="value-graph-chart" viewBox="0 0 640 260" preserveAspectRatio="none" role="img" :aria-label="valueGraphAriaLabel">
+              <svg v-if="hasNumericValueHistory" class="value-graph-chart" viewBox="0 0 640 260" preserveAspectRatio="none" role="img" :aria-label="valueGraphAriaLabel">
                 <line v-for="tick in valueGraphYTicks" :key="'y-' + tick.y" x1="54" :y1="tick.y" x2="626" :y2="tick.y" class="value-graph-grid"></line>
                 <line x1="54" y1="18" x2="54" y2="226" class="value-graph-axis"></line>
                 <line x1="54" y1="226" x2="626" y2="226" class="value-graph-axis"></line>
@@ -220,9 +224,26 @@ const WorkerCard = {
                 <circle v-if="valueGraphSinglePoint" :cx="valueGraphSinglePoint.x" :cy="valueGraphSinglePoint.y" r="4" class="value-graph-dot"></circle>
                 <text v-for="tick in valueGraphYTicks" :key="'label-' + tick.y" x="46" :y="tick.y + 4" class="value-graph-y-label">{{ tick.label }}</text>
               </svg>
-              <div class="value-graph-axis-labels">
+              <div v-if="hasNumericValueHistory" class="value-graph-axis-labels">
                 <span>{{ valueGraphStartLabel }}</span>
                 <span>{{ valueGraphEndLabel }}</span>
+              </div>
+              <div class="value-history-pane" role="region" aria-label="Value history">
+                <table v-if="valueHistoryRows.length" class="value-history-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, index) in valueHistoryRows" :key="row.updatedAt + '-' + index">
+                      <td :title="row.updatedAt">{{ row.displayTime }}</td>
+                      <td :title="row.displayValue">{{ row.displayValue }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else class="value-history-empty">No history recorded</div>
               </div>
             </div>
           </div>
@@ -553,22 +574,39 @@ const WorkerCard = {
       return String(value);
     },
     numericValueHistory() {
-      const history = Array.isArray(this.worker?.history) ? this.worker.history : [];
       const points = [];
-      for (const entry of history) {
-        const value = entry?.value;
+      for (const entry of this.valueHistoryRows) {
+        const value = entry.rawValue;
         const numeric = typeof value === 'number' ? value : Number(value);
         if (!Number.isFinite(numeric) || value === true || value === false) continue;
-        if (entry?.resolved_value_type && String(entry.resolved_value_type) !== 'number') continue;
-        const rawUpdatedAt = String(entry?.updated_at || '').trim();
-        const time = rawUpdatedAt ? Date.parse(rawUpdatedAt) : NaN;
+        if (entry.resolvedValueType && entry.resolvedValueType !== 'number') continue;
         points.push({
           value: numeric,
-          updatedAt: rawUpdatedAt,
-          time: Number.isFinite(time) ? time : null,
+          updatedAt: entry.updatedAt,
+          time: entry.time,
         });
       }
       return points;
+    },
+    valueHistoryRows() {
+      const history = Array.isArray(this.worker?.history) ? this.worker.history : [];
+      return history.map(entry => {
+        const updatedAt = String(entry?.updated_at || '').trim();
+        const time = updatedAt ? Date.parse(updatedAt) : NaN;
+        const rawValue = entry?.value;
+        return {
+          rawValue,
+          displayValue: rawValue === null || rawValue === undefined ? '' : String(rawValue),
+          updatedAt,
+          displayTime: this.formatHistoryTimestamp(updatedAt),
+          time: Number.isFinite(time) ? time : null,
+          valueType: String(entry?.value_type || ''),
+          resolvedValueType: String(entry?.resolved_value_type || ''),
+        };
+      });
+    },
+    hasNumericValueHistory() {
+      return this.numericValueHistory.length > 0;
     },
     hasNumericValueSparkline() {
       return this.isValue && this.valueTypeLabel === 'number' && this.numericValueHistory.length > 0;
@@ -860,13 +898,50 @@ const WorkerCard = {
       });
       this.cancelValueEdit();
     },
-    openValueGraph() {
-      if (!this.hasNumericValueSparkline) return;
+    openValueHistory() {
+      if (!this.isValue) return;
       this.valueGraphOpen = true;
       this.$nextTick(() => this.$refs.valueGraphOverlay?.focus?.());
     },
+    openValueGraph() {
+      this.openValueHistory();
+    },
     closeValueGraph() {
       this.valueGraphOpen = false;
+    },
+    exportValueHistoryCsv() {
+      if (!this.valueHistoryRows.length) return;
+      const headers = ['updated_at', 'value', 'value_type', 'resolved_value_type'];
+      const rows = this.valueHistoryRows.map(row => [
+        row.updatedAt,
+        row.displayValue,
+        row.valueType,
+        row.resolvedValueType,
+      ]);
+      const csv = [headers, ...rows]
+        .map(row => row.map(cell => this.csvCell(cell)).join(','))
+        .join('\n') + '\n';
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${this.valueHistoryFilenameBase()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+    csvCell(value) {
+      const text = String(value ?? '');
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    },
+    valueHistoryFilenameBase() {
+      const label = String(this.worker?.name || this.valueCellRef || `slot-${Number(this.slotIndex) + 1}`)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      return `value-history-${label || 'value'}`;
     },
     chartXForIndex(index, count, width, inset) {
       const left = inset.left || 0;
@@ -918,6 +993,20 @@ const WorkerCard = {
         }).format(new Date(point.time));
       }
       return point.updatedAt || '';
+    },
+    formatHistoryTimestamp(value) {
+      const raw = String(value || '').trim();
+      if (!raw) return '';
+      const time = Date.parse(raw);
+      if (!Number.isFinite(time)) return raw;
+      return new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+      }).format(new Date(time));
     },
     canConnect(dir) {
       if (this.isValue) return false;
@@ -1282,6 +1371,10 @@ const WorkerCard = {
     menuExportWorker() {
       this.closeMenuAndRestoreFocus();
       this.$root.exportWorker(this.slotIndex);
+    },
+    menuShowValueHistory() {
+      this.closeMenuAndRestoreFocus();
+      this.openValueHistory();
     },
     menuWatch() {
       this.closeMenuAndRestoreFocus();
