@@ -99,6 +99,7 @@ const WorkerCard = {
           <button class="worker-menu-item" @click="menuCopyWorker"><i class="menu-item-icon" data-lucide="clipboard" aria-hidden="true"></i><span class="menu-item-label">Copy Worker</span></button>
           <button class="worker-menu-item" @click="menuExportWorker"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Worker</span></button>
           <button v-if="valueHistoryEnabled" class="worker-menu-item" @click="menuShowValueHistory"><i class="menu-item-icon" data-lucide="history" aria-hidden="true"></i><span class="menu-item-label">Show History</span></button>
+          <button v-if="valueHistoryEnabled" class="worker-menu-item" @click="menuClearValueHistory"><i class="menu-item-icon" data-lucide="eraser" aria-hidden="true"></i><span class="menu-item-label">Clear History</span></button>
           <button v-if="multipleWorkspaces" class="worker-menu-item" @click="menuCopyTo"><i class="menu-item-icon" data-lucide="copy" aria-hidden="true"></i><span class="menu-item-label">Copy to workspace&hellip;</span></button>
           <button v-if="multipleWorkspaces && canMove" class="worker-menu-item" @click="menuMoveTo"><i class="menu-item-icon" data-lucide="arrow-right" aria-hidden="true"></i><span class="menu-item-label">Move to workspace&hellip;</span></button>
           <button class="worker-menu-item worker-menu-danger" @click="menuDelete"><i class="menu-item-icon" data-lucide="trash-2" aria-hidden="true"></i><span class="menu-item-label">Delete Worker&hellip;</span></button>
@@ -1379,6 +1380,13 @@ const WorkerCard = {
     menuShowValueHistory() {
       this.closeMenuAndRestoreFocus();
       this.openValueHistory();
+    },
+    menuClearValueHistory() {
+      this.closeMenuAndRestoreFocus();
+      if (!this.valueHistoryEnabled) return;
+      if (!window.confirm('Clear this value worker history?')) return;
+      this.closeValueGraph();
+      this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { history: [] } });
     },
     menuWatch() {
       this.closeMenuAndRestoreFocus();

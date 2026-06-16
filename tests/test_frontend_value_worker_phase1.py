@@ -143,6 +143,10 @@ def test_numeric_value_worker_card_has_sparkline_and_graph_modal():
     assert 'v-if="valueHistoryEnabled"' in card
     assert "Show History" in card
     assert "menuShowValueHistory()" in card
+    assert "Clear History" in card
+    assert "menuClearValueHistory()" in card
+    assert "if (!this.valueHistoryEnabled) return;" in card
+    assert "this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { history: [] } });" in card
     assert "valueHistoryRows()" in card
     assert "if (!this.valueHistoryEnabled) return [];" in card
     assert "exportValueHistoryCsv()" in card
