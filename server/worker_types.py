@@ -9,6 +9,7 @@ from server.model_aliases import normalize_model
 from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
 from server.values import (
     normalize_format as normalize_value_format,
+    normalize_unit as normalize_value_unit,
     normalize_value_history,
     normalize_value_payload,
 )
@@ -529,6 +530,7 @@ def normalize_worker_slot(raw, *, index, config):
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
+        slot["unit"] = normalize_value_unit(slot.get("unit"))
         slot["format"] = normalize_value_format(slot.get("format"))
         slot["save_history"] = save_history
         slot["icon"] = str(slot.get("icon") or "equal")

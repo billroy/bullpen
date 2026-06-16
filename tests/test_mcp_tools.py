@@ -303,6 +303,7 @@ def test_value_tools_list_and_get_values(tmp_workspace, monkeypatch):
                 "name": "Build",
                 "value": "42",
                 "value_type": "number",
+                "unit": "f",
                 "save_history": True,
                 "history": [{"value": "41", "value_type": "number", "updated_at": "t1"}],
             },
@@ -325,6 +326,9 @@ def test_value_tools_list_and_get_values(tmp_workspace, monkeypatch):
     by_name = json.loads(captured[1]["text"])
     assert by_name["ref"] == "B1"
     assert by_name["value"] == 42
+    assert by_name["unit"] == "fahrenheit"
+    assert by_name["unit_abbreviation"] == "°F"
+    assert by_name["unit_name"] == "degree Fahrenheit"
     assert by_name["save_history"] is True
     assert by_name["history"] == [
         {
@@ -366,10 +370,10 @@ def test_set_and_increment_value_dispatch_through_client(tmp_workspace, monkeypa
 
     monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
 
-    mcp_tools.handle_call(bp_dir, client=client, msg_id=15, name="set_value", args={"ref": "A1", "value": "2"})
+    mcp_tools.handle_call(bp_dir, client=client, msg_id=15, name="set_value", args={"ref": "A1", "value": "2", "unit": "kg"})
     mcp_tools.handle_call(bp_dir, client=client, msg_id=16, name="decrement_value", args={"ref": "A1", "amount": 2})
 
-    assert client.calls[0] == ("set", {"ref": "A1", "value": "2"})
+    assert client.calls[0] == ("set", {"ref": "A1", "value": "2", "unit": "kg"})
     assert client.calls[1] == ("increment", {"ref": "A1", "amount": 2}, -1)
     assert captured[0]["is_error"] is False
     assert captured[1]["is_error"] is False

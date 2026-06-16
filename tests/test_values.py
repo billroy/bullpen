@@ -6,10 +6,12 @@ from server.values import (
     coord_to_cell_ref,
     find_value_by_ref,
     normalize_format,
+    normalize_unit,
     normalize_value_history,
     normalize_value_payload,
     parse_cell_ref,
     row_label,
+    unit_labels,
 )
 from server.templates import render_value_template
 from server.templates import render_context_value_template
@@ -109,6 +111,20 @@ def test_value_format_normalizes_known_kinds_and_bounds():
         "symbol": "USDollar",
     }
     assert normalize_format({"kind": "mystery"}) == {"kind": "auto"}
+
+
+def test_value_units_normalize_common_aliases_and_custom_text():
+    assert normalize_unit("f") == "fahrenheit"
+    assert unit_labels("fahrenheit") == {
+        "unit": "fahrenheit",
+        "abbreviation": "°F",
+        "name": "degree Fahrenheit",
+    }
+    assert unit_labels("widgets") == {
+        "unit": "widgets",
+        "abbreviation": "widgets",
+        "name": "widgets",
+    }
 
 
 def test_find_value_by_ref_prefers_cell_reference_then_name_with_ambiguity_flag():

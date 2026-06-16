@@ -1348,16 +1348,21 @@ const BullpenTab = {
       const raw = String(text || '');
       if (!raw.trim()) return { error: 'Enter a value.' };
       let name = '';
+      let unit = '';
       let value = raw.trim();
       const colon = raw.indexOf(':');
       if (colon >= 0) {
-        name = raw.slice(0, colon).trim();
+        const label = raw.slice(0, colon).trim();
+        const slash = label.lastIndexOf('/');
+        name = (slash >= 0 ? label.slice(0, slash) : label).trim();
+        unit = slash >= 0 ? label.slice(slash + 1).trim() : '';
         value = raw.slice(colon + 1).trim();
       }
       if (!value) return { error: 'Enter a value.' };
       return {
         fields: {
           name,
+          unit,
           value,
           value_type: 'auto',
           format: { kind: 'auto' },
@@ -1430,6 +1435,7 @@ const BullpenTab = {
             worker: {
               type: 'value',
               name: '',
+              unit: '',
               value: rows[rowIndex][colIndex],
               value_type: 'auto',
               format: { kind: 'auto' },
@@ -1973,6 +1979,7 @@ const BullpenTab = {
         type: 'value',
         fields: {
           name: '',
+          unit: '',
           value: '',
           value_type: 'auto',
           format: { kind: 'auto' },
@@ -1993,7 +2000,7 @@ const BullpenTab = {
         'health_type', 'health_url', 'health_command', 'health_interval_seconds',
         'health_timeout_seconds', 'health_failure_threshold', 'on_crash',
         'stop_timeout_seconds', 'log_max_bytes', 'color', 'avatar'];
-      fields.push('value', 'value_type', 'resolved_value_type', 'format', 'save_history', 'icon', 'updated_at');
+      fields.push('value', 'value_type', 'resolved_value_type', 'unit', 'format', 'save_history', 'icon', 'updated_at');
       fields.push('notification');
       const copy = {};
       for (const key of fields) {

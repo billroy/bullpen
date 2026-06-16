@@ -9,6 +9,29 @@ from math import isfinite
 VALUE_WORKER_TYPE = "value"
 VALUE_TYPES = {"auto", "number", "string"}
 VALUE_HISTORY_LIMIT = 1000
+VALUE_UNIT_OPTIONS = {
+    "celsius": {"abbr": "°C", "name": "degree Celsius", "aliases": {"c", "°c", "celsius"}},
+    "fahrenheit": {"abbr": "°F", "name": "degree Fahrenheit", "aliases": {"f", "°f", "fahrenheit"}},
+    "kelvin": {"abbr": "K", "name": "kelvin", "aliases": {"k", "kelvin"}},
+    "meter": {"abbr": "m", "name": "meter", "aliases": {"m", "meter", "meters", "metre", "metres"}},
+    "kilometer": {"abbr": "km", "name": "kilometer", "aliases": {"km", "kilometer", "kilometers", "kilometre", "kilometres"}},
+    "centimeter": {"abbr": "cm", "name": "centimeter", "aliases": {"cm", "centimeter", "centimeters", "centimetre", "centimetres"}},
+    "millimeter": {"abbr": "mm", "name": "millimeter", "aliases": {"mm", "millimeter", "millimeters", "millimetre", "millimetres"}},
+    "inch": {"abbr": "in", "name": "inch", "aliases": {"in", "inch", "inches"}},
+    "foot": {"abbr": "ft", "name": "foot", "aliases": {"ft", "foot", "feet"}},
+    "yard": {"abbr": "yd", "name": "yard", "aliases": {"yd", "yard", "yards"}},
+    "mile": {"abbr": "mi", "name": "mile", "aliases": {"mi", "mile", "miles"}},
+    "gram": {"abbr": "g", "name": "gram", "aliases": {"g", "gram", "grams"}},
+    "kilogram": {"abbr": "kg", "name": "kilogram", "aliases": {"kg", "kilogram", "kilograms"}},
+    "pound": {"abbr": "lb", "name": "pound", "aliases": {"lb", "lbs", "pound", "pounds"}},
+    "ounce": {"abbr": "oz", "name": "ounce", "aliases": {"oz", "ounce", "ounces"}},
+    "second": {"abbr": "s", "name": "second", "aliases": {"s", "sec", "second", "seconds"}},
+    "minute": {"abbr": "min", "name": "minute", "aliases": {"min", "minute", "minutes"}},
+    "hour": {"abbr": "h", "name": "hour", "aliases": {"h", "hr", "hour", "hours"}},
+    "day": {"abbr": "d", "name": "day", "aliases": {"d", "day", "days"}},
+    "percent": {"abbr": "%", "name": "percent", "aliases": {"%", "percent", "percentage"}},
+    "dollar": {"abbr": "USD", "name": "US dollar", "aliases": {"usd", "dollar", "dollars"}},
+}
 _CELL_REF_RE = re.compile(r"^\s*([A-Za-z]+)\s*(\d+)\s*$")
 _PLAIN_NUMBER_RE = re.compile(r"^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?$")
 
@@ -138,6 +161,35 @@ def value_ref_warning(match: dict | None) -> str | None:
 def normalize_value_type(value_type: object) -> str:
     value_type = str(value_type or "auto").strip().lower()
     return value_type if value_type in VALUE_TYPES else "auto"
+
+
+def normalize_unit(unit: object) -> str:
+    text = str(unit if unit is not None else "").strip()
+    if not text:
+        return ""
+    lowered = text.casefold()
+    for key, spec in VALUE_UNIT_OPTIONS.items():
+        if lowered == key or lowered in spec["aliases"]:
+            return key
+    return text[:64]
+
+
+def unit_labels(unit: object) -> dict:
+    normalized = normalize_unit(unit)
+    if not normalized:
+        return {"unit": "", "abbreviation": "", "name": ""}
+    spec = VALUE_UNIT_OPTIONS.get(normalized)
+    if spec:
+        return {
+            "unit": normalized,
+            "abbreviation": spec["abbr"],
+            "name": spec["name"],
+        }
+    return {
+        "unit": normalized,
+        "abbreviation": normalized,
+        "name": normalized,
+    }
 
 
 def normalize_format(raw: object) -> dict:

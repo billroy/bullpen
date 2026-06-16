@@ -80,6 +80,32 @@ const NOTIFICATION_SOUND_OPTIONS = [
   { value: 'evacuation', label: 'Evacuation' },
 ];
 
+const VALUE_UNIT_OPTIONS = [
+  { value: '', label: 'None' },
+  { value: 'celsius', label: 'Celsius (°C)' },
+  { value: 'fahrenheit', label: 'Fahrenheit (°F)' },
+  { value: 'kelvin', label: 'Kelvin (K)' },
+  { value: 'meter', label: 'Meter (m)' },
+  { value: 'kilometer', label: 'Kilometer (km)' },
+  { value: 'centimeter', label: 'Centimeter (cm)' },
+  { value: 'millimeter', label: 'Millimeter (mm)' },
+  { value: 'inch', label: 'Inch (in)' },
+  { value: 'foot', label: 'Foot (ft)' },
+  { value: 'yard', label: 'Yard (yd)' },
+  { value: 'mile', label: 'Mile (mi)' },
+  { value: 'gram', label: 'Gram (g)' },
+  { value: 'kilogram', label: 'Kilogram (kg)' },
+  { value: 'pound', label: 'Pound (lb)' },
+  { value: 'ounce', label: 'Ounce (oz)' },
+  { value: 'second', label: 'Second (s)' },
+  { value: 'minute', label: 'Minute (min)' },
+  { value: 'hour', label: 'Hour (h)' },
+  { value: 'day', label: 'Day (d)' },
+  { value: 'percent', label: 'Percent (%)' },
+  { value: 'dollar', label: 'US dollar (USD)' },
+  { value: '__other__', label: 'Other...' },
+];
+
 function cloneNotificationForm(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const merged = JSON.parse(JSON.stringify(DEFAULT_NOTIFICATION_FORM));
@@ -121,6 +147,7 @@ const WorkerConfigModal = {
       opencodeModelProvider: '',
       opencodeModelSearch: '',
       webSpeechVoices: [],
+      valueUnitMode: '',
     };
   },
   watch: {
@@ -190,10 +217,13 @@ const WorkerConfigModal = {
             value: w.value ?? '',
             value_type: w.value_type || 'auto',
             resolved_value_type: w.resolved_value_type || 'string',
+            unit: w.unit || '',
             format: w.format && typeof w.format === 'object' ? { ...w.format } : { kind: 'auto' },
             save_history: w.save_history !== undefined ? !!w.save_history : Array.isArray(w.history) && w.history.length > 0,
             notification: cloneNotificationForm(w.notification),
           };
+          const hasKnownUnit = VALUE_UNIT_OPTIONS.some(option => option.value === this.form.unit);
+          this.valueUnitMode = hasKnownUnit ? this.form.unit : (this.form.unit ? '__other__' : '');
           this.servicePreview = null;
           this.servicePreviewError = '';
           this.serviceSuggestedPort = null;
@@ -380,6 +410,12 @@ const WorkerConfigModal = {
     notificationSoundOptions() {
       return NOTIFICATION_SOUND_OPTIONS;
     },
+    valueUnitOptions() {
+      return VALUE_UNIT_OPTIONS;
+    },
+    valueUnitIsOther() {
+      return this.valueUnitMode === '__other__';
+    },
     notificationSpeechHint() {
       const engine = this.notificationSpeechEngine;
       if (engine === 'kokoro') return 'Kokoro runs locally and loads its model on first speech use.';
@@ -431,6 +467,16 @@ const WorkerConfigModal = {
                   <option value="number">Number</option>
                   <option value="string">String</option>
                 </select>
+              </label>
+              <label class="form-label">
+                Unit
+                <select class="form-select" v-model="valueUnitMode" @change="onValueUnitModeChange">
+                  <option v-for="option in valueUnitOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <label class="form-label" v-if="valueUnitIsOther">
+                Other unit
+                <input class="form-input" v-model="form.unit" ref="valueUnitOtherInput" maxlength="64">
               </label>
             </div>
             <div class="form-row">
@@ -1348,6 +1394,14 @@ const WorkerConfigModal = {
       const valid = this.notificationVoiceOptions.some(option => option.value === speech.voice);
       if (!valid) speech.voice = speech.engine === 'kokoro' ? 'af_heart' : '';
     },
+    onValueUnitModeChange() {
+      if (this.valueUnitMode === '__other__') {
+        this.form.unit = '';
+        this.$nextTick(() => this.$refs.valueUnitOtherInput?.focus?.());
+        return;
+      }
+      this.form.unit = this.valueUnitMode || '';
+    },
     previewNotificationSound() {
       if (!this.canPreviewNotificationSound) return;
       const sound = this.form.notification?.sound || {};
@@ -1368,6 +1422,7 @@ const WorkerConfigModal = {
       if (this.isValue) {
         fields.name = String(fields.name || '').trim();
         fields.value_type = String(fields.value_type || 'auto');
+        fields.unit = String(fields.unit || '').trim();
         fields.format = fields.format && typeof fields.format === 'object' ? { ...fields.format } : { kind: 'auto' };
         fields.save_history = !!fields.save_history;
         delete fields.resolved_value_type;

@@ -35,6 +35,7 @@ from server.values import (
     find_value_by_ref,
     format_value,
     iter_value_slots,
+    unit_labels,
     value_ref_warning,
 )
 from server.worker_types import NOTIFICATION_SPEECH_ENGINES, normalize_layout
@@ -152,6 +153,7 @@ TOOLS = [
                 "ref": {"type": "string", "description": "Value coordinate alias or name"},
                 "value": {"description": "New raw value"},
                 "value_type": {"type": "string", "enum": ["auto", "number", "string"]},
+                "unit": {"type": "string", "description": "Optional unit key, abbreviation, or custom unit label"},
             },
             "required": ["ref", "value"],
         },
@@ -548,8 +550,9 @@ class BullpenClient:
 
     def set_value(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
         payload = {"ref": args.get("ref"), "value": args.get("value")}
-        if "value_type" in args:
-            payload["value_type"] = args["value_type"]
+        for key in ("value_type", "unit"):
+            if key in args:
+                payload[key] = args[key]
         layout, err = self._emit_value_mutation("value:set", payload)
         if err:
             return None, err
@@ -636,6 +639,7 @@ def _load_layout(bp_dir: str) -> dict[str, Any]:
 def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
     slot = match.get("slot") or {}
     coord = match.get("coord") or {}
+    labels = unit_labels(slot.get("unit"))
     payload = {
         "ref": coord_to_cell_ref(coord),
         "coordinate": {"col": coord.get("col"), "row": coord.get("row")},
@@ -643,6 +647,9 @@ def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
         "value": slot.get("value", ""),
         "value_type": slot.get("value_type", "auto"),
         "resolved_value_type": slot.get("resolved_value_type", "string"),
+        "unit": labels["unit"],
+        "unit_abbreviation": labels["abbreviation"],
+        "unit_name": labels["name"],
         "formatted_value": format_value(slot.get("value", ""), slot.get("format")),
         "format": slot.get("format", {"kind": "auto"}),
         "save_history": bool(slot.get("save_history", False)),

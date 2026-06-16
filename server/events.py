@@ -1285,6 +1285,8 @@ def register_events(socketio, app):
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
+        if "unit" in data:
+            slot["unit"] = value_mod.normalize_unit(data.get("unit"))
         updated_at = _now_iso()
         slot["updated_at"] = updated_at
         value_mod.append_value_history(slot, updated_at)

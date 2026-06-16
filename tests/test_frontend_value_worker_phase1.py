@@ -43,6 +43,7 @@ def test_value_worker_can_be_created_from_library():
     assert "addValueWorker()" in text
     assert "type: 'value'" in text
     assert "value_type: 'auto'" in text
+    assert "unit: ''" in text
     assert "save_history: false" in text
 
 
@@ -54,6 +55,8 @@ def test_value_worker_config_modal_has_value_fields_only():
     assert '<template v-if="isValue">' in text
     assert 'v-model="form.value"' in text
     assert 'v-model="form.value_type"' in text
+    assert 'v-model="valueUnitMode"' in text
+    assert 'v-model="form.unit"' in text
     assert 'v-model="form.format.kind"' in text
     assert 'v-model="form.save_history"' in text
     assert "fields.save_history = !!fields.save_history;" in text
@@ -97,7 +100,8 @@ def test_value_worker_small_card_shows_value_in_header():
     assert "return this.isValue && this.effectiveLayoutMode === 'small';" in card
     assert "{{ workerNameWithPort }}" in card
     assert "{{ valueDisplay || 'Empty' }}" in card
-    assert "`${String(this.worker?.name || '').trim()}:${this.storedValueText}`" in card
+    assert "const unit = String(this.worker?.unit || '').trim();" in card
+    assert "return `${unit ? `${name}/${unit}` : name}:${this.storedValueText}`;" in card
     assert ".worker-card-compact-value {" in css
     assert ".worker-card-compact-value-button {" in css
     assert ".worker-card-compact-value-editor {" in css
@@ -170,6 +174,7 @@ def test_value_shortcut_editor_parses_and_creates_values():
     assert "printableValueShortcutKey(e)" in text
     assert "parseValueShortcutText(text)" in text
     assert "const colon = raw.indexOf(':');" in text
+    assert "const slash = label.lastIndexOf('/');" in text
     assert "this.$emit('add-worker', {" in text
     assert "type: 'value'," in text
     assert "this.commitValueShortcutEditor({ openModal: e.metaKey || e.ctrlKey });" in text
@@ -198,6 +203,7 @@ vm.runInContext(source + `
     labelLessNumber: BullpenTab.methods.parseValueShortcutText(':40'),
     labelLessText: BullpenTab.methods.parseValueShortcutText(':foo'),
     named: BullpenTab.methods.parseValueShortcutText('tax rate: 5.5'),
+    unit: BullpenTab.methods.parseValueShortcutText('temp/f:32'),
     plain: BullpenTab.methods.parseValueShortcutText('foo'),
     emptyAfterColon: BullpenTab.methods.parseValueShortcutText('name:'),
   }};
@@ -214,6 +220,9 @@ process.stdout.write(JSON.stringify(context.__parsed));
     assert parsed["labelLessText"]["fields"]["value"] == "foo"
     assert parsed["named"]["fields"]["name"] == "tax rate"
     assert parsed["named"]["fields"]["value"] == "5.5"
+    assert parsed["unit"]["fields"]["name"] == "temp"
+    assert parsed["unit"]["fields"]["unit"] == "f"
+    assert parsed["unit"]["fields"]["value"] == "32"
     assert parsed["plain"]["fields"]["name"] == ""
     assert parsed["plain"]["fields"]["value"] == "foo"
     assert parsed["emptyAfterColon"]["error"] == "Enter a value."
@@ -353,7 +362,7 @@ def test_value_card_inline_edit_saves_and_reverts():
     assert "validateValueEditText(text)" in text
     assert "Enter a valid number." in text
     assert "fields: this.valueEditIncludesName" in text
-    assert "? { name: parsed.name, value: parsed.value }" in text
+    assert "? { name: parsed.name, unit: parsed.unit, value: parsed.value }" in text
     assert ": { value: parsed.value }" in text
     assert "this.cancelValueEdit();" in text
 
@@ -380,7 +389,7 @@ vm.runInContext(source + `
   const component = {{
     worker: {{ type: 'value', name: 'interest rate', value_type: 'auto' }},
     valueEditIncludesName: true,
-    valueEditText: 'tax rate:6.4%',
+    valueEditText: 'tax rate/percent:6.4',
     slotIndex: 7,
     parseValueEditText: methods.parseValueEditText,
     validateValueEditText: methods.validateValueEditText,
@@ -398,6 +407,6 @@ process.stdout.write(JSON.stringify(context.__result));
     payload = json.loads(result.stdout)
     assert payload["calls"] == [{
         "slot": 7,
-        "fields": {"name": "tax rate", "value": "6.4%"},
+        "fields": {"name": "tax rate", "unit": "percent", "value": "6.4"},
     }]
     assert payload["cancelled"] is True

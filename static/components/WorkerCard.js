@@ -1,3 +1,27 @@
+const VALUE_UNIT_LABELS = {
+  celsius: { abbr: '°C', name: 'degree Celsius' },
+  fahrenheit: { abbr: '°F', name: 'degree Fahrenheit' },
+  kelvin: { abbr: 'K', name: 'kelvin' },
+  meter: { abbr: 'm', name: 'meter' },
+  kilometer: { abbr: 'km', name: 'kilometer' },
+  centimeter: { abbr: 'cm', name: 'centimeter' },
+  millimeter: { abbr: 'mm', name: 'millimeter' },
+  inch: { abbr: 'in', name: 'inch' },
+  foot: { abbr: 'ft', name: 'foot' },
+  yard: { abbr: 'yd', name: 'yard' },
+  mile: { abbr: 'mi', name: 'mile' },
+  gram: { abbr: 'g', name: 'gram' },
+  kilogram: { abbr: 'kg', name: 'kilogram' },
+  pound: { abbr: 'lb', name: 'pound' },
+  ounce: { abbr: 'oz', name: 'ounce' },
+  second: { abbr: 's', name: 'second' },
+  minute: { abbr: 'min', name: 'minute' },
+  hour: { abbr: 'h', name: 'hour' },
+  day: { abbr: 'd', name: 'day' },
+  percent: { abbr: '%', name: 'percent' },
+  dollar: { abbr: 'USD', name: 'US dollar' },
+};
+
 const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'allWorkers', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'worker-scope-action', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
@@ -561,7 +585,15 @@ const WorkerCard = {
       const resolved = String(this.worker?.resolved_value_type || '');
       return declared === 'auto' && resolved ? resolved : declared;
     },
-    valueDisplay() {
+    valueUnitLabels() {
+      const unit = String(this.worker?.unit || '').trim();
+      if (!unit) return { abbr: '', name: '' };
+      return VALUE_UNIT_LABELS[unit] || { abbr: unit, name: unit };
+    },
+    valueUsesFullUnitLabel() {
+      return this.isValue && this.effectiveLayoutMode !== 'small' && Number(this.cardHeight || 0) >= 120;
+    },
+    valueDisplayBase() {
       const value = this.worker?.value;
       if (value === null || value === undefined) return '';
       const format = this.worker?.format || {};
@@ -576,6 +608,12 @@ const WorkerCard = {
         return kind === 'currency' ? `${format.symbol || '$'}${rendered}` : rendered;
       }
       return String(value);
+    },
+    valueDisplay() {
+      const base = this.valueDisplayBase;
+      if (!base) return '';
+      const unit = this.valueUsesFullUnitLabel ? this.valueUnitLabels.name : this.valueUnitLabels.abbr;
+      return unit ? `${base} ${unit}` : base;
     },
     numericValueHistory() {
       const points = [];
@@ -661,7 +699,9 @@ const WorkerCard = {
       return this.formatHistoryTime(this.numericValueHistory[this.numericValueHistory.length - 1]);
     },
     valueEditSourceText() {
-      return `${String(this.worker?.name || '').trim()}:${this.storedValueText}`;
+      const name = String(this.worker?.name || '').trim();
+      const unit = String(this.worker?.unit || '').trim();
+      return `${unit ? `${name}/${unit}` : name}:${this.storedValueText}`;
     },
     showCompactValue() {
       return this.isValue && this.effectiveLayoutMode === 'small';
@@ -839,10 +879,13 @@ const WorkerCard = {
       const raw = String(text || '').trim();
       const colon = raw.indexOf(':');
       if (colon < 0) {
-        return { name: String(this.worker?.name || '').trim(), value: raw };
+        return { name: String(this.worker?.name || '').trim(), unit: String(this.worker?.unit || '').trim(), value: raw };
       }
+      const label = raw.slice(0, colon).trim();
+      const slash = label.lastIndexOf('/');
       return {
-        name: raw.slice(0, colon).trim(),
+        name: (slash >= 0 ? label.slice(0, slash) : label).trim(),
+        unit: slash >= 0 ? label.slice(slash + 1).trim() : String(this.worker?.unit || '').trim(),
         value: raw.slice(colon + 1).trim(),
       };
     },
@@ -901,7 +944,7 @@ const WorkerCard = {
       this.$root.saveWorkerConfig({
         slot: this.slotIndex,
         fields: this.valueEditIncludesName
-          ? { name: parsed.name, value: parsed.value }
+          ? { name: parsed.name, unit: parsed.unit, value: parsed.value }
           : { value: parsed.value },
       });
       this.cancelValueEdit();
