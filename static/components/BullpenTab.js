@@ -211,6 +211,7 @@ const BullpenTab = {
                :aria-colindex="ariaColIndex(ghostCell)"
                :aria-label="'Empty cell at column ' + ghostCell.col + ', row ' + ghostCell.row"
                @click.stop="openEmptyMenu(ghostCell, $event)"
+               @dblclick.stop="openAddWorkerForEmptyCell(ghostCell)"
                @dragover="onEmptyDragOver($event, ghostCell)"
                @drop.stop.prevent="onDropOnEmpty($event, ghostCell)">
             <button class="empty-slot-menu-btn" draggable="false" title="Empty cell actions" @click.stop="openEmptyMenu(ghostCell, $event)">&hellip;</button>
@@ -1849,6 +1850,11 @@ const BullpenTab = {
       this.emptyMenuPos = null;
       this.loadShellExamples();
       this.$nextTick(() => this.$refs.libraryOverlay?.focus());
+    },
+    openAddWorkerForEmptyCell(coord) {
+      if (!this.isWritableCoord(coord) || this.itemAtCoord(coord)) return;
+      this.selectCell(coord);
+      this.openLibraryForCoord(coord);
     },
     async loadShellExamples() {
       if (this.shellExamplesLoaded) return;

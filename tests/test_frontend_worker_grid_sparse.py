@@ -79,6 +79,14 @@ def test_empty_cell_click_is_selected_and_enter_targets_current_empty_cell():
     assert "this.openEmptyMenu(coord);" in text
 
 
+def test_empty_cell_double_click_opens_add_worker_library():
+    text = _read("static/components/BullpenTab.js")
+    assert '@dblclick.stop="openAddWorkerForEmptyCell(ghostCell)"' in text
+    assert "openAddWorkerForEmptyCell(coord)" in text
+    assert "this.selectCell(coord);" in text
+    assert "this.openLibraryForCoord(coord);" in text
+
+
 def test_grid_controls_replace_legacy_rows_cols_selector():
     app = _read("static/app.js")
     bullpen = _read("static/components/BullpenTab.js")
