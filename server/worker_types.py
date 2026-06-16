@@ -7,7 +7,11 @@ from dataclasses import dataclass
 
 from server.model_aliases import normalize_model
 from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
-from server.values import normalize_format as normalize_value_format, normalize_value_payload
+from server.values import (
+    normalize_format as normalize_value_format,
+    normalize_value_history,
+    normalize_value_payload,
+)
 
 
 VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "notification", "value", "eval"}
@@ -527,6 +531,7 @@ def normalize_worker_slot(raw, *, index, config):
         slot["icon"] = str(slot.get("icon") or "equal")
         slot["color"] = str(slot.get("color") or "value")
         slot["updated_at"] = str(slot.get("updated_at") or "")
+        slot["history"] = normalize_value_history(slot.get("history"))
         for key in (
             "activation",
             "disposition",

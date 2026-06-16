@@ -819,6 +819,7 @@ def register_events(socketio, app):
                 "env": fields.get("env") if isinstance(fields.get("env"), list) else [],
             }
         elif worker_type == "value":
+            updated_at = _now_iso()
             worker = {
                 "type": "value",
                 "row": row,
@@ -829,8 +830,9 @@ def register_events(socketio, app):
                 "format": fields.get("format") if isinstance(fields.get("format"), dict) else {"kind": "auto"},
                 "icon": "equal",
                 "color": "value",
-                "updated_at": _now_iso(),
+                "updated_at": updated_at,
             }
+            value_mod.append_value_history(worker, updated_at)
         else:  # marker or notification
             if worker_type == "marker":
                 base_name = fields.get("name") or "Marker"
@@ -1192,7 +1194,9 @@ def register_events(socketio, app):
             if k not in ("task_queue", "state"):
                 worker[k] = v
         if worker.get("type") == "value" and any(k in fields for k in ("value", "value_type", "format")):
-            worker["updated_at"] = _now_iso()
+            updated_at = _now_iso()
+            worker["updated_at"] = updated_at
+            value_mod.append_value_history(worker, updated_at)
         config = read_json(os.path.join(bp_dir, "config.json"))
         layout["slots"][slot_index] = normalize_worker_slot(worker, index=slot_index, config=config)
         worker = layout["slots"][slot_index]
@@ -1280,7 +1284,9 @@ def register_events(socketio, app):
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
-        slot["updated_at"] = _now_iso()
+        updated_at = _now_iso()
+        slot["updated_at"] = updated_at
+        value_mod.append_value_history(slot, updated_at)
         layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
@@ -1320,7 +1326,9 @@ def register_events(socketio, app):
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
-        slot["updated_at"] = _now_iso()
+        updated_at = _now_iso()
+        slot["updated_at"] = updated_at
+        value_mod.append_value_history(slot, updated_at)
         layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)

@@ -8,6 +8,7 @@ from math import isfinite
 
 VALUE_WORKER_TYPE = "value"
 VALUE_TYPES = {"auto", "number", "string"}
+VALUE_HISTORY_LIMIT = 1000
 _CELL_REF_RE = re.compile(r"^\s*([A-Za-z]+)\s*(\d+)\s*$")
 _PLAIN_NUMBER_RE = re.compile(r"^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?$")
 
@@ -232,3 +233,36 @@ def normalize_value_payload(value: object, value_type: object = "auto") -> dict:
         "value_type": declared,
         "resolved_value_type": "string",
     }
+
+
+def value_history_entry(slot: dict | None, updated_at: object = None) -> dict | None:
+    if not isinstance(slot, dict):
+        return None
+    payload = normalize_value_payload(slot.get("value"), slot.get("value_type"))
+    return {
+        "value": payload["value"],
+        "value_type": payload["value_type"],
+        "resolved_value_type": payload["resolved_value_type"],
+        "updated_at": str(updated_at if updated_at is not None else slot.get("updated_at") or ""),
+    }
+
+
+def normalize_value_history(history: object) -> list[dict]:
+    if not isinstance(history, list):
+        return []
+    normalized = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        entry = value_history_entry(item, item.get("updated_at"))
+        if entry is not None:
+            normalized.append(entry)
+    return normalized[-VALUE_HISTORY_LIMIT:]
+
+
+def append_value_history(slot: dict | None, updated_at: object = None) -> dict | None:
+    entry = value_history_entry(slot, updated_at)
+    if entry is None:
+        return None
+    slot["history"] = (normalize_value_history(slot.get("history")) + [entry])[-VALUE_HISTORY_LIMIT:]
+    return entry

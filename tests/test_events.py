@@ -821,6 +821,14 @@ class TestWorkerEvents:
         assert worker["resolved_value_type"] == "string"
         assert worker["format"] == {"kind": "number", "places": 10}
         assert worker["updated_at"]
+        assert worker["history"] == [
+            {
+                "value": "00123",
+                "value_type": "auto",
+                "resolved_value_type": "string",
+                "updated_at": worker["updated_at"],
+            }
+        ]
         assert "task_queue" not in worker
         assert "state" not in worker
 
@@ -842,6 +850,25 @@ class TestWorkerEvents:
         assert worker["value"] == 2
         assert worker["updated_at"]
         assert worker["updated_at"] >= first_timestamp
+        assert [entry["value"] for entry in worker["history"]] == [1, 2]
+        assert worker["history"][-1]["updated_at"] == worker["updated_at"]
+
+    def test_value_set_event_records_history(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Counter", "value": "8", "value_type": "number"})
+        updated = get_event(c, "layout:updated")
+        worker = updated["slots"][0]
+
+        assert worker["value"] == 8
+        assert [entry["value"] for entry in worker["history"]] == [5, 8]
+        assert worker["history"][-1]["updated_at"] == worker["updated_at"]
 
     def test_value_increment_event_updates_numeric_value(self, client):
         c, app = client
@@ -859,6 +886,8 @@ class TestWorkerEvents:
         assert worker["type"] == "value"
         assert worker["value"] == 7
         assert worker["resolved_value_type"] == "number"
+        assert [entry["value"] for entry in worker["history"]] == [5, 7]
+        assert worker["history"][-1]["updated_at"] == worker["updated_at"]
 
     def test_value_set_event_rejects_non_numeric_number(self, client):
         c, app = client

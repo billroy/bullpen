@@ -1,10 +1,12 @@
 """Tests for value worker helpers."""
 
 from server.values import (
+    append_value_history,
     col_label,
     coord_to_cell_ref,
     find_value_by_ref,
     normalize_format,
+    normalize_value_history,
     normalize_value_payload,
     parse_cell_ref,
     row_label,
@@ -46,6 +48,51 @@ def test_value_payload_auto_detects_plain_numbers_without_erasing_strings():
         "value_type": "number",
         "resolved_value_type": "number",
     }
+
+
+def test_value_history_entries_normalize_values_and_timestamps():
+    slot = {"value": "42", "value_type": "auto", "updated_at": "2026-06-16T12:00:00Z"}
+
+    append_value_history(slot)
+    slot["value"] = "007"
+    slot["updated_at"] = "2026-06-16T12:01:00Z"
+    append_value_history(slot)
+
+    assert slot["history"] == [
+        {
+            "value": 42,
+            "value_type": "auto",
+            "resolved_value_type": "number",
+            "updated_at": "2026-06-16T12:00:00Z",
+        },
+        {
+            "value": "007",
+            "value_type": "auto",
+            "resolved_value_type": "string",
+            "updated_at": "2026-06-16T12:01:00Z",
+        },
+    ]
+
+
+def test_value_history_normalization_discards_invalid_entries():
+    assert normalize_value_history([
+        {"value": "5", "value_type": "number", "updated_at": "t1"},
+        "bad",
+        {"value": "x", "value_type": "bogus"},
+    ]) == [
+        {
+            "value": 5,
+            "value_type": "number",
+            "resolved_value_type": "number",
+            "updated_at": "t1",
+        },
+        {
+            "value": "x",
+            "value_type": "auto",
+            "resolved_value_type": "string",
+            "updated_at": "",
+        },
+    ]
 
 
 def test_value_format_normalizes_known_kinds_and_bounds():

@@ -296,7 +296,15 @@ def test_value_tools_list_and_get_values(tmp_workspace, monkeypatch):
     write_json(os.path.join(bp_dir, "layout.json"), {
         "slots": [
             {"type": "value", "row": 1, "col": 0, "name": "Build", "value": "alpha", "value_type": "string"},
-            {"type": "value", "row": 0, "col": 1, "name": "Build", "value": "42", "value_type": "number"},
+            {
+                "type": "value",
+                "row": 0,
+                "col": 1,
+                "name": "Build",
+                "value": "42",
+                "value_type": "number",
+                "history": [{"value": "41", "value_type": "number", "updated_at": "t1"}],
+            },
         ]
     })
 
@@ -316,6 +324,14 @@ def test_value_tools_list_and_get_values(tmp_workspace, monkeypatch):
     by_name = json.loads(captured[1]["text"])
     assert by_name["ref"] == "B1"
     assert by_name["value"] == 42
+    assert by_name["history"] == [
+        {
+            "value": 41,
+            "value_type": "number",
+            "resolved_value_type": "number",
+            "updated_at": "t1",
+        }
+    ]
     assert "warnings" in by_name
     by_coord = json.loads(captured[2]["text"])
     assert by_coord["ref"] == "B1"

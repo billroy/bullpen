@@ -646,6 +646,7 @@ def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
         "formatted_value": format_value(slot.get("value", ""), slot.get("format")),
         "format": slot.get("format", {"kind": "auto"}),
         "updated_at": slot.get("updated_at", ""),
+        "history": slot.get("history", []),
     }
     warning = value_ref_warning(match)
     if warning:
