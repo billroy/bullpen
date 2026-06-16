@@ -103,6 +103,7 @@ const BullpenTab = {
            @pointermove="onViewportPointerMove"
            @pointerup="onViewportPointerUp"
            @pointercancel="onViewportPointerUp"
+           @dblclick="onViewportDblClick"
            @keydown="onKeydown">
         <div class="worker-grid-corner" :style="cornerStyle"></div>
         <div class="worker-grid-column-headers" :style="columnHeaderAreaStyle" @pointerdown.stop>
@@ -1213,6 +1214,13 @@ const BullpenTab = {
         this.selectCell(coord);
         this.focusViewport();
       }
+    },
+    onViewportDblClick(e) {
+      if (e.target.closest('.worker-menu, button, input, select, textarea, .worker-card')) return;
+      const coord = this.coordFromEvent(e);
+      if (!this.isWritableCoord(coord) || this.itemAtCoord(coord)) return;
+      e.preventDefault();
+      this.openAddWorkerForEmptyCell(coord);
     },
     selectWorker(item, options = {}) {
       this.selectedCell = item.coord;

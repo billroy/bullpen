@@ -81,7 +81,10 @@ def test_empty_cell_click_is_selected_and_enter_targets_current_empty_cell():
 
 def test_empty_cell_double_click_opens_add_worker_library():
     text = _read("static/components/BullpenTab.js")
+    assert '@dblclick="onViewportDblClick"' in text
     assert '@dblclick.stop="openAddWorkerForEmptyCell(ghostCell)"' in text
+    assert "onViewportDblClick(e)" in text
+    assert "if (e.target.closest('.worker-menu, button, input, select, textarea, .worker-card')) return;" in text
     assert "openAddWorkerForEmptyCell(coord)" in text
     assert "this.selectCell(coord);" in text
     assert "this.openLibraryForCoord(coord);" in text
