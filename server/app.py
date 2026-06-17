@@ -42,6 +42,12 @@ from server import mcp_auth
 from server import opencode_models
 from server import worktrees as worktree_mod
 from server.bento_carrier import BentoCarrierError, inspect_bento
+from server.bento_workers import (
+    BULLPEN_BENTO_MIMETYPE,
+    build_worker_bento,
+    preview_worker_bento,
+    worker_export_name as _bento_worker_export_name,
+)
 from server.global_settings import load_global_settings
 from server.terminal import TerminalManager
 
@@ -1128,6 +1134,59 @@ def create_app(
             download_name=export_name,
         )
 
+    @app.route("/api/bento/export")
+    @auth.require_auth
+    def bento_export():
+        ws, error = _workspace_from_id(_workspace_id_from_args())
+        if error:
+            return error
+        kind = (request.args.get("kind") or "").strip()
+        slots = _normalized_worker_slots(ws)
+        if kind == "worker":
+            try:
+                slot = int(request.args.get("slot"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "slot is required"}), 400
+            if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
+                return jsonify({"error": "Unknown worker slot"}), 404
+            worker = slots[slot]
+            export_name = (
+                f"bullpen-worker-{_bento_worker_export_name(worker.get('name'), f'slot-{slot + 1}')}-"
+                f"{ws.id[:8]}.bento"
+            )
+            package = build_worker_bento(ws, [worker], kind="worker", selected_slots=[slot])
+        elif kind == "worker-group":
+            raw_slots = request.args.get("slots", "").strip()
+            if not raw_slots:
+                return jsonify({"error": "slots is required"}), 400
+            selected = []
+            selected_indices = []
+            seen = set()
+            for raw in raw_slots.split(","):
+                try:
+                    slot = int(raw)
+                except (TypeError, ValueError):
+                    return jsonify({"error": "slots must be comma-separated integers"}), 400
+                if slot in seen:
+                    continue
+                seen.add(slot)
+                if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
+                    return jsonify({"error": f"Unknown worker slot: {slot}"}), 404
+                selected.append(slots[slot])
+                selected_indices.append(slot)
+            if not selected:
+                return jsonify({"error": "slots must include at least one worker"}), 400
+            export_name = f"bullpen-worker-group-{ws.name}-{ws.id[:8]}.bento"
+            package = build_worker_bento(ws, selected, kind="worker-group", selected_slots=selected_indices)
+        else:
+            return jsonify({"error": "kind must be worker or worker-group"}), 400
+        return send_file(
+            package,
+            mimetype=BULLPEN_BENTO_MIMETYPE,
+            as_attachment=True,
+            download_name=export_name,
+        )
+
     @app.route("/api/bento/preview", methods=["POST"])
     @auth.require_auth
     def bento_preview():
@@ -1135,7 +1194,14 @@ def create_app(
         if not upload or not upload.filename:
             return jsonify({"ok": False, "error": "Missing upload file", "code": "missing-upload"}), 400
         try:
-            return jsonify(inspect_bento(upload.stream))
+            carrier_preview = inspect_bento(upload.stream)
+            if any(profile.get("id") == "org.bullpen.share" for profile in carrier_preview.get("profiles", [])):
+                ws, error = _workspace_from_id(_workspace_id_from_args())
+                if error:
+                    return error
+                upload.stream.seek(0)
+                return jsonify(preview_worker_bento(upload.stream, bp_dir=ws.bp_dir))
+            return jsonify(carrier_preview)
         except BentoCarrierError as e:
             return jsonify({"ok": False, "error": e.message, "code": e.code}), 400
 
