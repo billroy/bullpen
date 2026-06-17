@@ -51,6 +51,9 @@ def test_export_single_worker_bento_includes_manifest_worker_and_profile(tmp_wor
                     "type": "shell",
                     "profile": "custom-worker",
                     "command": "make test",
+                    "env": [{"key": "TOKEN", "value": "secret"}],
+                    "use_worktree": True,
+                    "auto_commit": True,
                     "state": "running",
                     "task_queue": ["ticket-1"],
                     "started_at": "2026-01-01T00:00:00Z",
@@ -220,6 +223,9 @@ def test_bento_import_single_worker_adds_sanitized_dormant_worker(tmp_workspace)
                     "type": "shell",
                     "profile": "custom-worker",
                     "command": "make test",
+                    "env": [{"key": "TOKEN", "value": "secret"}],
+                    "use_worktree": True,
+                    "auto_commit": True,
                     "state": "running",
                     "task_queue": ["ticket-1"],
                     "started_at": "2026-01-01T00:00:00Z",
@@ -245,11 +251,56 @@ def test_bento_import_single_worker_adds_sanitized_dormant_worker(tmp_workspace)
     assert imported["imported"] == {"workers": 1, "profiles": 1}
     assert imported["slots"] == [0]
     assert worker["name"] == "Builder"
+    assert worker["command"] == ""
+    assert worker["env"] == []
+    assert worker["use_worktree"] is False
+    assert worker["auto_commit"] is False
     assert worker["state"] == "idle"
     assert worker["task_queue"] == []
     assert "started_at" not in worker
     assert profile["id"] == "custom-worker"
     assert "workspaceId" not in profile
+    capabilities = {entry["capability"] for entry in imported["sanitized"]}
+    assert {"commands", "env", "git", "runtime"} <= capabilities
+
+
+def test_bento_import_preserves_approved_capability_fields(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {
+                    "name": "Builder",
+                    "type": "shell",
+                    "command": "make test",
+                    "env": [{"key": "TOKEN", "value": "secret"}],
+                    "use_worktree": True,
+                    "auto_pr": True,
+                    "col": 1,
+                    "row": 1,
+                }
+            ]
+        },
+    )
+    exported = _export_worker(client, kind="worker", slot=0)
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+
+    imported = _import_bento(
+        client,
+        exported["data"],
+        approvals={"commands": True, "env": True, "git": True},
+    )
+
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    worker = layout["slots"][0]
+    assert {entry["capability"] for entry in imported["sanitized"]} == {"runtime"}
+    assert worker["command"] == "make test"
+    assert worker["env"] == [{"key": "TOKEN", "value": "secret"}]
+    assert worker["use_worktree"] is True
+    assert worker["auto_pr"] is True
 
 
 def test_bento_import_group_can_choose_anchor_and_preserve_relative_positions(tmp_workspace):

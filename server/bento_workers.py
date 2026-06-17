@@ -33,6 +33,26 @@ _RUNTIME_FIELDS = {
     "process_id",
 }
 
+_COMMAND_FIELDS = {"command", "cwd", "pre_start", "health_command", "health_url"}
+_ENV_FIELDS = {"env"}
+_GIT_FIELDS = {"use_worktree", "auto_commit", "auto_pr"}
+_NOTIFICATION_FIELDS = {"notification"}
+_SERVICE_FIELDS = {
+    "command_source",
+    "procfile_process",
+    "port",
+    "ticket_action",
+    "startup_grace_seconds",
+    "startup_timeout_seconds",
+    "health_type",
+    "health_interval_seconds",
+    "health_timeout_seconds",
+    "health_failure_threshold",
+    "on_crash",
+    "stop_timeout_seconds",
+    "log_max_bytes",
+}
+
 
 def worker_export_name(value, fallback="worker"):
     text = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "")).strip(" .-_")
@@ -65,6 +85,67 @@ def sanitize_worker_for_package(worker):
         sanitized["task_queue"] = []
         sanitized["state"] = "idle"
     return sanitized
+
+
+def _approved(approvals, capability):
+    if isinstance(approvals, dict):
+        return bool(approvals.get(capability))
+    if isinstance(approvals, (list, tuple, set)):
+        return capability in approvals
+    return False
+
+
+def _strip_fields(worker, fields):
+    stripped = []
+    for field in sorted(fields):
+        if field in worker:
+            worker.pop(field, None)
+            stripped.append(field)
+    return stripped
+
+
+def sanitize_worker_for_import(worker, *, approvals=None):
+    """Return an import-safe worker and a report of stripped capability fields."""
+    original = worker if isinstance(worker, dict) else {}
+    sanitized = sanitize_worker_for_package(original)
+    reports = []
+
+    runtime_fields = sorted(field for field in _RUNTIME_FIELDS if field in original)
+    if runtime_fields:
+        reports.append({"capability": "runtime", "fields": runtime_fields})
+
+    command_fields = _strip_fields(sanitized, _COMMAND_FIELDS) if not _approved(approvals, "commands") else []
+    if command_fields:
+        reports.append({"capability": "commands", "fields": command_fields})
+
+    env_fields = _strip_fields(sanitized, _ENV_FIELDS) if not _approved(approvals, "env") else []
+    if env_fields:
+        reports.append({"capability": "env", "fields": env_fields})
+
+    if sanitized.get("type") == "service" and not _approved(approvals, "services"):
+        service_fields = _strip_fields(sanitized, _SERVICE_FIELDS)
+        sanitized["activation"] = "manual"
+        if service_fields:
+            reports.append({"capability": "services", "fields": service_fields})
+
+    notification_fields = (
+        _strip_fields(sanitized, _NOTIFICATION_FIELDS)
+        if sanitized.get("type") == "notification" and not _approved(approvals, "notifications")
+        else []
+    )
+    if notification_fields:
+        reports.append({"capability": "notifications", "fields": notification_fields})
+
+    git_fields = []
+    if not _approved(approvals, "git"):
+        for field in sorted(_GIT_FIELDS):
+            if sanitized.get(field):
+                sanitized[field] = False
+                git_fields.append(field)
+    if git_fields:
+        reports.append({"capability": "git", "fields": git_fields})
+
+    return sanitized, reports
 
 
 def _safe_json(obj):
@@ -483,7 +564,7 @@ def _local_name_rewrites(workers, rename_map, package_name_counts):
     return rewritten
 
 
-def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge"):
+def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approvals=None):
     """Import sanitized workers from a Bullpen Bento package into a workspace."""
     if mode not in {"merge", "add-only"}:
         raise BentoCarrierError("Unsupported worker import mode", "invalid-import-mode")
@@ -496,12 +577,18 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge"):
     worker_payloads, profile_payloads = _load_worker_payloads(fileobj, manifest)
     workers = []
     placement_workers = []
+    sanitized_reports = []
     warnings = []
     for item, worker in worker_payloads:
         if not isinstance(worker, dict):
             warnings.append(f"{item.get('id') or 'worker'} is not a worker object")
             continue
-        sanitized = sanitize_worker_for_package(worker)
+        sanitized, worker_reports = sanitize_worker_for_import(worker, approvals=approvals)
+        for report in worker_reports:
+            sanitized_reports.append({
+                "worker": sanitized.get("name") or "Worker",
+                **report,
+            })
         workers.append(sanitized)
         placement_workers.append((item.get("id") or "", sanitized))
     if not workers:
@@ -599,6 +686,7 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge"):
         },
         "renamed": renamed,
         "rewritten_bindings": rewritten,
+        "sanitized": sanitized_reports,
         "placement": placement_result,
         "warnings": warnings,
     }

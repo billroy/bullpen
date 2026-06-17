@@ -648,6 +648,7 @@ def register_events(socketio, app):
                     bp_dir=bp_dir,
                     placement=(data or {}).get("placement"),
                     mode=str((data or {}).get("mode") or "merge"),
+                    approvals=(data or {}).get("approvals"),
                 )
                 layout = result.pop("layout")
                 _emit("layout:updated", layout, ws_id)

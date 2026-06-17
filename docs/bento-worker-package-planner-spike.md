@@ -165,15 +165,26 @@ Suggested `bento:import` request:
   },
   "name_conflicts": "rename",
   "profile_conflicts": "keep-existing",
-  "capability_policy": "sanitize"
+  "capability_policy": "sanitize",
+  "approvals": {
+    "commands": false,
+    "env": false,
+    "services": false,
+    "notifications": false,
+    "git": false
+  }
 }
 ```
 
 MVP constraints:
 
 - Support only `mode: "merge"` or `mode: "add-only"`.
-- Support only `capability_policy: "sanitize"`.
-- Reject replacement and capability preservation until approval gates exist.
+- Default `capability_policy` is sanitize.
+- Preserve risky capability fields only when the current import request includes
+  the matching approval group.
+- Approval groups are scoped to the current import operation and are not stored
+  as workspace policy.
+- Reject replacement until overwrite planning exists.
 
 ## Placement Planning
 
