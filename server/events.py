@@ -45,6 +45,7 @@ from server.bento_workers import (
 )
 from server.bento_tickets import (
     apply_ticket_bento,
+    apply_ticket_fragments,
     build_ticket_bento,
     load_manifest as _bento_load_manifest,
     preview_ticket_bento,
@@ -847,6 +848,57 @@ def register_events(socketio, app):
         archived = str(scope).strip().lower() == "archived"
         tasks = task_mod.list_tasks(bp_dir, archived=archived)
         _emit("task:list", {"scope": "archived" if archived else "live", "tasks": tasks}, ws_id)
+
+    @socketio.on("task:paste")
+    @with_lock
+    def on_task_paste(data):
+        ws_id, bp_dir = _resolve(data or {})
+        if not _ensure_workspace_membership(ws_id):
+            return
+        ticket = (data or {}).get("ticket")
+        if ticket is None:
+            ticket = (data or {}).get("task")
+        try:
+            result = apply_ticket_fragments(
+                bp_dir,
+                [ticket],
+                target_status=(data or {}).get("target_status") or (data or {}).get("status"),
+                kind="ticket-fragment",
+            )
+        except BentoCarrierError as e:
+            emit("error", {"message": e.message, "code": e.code})
+            return
+        for task in result.get("tickets") or []:
+            _emit("task:created", task, ws_id)
+        emit("task:pasted", {**result, "workspaceId": ws_id})
+
+    @socketio.on("task:paste_group")
+    @with_lock
+    def on_task_paste_group(data):
+        ws_id, bp_dir = _resolve(data or {})
+        if not _ensure_workspace_membership(ws_id):
+            return
+        tickets = (data or {}).get("tickets")
+        if tickets is None:
+            tickets = (data or {}).get("tasks")
+        if tickets is None:
+            tickets = [
+                item.get("ticket") if isinstance(item, dict) and "ticket" in item else item
+                for item in ((data or {}).get("items") or [])
+            ]
+        try:
+            result = apply_ticket_fragments(
+                bp_dir,
+                tickets,
+                target_status=(data or {}).get("target_status") or (data or {}).get("status"),
+                kind="ticket-fragment-group",
+            )
+        except BentoCarrierError as e:
+            emit("error", {"message": e.message, "code": e.code})
+            return
+        for task in result.get("tickets") or []:
+            _emit("task:created", task, ws_id)
+        emit("task:pasted", {**result, "workspaceId": ws_id})
 
     # --- Worker / Layout events ---
 

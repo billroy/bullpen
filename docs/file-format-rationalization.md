@@ -654,6 +654,9 @@ Exit criteria:
   payloads can continue working while worker paste and Bento import share
   conflict, rename, and local binding behavior.
 - Add ticket copy/paste fragments after ticket package import is proven.
+- Start ticket fragments as server-side `task:paste` and `task:paste_group`
+  events that reuse the safe ticket import helper, generate new local IDs, clear
+  assignment, and avoid worker queue dispatch.
 - Keep worksheet TSV paste as-is while reserving richer worksheet fragments for
   later.
 

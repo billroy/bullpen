@@ -379,3 +379,5 @@ Ticket packages:
 10. Add ticket package export, preview, and safe import over Socket.IO.
 11. Route worker paste fragments through the same server apply helper used by
     Bento worker import, preserving existing clipboard payloads.
+12. Add server-side ticket paste fragments that reuse the ticket package import
+    helper without assigning work to workers.

@@ -12,6 +12,7 @@ from server.agents import register_adapter
 from server.agents.base import AgentAdapter
 from server import events as events_mod
 from server import mcp_auth
+from server import tasks as task_mod
 from server.app import create_app, socketio
 from server.persistence import read_json, write_json
 from server.validation import ValidationError
@@ -785,6 +786,79 @@ class TestTaskEvents:
         assert archived_list is not None
         assert archived_list["scope"] == "archived"
         assert any(t["id"] == live_task["id"] for t in archived_list["tasks"])
+
+    def test_task_paste_creates_new_backlog_ticket_without_waking_watcher(self, client):
+        c, app = client
+        write_json(
+            os.path.join(app.config["bp_dir"], "layout.json"),
+            {
+                "slots": [
+                    {
+                        "name": "Backlog watcher",
+                        "type": "ai",
+                        "activation": "on_queue",
+                        "watch_column": "backlog",
+                        "task_queue": [],
+                        "state": "idle",
+                        "col": 0,
+                        "row": 0,
+                    }
+                ]
+            },
+        )
+
+        c.emit("task:paste", {
+            "ticket": {
+                "id": "source-1",
+                "title": "Copied ticket",
+                "body": "Original body",
+                "status": "assigned",
+                "assigned_to": "Old worker",
+                "priority": "high",
+                "type": "bug",
+                "tags": ["copy"],
+            }
+        })
+
+        events = c.get_received()
+        pasted = next(evt["args"][0] for evt in events if evt["name"] == "task:pasted")
+        created = next(evt["args"][0] for evt in events if evt["name"] == "task:created")
+        layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        stored = task_mod.read_task(app.config["bp_dir"], created["id"])
+
+        assert pasted["kind"] == "ticket-fragment"
+        assert created["id"] != "source-1"
+        assert stored["title"] == "Copied ticket"
+        assert stored["status"] == "backlog"
+        assert stored["assigned_to"] == ""
+        assert stored["source_task_id"] == "source-1"
+        assert stored["source_status"] == "assigned"
+        assert "Original body" in stored["body"]
+        assert layout["slots"][0]["task_queue"] == []
+        assert layout["slots"][0]["state"] == "idle"
+
+    def test_task_paste_group_creates_fresh_unassigned_tickets(self, client):
+        c, app = client
+
+        c.emit("task:paste_group", {
+            "target_status": "inbox",
+            "tickets": [
+                {"id": "source-a", "title": "Ticket A", "status": "done", "priority": "low"},
+                {"id": "source-b", "title": "Ticket B", "status": "in_progress", "priority": "urgent"},
+            ],
+        })
+
+        events = c.get_received()
+        pasted = next(evt["args"][0] for evt in events if evt["name"] == "task:pasted")
+        created = [evt["args"][0] for evt in events if evt["name"] == "task:created"]
+        stored = [task_mod.read_task(app.config["bp_dir"], task["id"]) for task in created]
+
+        assert pasted["kind"] == "ticket-fragment-group"
+        assert pasted["imported"] == {"tickets": 2}
+        assert {task["title"] for task in stored} == {"Ticket A", "Ticket B"}
+        assert {task["status"] for task in stored} == {"inbox"}
+        assert {task["assigned_to"] for task in stored} == {""}
+        assert {task["source_task_id"] for task in stored} == {"source-a", "source-b"}
 
 
 class TestWorkerEvents:

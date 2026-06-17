@@ -242,19 +242,14 @@ def preview_ticket_bento(fileobj, *, bp_dir):
     return preview
 
 
-def apply_ticket_bento(fileobj, *, bp_dir, target_status=None):
-    carrier = inspect_bento(fileobj)
-    if not any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier.get("profiles", [])):
-        raise BentoCarrierError("Package does not include the Bullpen share profile", "unsupported-profile")
-
-    manifest = load_manifest(fileobj)
-    ticket_payloads = _load_ticket_payloads(fileobj, manifest)
-    if not ticket_payloads:
+def apply_ticket_fragments(bp_dir, tickets, *, target_status=None, kind="ticket-fragment"):
+    tickets = list(tickets or [])
+    if not tickets:
         raise BentoCarrierError("Package does not contain tickets", "missing-tickets")
 
     created = []
     sanitized_reports = []
-    for item, ticket in ticket_payloads:
+    for ticket in tickets:
         if not isinstance(ticket, dict):
             continue
         sanitized, reports = sanitize_ticket_for_import(ticket, target_status=target_status)
@@ -287,7 +282,7 @@ def apply_ticket_bento(fileobj, *, bp_dir, target_status=None):
 
     return {
         "ok": True,
-        "kind": (manifest.get("bullpen") or {}).get("kind") or ("ticket" if len(created) == 1 else "ticket-bundle"),
+        "kind": kind,
         "imported": {
             "tickets": len(created),
         },
@@ -296,3 +291,19 @@ def apply_ticket_bento(fileobj, *, bp_dir, target_status=None):
         "target_status": target_status or _SAFE_IMPORT_STATUS,
         "warnings": [],
     }
+
+
+def apply_ticket_bento(fileobj, *, bp_dir, target_status=None):
+    carrier = inspect_bento(fileobj)
+    if not any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier.get("profiles", [])):
+        raise BentoCarrierError("Package does not include the Bullpen share profile", "unsupported-profile")
+
+    manifest = load_manifest(fileobj)
+    ticket_payloads = _load_ticket_payloads(fileobj, manifest)
+    result = apply_ticket_fragments(
+        bp_dir,
+        [ticket for _item, ticket in ticket_payloads],
+        target_status=target_status,
+        kind=(manifest.get("bullpen") or {}).get("kind") or ("ticket" if len(ticket_payloads) == 1 else "ticket-bundle"),
+    )
+    return result
