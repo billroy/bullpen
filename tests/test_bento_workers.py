@@ -31,6 +31,13 @@ def _preview(client, data):
     return _received(client, "bento:previewed")
 
 
+def _import_bento(client, data, **payload):
+    body = {"file": data}
+    body.update(payload)
+    client.emit("bento:import", body)
+    return _received(client, "bento:imported")
+
+
 def test_export_single_worker_bento_includes_manifest_worker_and_profile(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
@@ -198,3 +205,125 @@ def test_bento_export_rejects_unknown_kind_and_slot(tmp_workspace):
 
     assert bad_kind["code"] == "invalid-kind"
     assert bad_slot["code"] == "unknown-worker-slot"
+
+
+def test_bento_import_single_worker_adds_sanitized_dormant_worker(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {
+                    "name": "Builder",
+                    "type": "shell",
+                    "profile": "custom-worker",
+                    "command": "make test",
+                    "state": "running",
+                    "task_queue": ["ticket-1"],
+                    "started_at": "2026-01-01T00:00:00Z",
+                    "col": 2,
+                    "row": 3,
+                }
+            ]
+        },
+    )
+    write_json(
+        os.path.join(bp_dir, "profiles", "custom-worker.json"),
+        {"id": "custom-worker", "name": "Custom Worker", "workspaceId": "local"},
+    )
+    exported = _export_worker(client, kind="worker", slot=0)
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+    os.unlink(os.path.join(bp_dir, "profiles", "custom-worker.json"))
+
+    imported = _import_bento(client, exported["data"])
+
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    worker = layout["slots"][0]
+    profile = read_json(os.path.join(bp_dir, "profiles", "custom-worker.json"))
+    assert imported["imported"] == {"workers": 1, "profiles": 1}
+    assert imported["slots"] == [0]
+    assert worker["name"] == "Builder"
+    assert worker["state"] == "idle"
+    assert worker["task_queue"] == []
+    assert "started_at" not in worker
+    assert profile["id"] == "custom-worker"
+    assert "workspaceId" not in profile
+
+
+def test_bento_import_group_can_choose_anchor_and_preserve_relative_positions(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {"name": "Left", "type": "ai", "col": 4, "row": 2},
+                {"name": "Right", "type": "ai", "col": 5, "row": 2},
+            ]
+        },
+    )
+    exported = _export_worker(client, kind="worker-group", slots=[0, 1])
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+
+    imported = _import_bento(
+        client,
+        exported["data"],
+        placement={"strategy": "choose-anchor", "anchor": {"col": 1, "row": 3}},
+    )
+
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    coords = {(worker["name"], worker["col"], worker["row"]) for worker in layout["slots"]}
+    assert imported["placement"] == {"strategy": "choose-anchor", "anchor": {"col": 1, "row": 3}}
+    assert coords == {("Left", 1, 3), ("Right", 2, 3)}
+
+
+def test_bento_import_renames_conflicts_and_rewrites_package_local_bindings(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {
+            "slots": [
+                {"name": "Left", "type": "ai", "col": 2, "row": 2, "disposition": "worker:Right"},
+                {"name": "Right", "type": "ai", "col": 3, "row": 2},
+            ]
+        },
+    )
+    exported = _export_worker(client, kind="worker-group", slots=[0, 1])
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {"slots": [{"name": "Right", "type": "ai", "col": 0, "row": 0}]},
+    )
+
+    imported = _import_bento(
+        client,
+        exported["data"],
+        placement={"strategy": "choose-anchor", "anchor": {"col": 1, "row": 0}},
+    )
+
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    imported_left = next(worker for worker in layout["slots"] if worker["name"] == "Left")
+    imported_right = next(worker for worker in layout["slots"] if worker["name"] == "Right copy")
+    assert imported["renamed"] == [{"from": "Right", "to": "Right copy"}]
+    assert imported["rewritten_bindings"] == [
+        {"worker": "Left", "field": "disposition", "from": "worker:Right", "to": "worker:Right copy"}
+    ]
+    assert imported_left["disposition"] == "worker:Right copy"
+    assert imported_right["col"] == 2
+
+
+def test_bento_import_preserve_reports_placement_conflict(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": [{"name": "One", "type": "ai", "col": 0, "row": 0}]})
+    exported = _export_worker(client, kind="worker", slot=0)
+
+    client.emit("bento:import", {"file": exported["data"]})
+    error = _received(client, "bento:error")
+
+    assert error["code"] == "placement-conflict"

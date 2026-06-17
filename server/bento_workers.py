@@ -10,7 +10,8 @@ import re
 import zipfile
 
 from server.bento_carrier import BentoCarrierError, inspect_bento
-from server.persistence import read_json
+from server.persistence import read_json, write_json
+from server.profiles import create_profile, get_profile
 from server.worker_types import copy_worker_slot, normalize_layout
 
 
@@ -326,6 +327,250 @@ def _placement_preview(workers, existing_slots, *, cols):
         "conflicts": conflicts,
         "duplicate_targets": duplicate_targets,
         "options": options,
+    }
+
+
+def _slot_coords(workers):
+    coords = []
+    for worker in workers:
+        coords.append((_safe_int(worker.get("col"), 0), _safe_int(worker.get("row"), 0)))
+    if not coords:
+        raise BentoCarrierError("Package does not contain workers", "missing-workers")
+    return coords
+
+
+def _occupied_coords(slots, *, cols):
+    occupied = set()
+    for index, worker in enumerate(slots):
+        if not isinstance(worker, dict):
+            continue
+        occupied.add((
+            _safe_int(worker.get("col"), index % cols),
+            _safe_int(worker.get("row"), index // cols),
+        ))
+    return occupied
+
+
+def _unique_worker_name(base, existing_names):
+    base = str(base or "Worker").strip() or "Worker"
+    if base not in existing_names:
+        existing_names.add(base)
+        return base
+    candidate = f"{base} copy"
+    suffix = 2
+    while candidate in existing_names:
+        candidate = f"{base} copy {suffix}"
+        suffix += 1
+    existing_names.add(candidate)
+    return candidate
+
+
+def _candidate_positions(workers, anchor_col, anchor_row):
+    coords = _slot_coords(workers)
+    min_col = min(col for col, _row in coords)
+    min_row = min(row for _col, row in coords)
+    positions = []
+    for worker in workers:
+        col = anchor_col + (_safe_int(worker.get("col"), 0) - min_col)
+        row = anchor_row + (_safe_int(worker.get("row"), 0) - min_row)
+        positions.append((worker, col, row))
+    return positions
+
+
+def _positions_available(positions, occupied):
+    seen = set()
+    for _worker, col, row in positions:
+        if col < 0 or row < 0:
+            return False
+        key = (col, row)
+        if key in seen or key in occupied:
+            return False
+        seen.add(key)
+    return True
+
+
+def _resolve_import_positions(workers, existing_slots, *, cols, placement):
+    placement = placement if isinstance(placement, dict) else {}
+    strategy = str(placement.get("strategy") or "preserve")
+    if strategy not in {"preserve", "choose-anchor", "place-right", "place-below"}:
+        raise BentoCarrierError("Unsupported worker import placement strategy", "invalid-placement")
+
+    occupied = _occupied_coords(existing_slots, cols=cols)
+    coords = _slot_coords(workers)
+    min_col = min(col for col, _row in coords)
+    min_row = min(row for _col, row in coords)
+
+    if strategy == "preserve":
+        positions = [(worker, _safe_int(worker.get("col"), 0), _safe_int(worker.get("row"), 0)) for worker in workers]
+        if not _positions_available(positions, occupied):
+            raise BentoCarrierError("Placement conflicts with existing workers", "placement-conflict")
+        return positions, {"strategy": "preserve", "anchor": {"col": min_col, "row": min_row}}
+
+    if strategy == "choose-anchor":
+        anchor = placement.get("anchor") if isinstance(placement.get("anchor"), dict) else {}
+        anchor_col = _safe_int(anchor.get("col"), min_col)
+        anchor_row = _safe_int(anchor.get("row"), min_row)
+        positions = _candidate_positions(workers, anchor_col, anchor_row)
+        if not _positions_available(positions, occupied):
+            raise BentoCarrierError("Placement conflicts with existing workers", "placement-conflict")
+        return positions, {"strategy": strategy, "anchor": {"col": anchor_col, "row": anchor_row}}
+
+    if occupied:
+        max_col = max(col for col, _row in occupied)
+        max_row = max(row for _col, row in occupied)
+        occupied_min_col = min(col for col, _row in occupied)
+        occupied_min_row = min(row for _col, row in occupied)
+    else:
+        max_col = max_row = -1
+        occupied_min_col = occupied_min_row = 0
+
+    if strategy == "place-right":
+        anchor_col = max_col + 1
+        anchor_row = occupied_min_row
+        while True:
+            positions = _candidate_positions(workers, anchor_col, anchor_row)
+            if _positions_available(positions, occupied):
+                return positions, {"strategy": strategy, "anchor": {"col": anchor_col, "row": anchor_row}}
+            anchor_col += 1
+
+    anchor_col = occupied_min_col
+    anchor_row = max_row + 1
+    while True:
+        positions = _candidate_positions(workers, anchor_col, anchor_row)
+        if _positions_available(positions, occupied):
+            return positions, {"strategy": strategy, "anchor": {"col": anchor_col, "row": anchor_row}}
+        anchor_row += 1
+
+
+def _local_name_rewrites(workers, rename_map, package_name_counts):
+    rewritten = []
+    for worker in workers:
+        disposition = str(worker.get("disposition") or "")
+        for prefix in ("worker:", "random:"):
+            if not disposition.startswith(prefix):
+                continue
+            target = disposition[len(prefix):].strip()
+            if package_name_counts.get(target) == 1 and target in rename_map:
+                worker["disposition"] = f"{prefix}{rename_map[target]}"
+                rewritten.append({
+                    "worker": worker.get("name") or "Worker",
+                    "field": "disposition",
+                    "from": disposition,
+                    "to": worker["disposition"],
+                })
+            break
+    return rewritten
+
+
+def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge"):
+    """Import sanitized workers from a Bullpen Bento package into a workspace."""
+    if mode not in {"merge", "add-only"}:
+        raise BentoCarrierError("Unsupported worker import mode", "invalid-import-mode")
+
+    carrier = inspect_bento(fileobj)
+    if not any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier.get("profiles", [])):
+        raise BentoCarrierError("Package does not include the Bullpen share profile", "unsupported-profile")
+
+    manifest = _load_manifest(fileobj)
+    worker_payloads, profile_payloads = _load_worker_payloads(fileobj, manifest)
+    workers = []
+    warnings = []
+    for item, worker in worker_payloads:
+        if not isinstance(worker, dict):
+            warnings.append(f"{item.get('id') or 'worker'} is not a worker object")
+            continue
+        workers.append(sanitize_worker_for_package(worker))
+    if not workers:
+        raise BentoCarrierError("Package does not contain workers", "missing-workers")
+
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
+    slots = layout.setdefault("slots", [])
+    cols = _safe_cols(config)
+    positions, placement_result = _resolve_import_positions(workers, slots, cols=cols, placement=placement)
+
+    imported_profiles = []
+    skipped_profiles = []
+    for item, profile in profile_payloads:
+        if not isinstance(profile, dict):
+            continue
+        profile_id = item.get("profile_id") or profile.get("id")
+        if not isinstance(profile_id, str) or not profile_id.strip():
+            continue
+        profile_id = profile_id.strip()
+        try:
+            existing_profile = get_profile(bp_dir, profile_id)
+        except ValueError as exc:
+            raise BentoCarrierError("Package profile id is invalid", "invalid-profile-id") from exc
+        if existing_profile:
+            skipped_profiles.append(profile_id)
+            continue
+        profile = dict(profile)
+        profile["id"] = profile_id
+        profile.pop("workspaceId", None)
+        create_profile(bp_dir, profile)
+        imported_profiles.append(profile_id)
+
+    existing_names = {
+        worker.get("name")
+        for worker in slots
+        if isinstance(worker, dict) and worker.get("name")
+    }
+    package_name_counts = {}
+    for worker in workers:
+        name = worker.get("name")
+        if name:
+            package_name_counts[name] = package_name_counts.get(name, 0) + 1
+    rename_map = {}
+    renamed = []
+    for worker in workers:
+        original = worker.get("name") or "Worker"
+        final = _unique_worker_name(original, existing_names)
+        if final != original:
+            rename_map[original] = final
+            renamed.append({"from": original, "to": final})
+        worker["name"] = final
+    rewritten = _local_name_rewrites(workers, rename_map, package_name_counts)
+
+    added_slots = []
+    for worker, col, row in positions:
+        worker["col"] = col
+        worker["row"] = row
+        while len(slots) and slots[-1] is None:
+            slots.pop()
+        slot_index = None
+        for index, existing in enumerate(slots):
+            if existing is None:
+                slot_index = index
+                break
+        if slot_index is None:
+            slot_index = len(slots)
+            slots.append(None)
+        slots[slot_index] = worker
+        added_slots.append(slot_index)
+
+    layout = normalize_layout(layout, config=config)
+    write_json(os.path.join(bp_dir, "layout.json"), layout)
+    for profile_id in skipped_profiles:
+        warnings.append(f"profile '{profile_id}' already exists and was kept")
+
+    return {
+        "ok": True,
+        "kind": (manifest.get("bullpen") or {}).get("kind") or ("worker" if len(workers) == 1 else "worker-group"),
+        "layout": layout,
+        "imported": {
+            "workers": len(workers),
+            "profiles": len(imported_profiles),
+        },
+        "slots": added_slots,
+        "profiles": {
+            "imported": sorted(imported_profiles),
+            "skipped": sorted(skipped_profiles),
+        },
+        "renamed": renamed,
+        "rewritten_bindings": rewritten,
+        "placement": placement_result,
+        "warnings": warnings,
     }
 
 

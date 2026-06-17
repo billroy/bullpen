@@ -36,6 +36,7 @@ from server.bento_carrier import BentoCarrierError, inspect_bento
 from server.bento_workers import (
     BULLPEN_BENTO_MIMETYPE,
     BULLPEN_PROFILE_ID,
+    apply_worker_bento,
     build_worker_bento,
     preview_worker_bento,
     worker_export_name as _bento_worker_export_name,
@@ -633,6 +634,27 @@ def register_events(socketio, app):
             "mimetype": BULLPEN_BENTO_MIMETYPE,
             "data": package.getvalue(),
         })
+
+    @socketio.on("bento:import")
+    def on_bento_import(data):
+        ws_id, bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        try:
+            fileobj = _bento_fileobj(data or {})
+            with _write_lock:
+                result = apply_worker_bento(
+                    fileobj,
+                    bp_dir=bp_dir,
+                    placement=(data or {}).get("placement"),
+                    mode=str((data or {}).get("mode") or "merge"),
+                )
+                layout = result.pop("layout")
+                _emit("layout:updated", layout, ws_id)
+            result["workspaceId"] = ws_id
+            emit("bento:imported", result)
+        except BentoCarrierError as e:
+            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": e.message, "code": e.code})
 
     # --- Task events ---
 
