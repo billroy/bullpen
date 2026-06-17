@@ -109,20 +109,27 @@ implemented" error. Import apply belongs to the worker package planner slice.
 
 ## Legacy Routing
 
-Keep existing endpoints unchanged:
+The carrier spike originally left existing endpoints unchanged so the first
+slice could focus only on package inspection. That was a temporary spike
+boundary, not a long-term architecture decision. After the Socket.IO Bento
+worker export/import path was wired through the UI, the legacy worker zip REST
+routes were removed:
 
-- `/api/import/workspace`
 - `/api/import/workers`
-- `/api/import/all`
-- `/api/export/workspace`
 - `/api/export/workers`
 - `/api/export/worker`
+
+Workspace and all-workspace zip endpoints remain under the separate REST
+endpoint audit ticket:
+
+- `/api/import/workspace`
+- `/api/import/all`
+- `/api/export/workspace`
 - `/api/export/all`
 
-Later, a unified import event may route by manifest presence:
+A future unified import event may route by manifest presence:
 
 - `bento.json` -> Bento preview/import path
-- `bullpen-workers-export.json` -> legacy workers importer
 - `bullpen-export.json` -> legacy all-workspaces importer
 - `.bullpen/` or `config.json` -> legacy workspace importer
 

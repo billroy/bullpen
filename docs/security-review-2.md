@@ -226,7 +226,7 @@ Remediation:
 
 ## Suggested Security Test Additions
 
-- HTTP CSRF tests for `/api/files/<path>` PUT, `/api/import/workspace`, `/api/import/workers`, `/api/import/all`, and `/api/worker/transfer`.
+- HTTP CSRF tests for `/api/files/<path>` PUT, `/api/import/workspace`, `/api/import/all`, and `/api/worker/transfer`.
 - Project path tests covering configured root allowlist, symlink escapes, absolute paths outside roots, and Docker `/workspace` expectations.
 - Import tests that flag or pause shell/service workers, scheduled triggers, and command fields.
 - Frontend supply-chain test that rejects unpinned CDN URLs and missing SRI.

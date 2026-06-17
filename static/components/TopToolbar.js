@@ -536,7 +536,7 @@ const TopToolbar = {
             <input
               ref="workersImportInput"
               type="file"
-              accept=".zip,application/zip"
+              accept=".bento,application/vnd.bullpen.bento+zip,application/vnd.bento+zip"
               class="toolbar-import-input"
               @change="onImportWorkersSelected"
             >

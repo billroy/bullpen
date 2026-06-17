@@ -288,9 +288,13 @@ Response event:
 
 - Media type: `application/vnd.bullpen.bento+zip`.
 - Download extension: `.bento`.
-- Current legacy `.zip` worker exports remain available.
+- Legacy `.zip` worker exports are removed from the UI and route surface.
 
-Do not remove or rename existing legacy worker export routes in the MVP.
+Remove these legacy REST routes as part of the remediation slice:
+
+- `/api/export/workers`
+- `/api/export/worker`
+- `/api/import/workers`
 
 ## Import Events
 
@@ -383,3 +387,4 @@ Ticket packages:
     helper without assigning work to workers.
 13. Move primary worker-card and worker-group exports to the Socket.IO Bento
     export event, leaving legacy zip export reachable during migration.
+14. Remove the legacy worker zip REST routes and toolbar wiring.

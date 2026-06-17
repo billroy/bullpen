@@ -171,64 +171,6 @@ def sync_deploy_label_config(bp_dir):
     write_json(path, config)
 
 
-def _slot_coord(slot, index, cols=4):
-    if isinstance(slot, dict):
-        return _safe_int(slot.get("col"), index % cols), _safe_int(slot.get("row"), index // cols)
-    return index % cols, index // cols
-
-
-def _translated_worker_slot(slot, delta_col, delta_row):
-    translated = dict(slot or {})
-    translated["col"] = _safe_int(translated.get("col"), 0) + delta_col
-    translated["row"] = _safe_int(translated.get("row"), 0) + delta_row
-    return translated
-
-
-def _merge_imported_worker_slots(existing_slots, imported_slots, *, config):
-    cols = max(_safe_int(((config or {}).get("grid") or {}).get("cols"), 4), 1)
-    kept_existing = list(existing_slots or [])
-    normalized_import = normalize_layout({"slots": imported_slots or []}, config=config).get("slots", [])
-    imported_workers = [slot for slot in normalized_import if isinstance(slot, dict)]
-    if not imported_workers:
-        return kept_existing
-
-    occupied = {
-        _slot_coord(slot, index, cols)
-        for index, slot in enumerate(kept_existing)
-        if isinstance(slot, dict)
-    }
-    imported_coords = [_slot_coord(slot, index, cols) for index, slot in enumerate(imported_workers)]
-    imported_min_col = min(col for col, _row in imported_coords)
-    imported_min_row = min(row for _col, row in imported_coords)
-
-    if occupied:
-        existing_cols = [col for col, _row in occupied]
-        existing_rows = [row for _col, row in occupied]
-        candidate_offsets = [
-            (max(existing_cols) + 1 - imported_min_col, min(existing_rows) - imported_min_row),
-            (min(existing_cols) - imported_min_col, max(existing_rows) + 1 - imported_min_row),
-        ]
-    else:
-        candidate_offsets = [(-imported_min_col, -imported_min_row)]
-
-    for delta_col, delta_row in candidate_offsets:
-        translated_coords = {
-            (col + delta_col, row + delta_row)
-            for col, row in imported_coords
-        }
-        if occupied.isdisjoint(translated_coords):
-            break
-    else:
-        delta_col = (max((col for col, _row in occupied), default=-1) + 1) - imported_min_col
-        delta_row = -imported_min_row
-
-    kept_existing.extend(
-        _translated_worker_slot(slot, delta_col, delta_row)
-        for slot in imported_workers
-    )
-    return kept_existing
-
-
 def _configured_allowed_origins():
     raw = os.environ.get("BULLPEN_ALLOWED_ORIGINS", "")
     allowed = set()
@@ -865,59 +807,6 @@ def create_app(
         # Do not expose host filesystem paths in export manifests.
         return {"id": ws.id, "name": ws.name}
 
-    def _worker_export_name(value, fallback="worker"):
-        text = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "")).strip(" .-_")
-        return text[:80] or fallback
-
-    def _normalized_worker_slots(ws):
-        layout_path = os.path.join(ws.bp_dir, "layout.json")
-        layout = read_json(layout_path) if os.path.exists(layout_path) else {"slots": []}
-        config = read_json(os.path.join(ws.bp_dir, "config.json"))
-        layout = normalize_layout(layout, config=config)
-        slots = layout.get("slots", []) if isinstance(layout, dict) else []
-        return slots if isinstance(slots, list) else []
-
-    def _export_workers_zip_bytes(ws, selected_slots=None, selected_slot=None):
-        mem = BytesIO()
-        created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        slots = _normalized_worker_slots(ws)
-        if selected_slots is None:
-            export_slots = slots
-        else:
-            export_slots = selected_slots
-        workers_layout = {"slots": export_slots if isinstance(export_slots, list) else []}
-
-        with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(".bullpen/layout.json", json.dumps(workers_layout, indent=2))
-
-            profile_ids = set()
-            for slot in workers_layout["slots"]:
-                if isinstance(slot, dict) and isinstance(slot.get("profile"), str) and slot.get("profile").strip():
-                    profile_ids.add(slot["profile"].strip())
-            for profile_id in sorted(profile_ids):
-                profile_path = os.path.join(ws.bp_dir, "profiles", f"{profile_id}.json")
-                if os.path.exists(profile_path):
-                    zf.write(profile_path, f".bullpen/profiles/{profile_id}.json")
-
-            manifest = {
-                "schema": "bullpen-workers-export-v1",
-                "created_at": created_at,
-                "workspace": _workspace_export_meta(ws),
-                "profiles": sorted(profile_ids),
-            }
-            if selected_slot is not None:
-                manifest["selection"] = {
-                    "slot": int(selected_slot),
-                    "count": len(workers_layout["slots"]),
-                }
-            elif selected_slots is not None:
-                manifest["selection"] = {
-                    "count": len(workers_layout["slots"]),
-                }
-            zf.writestr("bullpen-workers-export.json", json.dumps(manifest, indent=2))
-        mem.seek(0)
-        return mem
-
     def _export_all_zip_bytes():
         mem = BytesIO()
         created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -986,14 +875,6 @@ def create_app(
             return extracted_root
         return None
 
-    def _workers_payload_root(extracted_root):
-        explicit = os.path.join(extracted_root, ".bullpen")
-        if os.path.exists(os.path.join(explicit, "layout.json")):
-            return explicit
-        if os.path.exists(os.path.join(extracted_root, "layout.json")):
-            return extracted_root
-        return None
-
     def _replace_workspace_bp_dir(ws, source_bp_dir):
         bp_dir = ws.bp_dir
         previous_token = mcp_auth.read_workspace_mcp_token(bp_dir)
@@ -1008,44 +889,6 @@ def create_app(
         state["globalSettings"] = load_global_settings(manager.global_dir)
         socketio.emit("state:init", state, to=ws.id)
         socketio.emit("files:changed", {"workspaceId": ws.id}, to=ws.id)
-
-    def _replace_workspace_workers(ws, source_bp_dir):
-        source_layout_path = os.path.join(source_bp_dir, "layout.json")
-        if not os.path.exists(source_layout_path):
-            raise ValueError("Archive does not contain layout.json")
-
-        source_layout = read_json(source_layout_path)
-        if not isinstance(source_layout, dict):
-            raise ValueError("layout.json must be a JSON object")
-        slots = source_layout.get("slots", [])
-        if not isinstance(slots, list):
-            raise ValueError("layout.json slots must be a list")
-
-        bp_dir = ws.bp_dir
-        previous_token = mcp_auth.read_workspace_mcp_token(bp_dir)
-        init_workspace(ws.path)
-        _write_runtime_config(ws, preferred_token=previous_token)
-        config = read_json(os.path.join(bp_dir, "config.json"))
-        current_layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
-        merged_slots = _merge_imported_worker_slots(current_layout.get("slots", []), slots, config=config)
-        write_json(os.path.join(bp_dir, "layout.json"), normalize_layout({"slots": merged_slots}, config=config))
-
-        source_profiles_dir = os.path.join(source_bp_dir, "profiles")
-        if os.path.isdir(source_profiles_dir):
-            target_profiles_dir = os.path.join(bp_dir, "profiles")
-            os.makedirs(target_profiles_dir, exist_ok=True)
-            for filename in os.listdir(source_profiles_dir):
-                if not filename.endswith(".json"):
-                    continue
-                src_path = os.path.join(source_profiles_dir, filename)
-                dst_path = os.path.join(target_profiles_dir, filename)
-                shutil.copy2(src_path, dst_path)
-
-        reconcile(bp_dir)
-        state = load_state(bp_dir, ws.path, workspace_display=ws.name)
-        state["workspaceId"] = ws.id
-        state["globalSettings"] = load_global_settings(manager.global_dir)
-        socketio.emit("state:init", state, to=ws.id)
 
     @app.route("/api/export/workspace")
     @auth.require_auth
@@ -1067,61 +910,6 @@ def create_app(
         export_name = f"bullpen-all-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.zip"
         return send_file(
             _export_all_zip_bytes(),
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=export_name,
-        )
-
-    @app.route("/api/export/workers")
-    @auth.require_auth
-    def export_workers():
-        ws, error = _workspace_from_id(_workspace_id_from_args())
-        if error:
-            return error
-        selected_slots = None
-        raw_slots = request.args.get("slots", "").strip()
-        if raw_slots:
-            slots = _normalized_worker_slots(ws)
-            selected_slots = []
-            seen = set()
-            for raw in raw_slots.split(","):
-                try:
-                    slot = int(raw)
-                except (TypeError, ValueError):
-                    return jsonify({"error": "slots must be comma-separated integers"}), 400
-                if slot in seen:
-                    continue
-                seen.add(slot)
-                if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
-                    return jsonify({"error": f"Unknown worker slot: {slot}"}), 404
-                selected_slots.append(slots[slot])
-            if not selected_slots:
-                return jsonify({"error": "slots must include at least one worker"}), 400
-        export_name = f"bullpen-workers-{ws.name}-{ws.id[:8]}.zip"
-        return send_file(
-            _export_workers_zip_bytes(ws, selected_slots=selected_slots),
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=export_name,
-        )
-
-    @app.route("/api/export/worker")
-    @auth.require_auth
-    def export_worker():
-        ws, error = _workspace_from_id(_workspace_id_from_args())
-        if error:
-            return error
-        try:
-            slot = int(request.args.get("slot"))
-        except (TypeError, ValueError):
-            return jsonify({"error": "slot is required"}), 400
-        slots = _normalized_worker_slots(ws)
-        if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
-            return jsonify({"error": "Unknown worker slot"}), 404
-        worker = slots[slot]
-        export_name = f"bullpen-worker-{_worker_export_name(worker.get('name'), f'slot-{slot + 1}')}-{ws.id[:8]}.zip"
-        return send_file(
-            _export_workers_zip_bytes(ws, [worker], selected_slot=slot),
             mimetype="application/zip",
             as_attachment=True,
             download_name=export_name,
@@ -1198,32 +986,6 @@ def create_app(
                     if not payload_root:
                         return jsonify({"error": "Archive does not contain a workspace .bullpen payload"}), 400
                     _replace_workspace_bp_dir(ws, payload_root)
-        except zipfile.BadZipFile:
-            return jsonify({"error": "Invalid zip file"}), 400
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-        return jsonify({"ok": True, "imported": 1, "workspaceId": ws_id})
-
-    @app.route("/api/import/workers", methods=["POST"])
-    @auth.require_auth
-    def import_workers():
-        ws_id = _workspace_id_from_args()
-        ws, error = _workspace_from_id(ws_id)
-        if error:
-            return error
-        upload = request.files.get("file")
-        if not upload or not upload.filename:
-            return jsonify({"error": "Missing upload file"}), 400
-        try:
-            with zipfile.ZipFile(upload.stream, "r") as zf:
-                with tempfile.TemporaryDirectory(prefix="bullpen_import_workers_") as tmp_dir:
-                    _safe_extract_zip(zf, tmp_dir)
-                    payload_root = _workers_payload_root(tmp_dir)
-                    if not payload_root:
-                        return jsonify({"error": "Archive does not contain a workers payload"}), 400
-                    _replace_workspace_workers(ws, payload_root)
         except zipfile.BadZipFile:
             return jsonify({"error": "Invalid zip file"}), 400
         except ValueError as e:

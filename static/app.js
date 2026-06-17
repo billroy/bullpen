@@ -1596,6 +1596,52 @@ const app = createApp({
       return exported;
     }
 
+    function _requestBentoImport(payload) {
+      return new Promise((resolve, reject) => {
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Bento import timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('bento:imported', onImported);
+          socket.off('bento:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onImported = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Bento import failed'));
+        };
+        socket.on('bento:imported', onImported);
+        socket.on('bento:error', onError);
+        socket.emit('bento:import', _wsData(payload));
+      });
+    }
+
+    function _bentoImportCount(imported) {
+      if (!imported || typeof imported !== 'object') return 0;
+      return Object.values(imported).reduce((total, value) => {
+        return total + (Number.isFinite(Number(value)) ? Number(value) : 0);
+      }, 0);
+    }
+
+    async function _importBentoFile(file) {
+      if (!file) return null;
+      const data = await file.arrayBuffer();
+      return _requestBentoImport({ file: data });
+    }
+
     async function exportWorkspace() {
       if (!activeWorkspaceId.value) return;
       try {
@@ -1610,8 +1656,14 @@ const app = createApp({
     async function exportWorkers() {
       if (!activeWorkspaceId.value) return;
       try {
-        const url = `/api/export/workers?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
-        await _downloadZip(url, 'bullpen-workers.zip');
+        const slots = (state.layout?.slots || [])
+          .map((worker, slot) => (worker ? slot : null))
+          .filter(Number.isInteger);
+        if (!slots.length) {
+          addToast('No workers to export', 'error');
+          return;
+        }
+        await _downloadBentoExport({ kind: 'worker-group', slots }, 'bullpen-workers.bento');
         addToast('Workers export ready');
       } catch (e) {
         addToast('Workers export failed: ' + e.message, 'error');
@@ -1672,8 +1724,9 @@ const app = createApp({
     async function importWorkers(file) {
       if (!activeWorkspaceId.value) return;
       try {
-        const url = `/api/import/workers?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
-        await _importZip(url, file, 'Workers import complete');
+        const result = await _importBentoFile(file);
+        const count = _bentoImportCount(result?.imported);
+        addToast('Workers import complete' + (count ? ` (${count})` : ''));
       } catch (e) {
         addToast('Workers import failed: ' + e.message, 'error');
       }

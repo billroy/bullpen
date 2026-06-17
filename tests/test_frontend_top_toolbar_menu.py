@@ -19,6 +19,7 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
     assert "class=\"project-menu-item\" @click=\"triggerImportAll\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
+    assert "accept=\".bento,application/vnd.bullpen.bento+zip,application/vnd.bento+zip\"" in text
     assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"git-branch\"" in text
     assert "class=\"project-menu-item\" @click=\"onLogout\"><i class=\"menu-item-icon\" data-lucide=\"log-out\"" in text
     assert "<span class=\"menu-item-label\">Toggle Left Pane</span></button>" in text
@@ -56,12 +57,16 @@ def test_app_wires_toolbar_export_import_events():
     assert "@import-workers=\"importWorkers\"" in text
     assert "@import-all=\"importAll\"" in text
     assert "await _downloadZip('/api/export/all', 'bullpen-all.zip');" in text
-    assert "await _downloadZip(url, 'bullpen-workers.zip');" in text
+    assert "await _downloadBentoExport({ kind: 'worker-group', slots }, 'bullpen-workers.bento');" in text
     assert "async function exportWorker(slot) {" in text
     assert "socket.emit('bento:export', _wsData(payload));" in text
     assert "await _downloadBentoExport({ kind: 'worker', slot }, 'bullpen-worker.bento');" in text
+    assert "socket.emit('bento:import', _wsData(payload));" in text
+    assert "const data = await file.arrayBuffer();" in text
     assert "await _importZip('/api/import/all', file, 'All-workspace import complete');" in text
-    assert "await _importZip(url, file, 'Workers import complete');" in text
+    assert "Workers import complete' + (count ? ` (${count})` : '')" in text
+    assert "/api/export/workers" not in text
+    assert "/api/import/workers" not in text
 
 
 def test_worker_colors_menu_includes_opencode_marker_and_notification():

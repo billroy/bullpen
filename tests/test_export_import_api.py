@@ -150,7 +150,7 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     assert mcp_auth.read_workspace_mcp_token(bp2) == token_two
 
 
-def test_export_workers_returns_workers_payload(tmp_workspace):
+def test_legacy_worker_zip_routes_are_removed(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = app.test_client()
@@ -159,243 +159,23 @@ def test_export_workers_returns_workers_payload(tmp_workspace):
         os.path.join(bp_dir, "layout.json"),
         {
             "slots": [
-                {
-                    "name": "Builder",
-                    "profile": "custom-worker",
-                    "state": "idle",
-                    "task_queue": [],
-                }
-            ]
-        },
-    )
-    write_json(
-        os.path.join(bp_dir, "profiles", "custom-worker.json"),
-        {"id": "custom-worker", "name": "Custom Worker"},
-    )
-
-    resp = client.get("/api/export/workers")
-    assert resp.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
-        names = set(zf.namelist())
-        exported_layout = json.loads(zf.read(".bullpen/layout.json"))
-        manifest = json.loads(zf.read("bullpen-workers-export.json"))
-    assert ".bullpen/layout.json" in names
-    assert ".bullpen/config.json" not in names
-    assert ".bullpen/profiles/custom-worker.json" in names
-    assert exported_layout["slots"][0]["name"] == "Builder"
-    assert "path" not in manifest["workspace"]
-
-
-def test_export_single_worker_returns_selected_worker_payload(tmp_workspace):
-    bp_dir = init_workspace(tmp_workspace)
-    app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
-
-    write_json(
-        os.path.join(bp_dir, "layout.json"),
-        {
-            "slots": [
-                {
-                    "name": "Builder",
-                    "profile": "custom-worker",
-                    "state": "idle",
-                    "task_queue": [],
-                },
-                {
-                    "name": "Reviewer",
-                    "profile": "review-worker",
-                    "state": "idle",
-                    "task_queue": [],
-                },
-            ]
-        },
-    )
-    write_json(
-        os.path.join(bp_dir, "profiles", "custom-worker.json"),
-        {"id": "custom-worker", "name": "Custom Worker"},
-    )
-    write_json(
-        os.path.join(bp_dir, "profiles", "review-worker.json"),
-        {"id": "review-worker", "name": "Review Worker"},
-    )
-
-    resp = client.get("/api/export/worker?slot=1")
-    assert resp.status_code == 200
-    assert "bullpen-worker-Reviewer-" in resp.headers.get("Content-Disposition", "")
-    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
-        names = set(zf.namelist())
-        exported_layout = json.loads(zf.read(".bullpen/layout.json"))
-        manifest = json.loads(zf.read("bullpen-workers-export.json"))
-    assert len(exported_layout["slots"]) == 1
-    assert exported_layout["slots"][0]["name"] == "Reviewer"
-    assert exported_layout["slots"][0]["profile"] == "review-worker"
-    assert exported_layout["slots"][0]["state"] == "idle"
-    assert exported_layout["slots"][0]["task_queue"] == []
-    assert ".bullpen/profiles/review-worker.json" in names
-    assert ".bullpen/profiles/custom-worker.json" not in names
-    assert manifest["selection"] == {"slot": 1, "count": 1}
-
-
-def test_export_workers_can_limit_to_selected_slots(tmp_workspace):
-    bp_dir = init_workspace(tmp_workspace)
-    app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
-
-    write_json(
-        os.path.join(bp_dir, "layout.json"),
-        {
-            "slots": [
-                {"name": "One", "state": "idle", "task_queue": []},
-                {"name": "Two", "state": "idle", "task_queue": []},
-                {"name": "Three", "state": "idle", "task_queue": []},
+                {"name": "Builder", "profile": "custom-worker", "state": "idle", "task_queue": []}
             ]
         },
     )
 
-    resp = client.get("/api/export/workers?slots=0,2")
-    assert resp.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
-        exported_layout = json.loads(zf.read(".bullpen/layout.json"))
-        manifest = json.loads(zf.read("bullpen-workers-export.json"))
-    assert [slot["name"] for slot in exported_layout["slots"]] == ["One", "Three"]
-    assert manifest["selection"] == {"count": 2}
-
-
-def test_export_single_worker_rejects_unknown_slot(tmp_workspace):
-    init_workspace(tmp_workspace)
-    app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
-
-    resp = client.get("/api/export/worker?slot=99")
-    assert resp.status_code == 404
-    assert resp.get_json()["error"] == "Unknown worker slot"
-
-
-def test_import_workers_merges_layout_from_zip_without_overwriting_existing_workers(tmp_workspace):
-    bp_dir = init_workspace(tmp_workspace)
-    app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
-    original_token = mcp_auth.read_workspace_mcp_token(bp_dir)
-
-    write_json(
-        os.path.join(bp_dir, "layout.json"),
-        {
-            "slots": [
-                {
-                    "name": "Existing Worker",
-                    "profile": "existing-profile",
-                    "state": "idle",
-                    "task_queue": [],
-                    "col": 0,
-                    "row": 0,
-                }
-            ]
-        },
-    )
-    archive = _zip_bytes(
-        {
-            ".bullpen/layout.json": json.dumps(
-                {
-                    "slots": [
-                        {
-                            "name": "Imported Worker",
-                            "profile": "imported-profile",
-                            "state": "idle",
-                            "task_queue": [],
-                            "col": 0,
-                            "row": 0,
-                        }
-                    ]
-                }
-            ),
-            ".bullpen/profiles/imported-profile.json": json.dumps(
-                {"id": "imported-profile", "name": "Imported Profile"}
-            ),
-        }
-    )
-
+    routes = {rule.rule for rule in app.url_map.iter_rules()}
+    assert "/api/export/workers" not in routes
+    assert "/api/export/worker" not in routes
+    assert "/api/import/workers" not in routes
+    assert client.get("/api/export/workers").status_code == 404
+    assert client.get("/api/export/worker?slot=0").status_code == 404
     resp = client.post(
         "/api/import/workers",
-        data={"file": (archive, "workers.zip")},
+        data={"file": (_zip_bytes({".bullpen/layout.json": json.dumps({"slots": []})}), "workers.zip")},
         content_type="multipart/form-data",
     )
-    assert resp.status_code == 200
-    layout = read_json(os.path.join(bp_dir, "layout.json"))
-    profile = read_json(os.path.join(bp_dir, "profiles", "imported-profile.json"))
-    config = read_json(os.path.join(bp_dir, "config.json"))
-    workers = [slot for slot in layout["slots"] if isinstance(slot, dict)]
-    assert len(workers) == 2
-    existing = next(slot for slot in workers if slot["name"] == "Existing Worker")
-    imported = next(slot for slot in workers if slot["name"] == "Imported Worker")
-    assert (existing["col"], existing["row"]) == (0, 0)
-    assert (imported["col"], imported["row"]) == (1, 0)
-    assert profile["id"] == "imported-profile"
-    assert config["server_host"] == app.config["host"]
-    assert config["server_port"] == app.config["port"]
-    assert "mcp_token" not in config
-    assert mcp_auth.read_workspace_mcp_token(bp_dir) == original_token
-
-
-def test_import_workers_keeps_pass_connected_group_adjacent_after_translation(tmp_workspace):
-    bp_dir = init_workspace(tmp_workspace)
-    app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
-
-    write_json(
-        os.path.join(bp_dir, "layout.json"),
-        {
-            "slots": [
-                {
-                    "name": "Existing Worker",
-                    "profile": "existing-profile",
-                    "state": "idle",
-                    "task_queue": [],
-                    "col": 3,
-                    "row": 2,
-                }
-            ]
-        },
-    )
-    archive = _zip_bytes(
-        {
-            ".bullpen/layout.json": json.dumps(
-                {
-                    "slots": [
-                        {
-                            "name": "Pass Left",
-                            "profile": "imported-profile",
-                            "state": "idle",
-                            "task_queue": [],
-                            "disposition": "pass:right",
-                            "col": 0,
-                            "row": 0,
-                        },
-                        {
-                            "name": "Pass Right",
-                            "profile": "imported-profile",
-                            "state": "idle",
-                            "task_queue": [],
-                            "disposition": "pass:left",
-                            "col": 1,
-                            "row": 0,
-                        },
-                    ]
-                }
-            )
-        }
-    )
-
-    resp = client.post(
-        "/api/import/workers",
-        data={"file": (archive, "workers.zip")},
-        content_type="multipart/form-data",
-    )
-
-    assert resp.status_code == 200
-    layout = read_json(os.path.join(bp_dir, "layout.json"))
-    workers = {slot["name"]: slot for slot in layout["slots"] if isinstance(slot, dict)}
-    assert (workers["Pass Left"]["col"], workers["Pass Left"]["row"]) == (4, 2)
-    assert (workers["Pass Right"]["col"], workers["Pass Right"]["row"]) == (5, 2)
+    assert resp.status_code in {404, 405}
 
 
 def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):
