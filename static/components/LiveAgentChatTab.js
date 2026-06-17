@@ -26,6 +26,7 @@ const LiveAgentChatTab = {
       opencodeModelsStatus: '',
       opencodeModelsError: '',
       opencodeModelsLoading: false,
+      opencodeModelsRequestSeq: 0,
       opencodeModelProvider: '',
       opencodeModelSearch: '',
       userSelectedProviderModel: false,
@@ -226,18 +227,19 @@ const LiveAgentChatTab = {
       this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
     },
     syncOpenCodeModelProvider() {
-      const currentProvider = this.currentOpenCodeProvider;
-      if (currentProvider) {
-        this.opencodeModelProvider = currentProvider;
-      } else if (!this.opencodeModelProvider && this.opencodeProviders.length === 1) {
-        this.opencodeModelProvider = this.opencodeProviders[0];
-      }
+      const selectedProvider = String(this.opencodeModelProvider || '').trim();
+      if (!selectedProvider) return;
+      const knownProviders = this.opencodeModels
+        .map(model => String(model.provider || '').trim())
+        .filter(Boolean);
+      if (!knownProviders.includes(selectedProvider)) this.opencodeModelProvider = '';
     },
     ensureOpenCodeModels() {
       if (this.opencodeModels.length || this.opencodeModelsLoading) return;
       this.loadOpenCodeModels();
     },
     async loadOpenCodeModels({ refresh = false } = {}) {
+      const requestSeq = ++this.opencodeModelsRequestSeq;
       this.opencodeModelsLoading = true;
       this.opencodeModelsError = '';
       try {
@@ -249,20 +251,23 @@ const LiveAgentChatTab = {
           credentials: 'same-origin',
         });
         const data = await resp.json();
-        this.opencodeModelsStatus = data.status || (resp.ok ? 'ok' : 'error');
-        this.opencodeModels = Array.isArray(data.models) ? data.models : [];
-        if (!resp.ok || this.opencodeModelsStatus === 'error') {
+        if (requestSeq !== this.opencodeModelsRequestSeq) return;
+        const status = data.status || (resp.ok ? 'ok' : 'error');
+        const nextModels = Array.isArray(data.models) ? data.models : [];
+        this.opencodeModelsStatus = status;
+        if (!resp.ok || status === 'error') {
           this.opencodeModelsError = data.error || 'OpenCode model catalog is unavailable. Enter a custom provider/model value.';
         } else {
+          this.opencodeModels = nextModels;
           this.opencodeModelsError = '';
         }
         this.syncOpenCodeModelProvider();
       } catch (err) {
+        if (requestSeq !== this.opencodeModelsRequestSeq) return;
         this.opencodeModelsStatus = 'error';
-        this.opencodeModels = [];
         this.opencodeModelsError = err.message || 'OpenCode model catalog is unavailable. Enter a custom provider/model value.';
       } finally {
-        this.opencodeModelsLoading = false;
+        if (requestSeq === this.opencodeModelsRequestSeq) this.opencodeModelsLoading = false;
       }
     },
     refreshOpenCodeModels() {

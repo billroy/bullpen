@@ -1,6 +1,10 @@
 """Regression checks for worker model options shown in the UI."""
 
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,3 +106,103 @@ def test_last_ai_selection_promotes_provider_and_model_options():
     assert "lastAiSelection" in chat
     assert "withPreferredOption(AI_PROVIDER_OPTIONS" in chat
     assert "preferred?.agent === this.provider ? preferred.model" in chat
+
+
+def test_opencode_worker_catalog_refresh_keeps_all_providers_and_existing_results():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+
+    script = r"""
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = process.cwd();
+const source = fs.readFileSync(path.join(root, 'static/components/WorkerConfigModal.js'), 'utf8');
+const context = {
+  console,
+  URLSearchParams,
+  AI_PROVIDER_OPTIONS: ['claude', 'opencode'],
+  MODEL_OPTIONS: { claude: ['claude-sonnet-4-6'], opencode: [] },
+  normalizedLastAiSelection: () => null,
+  withPreferredOption: (options) => options,
+  setTimeout,
+  clearTimeout,
+  requestAnimationFrame: (fn) => fn(),
+  document: {
+    createElement: () => ({ style: {}, addEventListener() {}, removeEventListener() {}, setAttribute() {}, focus() {}, click() {} }),
+    body: { appendChild() {} },
+    documentElement: { clientWidth: 1280, clientHeight: 720 },
+  },
+  window: { innerWidth: 1280, innerHeight: 720, addEventListener() {}, removeEventListener() {} },
+};
+
+vm.createContext(context);
+vm.runInContext(`${source}\n;globalThis.__WorkerConfigModal = WorkerConfigModal;`, context);
+const component = context.__WorkerConfigModal;
+
+function makeInstance() {
+  const instance = {
+    ...component.data.call({}),
+    form: { type: 'ai', agent: 'opencode', model: 'opencode/north-mini-code-free' },
+    activeWorkspaceId: 'ws-test',
+    $root: { activeWorkspaceId: 'ws-test' },
+    $refs: {},
+    $nextTick(fn) { if (typeof fn === 'function') fn(); },
+  };
+  for (const [name, getter] of Object.entries(component.computed || {})) {
+    Object.defineProperty(instance, name, { get: () => getter.call(instance) });
+  }
+  for (const [name, method] of Object.entries(component.methods || {})) {
+    instance[name] = method.bind(instance);
+  }
+  return instance;
+}
+
+(async () => {
+  const instance = makeInstance();
+  instance.syncOpenCodeModelProvider();
+  assert.strictEqual(instance.opencodeModelProvider, '', 'saved model provider should not become an implicit filter');
+
+  const urls = [];
+  context.fetch = async (url) => {
+    urls.push(String(url));
+    return {
+      ok: true,
+      json: async () => ({
+        status: 'ok',
+        models: [
+          { id: 'opencode/north-mini-code-free', provider: 'opencode', model: 'north-mini-code-free' },
+          { id: 'anthropic/claude-sonnet-4-6', provider: 'anthropic', model: 'claude-sonnet-4-6' },
+        ],
+      }),
+    };
+  };
+
+  await instance.refreshOpenCodeModels();
+  assert.strictEqual(urls[0], '/api/models/opencode?workspaceId=ws-test&refresh=1');
+  assert.deepStrictEqual(instance.filteredOpenCodeModels.map((model) => model.id), [
+    'opencode/north-mini-code-free',
+    'anthropic/claude-sonnet-4-6',
+  ]);
+
+  context.fetch = async () => ({
+    ok: true,
+    json: async () => ({ status: 'error', error: 'OpenCode model catalog timed out after 20s', models: [] }),
+  });
+  await instance.refreshOpenCodeModels();
+  assert.deepStrictEqual(instance.opencodeModels.map((model) => model.id), [
+    'opencode/north-mini-code-free',
+    'anthropic/claude-sonnet-4-6',
+  ]);
+  assert.match(instance.opencodeModelsError, /timed out/);
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+"""
+
+    result = subprocess.run([node, "-e", script], cwd=ROOT, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
