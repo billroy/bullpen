@@ -21,7 +21,7 @@ Deliverables:
 
 - Carrier validation contract for `bento.json` packages.
 - Decision on module placement for carrier code.
-- Preview endpoint shape for carrier-only results.
+- Preview event shape for carrier-only results.
 - Import routing order for Bento and legacy archives.
 - Test matrix for unsafe archives and unsupported Bento files.
 
@@ -60,7 +60,7 @@ Exit criteria:
 - Unsafe archives fail before profile handling.
 - A valid non-Bullpen Bento previews as unsupported.
 - Legacy workspace, workers, and all-workspaces imports still work.
-- No endpoint applies package contents during preview.
+- No Socket.IO event applies package contents during preview.
 
 ## Spike 2: Worker Package Planner
 

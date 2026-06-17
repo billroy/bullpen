@@ -5,7 +5,7 @@ import json
 import os
 import zipfile
 
-from server.app import create_app
+from server.app import create_app, socketio
 from server.init import init_workspace
 from server.persistence import read_json, write_json
 
@@ -15,18 +15,26 @@ def _read_zip_json(data, path):
         return json.loads(zf.read(path))
 
 
-def _post_preview(client, data):
-    return client.post(
-        "/api/bento/preview",
-        data={"file": (io.BytesIO(data), "workers.bento")},
-        content_type="multipart/form-data",
-    )
+def _received(client, name):
+    matches = [event["args"][0] for event in client.get_received() if event["name"] == name]
+    assert matches, f"missing socket event {name}"
+    return matches[-1]
+
+
+def _export_worker(client, **payload):
+    client.emit("bento:export", payload)
+    return _received(client, "bento:exported")
+
+
+def _preview(client, data):
+    client.emit("bento:preview", {"file": data})
+    return _received(client, "bento:previewed")
 
 
 def test_export_single_worker_bento_includes_manifest_worker_and_profile(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
     write_json(
         os.path.join(bp_dir, "layout.json"),
         {
@@ -50,20 +58,19 @@ def test_export_single_worker_bento_includes_manifest_worker_and_profile(tmp_wor
         {"id": "custom-worker", "name": "Custom Worker", "workspaceId": "local"},
     )
 
-    resp = client.get("/api/bento/export?kind=worker&slot=0")
+    exported = _export_worker(client, kind="worker", slot=0)
 
-    assert resp.status_code == 200
-    assert resp.headers["Content-Type"].startswith("application/vnd.bullpen.bento+zip")
-    assert "bullpen-worker-Builder-" in resp.headers.get("Content-Disposition", "")
-    assert ".bento" in resp.headers.get("Content-Disposition", "")
-    manifest = _read_zip_json(resp.data, "bento.json")
+    assert exported["mimetype"] == "application/vnd.bullpen.bento+zip"
+    assert exported["filename"].startswith("bullpen-worker-Builder-")
+    assert exported["filename"].endswith(".bento")
+    manifest = _read_zip_json(exported["data"], "bento.json")
     assert manifest["format"] == "bento"
     assert manifest["profiles"][0]["id"] == "org.bullpen.share"
     assert manifest["bullpen"]["kind"] == "worker"
     worker_item = next(item for item in manifest["items"] if item["bullpen_type"] == "worker")
     profile_item = next(item for item in manifest["items"] if item["bullpen_type"] == "profile")
-    worker = _read_zip_json(resp.data, worker_item["path"])
-    profile = _read_zip_json(resp.data, profile_item["path"])
+    worker = _read_zip_json(exported["data"], worker_item["path"])
+    profile = _read_zip_json(exported["data"], profile_item["path"])
     assert worker["name"] == "Builder"
     assert worker["state"] == "idle"
     assert worker["task_queue"] == []
@@ -75,7 +82,7 @@ def test_export_single_worker_bento_includes_manifest_worker_and_profile(tmp_wor
 def test_export_worker_group_bento_preserves_relative_positions(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
     write_json(
         os.path.join(bp_dir, "layout.json"),
         {
@@ -86,13 +93,12 @@ def test_export_worker_group_bento_preserves_relative_positions(tmp_workspace):
         },
     )
 
-    resp = client.get("/api/bento/export?kind=worker-group&slots=0,1")
+    exported = _export_worker(client, kind="worker-group", slots=[0, 1])
 
-    assert resp.status_code == 200
-    manifest = _read_zip_json(resp.data, "bento.json")
+    manifest = _read_zip_json(exported["data"], "bento.json")
     assert manifest["bullpen"]["kind"] == "worker-group"
     worker_items = [item for item in manifest["items"] if item["bullpen_type"] == "worker"]
-    workers = [_read_zip_json(resp.data, item["path"]) for item in worker_items]
+    workers = [_read_zip_json(exported["data"], item["path"]) for item in worker_items]
     coords = {(worker["name"], worker["col"], worker["row"]) for worker in workers}
     assert coords == {("Left", 4, 2), ("Right", 5, 2)}
 
@@ -100,7 +106,7 @@ def test_export_worker_group_bento_preserves_relative_positions(tmp_workspace):
 def test_bento_preview_upgrades_bullpen_worker_package(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
     write_json(
         os.path.join(bp_dir, "layout.json"),
         {
@@ -118,12 +124,10 @@ def test_bento_preview_upgrades_bullpen_worker_package(tmp_workspace):
             ]
         },
     )
-    export_resp = client.get("/api/bento/export?kind=worker&slot=0")
+    exported = _export_worker(client, kind="worker", slot=0)
 
-    preview_resp = _post_preview(client, export_resp.data)
+    preview = _preview(client, exported["data"])
 
-    assert preview_resp.status_code == 200
-    preview = preview_resp.get_json()
     assert preview["supported_profiles"] == ["org.bullpen.share"]
     assert preview["kind"] == "worker"
     assert preview["bullpen"]["items"][0]["name"] == "Deploy"
@@ -137,7 +141,7 @@ def test_bento_preview_upgrades_bullpen_worker_package(tmp_workspace):
 def test_bento_preview_reports_package_local_binding_for_worker_group(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
     write_json(
         os.path.join(bp_dir, "layout.json"),
         {
@@ -147,12 +151,11 @@ def test_bento_preview_reports_package_local_binding_for_worker_group(tmp_worksp
             ]
         },
     )
-    export_resp = client.get("/api/bento/export?kind=worker-group&slots=0,1")
+    exported = _export_worker(client, kind="worker-group", slots=[0, 1])
 
-    preview_resp = _post_preview(client, export_resp.data)
+    preview = _preview(client, exported["data"])
 
-    assert preview_resp.status_code == 200
-    items = preview_resp.get_json()["bullpen"]["items"]
+    items = preview["bullpen"]["items"]
     left = next(item for item in items if item["name"] == "Left")
     assert left["bindings"][0]["status"] == "package-local"
 
@@ -160,7 +163,7 @@ def test_bento_preview_reports_package_local_binding_for_worker_group(tmp_worksp
 def test_bento_preview_carrier_only_for_non_bullpen_package(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
     mem = io.BytesIO()
     with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(
@@ -177,10 +180,8 @@ def test_bento_preview_carrier_only_for_non_bullpen_package(tmp_workspace):
         )
     mem.seek(0)
 
-    resp = _post_preview(client, mem.getvalue())
+    preview = _preview(client, mem.getvalue())
 
-    assert resp.status_code == 200
-    preview = resp.get_json()
     assert "bullpen" not in preview
     assert preview["unsupported_profiles"] == ["org.example.other"]
 
@@ -188,10 +189,12 @@ def test_bento_preview_carrier_only_for_non_bullpen_package(tmp_workspace):
 def test_bento_export_rejects_unknown_kind_and_slot(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
-    bad_kind = client.get("/api/bento/export?kind=ticket&id=one")
-    bad_slot = client.get("/api/bento/export?kind=worker&slot=99")
+    client.emit("bento:export", {"kind": "ticket", "id": "one"})
+    bad_kind = _received(client, "bento:error")
+    client.emit("bento:export", {"kind": "worker", "slot": 99})
+    bad_slot = _received(client, "bento:error")
 
-    assert bad_kind.status_code == 400
-    assert bad_slot.status_code == 404
+    assert bad_kind["code"] == "invalid-kind"
+    assert bad_slot["code"] == "unknown-worker-slot"

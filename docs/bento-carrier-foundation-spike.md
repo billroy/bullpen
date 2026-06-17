@@ -8,8 +8,8 @@ Ready to implement as a bounded carrier-only spike. Do not include Bullpen
 worker, ticket, clipboard, scanner, or social semantics in this slice.
 
 The current import code already has useful archive-hardening pieces in
-`server/app.py`, but they are embedded in legacy import endpoints and extraction
-is coupled to immediate apply. The carrier spike should pull that concern into a
+`server/app.py`, but they are embedded in legacy import routes and extraction is
+coupled to immediate apply. The carrier spike should pull that concern into a
 small, testable module before any package contents can mutate workspace state.
 
 ## Proposed Module Boundary
@@ -80,7 +80,7 @@ Preview summary shape:
 }
 ```
 
-Error shape for endpoints:
+Error shape for Socket.IO result events:
 
 ```json
 {
@@ -90,23 +90,22 @@ Error shape for endpoints:
 }
 ```
 
-## Endpoint Shape
+## Socket.IO Event Shape
 
-Add `POST /api/bento/preview`.
+Add `bento:preview`.
 
 Behavior:
 
-- Requires auth.
-- Accepts multipart `file`.
+- Uses the existing authenticated Socket.IO session.
+- Accepts package bytes in `file` or `data`.
 - Does not apply or extract into workspace state.
-- Returns carrier-only preview for valid Bento files.
-- Returns `400` with a stable error code for invalid archives.
-- Returns unsupported profile information without treating unsupported profiles
-  as trusted.
+- Emits `bento:previewed` with carrier-only preview for valid Bento files.
+- Emits `bento:error` with a stable error code for invalid archives.
+- Emits unsupported profile information without treating unsupported profiles as
+  trusted.
 
-Do not add `/api/bento/import` in this spike unless it only returns a clear
-`501` or equivalent "not implemented" response. Import apply belongs to the
-worker package planner slice.
+Do not add `bento:import` in this spike unless it only emits a clear "not
+implemented" error. Import apply belongs to the worker package planner slice.
 
 ## Legacy Routing
 
@@ -120,7 +119,7 @@ Keep existing endpoints unchanged:
 - `/api/export/worker`
 - `/api/export/all`
 
-Later, a unified import endpoint may route by manifest presence:
+Later, a unified import event may route by manifest presence:
 
 - `bento.json` -> Bento preview/import path
 - `bullpen-workers-export.json` -> legacy workers importer
@@ -191,11 +190,12 @@ Manifest rejection:
 - Attribute `path` points to a missing member.
 - Attribute `path` points to non-JSON when loaded for preview.
 
-Endpoint behavior:
+Event behavior:
 
-- `/api/bento/preview` rejects missing upload.
-- `/api/bento/preview` never mutates `.bullpen`.
-- Unsupported Bento returns `200` with unsupported profile data, not a crash.
+- `bento:preview` rejects missing upload.
+- `bento:preview` never mutates `.bullpen`.
+- Unsupported Bento emits a successful preview with unsupported profile data,
+  not a crash.
 - Legacy import/export tests still pass.
 
 ## Open Decisions
@@ -206,13 +206,14 @@ Endpoint behavior:
   apply path needs it.
 - Whether strict Bento limits should differ from legacy ZIP limits.
   Recommendation: yes, stricter for Bento preview.
-- Whether unsupported profiles are `200` or `422`. Recommendation: `200`, since
-  the carrier is valid; only application is unsupported.
+- Whether unsupported profiles are successful preview events or errors.
+  Recommendation: successful preview, since the carrier is valid; only
+  application is unsupported.
 
 ## Implementation Tickets
 
 1. Add `server/bento_carrier.py` with carrier inspection and typed errors.
 2. Add focused carrier unit tests in `tests/test_bento_carrier.py`.
-3. Add `POST /api/bento/preview` using the carrier inspector.
-4. Add endpoint tests proving preview does not mutate workspace state.
+3. Add `bento:preview` using the carrier inspector.
+4. Add Socket.IO tests proving preview does not mutate workspace state.
 5. Run existing legacy import/export tests to verify no regression.

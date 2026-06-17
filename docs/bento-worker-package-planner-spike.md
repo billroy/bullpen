@@ -88,8 +88,8 @@ Referenced profiles:
 
 ## Preview Result Shape
 
-Suggested response from `POST /api/bento/preview` once Bullpen worker profile
-support is added:
+Suggested `bento:previewed` payload once Bullpen worker profile support is
+added:
 
 ```json
 {
@@ -146,7 +146,7 @@ preview token in a later pass.
 
 ## Apply Request Shape
 
-Suggested request for `POST /api/bento/import`:
+Suggested `bento:import` request:
 
 ```json
 {
@@ -257,27 +257,27 @@ Open decision:
   or kept inert with warnings. Recommendation: keep inert only when there is no
   automatic activation path; otherwise strip and report.
 
-## Export Endpoints
+## Export Events
 
 Add after carrier foundation:
 
-- `GET /api/bento/export?kind=worker&slot=...`
-- `GET /api/bento/export?kind=worker-group&slots=...`
+- `bento:export` with `kind=worker` and `slot`
+- `bento:export` with `kind=worker-group` and `slots`
 
-Response:
+Response event:
 
 - Media type: `application/vnd.bullpen.bento+zip`.
 - Download extension: `.bento`.
 - Current legacy `.zip` worker exports remain available.
 
-Do not remove or rename existing worker export endpoints in the MVP.
+Do not remove or rename existing legacy worker export routes in the MVP.
 
-## Import Endpoints
+## Import Events
 
 Extend after carrier foundation:
 
-- `POST /api/bento/preview` recognizes `org.bullpen.share` worker packages.
-- `POST /api/bento/import` applies worker packages only.
+- `bento:preview` recognizes `org.bullpen.share` worker packages.
+- `bento:import` applies worker packages only.
 
 Apply behavior:
 
@@ -340,7 +340,7 @@ Legacy compatibility:
 3. Add placement planner with explicit conflict options.
 4. Add binding analyzer for dispositions and watch columns.
 5. Add capability analyzer and MVP sanitization path.
-6. Add worker `.bento` export endpoint support.
-7. Extend `/api/bento/preview` for Bullpen worker packages.
-8. Add `/api/bento/import` for worker packages in add/merge mode.
+6. Add worker `.bento` export event support.
+7. Extend `bento:preview` for Bullpen worker packages.
+8. Add `bento:import` for worker packages in add/merge mode.
 9. Add tests for worker export, preview, apply, and legacy compatibility.

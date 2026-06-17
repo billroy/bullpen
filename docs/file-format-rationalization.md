@@ -660,16 +660,16 @@ Exit criteria:
   planner.
 - Ticket paste and ticket package import share ID/status/assignment handling.
 
-Suggested initial package endpoints:
+Suggested initial package Socket.IO events:
 
-- `POST /api/bento/preview`
-- `POST /api/bento/import`
-- `GET /api/bento/export?kind=worker&slot=...`
-- `GET /api/bento/export?kind=worker-group&slots=...`
-- `GET /api/bento/export?kind=ticket&id=...`
+- `bento:preview`
+- `bento:import`
+- `bento:export` with `kind=worker` and `slot`
+- `bento:export` with `kind=worker-group` and `slots`
+- `bento:export` with `kind=ticket` and `id`
 
-The endpoint names are illustrative. The key architectural point is that import
-preview and import apply are separate operations.
+The event names are illustrative. The key architectural point is that import
+preview and import apply are separate Socket.IO operations.
 
 ## Aft: Deferred Work
 

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import threading
 import time
+from io import BytesIO
 from datetime import datetime, timezone
 
 from flask import request
@@ -31,6 +32,14 @@ from server import values as value_mod
 from server.workers import _terminate_proc
 from server.locks import write_lock as _write_lock
 from server import mcp_auth
+from server.bento_carrier import BentoCarrierError, inspect_bento
+from server.bento_workers import (
+    BULLPEN_BENTO_MIMETYPE,
+    BULLPEN_PROFILE_ID,
+    build_worker_bento,
+    preview_worker_bento,
+    worker_export_name as _bento_worker_export_name,
+)
 from server.workspace_manager import ensure_within_projects_root, projects_root, resolve_project_path
 from server.prompt_hardening import (
     TRUST_MODE_UNTRUSTED,
@@ -519,6 +528,111 @@ def register_events(socketio, app):
                     emit("error", {"message": "An internal error occurred"})
         wrapper.__name__ = fn.__name__
         return wrapper
+
+    def _normalized_worker_slots_for_bp(bp_dir):
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
+        slots = layout.get("slots", [])
+        return slots if isinstance(slots, list) else []
+
+    def _bento_fileobj(data):
+        payload = (data or {}).get("file")
+        if payload is None:
+            payload = (data or {}).get("data")
+        if payload is None:
+            raise BentoCarrierError("Missing upload file", "missing-upload")
+        if isinstance(payload, BytesIO):
+            payload.seek(0)
+            return payload
+        if isinstance(payload, bytearray):
+            return BytesIO(bytes(payload))
+        if isinstance(payload, bytes):
+            return BytesIO(payload)
+        raise BentoCarrierError("Bento payload must be bytes", "invalid-upload")
+
+    @socketio.on("bento:preview")
+    def on_bento_preview(data):
+        ws_id, bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        try:
+            fileobj = _bento_fileobj(data or {})
+            carrier_preview = inspect_bento(fileobj)
+            if any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier_preview.get("profiles", [])):
+                fileobj.seek(0)
+                preview = preview_worker_bento(fileobj, bp_dir=bp_dir)
+            else:
+                preview = carrier_preview
+            preview["workspaceId"] = ws_id
+            emit("bento:previewed", preview)
+        except BentoCarrierError as e:
+            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": e.message, "code": e.code})
+
+    @socketio.on("bento:export")
+    def on_bento_export(data):
+        ws_id, bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get(ws_id)
+        if not ws:
+            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Unknown workspace", "code": "unknown-workspace"})
+            return
+        kind = str((data or {}).get("kind") or "").strip()
+        slots = _normalized_worker_slots_for_bp(bp_dir)
+        try:
+            if kind == "worker":
+                slot = int((data or {}).get("slot"))
+                if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
+                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Unknown worker slot", "code": "unknown-worker-slot"})
+                    return
+                worker = slots[slot]
+                filename = (
+                    f"bullpen-worker-{_bento_worker_export_name(worker.get('name'), f'slot-{slot + 1}')}-"
+                    f"{ws.id[:8]}.bento"
+                )
+                package = build_worker_bento(ws, [worker], kind="worker", selected_slots=[slot])
+            elif kind == "worker-group":
+                raw_slots = (data or {}).get("slots") or []
+                if isinstance(raw_slots, str):
+                    raw_slots = [part for part in raw_slots.split(",") if part.strip()]
+                selected = []
+                selected_indices = []
+                seen = set()
+                for raw in raw_slots:
+                    slot = int(raw)
+                    if slot in seen:
+                        continue
+                    seen.add(slot)
+                    if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
+                        emit("bento:error", {
+                            "workspaceId": ws_id,
+                            "ok": False,
+                            "error": f"Unknown worker slot: {slot}",
+                            "code": "unknown-worker-slot",
+                        })
+                        return
+                    selected.append(slots[slot])
+                    selected_indices.append(slot)
+                if not selected:
+                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "slots must include at least one worker", "code": "missing-slots"})
+                    return
+                filename = f"bullpen-worker-group-{ws.name}-{ws.id[:8]}.bento"
+                package = build_worker_bento(ws, selected, kind="worker-group", selected_slots=selected_indices)
+            else:
+                emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "kind must be worker or worker-group", "code": "invalid-kind"})
+                return
+        except (TypeError, ValueError):
+            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Invalid Bento export request", "code": "invalid-export-request"})
+            return
+        emit("bento:exported", {
+            "workspaceId": ws_id,
+            "ok": True,
+            "kind": kind,
+            "filename": filename,
+            "mimetype": BULLPEN_BENTO_MIMETYPE,
+            "data": package.getvalue(),
+        })
 
     # --- Task events ---
 

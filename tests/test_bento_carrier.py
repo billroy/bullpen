@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from server.app import create_app
+from server.app import create_app, socketio
 from server.bento_carrier import BentoCarrierError, BentoLimits, inspect_bento
 from server.init import init_workspace
 from server.persistence import read_json
@@ -236,60 +236,51 @@ def test_rejects_invalid_attribute_json():
     )
 
 
-def test_bento_preview_endpoint_returns_carrier_preview(tmp_workspace):
+def _received(client, name):
+    matches = [event["args"][0] for event in client.get_received() if event["name"] == name]
+    assert matches, f"missing socket event {name}"
+    return matches[-1]
+
+
+def test_bento_preview_event_returns_carrier_preview(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
-    resp = client.post(
-        "/api/bento/preview",
-        data={"file": (_valid_bento(), "sample.bento")},
-        content_type="multipart/form-data",
-    )
+    client.emit("bento:preview", {"file": _valid_bento().getvalue()})
 
-    assert resp.status_code == 200
-    assert resp.get_json()["ok"] is True
+    assert _received(client, "bento:previewed")["ok"] is True
 
 
-def test_bento_preview_endpoint_rejects_missing_upload(tmp_workspace):
+def test_bento_preview_event_rejects_missing_upload(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
-    resp = client.post("/api/bento/preview", data={}, content_type="multipart/form-data")
+    client.emit("bento:preview", {})
 
-    assert resp.status_code == 400
-    assert resp.get_json()["code"] == "missing-upload"
+    assert _received(client, "bento:error")["code"] == "missing-upload"
 
 
-def test_bento_preview_endpoint_rejects_invalid_archive(tmp_workspace):
+def test_bento_preview_event_rejects_invalid_archive(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
-    resp = client.post(
-        "/api/bento/preview",
-        data={"file": (io.BytesIO(b"not a zip"), "bad.bento")},
-        content_type="multipart/form-data",
-    )
+    client.emit("bento:preview", {"file": b"not a zip"})
 
-    assert resp.status_code == 400
-    assert resp.get_json()["code"] == "invalid-zip"
+    assert _received(client, "bento:error")["code"] == "invalid-zip"
 
 
-def test_bento_preview_does_not_mutate_workspace(tmp_workspace):
+def test_bento_preview_event_does_not_mutate_workspace(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
     before_config = read_json(os.path.join(bp_dir, "config.json"))
     before_layout = read_json(os.path.join(bp_dir, "layout.json"))
 
-    resp = client.post(
-        "/api/bento/preview",
-        data={"file": (_valid_bento(), "sample.bento")},
-        content_type="multipart/form-data",
-    )
+    client.emit("bento:preview", {"file": _valid_bento().getvalue()})
 
-    assert resp.status_code == 200
+    assert _received(client, "bento:previewed")["ok"] is True
     assert read_json(os.path.join(bp_dir, "config.json")) == before_config
     assert read_json(os.path.join(bp_dir, "layout.json")) == before_layout
