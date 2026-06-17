@@ -1,0 +1,218 @@
+# Bento Carrier Foundation Spike
+
+Status: Planning spike output
+
+## Readiness
+
+Ready to implement as a bounded carrier-only spike. Do not include Bullpen
+worker, ticket, clipboard, scanner, or social semantics in this slice.
+
+The current import code already has useful archive-hardening pieces in
+`server/app.py`, but they are embedded in legacy import endpoints and extraction
+is coupled to immediate apply. The carrier spike should pull that concern into a
+small, testable module before any package contents can mutate workspace state.
+
+## Proposed Module Boundary
+
+Add `server/bento_carrier.py`.
+
+Responsibilities:
+
+- Open uploaded zip-like files.
+- Detect root `bento.json`.
+- Validate member paths and resource limits.
+- Parse `bento.json` as UTF-8 JSON.
+- Validate the carrier envelope:
+  - `format == "bento"`
+  - `version == "1"`
+  - `profiles` is a list when present
+  - `items` is a list when present
+  - `attributes` is a list when present
+- Validate manifest item `path` references against archive members.
+- Return a preview-safe carrier summary.
+- Optionally extract to a temporary directory only after validation succeeds.
+
+Non-responsibilities:
+
+- Worker semantics.
+- Ticket semantics.
+- Capability approval.
+- Applying objects to `.bullpen`.
+- Running scanners.
+- Trusting or executing attribute bundles.
+
+## Carrier API Sketch
+
+The first implementation can keep the API deliberately small:
+
+```python
+class BentoCarrierError(ValueError):
+    code: str
+    message: str
+
+
+def inspect_bento(fileobj, *, limits=None) -> dict:
+    """Validate a Bento carrier and return a preview-safe summary."""
+```
+
+Preview summary shape:
+
+```json
+{
+  "ok": true,
+  "format": "bento",
+  "version": "1",
+  "profiles": [
+    {"id": "org.bullpen.share", "version": "1", "label": "Bullpen Share"}
+  ],
+  "items": [
+    {
+      "id": "worker.builder",
+      "label": "Builder",
+      "media_type": "application/json",
+      "path": "payload/workers/builder.json"
+    }
+  ],
+  "attributes": [],
+  "supported_profiles": [],
+  "unsupported_profiles": ["org.example.other"],
+  "warnings": []
+}
+```
+
+Error shape for endpoints:
+
+```json
+{
+  "ok": false,
+  "error": "Archive contains duplicate normalized paths",
+  "code": "duplicate-path"
+}
+```
+
+## Endpoint Shape
+
+Add `POST /api/bento/preview`.
+
+Behavior:
+
+- Requires auth.
+- Accepts multipart `file`.
+- Does not apply or extract into workspace state.
+- Returns carrier-only preview for valid Bento files.
+- Returns `400` with a stable error code for invalid archives.
+- Returns unsupported profile information without treating unsupported profiles
+  as trusted.
+
+Do not add `/api/bento/import` in this spike unless it only returns a clear
+`501` or equivalent "not implemented" response. Import apply belongs to the
+worker package planner slice.
+
+## Legacy Routing
+
+Keep existing endpoints unchanged:
+
+- `/api/import/workspace`
+- `/api/import/workers`
+- `/api/import/all`
+- `/api/export/workspace`
+- `/api/export/workers`
+- `/api/export/worker`
+- `/api/export/all`
+
+Later, a unified import endpoint may route by manifest presence:
+
+- `bento.json` -> Bento preview/import path
+- `bullpen-workers-export.json` -> legacy workers importer
+- `bullpen-export.json` -> legacy all-workspaces importer
+- `.bullpen/` or `config.json` -> legacy workspace importer
+
+That unified router is not required for the carrier spike.
+
+## Limits
+
+Use the current legacy defaults as compatibility inputs but do not expose them
+as the final Bento defaults without review:
+
+- `_MAX_IMPORT_ARCHIVE_BYTES = 200 MiB`
+- `_MAX_IMPORT_ARCHIVE_FILES = 1000`
+- `_MAX_IMPORT_COMPRESSION_RATIO = 100`
+
+For Bento preview, consider stricter defaults:
+
+- total entries: 256
+- total uncompressed bytes: 25 MiB
+- single member bytes: 5 MiB
+- `bento.json` bytes: 512 KiB
+- single JSON payload bytes: 2 MiB
+
+The spike decision is whether to start strict for Bento while leaving legacy
+imports at current limits.
+
+## Test Matrix
+
+Create `tests/test_bento_carrier.py`.
+
+Happy path:
+
+- Valid minimal Bento previews successfully.
+- Valid Bento with profiles/items/attributes previews successfully.
+- Valid non-Bullpen Bento previews as unsupported.
+- Item `path` references an existing payload member.
+
+Archive rejection:
+
+- Invalid zip file.
+- Missing `bento.json`.
+- `bento.json` is not UTF-8 JSON.
+- `bento.json` root is not an object.
+- Unsupported carrier version.
+- Too many files.
+- Total uncompressed bytes too large.
+- Per-member compression ratio too high.
+- Total compression ratio too high.
+- Nested archive member.
+- Absolute path.
+- `..` traversal.
+- Empty normalized path.
+- Duplicate normalized path.
+- Windows drive prefix.
+- NUL byte in name if the ZIP reader exposes one.
+- Symlink or special-file member.
+- Encrypted member if detectable.
+
+Manifest rejection:
+
+- `items` is not a list.
+- Item descriptor is not an object.
+- Item `path` is not a string.
+- Item `path` points to a missing member.
+- Item `path` points to a directory.
+- Attribute `path` points to a missing member.
+- Attribute `path` points to non-JSON when loaded for preview.
+
+Endpoint behavior:
+
+- `/api/bento/preview` rejects missing upload.
+- `/api/bento/preview` never mutates `.bullpen`.
+- Unsupported Bento returns `200` with unsupported profile data, not a crash.
+- Legacy import/export tests still pass.
+
+## Open Decisions
+
+- Whether preview is stateless for Slice 0. Recommendation: stateless.
+- Whether `inspect_bento` should read from `ZipFile` only or extract to temp.
+  Recommendation: validate from `ZipFile`, then add extraction only when an
+  apply path needs it.
+- Whether strict Bento limits should differ from legacy ZIP limits.
+  Recommendation: yes, stricter for Bento preview.
+- Whether unsupported profiles are `200` or `422`. Recommendation: `200`, since
+  the carrier is valid; only application is unsupported.
+
+## Implementation Tickets
+
+1. Add `server/bento_carrier.py` with carrier inspection and typed errors.
+2. Add focused carrier unit tests in `tests/test_bento_carrier.py`.
+3. Add `POST /api/bento/preview` using the carrier inspector.
+4. Add endpoint tests proving preview does not mutate workspace state.
+5. Run existing legacy import/export tests to verify no regression.
