@@ -201,7 +201,7 @@ def test_bento_export_rejects_unknown_kind_and_slot(tmp_workspace):
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
 
-    client.emit("bento:export", {"kind": "ticket", "id": "one"})
+    client.emit("bento:export", {"kind": "not-a-kind", "id": "one"})
     bad_kind = _received(client, "bento:error")
     client.emit("bento:export", {"kind": "worker", "slot": 99})
     bad_slot = _received(client, "bento:error")

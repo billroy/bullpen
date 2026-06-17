@@ -41,6 +41,12 @@ from server.bento_workers import (
     preview_worker_bento,
     worker_export_name as _bento_worker_export_name,
 )
+from server.bento_tickets import (
+    apply_ticket_bento,
+    build_ticket_bento,
+    load_manifest as _bento_load_manifest,
+    preview_ticket_bento,
+)
 from server.workspace_manager import ensure_within_projects_root, projects_root, resolve_project_path
 from server.prompt_hardening import (
     TRUST_MODE_UNTRUSTED,
@@ -561,7 +567,13 @@ def register_events(socketio, app):
             carrier_preview = inspect_bento(fileobj)
             if any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier_preview.get("profiles", [])):
                 fileobj.seek(0)
-                preview = preview_worker_bento(fileobj, bp_dir=bp_dir)
+                manifest = _bento_load_manifest(fileobj)
+                kind = (manifest.get("bullpen") or {}).get("kind")
+                fileobj.seek(0)
+                if kind in {"ticket", "ticket-bundle"}:
+                    preview = preview_ticket_bento(fileobj, bp_dir=bp_dir)
+                else:
+                    preview = preview_worker_bento(fileobj, bp_dir=bp_dir)
             else:
                 preview = carrier_preview
             preview["workspaceId"] = ws_id
@@ -620,8 +632,47 @@ def register_events(socketio, app):
                     return
                 filename = f"bullpen-worker-group-{ws.name}-{ws.id[:8]}.bento"
                 package = build_worker_bento(ws, selected, kind="worker-group", selected_slots=selected_indices)
+            elif kind == "ticket":
+                task_id = str((data or {}).get("id") or "").strip()
+                task = task_mod.read_task(bp_dir, task_id)
+                if not task:
+                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Unknown ticket", "code": "unknown-ticket"})
+                    return
+                filename = (
+                    f"bullpen-ticket-{_bento_worker_export_name(task.get('title'), task.get('id') or 'ticket')}-"
+                    f"{ws.id[:8]}.bento"
+                )
+                package = build_ticket_bento(ws, [task], kind="ticket", selected_ids=[task["id"]])
+            elif kind == "ticket-bundle":
+                raw_ids = (data or {}).get("ids") or []
+                if isinstance(raw_ids, str):
+                    raw_ids = [part for part in raw_ids.split(",") if part.strip()]
+                selected = []
+                selected_ids = []
+                seen = set()
+                for raw in raw_ids:
+                    task_id = str(raw or "").strip()
+                    if not task_id or task_id in seen:
+                        continue
+                    seen.add(task_id)
+                    task = task_mod.read_task(bp_dir, task_id)
+                    if not task:
+                        emit("bento:error", {
+                            "workspaceId": ws_id,
+                            "ok": False,
+                            "error": f"Unknown ticket: {task_id}",
+                            "code": "unknown-ticket",
+                        })
+                        return
+                    selected.append(task)
+                    selected_ids.append(task_id)
+                if not selected:
+                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "ids must include at least one ticket", "code": "missing-tickets"})
+                    return
+                filename = f"bullpen-ticket-bundle-{ws.name}-{ws.id[:8]}.bento"
+                package = build_ticket_bento(ws, selected, kind="ticket-bundle", selected_ids=selected_ids)
             else:
-                emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "kind must be worker or worker-group", "code": "invalid-kind"})
+                emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "kind must be worker, worker-group, ticket, or ticket-bundle", "code": "invalid-kind"})
                 return
         except (TypeError, ValueError):
             emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Invalid Bento export request", "code": "invalid-export-request"})
@@ -642,16 +693,29 @@ def register_events(socketio, app):
             return
         try:
             fileobj = _bento_fileobj(data or {})
+            manifest = _bento_load_manifest(fileobj)
+            kind = (manifest.get("bullpen") or {}).get("kind")
+            fileobj.seek(0)
             with _write_lock:
-                result = apply_worker_bento(
-                    fileobj,
-                    bp_dir=bp_dir,
-                    placement=(data or {}).get("placement"),
-                    mode=str((data or {}).get("mode") or "merge"),
-                    approvals=(data or {}).get("approvals"),
-                )
-                layout = result.pop("layout")
-                _emit("layout:updated", layout, ws_id)
+                if kind in {"ticket", "ticket-bundle"}:
+                    result = apply_ticket_bento(
+                        fileobj,
+                        bp_dir=bp_dir,
+                        target_status=(data or {}).get("target_status"),
+                    )
+                    tickets = result.get("tickets") or []
+                    for task in tickets:
+                        _emit("task:created", task, ws_id)
+                else:
+                    result = apply_worker_bento(
+                        fileobj,
+                        bp_dir=bp_dir,
+                        placement=(data or {}).get("placement"),
+                        mode=str((data or {}).get("mode") or "merge"),
+                        approvals=(data or {}).get("approvals"),
+                    )
+                    layout = result.pop("layout")
+                    _emit("layout:updated", layout, ws_id)
             result["workspaceId"] = ws_id
             emit("bento:imported", result)
         except BentoCarrierError as e:

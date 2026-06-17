@@ -634,7 +634,7 @@ Exit criteria:
 
 ### Slice 3: Tickets
 
-- Implement `.bento` export for one ticket and ticket bundles.
+- Implement `.bento` export for one ticket and ticket bundles over Socket.IO.
 - Generate new local ticket IDs on import.
 - Preserve original IDs only as source metadata.
 - Default imported tickets to a selected human column, initially `backlog`.
@@ -667,6 +667,7 @@ Suggested initial package Socket.IO events:
 - `bento:export` with `kind=worker` and `slot`
 - `bento:export` with `kind=worker-group` and `slots`
 - `bento:export` with `kind=ticket` and `id`
+- `bento:export` with `kind=ticket-bundle` and `ids`
 
 The event names are illustrative. The key architectural point is that import
 preview and import apply are separate Socket.IO operations.

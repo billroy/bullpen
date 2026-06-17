@@ -281,6 +281,8 @@ Add after carrier foundation:
 
 - `bento:export` with `kind=worker` and `slot`
 - `bento:export` with `kind=worker-group` and `slots`
+- `bento:export` with `kind=ticket` and `id`
+- `bento:export` with `kind=ticket-bundle` and `ids`
 
 Response event:
 
@@ -295,7 +297,8 @@ Do not remove or rename existing legacy worker export routes in the MVP.
 Extend after carrier foundation:
 
 - `bento:preview` recognizes `org.bullpen.share` worker packages.
-- `bento:import` applies worker packages only.
+- `bento:preview` recognizes `org.bullpen.share` ticket packages.
+- `bento:import` applies worker and ticket packages only.
 
 Apply behavior:
 
@@ -351,6 +354,17 @@ Legacy compatibility:
 - Existing worker `.zip` export/import tests continue to pass.
 - Existing worker paste and transfer tests continue to pass.
 
+Ticket packages:
+
+- Single ticket export writes `.bento` with `bento.json`.
+- Ticket bundle export preserves titles, body text, type, priority, and tags.
+- Ticket preview reports source status and safe target status.
+- Assigned or active tickets preview with an unassigned-backlog warning.
+- Ticket import generates new local IDs.
+- Ticket import stores original IDs only as source metadata.
+- Ticket import clears assignment and does not wake worker queues.
+- Ticket import defaults to `backlog`, with an explicit target status override.
+
 ## Implementation Tickets
 
 1. Add worker package builder in `server/bento_workers.py`.
@@ -362,3 +376,4 @@ Legacy compatibility:
 7. Extend `bento:preview` for Bullpen worker packages.
 8. Add `bento:import` for worker packages in add/merge mode.
 9. Add tests for worker export, preview, apply, and legacy compatibility.
+10. Add ticket package export, preview, and safe import over Socket.IO.
