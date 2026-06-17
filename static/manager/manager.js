@@ -202,11 +202,42 @@ createApp({
       return data;
     }
 
+    let managerRequestSeq = 0;
+    function managerRequest(requestEvent, responseEvent, payload = {}) {
+      return new Promise((resolve, reject) => {
+        const socket = socketRef.value;
+        if (!socket) {
+          reject(new Error('Manager socket is not connected'));
+          return;
+        }
+        const requestId = `manager-${Date.now()}-${++managerRequestSeq}`;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Manager request timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off(responseEvent, onResponse);
+        };
+        const onResponse = (data) => {
+          if (!data || data.requestId !== requestId) return;
+          cleanup();
+          if (data.error) {
+            reject(new Error(data.error));
+          } else {
+            resolve(data);
+          }
+        };
+        socket.on(responseEvent, onResponse);
+        socket.emit(requestEvent, { ...payload, requestId });
+      });
+    }
+
     async function refresh() {
       state.loading = true;
       state.error = '';
       try {
-        const data = await api('/api/profiles');
+        const data = await managerRequest('manager:profiles', 'manager:profiles:result');
         state.profiles = data.profiles || [];
         if (!state.selectedId && state.profiles.length) {
           state.selectedId = state.profiles[0].id;
@@ -233,7 +264,7 @@ createApp({
       state.baseSnapshotsLoading = true;
       state.baseSnapshotsError = '';
       try {
-        const data = await api('/api/microsandbox/base-snapshots');
+        const data = await managerRequest('manager:base-snapshots', 'manager:base-snapshots:result');
         state.baseSnapshots = data.snapshots || [];
         if (form.runtime === 'microsandbox' && !form.base && state.baseSnapshots.length) {
           form.base = state.baseSnapshots[0].name;
@@ -360,7 +391,7 @@ createApp({
 
     async function loadBaseRebuildLogs() {
       try {
-        const data = await api('/api/microsandbox/base-snapshots/rebuild/logs');
+        const data = await managerRequest('manager:base-rebuild-logs', 'manager:base-rebuild-logs:result');
         state.baseRebuildLogs = data.text || '';
         updateBaseRebuildState(data.prepare);
       } catch (err) {
@@ -425,7 +456,7 @@ createApp({
       }
       if (state.setupProfileId === profile.id && state.setupSessionId) return;
       try {
-        const data = await api(`/api/profiles/${profile.id}/setup-providers/session`);
+        const data = await managerRequest('manager:setup-session', 'manager:setup-session:result', { profileId: profile.id });
         state.setupSessionId = data.sessionId || '';
         state.setupProfileId = profile.id;
         state.setupExit = data.sessionId ? '' : 'Setup input channel unavailable';
@@ -578,7 +609,7 @@ createApp({
     async function syncSetupTranscript(profile = selected.value) {
       if (!profile || profile.runtime !== 'microsandbox') return;
       try {
-        const data = await api(`/api/profiles/${profile.id}/logs`);
+        const data = await managerRequest('manager:profile-logs', 'manager:profile-logs:result', { profileId: profile.id });
         const text = data.text || '';
         if (!text || text === state.setupOutput) return;
         if (text.startsWith(state.setupOutput)) {
@@ -594,7 +625,7 @@ createApp({
     async function syncSetupLog(profile = selected.value) {
       if (!profile || !showLogPanel(profile)) return;
       try {
-        const data = await api(`/api/profiles/${profile.id}/logs`);
+        const data = await managerRequest('manager:profile-logs', 'manager:profile-logs:result', { profileId: profile.id });
         state.logs = data.text || '';
       } catch (_err) {
         // The regular profile refresh path surfaces connection errors.
@@ -614,7 +645,7 @@ createApp({
 
     async function loadLogs(profileId) {
       try {
-        const data = await api(`/api/profiles/${profileId}/logs`);
+        const data = await managerRequest('manager:profile-logs', 'manager:profile-logs:result', { profileId });
         state.logs = data.text || '';
       } catch (_err) {
         state.logs = '';
@@ -627,7 +658,6 @@ createApp({
     }
 
     onMounted(() => {
-      refresh();
       const socket = io();
       socketRef.value = socket;
       socket.on('manager:updated', (payload) => {
@@ -658,6 +688,7 @@ createApp({
         if (state.baseRebuildLogOpen) loadBaseRebuildLogs();
         if (payload && payload.prepare && payload.prepare.running === false) loadBaseSnapshots();
       });
+      refresh();
     });
 
     watch(selected, (profile) => {

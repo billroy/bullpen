@@ -1510,18 +1510,6 @@ def create_manager_app(
     def favicon():
         return ("", 204)
 
-    @app.route("/api/profiles", methods=["GET"])
-    def api_profiles():
-        runtime.reconcile()
-        return jsonify({"profiles": profiles_payload(registry)})
-
-    @app.route("/api/microsandbox/base-snapshots")
-    def api_microsandbox_base_snapshots():
-        try:
-            return jsonify({"snapshots": microsandbox_base_snapshots_payload()})
-        except ManagerError as exc:
-            return jsonify({"error": str(exc), "snapshots": []}), 503
-
     @app.route("/api/microsandbox/base-snapshots/rebuild", methods=["POST"])
     def api_microsandbox_base_rebuild():
         payload = request.get_json(silent=True) or {}
@@ -1529,10 +1517,6 @@ def create_manager_app(
             return jsonify(base_rebuild.start(base=payload.get("base")))
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
-
-    @app.route("/api/microsandbox/base-snapshots/rebuild/logs")
-    def api_microsandbox_base_rebuild_logs():
-        return jsonify(base_rebuild.logs())
 
     @app.route("/api/profiles", methods=["POST"])
     def api_create_profile():
@@ -1586,45 +1570,78 @@ def create_manager_app(
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
 
-    @app.route("/api/profiles/<profile_id>/setup-providers/session")
-    def api_setup_provider_session(profile_id):
-        try:
-            result = runtime.active_setup_session(profile_id)
-            if isinstance(result.get("profile"), dict):
-                result = dict(result)
-                result["profile"] = profile_payload(result["profile"])
-            return jsonify(result)
-        except ManagerError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    @app.route("/api/profiles/<profile_id>/logs")
-    def api_profile_logs(profile_id):
-        try:
-            profile = registry.get(profile_id)
-        except ManagerError as exc:
-            return jsonify({"error": str(exc)}), 404
-        log_path = (profile.get("observed") or {}).get("logPath")
-        if not log_path:
-            log_path = str(Path(profile.get("instanceHome") or "") / "logs" / "bullpen.log")
-        path = Path(log_path).expanduser()
-        if not path.exists():
-            return jsonify({"text": ""})
-        text = path.read_text(encoding="utf-8", errors="replace")
-        return jsonify({"text": text[-20000:]})
-
-    @app.route("/api/ports")
-    def api_ports():
-        allocator = PortAllocator(registry)
-        return jsonify({
-            "profiles": [
-                {"id": profile.get("id"), "ports": allocator.classify_profile_ports(profile)}
-                for profile in registry.profiles()
-            ]
-        })
-
     @socketio.on("connect")
     def on_connect():
         socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
+
+    @socketio.on("manager:profiles")
+    def on_manager_profiles(payload):
+        data = payload or {}
+        runtime.reconcile()
+        socketio.emit(
+            "manager:profiles:result",
+            {"requestId": data.get("requestId"), "profiles": profiles_payload(registry)},
+            to=request.sid,
+        )
+
+    @socketio.on("manager:base-snapshots")
+    def on_manager_base_snapshots(payload):
+        data = payload or {}
+        try:
+            result = {"requestId": data.get("requestId"), "snapshots": microsandbox_base_snapshots_payload()}
+        except ManagerError as exc:
+            result = {"requestId": data.get("requestId"), "error": str(exc), "snapshots": []}
+        socketio.emit("manager:base-snapshots:result", result, to=request.sid)
+
+    @socketio.on("manager:base-rebuild-logs")
+    def on_manager_base_rebuild_logs(payload):
+        data = payload or {}
+        result = dict(base_rebuild.logs())
+        result["requestId"] = data.get("requestId")
+        socketio.emit("manager:base-rebuild-logs:result", result, to=request.sid)
+
+    @socketio.on("manager:setup-session")
+    def on_manager_setup_session(payload):
+        data = payload or {}
+        try:
+            result = runtime.active_setup_session(str(data.get("profileId") or ""))
+            if isinstance(result.get("profile"), dict):
+                result = dict(result)
+                result["profile"] = profile_payload(result["profile"])
+            result["requestId"] = data.get("requestId")
+            socketio.emit("manager:setup-session:result", result, to=request.sid)
+        except ManagerError as exc:
+            socketio.emit("manager:setup-session:result", {"requestId": data.get("requestId"), "error": str(exc)}, to=request.sid)
+
+    @socketio.on("manager:profile-logs")
+    def on_manager_profile_logs(payload):
+        data = payload or {}
+        try:
+            profile = registry.get(str(data.get("profileId") or ""))
+            log_path = (profile.get("observed") or {}).get("logPath")
+            if not log_path:
+                log_path = str(Path(profile.get("instanceHome") or "") / "logs" / "bullpen.log")
+            path = Path(log_path).expanduser()
+            text = path.read_text(encoding="utf-8", errors="replace")[-20000:] if path.exists() else ""
+            socketio.emit("manager:profile-logs:result", {"requestId": data.get("requestId"), "text": text}, to=request.sid)
+        except ManagerError as exc:
+            socketio.emit("manager:profile-logs:result", {"requestId": data.get("requestId"), "error": str(exc)}, to=request.sid)
+
+    @socketio.on("manager:ports")
+    def on_manager_ports(payload):
+        data = payload or {}
+        allocator = PortAllocator(registry)
+        socketio.emit(
+            "manager:ports:result",
+            {
+                "requestId": data.get("requestId"),
+                "profiles": [
+                    {"id": profile.get("id"), "ports": allocator.classify_profile_ports(profile)}
+                    for profile in registry.profiles()
+                ],
+            },
+            to=request.sid,
+        )
 
     @socketio.on("manager:pty-input")
     def on_pty_input(payload):

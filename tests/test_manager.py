@@ -18,6 +18,12 @@ from server.manager import (
 from server.persistence import write_json
 
 
+def _manager_received(client, name):
+    matches = [event["args"][0] for event in client.get_received() if event["name"] == name]
+    assert matches, f"missing socket event {name}"
+    return matches[-1]
+
+
 def test_create_profile_allocates_ports_and_persists(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
@@ -201,7 +207,7 @@ def test_manager_api_create_profile(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
     (source / "bullpen.py").write_text("", encoding="utf-8")
-    app, _socketio = create_manager_app(home=home)
+    app, socketio = create_manager_app(home=home)
 
     client = app.test_client()
     response = client.post(
@@ -218,9 +224,16 @@ def test_manager_api_create_profile(tmp_path):
     assert data["profile"]["id"] == "api-instance"
     assert data["profile"]["ports"]["bullpen"] == 8080
 
-    list_response = client.get("/api/profiles")
-    assert list_response.status_code == 200
-    assert list_response.get_json()["profiles"][0]["id"] == "api-instance"
+    sio = socketio.test_client(app)
+    sio.get_received()
+    sio.emit("manager:profiles", {"requestId": "profiles-one"})
+    list_response = _manager_received(sio, "manager:profiles:result")
+    assert list_response["requestId"] == "profiles-one"
+    assert list_response["profiles"][0]["id"] == "api-instance"
+    assert "/api/profiles" not in {
+        rule.rule for rule in app.url_map.iter_rules() if "GET" in rule.methods and "POST" not in rule.methods
+    }
+    sio.disconnect()
 
 
 def test_manager_api_profiles_include_deployment_info(tmp_path):
@@ -247,7 +260,7 @@ def test_manager_api_profiles_include_deployment_info(tmp_path):
     )
     subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True, text=True)
     (project / "README.md").write_text("hello\n", encoding="utf-8")
-    app, _socketio = create_manager_app(home=home)
+    app, socketio = create_manager_app(home=home)
 
     client = app.test_client()
     create_response = client.post(
@@ -260,10 +273,13 @@ def test_manager_api_profiles_include_deployment_info(tmp_path):
     )
     assert create_response.status_code == 201
 
-    response = client.get("/api/profiles")
+    sio = socketio.test_client(app)
+    sio.get_received()
+    sio.emit("manager:profiles", {"requestId": "profiles-deployment"})
+    response = _manager_received(sio, "manager:profiles:result")
 
-    assert response.status_code == 200
-    [profile] = response.get_json()["profiles"]
+    assert response["requestId"] == "profiles-deployment"
+    [profile] = response["profiles"]
     info = profile["deploymentInfo"]
     assert info["resources"]["source"] == "host"
     assert {provider["agent"] for provider in info["aiProviders"]} == {"claude", "codex", "opencode"}
@@ -276,6 +292,57 @@ def test_manager_api_profiles_include_deployment_info(tmp_path):
     assert opencode["model"] == "opencode/north-mini-code-free"
     assert info["git"]["repositories"][0]["name"] == "project-a"
     assert info["git"]["repositories"][0]["dirty"] is True
+    sio.disconnect()
+
+
+def test_manager_read_surfaces_use_socketio(tmp_path):
+    home = tmp_path / "manager"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "bullpen.py").write_text("", encoding="utf-8")
+    app, socketio = create_manager_app(home=home)
+    client = app.test_client()
+    create_response = client.post(
+        "/api/profiles",
+        json={
+            "displayName": "Socket Reads",
+            "workspaceRoot": str(workspace),
+            "bullpenSource": str(source),
+        },
+    )
+    assert create_response.status_code == 201
+    profile = create_response.get_json()["profile"]
+    log_path = Path(profile["instanceHome"]) / "logs" / "bullpen.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("hello from manager\n", encoding="utf-8")
+
+    sio = socketio.test_client(app)
+    sio.get_received()
+    sio.emit("manager:profile-logs", {"requestId": "profile-logs", "profileId": profile["id"]})
+    logs = _manager_received(sio, "manager:profile-logs:result")
+    sio.emit("manager:ports", {"requestId": "ports-one"})
+    ports = _manager_received(sio, "manager:ports:result")
+    sio.emit("manager:setup-session", {"requestId": "setup-one", "profileId": profile["id"]})
+    setup = _manager_received(sio, "manager:setup-session:result")
+
+    assert logs["requestId"] == "profile-logs"
+    assert logs["text"] == "hello from manager\n"
+    assert ports["requestId"] == "ports-one"
+    assert ports["profiles"][0]["id"] == profile["id"]
+    assert setup["requestId"] == "setup-one"
+    assert setup["error"] == "Provider setup is only available for microsandbox profiles"
+    removed_routes = {
+        "/api/microsandbox/base-snapshots",
+        "/api/microsandbox/base-snapshots/rebuild/logs",
+        "/api/profiles/<profile_id>/setup-providers/session",
+        "/api/profiles/<profile_id>/logs",
+        "/api/ports",
+    }
+    assert removed_routes.isdisjoint({rule.rule for rule in app.url_map.iter_rules()})
+    assert client.get("/api/profiles").status_code == 405
+    sio.disconnect()
 
 
 def test_manager_api_lists_microsandbox_base_snapshots(tmp_path, monkeypatch):
@@ -302,21 +369,25 @@ def test_manager_api_lists_microsandbox_base_snapshots(tmp_path, monkeypatch):
         MicrosandboxRuntime = FakeRuntime
 
     monkeypatch.setattr(manager_mod, "_load_deploy_sandbox_module", lambda: FakeModule)
-    app, _socketio = create_manager_app(home=tmp_path / "manager")
+    app, socketio = create_manager_app(home=tmp_path / "manager")
 
-    response = app.test_client().get("/api/microsandbox/base-snapshots")
+    client = socketio.test_client(app)
+    client.get_received()
+    client.emit("manager:base-snapshots", {"requestId": "snapshots-one"})
+    data = _manager_received(client, "manager:base-snapshots:result")
 
-    assert response.status_code == 200
-    data = response.get_json()
+    assert data["requestId"] == "snapshots-one"
     assert [snapshot["name"] for snapshot in data["snapshots"]] == [
         DEFAULT_MICROSANDBOX_BASE,
         "bullpen-microsandbox-local-v2",
     ]
     assert data["snapshots"][0]["imageRef"] == "node:22-bookworm"
+    assert "/api/microsandbox/base-snapshots" not in {rule.rule for rule in app.url_map.iter_rules()}
+    client.disconnect()
 
 
 def test_manager_serves_empty_favicon(tmp_path):
-    app, _socketio = create_manager_app(home=tmp_path / "manager")
+    app, socketio = create_manager_app(home=tmp_path / "manager")
 
     response = app.test_client().get("/favicon.ico")
 
@@ -330,7 +401,7 @@ def test_manager_socketio_uses_threading_mode(tmp_path):
 
 
 def test_manager_serves_vendored_xterm_assets(tmp_path):
-    app, _socketio = create_manager_app(home=tmp_path / "manager")
+    app, socketio = create_manager_app(home=tmp_path / "manager")
 
     response = app.test_client().get("/vendor/xterm/xterm.js")
 
@@ -457,7 +528,7 @@ def test_manager_create_deployment_uses_base_snapshot_dropdown():
     manager_css = Path("static/manager/manager.css").read_text(encoding="utf-8")
 
     assert "baseSnapshots: []" in manager_js
-    assert "api('/api/microsandbox/base-snapshots')" in manager_js
+    assert "managerRequest('manager:base-snapshots', 'manager:base-snapshots:result')" in manager_js
     assert "const baseSnapshotOptions = computed(() => {" in manager_js
     assert '<select v-model="form.base" :disabled="state.baseSnapshotsLoading" @keydown.enter="openDropdownOnEnter">' in manager_js
     assert 'v-for="snapshot in baseSnapshotOptions"' in manager_js
@@ -474,7 +545,7 @@ def test_manager_header_menu_exposes_base_rebuild_actions():
     assert "Rebuild base snapshot" in manager_js
     assert "Base rebuild logs" in manager_js
     assert "api('/api/microsandbox/base-snapshots/rebuild'" in manager_js
-    assert "api('/api/microsandbox/base-snapshots/rebuild/logs')" in manager_js
+    assert "managerRequest('manager:base-rebuild-logs', 'manager:base-rebuild-logs:result')" in manager_js
     assert ".menu-wrap" in manager_css
     assert ".menu-panel" in manager_css
     assert "pointer-events: none;" in manager_css
@@ -509,7 +580,7 @@ def test_manager_api_rebuilds_microsandbox_base_in_background(tmp_path, monkeypa
     calls = []
     monkeypatch.setattr(manager_mod.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(manager_mod.subprocess, "Popen", lambda argv, **kwargs: calls.append((argv, kwargs)) or FakeProcess())
-    app, _socketio = create_manager_app(home=tmp_path / "manager")
+    app, socketio = create_manager_app(home=tmp_path / "manager")
 
     response = app.test_client().post(
         "/api/microsandbox/base-snapshots/rebuild",
@@ -525,11 +596,16 @@ def test_manager_api_rebuilds_microsandbox_base_in_background(tmp_path, monkeypa
     assert argv[argv.index("--base") + 1] == "bullpen-microsandbox-local-v2"
     assert kwargs["cwd"] == str(manager_mod.repo_root())
 
-    logs_response = app.test_client().get("/api/microsandbox/base-snapshots/rebuild/logs")
-    logs = logs_response.get_json()
+    client = socketio.test_client(app)
+    client.get_received()
+    client.emit("manager:base-rebuild-logs", {"requestId": "base-logs"})
+    logs = _manager_received(client, "manager:base-rebuild-logs:result")
+    assert logs["requestId"] == "base-logs"
     assert logs["prepare"]["running"] is False
     assert logs["prepare"]["returncode"] == 0
     assert "deploy-sandbox.py" in logs["text"]
+    assert "/api/microsandbox/base-snapshots/rebuild/logs" not in {rule.rule for rule in app.url_map.iter_rules()}
+    client.disconnect()
 
 
 def test_microsandbox_runtime_builds_deploy_command(tmp_path):

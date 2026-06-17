@@ -41,6 +41,13 @@ leaving only narrowly justified HTTP surfaces.
   - `/api/export/all`
   - `/api/import/workspace`
   - `/api/import/all`
+- Manager/admin read/query routes:
+  - `GET /api/profiles`
+  - `/api/profiles/<profile_id>/setup-providers/session`
+  - `/api/profiles/<profile_id>/logs`
+  - `/api/microsandbox/base-snapshots`
+  - `/api/microsandbox/base-snapshots/rebuild/logs`
+  - `/api/ports`
 
 These now use Socket.IO:
 
@@ -58,6 +65,12 @@ These now use Socket.IO:
 - `files:binary`
 - `archive:export`
 - `archive:import`
+- `manager:profiles`
+- `manager:setup-session`
+- `manager:profile-logs`
+- `manager:base-snapshots`
+- `manager:base-rebuild-logs`
+- `manager:ports`
 
 ## Current Main-App REST Surface
 
@@ -67,29 +80,25 @@ None currently identified.
 
 `server/manager.py` has a separate admin/management UI with these REST routes:
 
-- `/api/profiles`
-- `/api/profiles/<profile_id>`
+- `POST /api/profiles`
+- `DELETE /api/profiles/<profile_id>`
 - `/api/profiles/<profile_id>/<action>`
 - `/api/profiles/<profile_id>/setup-providers/start`
-- `/api/profiles/<profile_id>/setup-providers/session`
-- `/api/profiles/<profile_id>/logs`
-- `/api/microsandbox/base-snapshots`
 - `/api/microsandbox/base-snapshots/rebuild`
-- `/api/microsandbox/base-snapshots/rebuild/logs`
-- `/api/ports`
 
 Assessment:
 
-- These are still REST, but they are not the main Socket.IO board surface.
-- They require their own pass because the manager app may not share the same
-  Socket.IO lifecycle as the board.
+- These are mutating manager/admin actions.
+- The manager UI already has a Socket.IO lifecycle for live profile updates and
+  PTY traffic, so the remaining mutations should move to request/response
+  manager Socket.IO events.
 
 Remediation:
 
-1. Inventory whether the manager UI has or should have a Socket.IO connection.
-2. Move profile and microsandbox actions to manager Socket.IO events if the UI
-   is live and session-bound.
-3. If any manager REST route remains, document the reason and harden it with
+1. Move profile create/delete/start/stop/restart/open to manager Socket.IO.
+2. Move provider setup start to manager Socket.IO.
+3. Move base snapshot rebuild start to manager Socket.IO.
+4. If any manager REST route remains, document the reason and harden it with
    CSRF/origin checks.
 
 ## Order Of Operations
@@ -98,7 +107,7 @@ Remediation:
    - workspace/all import
    - workspace/all export
    - raw file download/media transport
-2. Audit and remediate manager/admin REST.
+2. Remove manager/admin mutation REST.
 
 ## Acceptance Criteria
 
