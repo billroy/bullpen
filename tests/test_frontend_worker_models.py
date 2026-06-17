@@ -52,7 +52,10 @@ def test_opencode_uses_catalog_backed_model_picker():
     assert "agentOptions()" in modal
     assert "agentLabel(agent)" in modal
     assert "isOpenCodeAgent()" in modal
-    assert "/api/models/opencode" in modal
+    assert "this.$root.requestOpenCodeModels({" in modal
+    assert "/api/models/opencode" not in modal
+    assert "function requestOpenCodeModels(payload = {})" in app
+    assert "socket.emit('models:opencode', _wsData({ ...payload, request_id: requestId }));" in app
     assert "opencodeModelProvider" in modal
     assert "filteredOpenCodeModels" in modal
     assert "refreshOpenCodeModels" in modal
@@ -69,7 +72,8 @@ def test_live_agent_chat_exposes_opencode_catalog_picker():
     assert "AI_PROVIDER_OPTIONS" in text
     assert "withPreferredOption" in text
     assert "isOpenCodeProvider()" in text
-    assert "/api/models/opencode" in text
+    assert "this.$root.requestOpenCodeModels({" in text
+    assert "/api/models/opencode" not in text
     assert "opencodeModelProvider" in text
     assert "filteredOpenCodeModels" in text
     assert "refreshOpenCodeModels" in text
@@ -142,13 +146,26 @@ const context = {
 vm.createContext(context);
 vm.runInContext(`${source}\n;globalThis.__WorkerConfigModal = WorkerConfigModal;`, context);
 const component = context.__WorkerConfigModal;
+let requests = [];
 
 function makeInstance() {
   const instance = {
     ...component.data.call({}),
     form: { type: 'ai', agent: 'opencode', model: 'opencode/north-mini-code-free' },
     activeWorkspaceId: 'ws-test',
-    $root: { activeWorkspaceId: 'ws-test' },
+    $root: {
+      activeWorkspaceId: 'ws-test',
+      requestOpenCodeModels: async (payload) => {
+        requests.push(payload);
+        return {
+          status: 'ok',
+          models: [
+            { id: 'opencode/north-mini-code-free', provider: 'opencode', model: 'north-mini-code-free' },
+            { id: 'anthropic/claude-sonnet-4-6', provider: 'anthropic', model: 'claude-sonnet-4-6' },
+          ],
+        };
+      },
+    },
     $refs: {},
     $nextTick(fn) { if (typeof fn === 'function') fn(); },
   };
@@ -166,32 +183,16 @@ function makeInstance() {
   instance.syncOpenCodeModelProvider();
   assert.strictEqual(instance.opencodeModelProvider, '', 'saved model provider should not become an implicit filter');
 
-  const urls = [];
-  context.fetch = async (url) => {
-    urls.push(String(url));
-    return {
-      ok: true,
-      json: async () => ({
-        status: 'ok',
-        models: [
-          { id: 'opencode/north-mini-code-free', provider: 'opencode', model: 'north-mini-code-free' },
-          { id: 'anthropic/claude-sonnet-4-6', provider: 'anthropic', model: 'claude-sonnet-4-6' },
-        ],
-      }),
-    };
-  };
+  requests = [];
 
   await instance.refreshOpenCodeModels();
-  assert.strictEqual(urls[0], '/api/models/opencode?workspaceId=ws-test&refresh=1');
+  assert.strictEqual(JSON.stringify(requests[0]), JSON.stringify({ workspaceId: 'ws-test', refresh: true }));
   assert.deepStrictEqual(instance.filteredOpenCodeModels.map((model) => model.id), [
     'opencode/north-mini-code-free',
     'anthropic/claude-sonnet-4-6',
   ]);
 
-  context.fetch = async () => ({
-    ok: true,
-    json: async () => ({ status: 'error', error: 'OpenCode model catalog timed out after 20s', models: [] }),
-  });
+  instance.$root.requestOpenCodeModels = async () => ({ status: 'error', error: 'OpenCode model catalog timed out after 20s', models: [] });
   await instance.refreshOpenCodeModels();
   assert.deepStrictEqual(instance.opencodeModels.map((model) => model.id), [
     'opencode/north-mini-code-free',

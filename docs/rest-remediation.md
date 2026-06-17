@@ -24,6 +24,8 @@ leaving only narrowly justified HTTP surfaces.
   - `/api/worker/transfer_group`
 - Service worker preview:
   - `/api/service/preview`
+- OpenCode model lookup:
+  - `/api/models/opencode`
 
 These now use Socket.IO:
 
@@ -31,6 +33,7 @@ These now use Socket.IO:
 - `bento:import`
 - `worker:transfer`
 - `service:preview`
+- `models:opencode`
 
 ## Current Main-App REST Surface
 
@@ -108,22 +111,6 @@ Candidate events:
 - `commits:diffed`
 - `commits:error`
 
-### Model Lookup
-
-- `/api/models/opencode`
-
-Assessment:
-
-- This is not a durable external API; it is UI support for worker/chat model
-  pickers.
-- It should become a Socket.IO query event.
-
-Remediation:
-
-1. Add `models:opencode` Socket.IO request handling.
-2. Migrate `WorkerConfigModal` and `LiveAgentChatTab`.
-3. Remove the HTTP route.
-
 ## Manager/Admin REST Surface
 
 `server/manager.py` has a separate admin/management UI with these REST routes:
@@ -155,16 +142,14 @@ Remediation:
 
 ## Order Of Operations
 
-1. Remove low-risk UI support routes with clear socket replacements:
-   - `models:opencode`
-2. Remove app query routes:
+1. Remove app query routes:
    - commits list/diff
    - file list/read
-3. Remove or contain app mutation/file transport:
+2. Remove or contain app mutation/file transport:
    - file write
    - workspace/all import
    - workspace/all export
-4. Audit and remediate manager/admin REST.
+3. Audit and remediate manager/admin REST.
 
 ## Acceptance Criteria
 

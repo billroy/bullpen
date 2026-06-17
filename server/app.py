@@ -38,7 +38,6 @@ from server.worker_types import ViewerContext, normalize_layout, serialize_layou
 from server.workspace_manager import WorkspaceManager, projects_root
 from server import service_worker as service_worker_mod
 from server import mcp_auth
-from server import opencode_models
 from server import worktrees as worktree_mod
 from server.global_settings import load_global_settings
 from server.terminal import TerminalManager
@@ -502,17 +501,6 @@ def create_app(
         if ws is None:
             return None, (jsonify({"error": "Unknown workspace"}), 404)
         return ws, None
-
-    @app.route("/api/models/opencode")
-    @auth.require_auth
-    def get_opencode_models():
-        """Return OpenCode models for a workspace without blocking custom entry."""
-        ws, error = _workspace_from_id(_workspace_id_from_args())
-        if error:
-            return error
-        provider = request.args.get("provider") or ""
-        refresh = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
-        return jsonify(opencode_models.fetch_opencode_models(ws.path, provider=provider, refresh=refresh))
 
     @app.route("/api/commits")
     @auth.require_auth

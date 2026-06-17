@@ -1,9 +1,9 @@
-"""Tests for OpenCode model catalog helpers and API."""
+"""Tests for OpenCode model catalog helpers and socket events."""
 
 from pathlib import Path
 import subprocess
 
-from server.app import create_app
+from server.app import create_app, socketio
 from server import opencode_models
 
 
@@ -118,7 +118,7 @@ def test_fetch_opencode_models_reports_timeout(monkeypatch, tmp_path):
     assert "timed out" in result["error"]
 
 
-def test_opencode_models_api_returns_catalog(monkeypatch, tmp_workspace):
+def test_opencode_models_event_returns_catalog(monkeypatch, tmp_workspace):
     def fake_fetch(workspace, **kwargs):
         return {
             "status": "ok",
@@ -129,12 +129,30 @@ def test_opencode_models_api_returns_catalog(monkeypatch, tmp_workspace):
 
     monkeypatch.setattr(opencode_models, "fetch_opencode_models", fake_fetch)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
+    client.get_received()
 
-    response = client.get("/api/models/opencode?provider=opencode&refresh=1")
+    client.emit("models:opencode", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "models-one",
+        "provider": "opencode",
+        "refresh": True,
+    })
 
-    assert response.status_code == 200
-    data = response.get_json()
+    data = next(
+        event["args"][0]
+        for event in client.get_received()
+        if event["name"] == "models:opencode:listed"
+    )
+    assert data["request_id"] == "models-one"
     assert data["status"] == "ok"
     assert data["provider"] == "opencode"
     assert data["models"][0]["id"] == "opencode/north-mini-code-free"
+    client.disconnect()
+
+
+def test_opencode_models_rest_route_is_removed(tmp_workspace):
+    app = create_app(tmp_workspace, no_browser=True)
+
+    routes = {rule.rule for rule in app.url_map.iter_rules()}
+    assert "/api/models/opencode" not in routes

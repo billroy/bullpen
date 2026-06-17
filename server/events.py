@@ -14,6 +14,7 @@ from flask import request
 from flask_socketio import emit, join_room, rooms
 
 from server import tasks as task_mod
+from server import opencode_models
 from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
 from server.teams import save_team, load_team, list_teams
@@ -494,6 +495,16 @@ def register_events(socketio, app):
             "error": message,
         })
 
+    def _emit_opencode_models_error(data, ws_id, message):
+        emit("models:opencode:error", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": False,
+            "status": "error",
+            "error": message,
+            "models": [],
+        })
+
     def _archive_tasks_by_status(bp_dir, status, ws_id):
         """Archive live tasks with a matching status and clean worker references."""
         task_ids = [
@@ -718,6 +729,28 @@ def register_events(socketio, app):
             emit("bento:imported", result)
         except BentoCarrierError as e:
             emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": e.message, "code": e.code})
+
+    @socketio.on("models:opencode")
+    def on_opencode_models(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            _emit_opencode_models_error(data, ws_id, "Unknown workspace")
+            return
+        provider = str((data or {}).get("provider") or "")
+        refresh = bool((data or {}).get("refresh"))
+        result = opencode_models.fetch_opencode_models(ws.path, provider=provider, refresh=refresh)
+        if isinstance(result, dict):
+            payload = dict(result)
+        else:
+            payload = {"status": "error", "error": "Invalid OpenCode model catalog response", "models": []}
+        payload["workspaceId"] = ws_id
+        payload["request_id"] = (data or {}).get("request_id")
+        payload["ok"] = payload.get("status") != "error"
+        emit("models:opencode:listed", payload)
 
     # --- Task events ---
 

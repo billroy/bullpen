@@ -243,19 +243,15 @@ const LiveAgentChatTab = {
       this.opencodeModelsLoading = true;
       this.opencodeModelsError = '';
       try {
-        const params = new URLSearchParams();
-        if (this.workspaceId) params.set('workspaceId', this.workspaceId);
-        if (refresh) params.set('refresh', '1');
-        const query = params.toString();
-        const resp = await fetch(`/api/models/opencode${query ? `?${query}` : ''}`, {
-          credentials: 'same-origin',
+        const data = await this.$root.requestOpenCodeModels({
+          workspaceId: this.workspaceId,
+          refresh: !!refresh,
         });
-        const data = await resp.json();
         if (requestSeq !== this.opencodeModelsRequestSeq) return;
-        const status = data.status || (resp.ok ? 'ok' : 'error');
+        const status = data.status || 'ok';
         const nextModels = Array.isArray(data.models) ? data.models : [];
         this.opencodeModelsStatus = status;
-        if (!resp.ok || status === 'error') {
+        if (status === 'error') {
           this.opencodeModelsError = data.error || 'OpenCode model catalog is unavailable. Enter a custom provider/model value.';
         } else {
           this.opencodeModels = nextModels;

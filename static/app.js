@@ -1383,6 +1383,40 @@ const app = createApp({
         socket.emit('service:preview', _wsData({ ...payload, request_id: requestId }));
       });
     }
+    let openCodeModelsRequestSeq = 0;
+    function requestOpenCodeModels(payload = {}) {
+      return new Promise((resolve, reject) => {
+        const requestId = `opencode-models-${Date.now()}-${++openCodeModelsRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('OpenCode model catalog timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('models:opencode:listed', onListed);
+          socket.off('models:opencode:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onListed = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'OpenCode model catalog is unavailable'));
+        };
+        socket.on('models:opencode:listed', onListed);
+        socket.on('models:opencode:error', onError);
+        socket.emit('models:opencode', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
     async function transferWorker(payload) {
       try {
         const groupTransfer = Array.isArray(payload.source_slots) && payload.source_slots.length > 1;
@@ -2051,7 +2085,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,
