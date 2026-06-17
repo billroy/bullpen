@@ -4,11 +4,7 @@ import os
 import re
 import sys
 import json
-import tempfile
-import zipfile
-from datetime import datetime, timedelta, timezone
-from io import BytesIO
-import shutil
+from datetime import datetime, timedelta
 import atexit
 from time import monotonic
 from urllib.parse import urlparse
@@ -27,9 +23,13 @@ from flask import (
 from flask_socketio import SocketIO, join_room
 
 from server import auth
+from server.archive_transport import (
+    MAX_IMPORT_ARCHIVE_FILES as _MAX_IMPORT_ARCHIVE_FILES,
+    MAX_IMPORT_COMPRESSION_RATIO as _MAX_IMPORT_COMPRESSION_RATIO,
+)
 from server.events import register_events
 from server.init import init_workspace
-from server.persistence import read_json, write_json, read_frontmatter, ensure_within
+from server.persistence import read_json, write_json, read_frontmatter
 from server.file_browser import FileBrowserError, is_textual_mime, workspace_file_path
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
@@ -53,25 +53,6 @@ mcp_sids = set()
 mcp_sid_workspace = {}
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
-_MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
-_MAX_IMPORT_ARCHIVE_FILES = 1000
-_MAX_IMPORT_COMPRESSION_RATIO = 100
-_NESTED_ARCHIVE_SUFFIXES = (
-    ".zip",
-    ".tar",
-    ".tgz",
-    ".tar.gz",
-    ".tbz",
-    ".tbz2",
-    ".tar.bz2",
-    ".txz",
-    ".tar.xz",
-    ".gz",
-    ".bz2",
-    ".xz",
-    ".7z",
-    ".rar",
-)
 _LOGIN_THROTTLE_WINDOW_SECONDS = 5 * 60
 _LOGIN_THROTTLE_MAX_FAILURES = 5
 _LOGIN_THROTTLE_BLOCK_SECONDS = 60
@@ -319,23 +300,6 @@ def create_app(
     )
     app.config["terminal_manager"] = TerminalManager(socketio)
 
-    def _portable_config(config):
-        safe = dict(config or {})
-        for key in ("server_host", "server_port", "mcp_token", "deploy_label"):
-            safe.pop(key, None)
-        return safe
-
-    def _write_runtime_config(ws, preferred_token=None):
-        token = mcp_auth.ensure_workspace_runtime_config(
-            ws.bp_dir,
-            host=app.config.get("host", "127.0.0.1"),
-            port=app.config.get("port", 5000),
-            disallowed_tokens=mcp_auth.workspace_token_set(manager.all_workspaces(), exclude_bp_dir=ws.bp_dir),
-            preferred_token=preferred_token,
-        )
-        app.config.setdefault("mcp_tokens_by_workspace", {})
-        app.config["mcp_tokens_by_workspace"][ws.id] = token
-
     app.config["host"] = host
     app.config["port"] = port
     global _service_worker_atexit_registered
@@ -511,193 +475,6 @@ def create_app(
             return send_file(full_path, mimetype=mime)
 
         return jsonify({"error": "Use Socket.IO file events for text file content"}), 400
-
-    def _export_workspace_zip_bytes(ws):
-        mem = BytesIO()
-        with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            if os.path.isdir(ws.bp_dir):
-                for root, _dirs, files in os.walk(ws.bp_dir):
-                    for filename in files:
-                        full_path = os.path.join(root, filename)
-                        rel_path = os.path.relpath(full_path, ws.path).replace(os.sep, "/")
-                        if rel_path == ".bullpen/config.json":
-                            config = _portable_config(read_json(full_path))
-                            zf.writestr(rel_path, json.dumps(config, indent=2))
-                            continue
-                        zf.write(full_path, rel_path)
-        mem.seek(0)
-        return mem
-
-    def _workspace_export_meta(ws):
-        # Do not expose host filesystem paths in export manifests.
-        return {"id": ws.id, "name": ws.name}
-
-    def _export_all_zip_bytes():
-        mem = BytesIO()
-        created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for ws in manager.all_workspaces():
-                if not os.path.isdir(ws.bp_dir):
-                    continue
-                for root, _dirs, files in os.walk(ws.bp_dir):
-                    for filename in files:
-                        full_path = os.path.join(root, filename)
-                        rel_path = os.path.relpath(full_path, ws.bp_dir).replace(os.sep, "/")
-                        arcname = f"workspaces/{ws.id}/.bullpen/{rel_path}"
-                        if rel_path == "config.json":
-                            config = _portable_config(read_json(full_path))
-                            zf.writestr(arcname, json.dumps(config, indent=2))
-                            continue
-                        zf.write(full_path, arcname)
-            manifest = {
-                "schema": "bullpen-export-all-v1",
-                "created_at": created_at,
-                "workspaces": [_workspace_export_meta(ws) for ws in manager.all_workspaces()],
-            }
-            zf.writestr("bullpen-export.json", json.dumps(manifest, indent=2))
-        mem.seek(0)
-        return mem
-
-    def _safe_extract_zip(zf, target_dir):
-        total_size = 0
-        total_compressed_size = 0
-        file_count = 0
-        for info in zf.infolist():
-            name = (info.filename or "").replace("\\", "/")
-            if not name or name.endswith("/"):
-                continue
-            file_count += 1
-            if file_count > _MAX_IMPORT_ARCHIVE_FILES:
-                raise ValueError("Archive contains too many files")
-            parts = [p for p in name.split("/") if p not in ("", ".")]
-            if any(p == ".." for p in parts):
-                raise ValueError("Archive contains invalid relative paths")
-            if parts and parts[0].endswith(":"):
-                raise ValueError("Archive contains invalid absolute paths")
-            lower_name = "/".join(parts).lower()
-            if any(lower_name.endswith(suffix) for suffix in _NESTED_ARCHIVE_SUFFIXES):
-                raise ValueError("Archive contains nested archive files")
-            compressed_size = max(0, int(info.compress_size or 0))
-            total_compressed_size += max(1, compressed_size)
-            total_size += max(0, int(info.file_size or 0))
-            if total_size > _MAX_IMPORT_ARCHIVE_BYTES:
-                raise ValueError("Archive is too large")
-            if info.file_size > max(1, compressed_size) * _MAX_IMPORT_COMPRESSION_RATIO:
-                raise ValueError("Archive contains highly compressed entries")
-            if total_size > total_compressed_size * _MAX_IMPORT_COMPRESSION_RATIO:
-                raise ValueError("Archive compression ratio is too high")
-            dest_path = os.path.join(target_dir, *parts)
-            ensure_within(dest_path, target_dir)
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-            with zf.open(info, "r") as src, open(dest_path, "wb") as dst:
-                shutil.copyfileobj(src, dst)
-
-    def _workspace_payload_root(extracted_root):
-        explicit = os.path.join(extracted_root, ".bullpen")
-        if os.path.isdir(explicit):
-            return explicit
-        if os.path.exists(os.path.join(extracted_root, "config.json")):
-            return extracted_root
-        return None
-
-    def _replace_workspace_bp_dir(ws, source_bp_dir):
-        bp_dir = ws.bp_dir
-        previous_token = mcp_auth.read_workspace_mcp_token(bp_dir)
-        if os.path.exists(bp_dir):
-            shutil.rmtree(bp_dir)
-        shutil.copytree(source_bp_dir, bp_dir)
-        init_workspace(ws.path)
-        _write_runtime_config(ws, preferred_token=previous_token)
-        reconcile(bp_dir)
-        state = load_state(bp_dir, ws.path, workspace_display=ws.name)
-        state["workspaceId"] = ws.id
-        state["globalSettings"] = load_global_settings(manager.global_dir)
-        socketio.emit("state:init", state, to=ws.id)
-        socketio.emit("files:changed", {"workspaceId": ws.id}, to=ws.id)
-
-    @app.route("/api/export/workspace")
-    @auth.require_auth
-    def export_workspace():
-        ws, error = _workspace_from_id(_workspace_id_from_args())
-        if error:
-            return error
-        export_name = f"bullpen-workspace-{ws.name}-{ws.id[:8]}.zip"
-        return send_file(
-            _export_workspace_zip_bytes(ws),
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=export_name,
-        )
-
-    @app.route("/api/export/all")
-    @auth.require_auth
-    def export_all():
-        export_name = f"bullpen-all-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.zip"
-        return send_file(
-            _export_all_zip_bytes(),
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=export_name,
-        )
-
-    @app.route("/api/import/workspace", methods=["POST"])
-    @auth.require_auth
-    def import_workspace():
-        ws_id = _workspace_id_from_args()
-        ws, error = _workspace_from_id(ws_id)
-        if error:
-            return error
-        upload = request.files.get("file")
-        if not upload or not upload.filename:
-            return jsonify({"error": "Missing upload file"}), 400
-        try:
-            with zipfile.ZipFile(upload.stream, "r") as zf:
-                with tempfile.TemporaryDirectory(prefix="bullpen_import_") as tmp_dir:
-                    _safe_extract_zip(zf, tmp_dir)
-                    payload_root = _workspace_payload_root(tmp_dir)
-                    if not payload_root:
-                        return jsonify({"error": "Archive does not contain a workspace .bullpen payload"}), 400
-                    _replace_workspace_bp_dir(ws, payload_root)
-        except zipfile.BadZipFile:
-            return jsonify({"error": "Invalid zip file"}), 400
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-        return jsonify({"ok": True, "imported": 1, "workspaceId": ws_id})
-
-    @app.route("/api/import/all", methods=["POST"])
-    @auth.require_auth
-    def import_all():
-        upload = request.files.get("file")
-        if not upload or not upload.filename:
-            return jsonify({"error": "Missing upload file"}), 400
-        imported = 0
-        try:
-            with zipfile.ZipFile(upload.stream, "r") as zf:
-                with tempfile.TemporaryDirectory(prefix="bullpen_import_all_") as tmp_dir:
-                    _safe_extract_zip(zf, tmp_dir)
-                    workspaces_dir = os.path.join(tmp_dir, "workspaces")
-                    if not os.path.isdir(workspaces_dir):
-                        return jsonify({"error": "Archive does not contain a workspaces/ directory"}), 400
-                    for ws in manager.all_workspaces():
-                        candidate = os.path.join(workspaces_dir, ws.id)
-                        if not os.path.isdir(candidate):
-                            continue
-                        payload_root = _workspace_payload_root(candidate)
-                        if not payload_root:
-                            continue
-                        _replace_workspace_bp_dir(ws, payload_root)
-                        imported += 1
-        except zipfile.BadZipFile:
-            return jsonify({"error": "Invalid zip file"}), 400
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-        if imported == 0:
-            return jsonify({"error": "No matching workspaces found in archive"}), 400
-        return jsonify({"ok": True, "imported": imported})
 
     @socketio.on("connect")
     def on_connect(auth_data=None):

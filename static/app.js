@@ -1735,32 +1735,9 @@ const app = createApp({
       workerMinimapCollapsed.value = collapsed === true;
     }
 
-    function _downloadNameFromDisposition(contentDisposition, fallback) {
-      if (typeof contentDisposition !== 'string' || !contentDisposition) return fallback;
-      const match = contentDisposition.match(/filename\*?=(?:UTF-8''|\"?)([^\";]+)/i);
-      if (!match || !match[1]) return fallback;
-      try {
-        return decodeURIComponent(match[1].trim());
-      } catch (_err) {
-        return match[1].trim();
-      }
-    }
-
-    async function _downloadZip(url, fallbackName) {
-      const resp = await fetch(url, { method: 'GET' });
-      if (!resp.ok) {
-        let message = 'Download failed';
-        try {
-          const body = await resp.json();
-          if (body && body.error) message = body.error;
-        } catch (_err) {
-          // Keep generic message when non-JSON response body.
-        }
-        throw new Error(message);
-      }
-      const blob = await resp.blob();
-      const name = _downloadNameFromDisposition(resp.headers.get('content-disposition'), fallbackName);
-      _downloadBlob(blob, name || fallbackName);
+    function _nextRequestId(prefix) {
+      const random = Math.random().toString(36).slice(2);
+      return `${prefix}-${Date.now()}-${random}`;
     }
 
     function _downloadBlob(blob, fallbackName) {
@@ -1824,6 +1801,51 @@ const app = createApp({
       return exported;
     }
 
+    function _requestArchiveExport(payload) {
+      return new Promise((resolve, reject) => {
+        const requestId = payload.request_id || _nextRequestId('archive-export');
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const expectedKind = payload.kind || 'workspace';
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Archive export timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('archive:exported', onExported);
+          socket.off('archive:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload) return false;
+          if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;
+          if (expectedKind && eventPayload.kind && eventPayload.kind !== expectedKind) return false;
+          if (expectedKind === 'workspace' && expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onExported = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Archive export failed'));
+        };
+        socket.on('archive:exported', onExported);
+        socket.on('archive:error', onError);
+        socket.emit('archive:export', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
+
+    async function _downloadArchiveExport(payload, fallbackName) {
+      const exported = await _requestArchiveExport(payload);
+      const bytes = _bentoPayloadBytes(exported.data);
+      const blob = new Blob([bytes], { type: exported.mimetype || 'application/zip' });
+      _downloadBlob(blob, exported.filename || fallbackName);
+      return exported;
+    }
+
     function _requestBentoImport(payload) {
       return new Promise((resolve, reject) => {
         const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
@@ -1870,11 +1892,53 @@ const app = createApp({
       return _requestBentoImport({ file: data });
     }
 
+    function _requestArchiveImport(payload) {
+      return new Promise((resolve, reject) => {
+        const requestId = payload.request_id || _nextRequestId('archive-import');
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const expectedKind = payload.kind || 'workspace';
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Archive import timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('archive:imported', onImported);
+          socket.off('archive:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload) return false;
+          if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;
+          if (expectedKind && eventPayload.kind && eventPayload.kind !== expectedKind) return false;
+          if (expectedKind === 'workspace' && expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onImported = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Archive import failed'));
+        };
+        socket.on('archive:imported', onImported);
+        socket.on('archive:error', onError);
+        socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
+
+    async function _importArchiveFile(file, kind) {
+      if (!file) return null;
+      const data = await file.arrayBuffer();
+      return _requestArchiveImport({ kind, file: data });
+    }
+
     async function exportWorkspace() {
       if (!activeWorkspaceId.value) return;
       try {
-        const url = `/api/export/workspace?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
-        await _downloadZip(url, 'bullpen-workspace.zip');
+        await _downloadArchiveExport({ kind: 'workspace' }, 'bullpen-workspace.zip');
         addToast('Workspace export ready');
       } catch (e) {
         addToast('Workspace export failed: ' + e.message, 'error');
@@ -1920,30 +1984,18 @@ const app = createApp({
 
     async function exportAll() {
       try {
-        await _downloadZip('/api/export/all', 'bullpen-all.zip');
+        await _downloadArchiveExport({ kind: 'all' }, 'bullpen-all.zip');
         addToast('All-workspace export ready');
       } catch (e) {
         addToast('Export all failed: ' + e.message, 'error');
       }
     }
 
-    async function _importZip(url, file, successMessage) {
-      if (!file) return;
-      const form = new FormData();
-      form.append('file', file);
-      const resp = await fetch(url, { method: 'POST', body: form });
-      const body = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        throw new Error(body?.error || 'Import failed');
-      }
-      addToast(successMessage + (body?.imported ? ` (${body.imported})` : ''));
-    }
-
     async function importWorkspace(file) {
       if (!activeWorkspaceId.value) return;
       try {
-        const url = `/api/import/workspace?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}`;
-        await _importZip(url, file, 'Workspace import complete');
+        const result = await _importArchiveFile(file, 'workspace');
+        addToast('Workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
       } catch (e) {
         addToast('Workspace import failed: ' + e.message, 'error');
       }
@@ -1962,7 +2014,8 @@ const app = createApp({
 
     async function importAll(file) {
       try {
-        await _importZip('/api/import/all', file, 'All-workspace import complete');
+        const result = await _importArchiveFile(file, 'all');
+        addToast('All-workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
       } catch (e) {
         addToast('Import all failed: ' + e.message, 'error');
       }

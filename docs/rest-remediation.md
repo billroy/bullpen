@@ -33,6 +33,11 @@ leaving only narrowly justified HTTP surfaces.
   - `/api/files`
   - text `GET /api/files/<path>`
   - `PUT /api/files/<path>`
+- Workspace/all archive transport:
+  - `/api/export/workspace`
+  - `/api/export/all`
+  - `/api/import/workspace`
+  - `/api/import/all`
 
 These now use Socket.IO:
 
@@ -47,31 +52,10 @@ These now use Socket.IO:
 - `files:read`
 - `files:exists`
 - `files:write`
+- `archive:export`
+- `archive:import`
 
 ## Current Main-App REST Surface
-
-### Archive Transport
-
-- `/api/export/workspace`
-- `/api/export/all`
-- `/api/import/workspace`
-- `/api/import/all`
-
-Assessment:
-
-- These are file transport endpoints, not ordinary app commands.
-- They remain suspect because import mutates workspace state and export can leak
-  workspace content.
-- They should be migrated or contained behind an explicit maintenance/admin
-  affordance.
-
-Remediation:
-
-1. Prefer Socket.IO for preview/apply semantics.
-2. Keep HTTP download/upload only if browser file mechanics make it materially
-   better than Socket.IO binary payloads.
-3. If retained, move out of primary sharing UI and document as maintenance
-   transport with CSRF/origin checks.
 
 ### Files
 

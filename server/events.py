@@ -15,6 +15,12 @@ from flask import request
 from flask_socketio import emit, join_room, rooms
 
 from server import tasks as task_mod
+from server.archive_transport import (
+    export_all_zip_bytes,
+    export_workspace_zip_bytes,
+    import_all_archive,
+    import_workspace_archive,
+)
 from server import opencode_models
 from server.file_browser import (
     FileBrowserError,
@@ -574,6 +580,21 @@ def register_events(socketio, app):
             return BytesIO(payload)
         raise BentoCarrierError("Bento payload must be bytes", "invalid-upload")
 
+    def _archive_fileobj(data):
+        payload = (data or {}).get("file")
+        if payload is None:
+            payload = (data or {}).get("data")
+        if payload is None:
+            raise ValueError("Missing upload file")
+        if isinstance(payload, BytesIO):
+            payload.seek(0)
+            return payload
+        if isinstance(payload, bytearray):
+            return BytesIO(bytes(payload))
+        if isinstance(payload, bytes):
+            return BytesIO(payload)
+        raise ValueError("Archive payload must be bytes")
+
     @socketio.on("bento:preview")
     def on_bento_preview(data):
         ws_id, bp_dir = _resolve(data or {})
@@ -737,6 +758,104 @@ def register_events(socketio, app):
             emit("bento:imported", result)
         except BentoCarrierError as e:
             emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": e.message, "code": e.code})
+
+    @socketio.on("archive:export")
+    def on_archive_export(data):
+        payload = data or {}
+        manager = app.config["manager"]
+        kind = str(payload.get("kind") or "workspace").strip()
+        ws_id, _bp_dir = _resolve(payload)
+        if kind == "workspace":
+            if not ws_id:
+                return
+            ws = manager.get(ws_id)
+            if not ws:
+                emit("archive:error", {
+                    "workspaceId": ws_id,
+                    "request_id": payload.get("request_id"),
+                    "ok": False,
+                    "error": "Unknown workspace",
+                    "code": "unknown-workspace",
+                })
+                return
+            package = export_workspace_zip_bytes(ws)
+            filename = f"bullpen-workspace-{ws.name}-{ws.id[:8]}.zip"
+        elif kind == "all":
+            package = export_all_zip_bytes(manager)
+            filename = f"bullpen-all-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.zip"
+        else:
+            emit("archive:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": "kind must be workspace or all",
+                "code": "invalid-kind",
+            })
+            return
+        emit("archive:exported", {
+            "workspaceId": ws_id,
+            "request_id": payload.get("request_id"),
+            "ok": True,
+            "kind": kind,
+            "filename": filename,
+            "mimetype": "application/zip",
+            "data": package.getvalue(),
+        })
+
+    @socketio.on("archive:import")
+    def on_archive_import(data):
+        payload = data or {}
+        manager = app.config["manager"]
+        kind = str(payload.get("kind") or "workspace").strip()
+        ws_id, _bp_dir = _resolve(payload)
+        try:
+            fileobj = _archive_fileobj(payload)
+            with _write_lock:
+                if kind == "workspace":
+                    if not ws_id:
+                        return
+                    ws = manager.get(ws_id)
+                    if not ws:
+                        emit("archive:error", {
+                            "workspaceId": ws_id,
+                            "request_id": payload.get("request_id"),
+                            "ok": False,
+                            "error": "Unknown workspace",
+                            "code": "unknown-workspace",
+                        })
+                        return
+                    result = import_workspace_archive(app, socketio, ws, fileobj)
+                elif kind == "all":
+                    result = import_all_archive(app, socketio, fileobj)
+                else:
+                    emit("archive:error", {
+                        "workspaceId": ws_id,
+                        "request_id": payload.get("request_id"),
+                        "ok": False,
+                        "error": "kind must be workspace or all",
+                        "code": "invalid-kind",
+                    })
+                    return
+            result["workspaceId"] = ws_id
+            result["request_id"] = payload.get("request_id")
+            result["kind"] = kind
+            emit("archive:imported", result)
+        except ValueError as e:
+            emit("archive:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": str(e),
+                "code": "invalid-archive",
+            })
+        except Exception as e:
+            emit("archive:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": str(e),
+                "code": "archive-import-failed",
+            })
 
     @socketio.on("models:opencode")
     def on_opencode_models(data):

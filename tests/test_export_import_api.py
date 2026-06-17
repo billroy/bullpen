@@ -1,4 +1,4 @@
-"""Tests for workspace zip export/import endpoints."""
+"""Tests for workspace archive export/import Socket.IO events."""
 
 import io
 import json
@@ -9,6 +9,7 @@ from server.app import (
     _MAX_IMPORT_ARCHIVE_FILES,
     _MAX_IMPORT_COMPRESSION_RATIO,
     create_app,
+    socketio,
 )
 from server.init import init_workspace
 from server import mcp_auth
@@ -24,15 +25,41 @@ def _zip_bytes(entries):
     return mem
 
 
+def _received(client, name):
+    matches = [event["args"][0] for event in client.get_received() if event["name"] == name]
+    assert matches, f"missing socket event {name}"
+    return matches[-1]
+
+
+def _export_archive(client, **payload):
+    client.emit("archive:export", payload)
+    return _received(client, "archive:exported")
+
+
+def _import_archive(client, data, **payload):
+    body = {"file": data}
+    body.update(payload)
+    client.emit("archive:import", body)
+    return _received(client, "archive:imported")
+
+
+def _archive_error(client, data, **payload):
+    body = {"file": data}
+    body.update(payload)
+    client.emit("archive:import", body)
+    return _received(client, "archive:error")
+
+
 def test_export_workspace_returns_zip_with_bullpen_dir(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
-    resp = client.get("/api/export/workspace")
-    assert resp.status_code == 200
-    assert resp.headers.get("Content-Type", "").startswith("application/zip")
-    with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
+    exported = _export_archive(client, kind="workspace")
+    assert exported["ok"] is True
+    assert exported["mimetype"] == "application/zip"
+    assert exported["filename"].startswith("bullpen-workspace-")
+    with zipfile.ZipFile(io.BytesIO(exported["data"]), "r") as zf:
         names = set(zf.namelist())
         exported_config = json.loads(zf.read(".bullpen/config.json"))
     assert ".bullpen/config.json" in names
@@ -50,7 +77,7 @@ def test_export_workspace_returns_zip_with_bullpen_dir(tmp_workspace):
 def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
     original = read_json(os.path.join(bp_dir, "config.json"))
     original_token = mcp_auth.read_workspace_mcp_token(bp_dir)
@@ -61,12 +88,9 @@ def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     }
     archive = _zip_bytes(payload)
 
-    resp = client.post(
-        "/api/import/workspace",
-        data={"file": (archive, "workspace.zip")},
-        content_type="multipart/form-data",
-    )
-    assert resp.status_code == 200
+    imported = _import_archive(client, archive.getvalue(), kind="workspace")
+    assert imported["ok"] is True
+    assert imported["imported"] == 1
     config = read_json(os.path.join(bp_dir, "config.json"))
     assert config["name"] == "Imported Workspace"
     assert config["server_host"] == app.config["host"]
@@ -110,10 +134,11 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
     token_one = mcp_auth.read_workspace_mcp_token(bp1)
     token_two = mcp_auth.read_workspace_mcp_token(bp2)
 
-    client = app.test_client()
-    export_resp = client.get("/api/export/all")
-    assert export_resp.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(export_resp.data), "r") as zf:
+    client = socketio.test_client(app)
+    exported = _export_archive(client, kind="all")
+    assert exported["ok"] is True
+    assert exported["filename"].startswith("bullpen-all-")
+    with zipfile.ZipFile(io.BytesIO(exported["data"]), "r") as zf:
         names = set(zf.namelist())
         manifest = json.loads(zf.read("bullpen-export.json"))
         exported_one = json.loads(zf.read(f"workspaces/{ws1_id}/.bullpen/config.json"))
@@ -131,13 +156,9 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
         f"workspaces/{ws1_id}/.bullpen/config.json": json.dumps({"name": "Imported One", "columns": [], "grid": {"rows": 4, "cols": 6}}),
         f"workspaces/{ws2_id}/.bullpen/config.json": json.dumps({"name": "Imported Two", "columns": [], "grid": {"rows": 4, "cols": 6}}),
     })
-    import_resp = client.post(
-        "/api/import/all",
-        data={"file": (import_archive, "all.zip")},
-        content_type="multipart/form-data",
-    )
-    assert import_resp.status_code == 200
-    assert import_resp.get_json()["imported"] == 2
+    imported = _import_archive(client, import_archive.getvalue(), kind="all")
+    assert imported["ok"] is True
+    assert imported["imported"] == 2
     config_one = read_json(os.path.join(bp1, "config.json"))
     config_two = read_json(os.path.join(bp2, "config.json"))
     assert config_one["name"] == "Imported One"
@@ -178,10 +199,26 @@ def test_legacy_worker_zip_routes_are_removed(tmp_workspace):
     assert resp.status_code in {404, 405}
 
 
-def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):
+def test_legacy_archive_routes_are_removed(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = app.test_client()
+
+    routes = {rule.rule for rule in app.url_map.iter_rules()}
+    assert "/api/export/workspace" not in routes
+    assert "/api/export/all" not in routes
+    assert "/api/import/workspace" not in routes
+    assert "/api/import/all" not in routes
+    assert client.get("/api/export/workspace").status_code == 404
+    assert client.get("/api/export/all").status_code == 404
+    assert client.post("/api/import/workspace").status_code in {404, 405}
+    assert client.post("/api/import/all").status_code in {404, 405}
+
+
+def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
 
     payload = {
         ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
@@ -189,56 +226,43 @@ def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):
     for idx in range(_MAX_IMPORT_ARCHIVE_FILES):
         payload[f".bullpen/files/file-{idx}.txt"] = "ok"
 
-    resp = client.post(
-        "/api/import/workspace",
-        data={"file": (_zip_bytes(payload), "workspace.zip")},
-        content_type="multipart/form-data",
-    )
+    error = _archive_error(client, _zip_bytes(payload).getvalue(), kind="workspace")
 
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "Archive contains too many files"
+    assert error["code"] == "invalid-archive"
+    assert error["error"] == "Archive contains too many files"
 
 
 def test_import_workspace_rejects_high_expansion_archive(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
     bomb_payload = {
         ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
         ".bullpen/payload.txt": "A" * (_MAX_IMPORT_COMPRESSION_RATIO * 4096),
     }
 
-    resp = client.post(
-        "/api/import/workspace",
-        data={"file": (_zip_bytes(bomb_payload), "workspace.zip")},
-        content_type="multipart/form-data",
-    )
+    error = _archive_error(client, _zip_bytes(bomb_payload).getvalue(), kind="workspace")
 
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "Archive contains highly compressed entries"
+    assert error["code"] == "invalid-archive"
+    assert error["error"] == "Archive contains highly compressed entries"
 
 
 def test_import_workspace_rejects_nested_archive_files(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
 
-    resp = client.post(
-        "/api/import/workspace",
-        data={
-            "file": (
-                _zip_bytes(
-                    {
-                        ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
-                        ".bullpen/nested/archive.zip": "not really a zip, still blocked",
-                    }
-                ),
-                "workspace.zip",
-            )
-        },
-        content_type="multipart/form-data",
+    error = _archive_error(
+        client,
+        _zip_bytes(
+            {
+                ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
+                ".bullpen/nested/archive.zip": "not really a zip, still blocked",
+            }
+        ).getvalue(),
+        kind="workspace",
     )
 
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "Archive contains nested archive files"
+    assert error["code"] == "invalid-archive"
+    assert error["error"] == "Archive contains nested archive files"

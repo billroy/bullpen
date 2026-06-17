@@ -56,15 +56,21 @@ def test_app_wires_toolbar_export_import_events():
     assert "@import-workspace=\"importWorkspace\"" in text
     assert "@import-workers=\"importWorkers\"" in text
     assert "@import-all=\"importAll\"" in text
-    assert "await _downloadZip('/api/export/all', 'bullpen-all.zip');" in text
+    assert "await _downloadArchiveExport({ kind: 'all' }, 'bullpen-all.zip');" in text
     assert "await _downloadBentoExport({ kind: 'worker-group', slots }, 'bullpen-workers.bento');" in text
     assert "async function exportWorker(slot) {" in text
+    assert "socket.emit('archive:export', _wsData({ ...payload, request_id: requestId }));" in text
     assert "socket.emit('bento:export', _wsData(payload));" in text
     assert "await _downloadBentoExport({ kind: 'worker', slot }, 'bullpen-worker.bento');" in text
+    assert "socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "socket.emit('bento:import', _wsData(payload));" in text
     assert "const data = await file.arrayBuffer();" in text
-    assert "await _importZip('/api/import/all', file, 'All-workspace import complete');" in text
+    assert "const result = await _importArchiveFile(file, 'all');" in text
     assert "Workers import complete' + (count ? ` (${count})` : '')" in text
+    assert "/api/export/workspace" not in text
+    assert "/api/export/all" not in text
+    assert "/api/import/workspace" not in text
+    assert "/api/import/all" not in text
     assert "/api/export/workers" not in text
     assert "/api/import/workers" not in text
 
