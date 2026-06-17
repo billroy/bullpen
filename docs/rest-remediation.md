@@ -1,6 +1,6 @@
 # REST Remediation
 
-Status: Active remediation plan
+Status: Completed; guarded by `tests/test_rest_remediation.py`
 
 ## Position
 
@@ -82,48 +82,38 @@ These now use Socket.IO:
 - `manager:setup-providers-start`
 - `manager:base-rebuild-start`
 
-## Current Main-App REST Surface
+## Current REST Surface
 
-None currently identified.
+None currently identified in the main app or the manager/admin app.
 
-## Manager/Admin REST Surface
+Bullpen still has ordinary HTTP routes for pages, static assets, login/logout,
+CSRF bootstrap, health checks, favicon handling, and vendor assets. Those are
+not REST application endpoints. Browser-visible application commands and state
+queries are expected to use Socket.IO events.
 
-None currently identified.
+## Completion Notes
 
-Assessment:
+The manager UI already had a Socket.IO lifecycle for live profile updates and
+PTY traffic. All identified manager/admin `/api/*` routes have now been moved
+to Socket.IO.
 
-- The manager UI already has a Socket.IO lifecycle for live profile updates and
-- PTY traffic.
-- All identified manager/admin `/api/*` routes have been moved to Socket.IO.
+`tests/test_rest_remediation.py` asserts that both Flask URL maps expose no
+`/api/*` routes. Feature-specific tests also assert that removed routes return
+404 or are absent from frontend source where appropriate.
 
-Remediation:
+## Ongoing Guardrails
 
-1. Keep manager mutations on request/response Socket.IO events.
-2. If any manager REST route returns, document the reason and harden it with
-   CSRF/origin checks.
+1. Keep application behavior on request/response Socket.IO events.
+2. Keep `tests/test_rest_remediation.py` green.
+3. Before adding any new `/api/*` route, document why Socket.IO is unsuitable
+   for that behavior and get explicit architecture approval.
+4. Any approved browser-callable HTTP application route must have explicit
+   authentication, CSRF/origin protection, resource limits, and tests.
 
-## Order Of Operations
+## Regression Criteria
 
-1. Remove or contain app mutation/file transport:
-   - workspace/all import
-   - workspace/all export
-   - raw file download/media transport
-2. Keep manager/admin REST at zero identified routes.
-
-## Acceptance Criteria
-
-For each route removed:
-
-- Frontend no longer calls the HTTP path.
-- Flask URL map no longer includes the route.
-- Tests assert the route is absent or the frontend does not reference it.
-- Socket.IO event tests cover the replacement behavior.
-- Docs/security notes are updated so stale REST references do not imply
-  support.
-
-For each route retained:
-
-- The document names the route.
-- The document explains why Socket.IO is not the preferred transport.
-- The route has explicit auth, CSRF/origin protection when browser-callable,
-  resource limits, and tests.
+- The main app URL map contains no `/api/*` routes.
+- The manager/admin URL map contains no `/api/*` routes.
+- Frontend source does not call removed `/api/*` routes.
+- Socket.IO event tests cover replacement behavior for removed routes.
+- Docs that describe current supported behavior do not imply `/api/*` support.

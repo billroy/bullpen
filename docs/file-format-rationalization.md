@@ -21,8 +21,8 @@ Before the Bento worker-package migration, Bullpen had three
 downloadable/importable zip archive formats:
 
 1. Workspace archive
-   - Export: `/api/export/workspace`
-   - Import: `/api/import/workspace`
+   - Former export: `/api/export/workspace`
+   - Former import: `/api/import/workspace`
    - Payload: one workspace `.bullpen/` directory with runtime config stripped.
 
 2. Legacy workers archive
@@ -36,8 +36,8 @@ downloadable/importable zip archive formats:
      export/import path was wired.
 
 3. All-workspaces archive
-   - Export: `/api/export/all`
-   - Import: `/api/import/all`
+   - Former export: `/api/export/all`
+   - Former import: `/api/import/all`
    - Payload: `workspaces/<workspaceId>/.bullpen/...` plus
      `bullpen-export.json`.
 
@@ -566,8 +566,8 @@ Support a migration period:
 
 - Continue accepting current `.zip` workspace archives.
 - Export new packages from the primary sharing UI.
-- Keep old workspace and all-workspace archive exports under an advanced or
-  maintenance menu until the REST endpoint audit resolves their fate.
+- Keep old workspace and all-workspace archive behavior available through
+  Socket.IO during the migration period.
 - Remove the legacy worker zip REST routes as part of the Socket.IO Bento worker
   remediation:
   - `/api/export/workers`
