@@ -41,6 +41,7 @@ from server import service_worker as service_worker_mod
 from server import mcp_auth
 from server import opencode_models
 from server import worktrees as worktree_mod
+from server.bento_carrier import BentoCarrierError, inspect_bento
 from server.global_settings import load_global_settings
 from server.terminal import TerminalManager
 
@@ -1126,6 +1127,17 @@ def create_app(
             as_attachment=True,
             download_name=export_name,
         )
+
+    @app.route("/api/bento/preview", methods=["POST"])
+    @auth.require_auth
+    def bento_preview():
+        upload = request.files.get("file")
+        if not upload or not upload.filename:
+            return jsonify({"ok": False, "error": "Missing upload file", "code": "missing-upload"}), 400
+        try:
+            return jsonify(inspect_bento(upload.stream))
+        except BentoCarrierError as e:
+            return jsonify({"ok": False, "error": e.message, "code": e.code}), 400
 
     @app.route("/api/service/preview", methods=["POST"])
     @auth.require_auth
