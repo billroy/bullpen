@@ -327,3 +327,22 @@ def test_bento_import_preserve_reports_placement_conflict(tmp_workspace):
     error = _received(client, "bento:error")
 
     assert error["code"] == "placement-conflict"
+
+
+def test_bento_import_with_preview_state_rejects_stale_workspace(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": [{"name": "One", "type": "ai", "col": 0, "row": 0}]})
+    exported = _export_worker(client, kind="worker", slot=0)
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+    preview = _preview(client, exported["data"])
+    preview_state = preview["bullpen"]["placement"]["state"]
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": [{"name": "Two", "type": "ai", "col": 0, "row": 0}]})
+
+    client.emit("bento:import", {"file": exported["data"], "placement": {"strategy": "preserve", "state": preview_state}})
+    error = _received(client, "bento:error")
+
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    assert error["code"] == "stale-preview"
+    assert [worker["name"] for worker in layout["slots"]] == ["Two"]

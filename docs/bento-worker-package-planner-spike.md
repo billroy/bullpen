@@ -121,6 +121,7 @@ added:
   ],
   "placement": {
     "status": "conflict",
+    "state": "placement-fingerprint",
     "requested": [
       {"item_id": "worker.builder", "coord": {"col": 0, "row": 0}}
     ],
@@ -144,6 +145,11 @@ The first worker-package MVP can avoid server-side preview tokens by requiring
 the file to be uploaded again on apply. If that proves awkward, add a short-lived
 preview token in a later pass.
 
+The preview placement `state` is a stateless fingerprint of the requested target
+cells and any current occupants. Apply requests may send it back as
+`placement.state` or `placement.expected_state`; if the same cells no longer
+match, import rejects with `stale-preview` before writing.
+
 ## Apply Request Shape
 
 Suggested `bento:import` request:
@@ -154,6 +160,7 @@ Suggested `bento:import` request:
   "mode": "merge",
   "placement": {
     "strategy": "choose-anchor",
+    "state": "placement-fingerprint-from-preview",
     "anchor": {"col": 4, "row": 2}
   },
   "name_conflicts": "rename",

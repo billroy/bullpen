@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from io import BytesIO
 import json
 import os
@@ -300,13 +301,19 @@ def _coord_occupied(slots, col, row, *, cols):
         worker_col = _safe_int(worker.get("col"), index % cols)
         worker_row = _safe_int(worker.get("row"), index // cols)
         if worker_col == col and worker_row == row:
-            return worker
+            return index, worker
     return None
+
+
+def _placement_state(entries):
+    payload = json.dumps(entries, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _placement_preview(workers, existing_slots, *, cols):
     requested = []
     conflicts = []
+    state_entries = []
     seen = set()
     duplicate_targets = []
     for item_id, worker in workers:
@@ -318,11 +325,25 @@ def _placement_preview(workers, existing_slots, *, cols):
         requested.append({"item_id": item_id, "coord": coord})
         existing = _coord_occupied(existing_slots, coord["col"], coord["row"], cols=cols)
         if existing:
-            conflicts.append({"coord": coord, "existing_name": existing.get("name") or "Worker"})
+            existing_index, existing_worker = existing
+            conflicts.append({"coord": coord, "existing_name": existing_worker.get("name") or "Worker"})
+            state_existing = {
+                "slot": existing_index,
+                "name": str(existing_worker.get("name") or "Worker"),
+                "type": str(existing_worker.get("type") or "ai"),
+            }
+        else:
+            state_existing = None
+        state_entries.append({
+            "item_id": item_id,
+            "coord": coord,
+            "existing": state_existing,
+        })
     status = "conflict" if conflicts or duplicate_targets else "available"
     options = ["preserve"] if status == "available" else ["choose-anchor", "place-right", "place-below", "cancel"]
     return {
         "status": status,
+        "state": _placement_state(state_entries),
         "requested": requested,
         "conflicts": conflicts,
         "duplicate_targets": duplicate_targets,
@@ -474,12 +495,15 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge"):
     manifest = _load_manifest(fileobj)
     worker_payloads, profile_payloads = _load_worker_payloads(fileobj, manifest)
     workers = []
+    placement_workers = []
     warnings = []
     for item, worker in worker_payloads:
         if not isinstance(worker, dict):
             warnings.append(f"{item.get('id') or 'worker'} is not a worker object")
             continue
-        workers.append(sanitize_worker_for_package(worker))
+        sanitized = sanitize_worker_for_package(worker)
+        workers.append(sanitized)
+        placement_workers.append((item.get("id") or "", sanitized))
     if not workers:
         raise BentoCarrierError("Package does not contain workers", "missing-workers")
 
@@ -487,6 +511,12 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge"):
     layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
     slots = layout.setdefault("slots", [])
     cols = _safe_cols(config)
+    placement = placement if isinstance(placement, dict) else {}
+    expected_state = placement.get("expected_state") or placement.get("state")
+    if expected_state:
+        current_state = _placement_preview(placement_workers, slots, cols=cols).get("state")
+        if current_state != expected_state:
+            raise BentoCarrierError("Import preview is stale; preview the package again", "stale-preview")
     positions, placement_result = _resolve_import_positions(workers, slots, cols=cols, placement=placement)
 
     imported_profiles = []
