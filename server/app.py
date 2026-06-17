@@ -16,7 +16,6 @@ from flask import (
     redirect,
     render_template_string,
     request,
-    send_file,
     session,
     url_for,
 )
@@ -30,7 +29,6 @@ from server.archive_transport import (
 from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json, write_json, read_frontmatter
-from server.file_browser import FileBrowserError, is_textual_mime, workspace_file_path
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
@@ -442,39 +440,6 @@ def create_app(
         if ws is None:
             return None, (jsonify({"error": "Unknown workspace"}), 404)
         return ws, None
-
-    @app.route("/api/files/<path:filepath>")
-    @auth.require_auth
-    def raw_file_content(filepath):
-        """Serve raw/downloadable workspace files only."""
-        ws, error = _workspace_from_id(_workspace_id_from_args())
-        if error:
-            return error
-        ws_path = ws.path
-        try:
-            full_path = workspace_file_path(ws_path, filepath)
-        except FileBrowserError as e:
-            return jsonify({"error": e.message}), e.status
-
-        if not os.path.isfile(full_path):
-            abort(404)
-
-        # Determine if binary
-        import mimetypes
-        mime, _ = mimetypes.guess_type(full_path)
-
-        # Serve the raw file directly (e.g. open HTML in browser)
-        if request.args.get("raw"):
-            send_kwargs = {"mimetype": mime or "text/plain"}
-            if mime in {"text/html", "application/xhtml+xml"}:
-                send_kwargs["as_attachment"] = True
-                send_kwargs["download_name"] = os.path.basename(full_path)
-            return send_file(full_path, **send_kwargs)
-
-        if mime and (mime.startswith("image/") or not is_textual_mime(mime)):
-            return send_file(full_path, mimetype=mime)
-
-        return jsonify({"error": "Use Socket.IO file events for text file content"}), 400
 
     @socketio.on("connect")
     def on_connect(auth_data=None):

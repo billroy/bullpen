@@ -6,6 +6,8 @@ import subprocess
 
 from server.persistence import atomic_write, ensure_within
 
+MAX_BINARY_FILE_BYTES = 50 * 1024 * 1024
+
 
 class FileBrowserError(Exception):
     def __init__(self, message, status=400):
@@ -108,6 +110,24 @@ def read_text_file(workspace, filepath):
     with open(full_path, "r", errors="replace") as handle:
         content = handle.read()
     return {"path": filepath, "content": content, "mime": mime or "text/plain"}
+
+
+def read_binary_file(workspace, filepath):
+    full_path = workspace_file_path(workspace, filepath)
+    if not os.path.isfile(full_path):
+        raise FileBrowserError("File not found", status=404)
+    size = os.path.getsize(full_path)
+    if size > MAX_BINARY_FILE_BYTES:
+        raise FileBrowserError("File too large for socket transfer", status=413)
+    mime, _ = mimetypes.guess_type(full_path)
+    with open(full_path, "rb") as handle:
+        content = handle.read()
+    return {
+        "path": filepath,
+        "data": content,
+        "mime": mime or "application/octet-stream",
+        "size": size,
+    }
 
 
 def file_exists(workspace, filepath):

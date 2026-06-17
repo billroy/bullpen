@@ -33,6 +33,9 @@ leaving only narrowly justified HTTP surfaces.
   - `/api/files`
   - text `GET /api/files/<path>`
   - `PUT /api/files/<path>`
+- Raw file download/media transport:
+  - raw/download/media `GET /api/files/<path>?raw=1`
+  - image/PDF media `GET /api/files/<path>`
 - Workspace/all archive transport:
   - `/api/export/workspace`
   - `/api/export/all`
@@ -52,30 +55,13 @@ These now use Socket.IO:
 - `files:read`
 - `files:exists`
 - `files:write`
+- `files:binary`
 - `archive:export`
 - `archive:import`
 
 ## Current Main-App REST Surface
 
-### Files
-
-- raw/download/media `GET /api/files/<path>?raw=1`
-- image/PDF media `GET /api/files/<path>`
-
-Assessment:
-
-- File browsing/editing is now Socket.IO app behavior.
-- The remaining HTTP path is a browser file transport for downloads, PDF/embed,
-  image preview, and raw HTML attachment handling.
-- This route remains suspect and should be revisited, but it is not an app state
-  query or mutation endpoint.
-
-Remediation:
-
-1. Keep raw/media HTTP route isolated from JSON app behavior.
-2. Preserve path traversal checks and HTML-as-attachment behavior.
-3. Decide later whether downloads/media previews should move to blob URLs fed by
-   Socket.IO binary payloads.
+None currently identified.
 
 ## Manager/Admin REST Surface
 

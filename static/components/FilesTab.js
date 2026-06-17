@@ -91,10 +91,10 @@ const FilesTab = {
           <div class="file-editor-toolbar">
             <template v-if="!editing">
               <button v-if="canEdit" class="btn btn-sm" @click="startEditing">Edit</button>
-              <a class="btn btn-sm file-download-button" :href="downloadUrl" :download="activeFile.name" title="Download">
+              <button class="btn btn-sm file-download-button" @click="downloadActiveFile" title="Download">
                 <i data-lucide="download" aria-hidden="true"></i>
                 <span>Download</span>
-              </a>
+              </button>
             </template>
             <template v-if="editing">
               <button class="btn btn-sm btn-primary" @click="saveEdit">Save</button>
@@ -108,11 +108,13 @@ const FilesTab = {
           </div>
           <!-- Image -->
           <div v-else-if="isImage" class="file-view-image">
-            <img :src="_filesUrl(activeFile.path)" :alt="activeFile.name" />
+            <img v-if="activeFile.objectUrl" :src="activeFile.objectUrl" :alt="activeFile.name" />
+            <div v-else class="empty-state">Loading...</div>
           </div>
           <!-- PDF -->
           <div v-else-if="isPdf" class="file-view-pdf">
-            <embed :src="_filesUrl(activeFile.path, { raw: '1' })" type="application/pdf" width="100%" height="100%" />
+            <embed v-if="activeFile.objectUrl" :src="activeFile.objectUrl" type="application/pdf" width="100%" height="100%" />
+            <div v-else class="empty-state">Loading...</div>
           </div>
           <!-- HTML preview -->
           <div v-else-if="isHtml" class="file-view-html">
@@ -187,10 +189,6 @@ const FilesTab = {
       if (this.activeFile.content && this.activeFile.content.length > 1_000_000) return false;
       return true;
     },
-    downloadUrl() {
-      if (!this.activeFile) return '#';
-      return this._filesUrl(this.activeFile.path, { raw: '1' });
-    },
     renderedMarkdown() {
       if (!this.activeFile?.content) return '';
       const md = window.markdownit({ html: false, linkify: true, typographer: true });
@@ -233,6 +231,7 @@ const FilesTab = {
     workspaceId(newId, oldId) {
       if (newId === oldId) return;
       this._destroyAceEditor();
+      this._revokeAllObjectUrls();
       this.openFiles = [];
       this.activeFile = null;
       this.editing = false;
@@ -251,6 +250,7 @@ const FilesTab = {
   unmounted() {
     document.removeEventListener('click', this.onGlobalClick);
     this._destroyAceEditor();
+    this._revokeAllObjectUrls();
   },
   updated() {
     renderLucideIcons(this.$el);
@@ -261,13 +261,6 @@ const FilesTab = {
     },
     onGlobalClick() {
       this.showFileMenu = false;
-    },
-    _filesUrl(path, params = {}) {
-      const base = path ? '/api/files/' + encodeURI(path) : '/api/files';
-      const query = new URLSearchParams(params);
-      if (this.workspaceId) query.set('workspaceId', this.workspaceId);
-      const suffix = query.toString();
-      return suffix ? base + '?' + suffix : base;
     },
     async loadTree() {
       this.loadingTree = true;
@@ -295,9 +288,10 @@ const FilesTab = {
       }
       // Images/PDFs don't need content fetch
       if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.pdf'].includes(ext)) {
-        const file = { path: node.path, name: node.name, content: null };
+        const file = { path: node.path, name: node.name, content: null, objectUrl: '', mime: '' };
         this.openFiles.push(file);
         this.activeFile = file;
+        await this._loadBinaryForFile(file);
         return;
       }
       try {
@@ -359,12 +353,7 @@ const FilesTab = {
         this._destroyAceEditor();
         this.editing = false;
       }
-      const idx = this.openFiles.findIndex(f => f.path === path);
-      if (idx < 0) return;
-      this.openFiles.splice(idx, 1);
-      if (this.activeFile?.path === path) {
-        this.activeFile = this.openFiles[Math.min(idx, this.openFiles.length - 1)] || null;
-      }
+      this._removeOpenFile(path);
     },
     startEditing() {
       this.editContent = this.activeFile.content || '';
@@ -398,13 +387,62 @@ const FilesTab = {
       if (cancelled?.isNew) this._removeOpenFile(cancelled.path);
     },
     async reloadActiveFile() {
-      if (!this.activeFile || this.isImage || this.isPdf) return;
+      if (!this.activeFile) return;
+      if (this.isImage || this.isPdf) {
+        await this._loadBinaryForFile(this.activeFile);
+        return;
+      }
       try {
         const data = await this.$root.requestFileRead({ workspaceId: this.workspaceId, path: this.activeFile.path });
         this.activeFile.content = data.content;
       } catch (e) {
         // Silently skip reload failures
       }
+    },
+    async _loadBinaryForFile(file) {
+      if (!file?.path) return;
+      try {
+        const data = await this.$root.requestFileBinary({ workspaceId: this.workspaceId, path: file.path });
+        this._revokeObjectUrl(file);
+        const blob = new Blob([this._payloadBytes(data.data)], { type: data.mime || 'application/octet-stream' });
+        file.objectUrl = URL.createObjectURL(blob);
+        file.mime = data.mime || '';
+      } catch (e) {
+        console.error('Failed to load binary file', e);
+      }
+    },
+    _payloadBytes(data) {
+      if (data instanceof ArrayBuffer) return data;
+      if (data instanceof Uint8Array) return data;
+      if (Array.isArray(data)) return new Uint8Array(data);
+      if (data && Array.isArray(data.data)) return new Uint8Array(data.data);
+      return data;
+    },
+    _revokeObjectUrl(file) {
+      if (file?.objectUrl) {
+        URL.revokeObjectURL(file.objectUrl);
+        file.objectUrl = '';
+      }
+    },
+    _revokeAllObjectUrls() {
+      for (const file of this.openFiles) this._revokeObjectUrl(file);
+    },
+    downloadActiveFile() {
+      if (!this.activeFile) return;
+      let objectUrl = this.activeFile.objectUrl;
+      let shouldRevoke = false;
+      if (!objectUrl) {
+        const blob = new Blob([this.activeFile.content || ''], { type: this.activeFile.mime || 'text/plain' });
+        objectUrl = URL.createObjectURL(blob);
+        shouldRevoke = true;
+      }
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = this.activeFile.name || 'download';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      if (shouldRevoke) URL.revokeObjectURL(objectUrl);
     },
     getExt(name) {
       const dot = name.lastIndexOf('.');
@@ -413,6 +451,7 @@ const FilesTab = {
     _removeOpenFile(path) {
       const idx = this.openFiles.findIndex(f => f.path === path);
       if (idx < 0) return;
+      this._revokeObjectUrl(this.openFiles[idx]);
       this.openFiles.splice(idx, 1);
       if (this.activeFile?.path === path) {
         this.activeFile = this.openFiles[Math.min(idx, this.openFiles.length - 1)] || null;

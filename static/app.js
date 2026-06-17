@@ -1536,6 +1536,15 @@ const app = createApp({
         errorMessage: 'Failed to load file',
       });
     }
+    function requestFileBinary(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:binary',
+        successEvent: 'files:binary',
+        payload,
+        timeoutMessage: 'File download timed out',
+        errorMessage: 'Failed to load file',
+      });
+    }
     function requestFileExists(payload = {}) {
       return _requestFileEvent({
         requestEvent: 'files:exists',
@@ -2275,7 +2284,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileExists, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

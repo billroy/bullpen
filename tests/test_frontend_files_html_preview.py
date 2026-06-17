@@ -19,8 +19,9 @@ def test_files_tab_does_not_open_html_in_new_same_origin_window():
 def test_files_tab_detail_viewer_has_download_button_next_to_edit():
     text = _read("static/components/FilesTab.js")
     assert "<button v-if=\"canEdit\" class=\"btn btn-sm\" @click=\"startEditing\">Edit</button>" in text
-    assert "class=\"btn btn-sm file-download-button\" :href=\"downloadUrl\" :download=\"activeFile.name\"" in text
-    assert "return this._filesUrl(this.activeFile.path, { raw: '1' });" in text
+    assert "class=\"btn btn-sm file-download-button\" @click=\"downloadActiveFile\"" in text
+    assert "URL.createObjectURL(blob)" in text
+    assert "_filesUrl(" not in text
 
 
 def test_files_tab_has_distinct_loaded_empty_and_error_states():
@@ -36,8 +37,11 @@ def test_files_tab_uses_socket_events_for_app_file_operations():
     app = _read("static/app.js")
     assert "this.$root.requestFileTree({ workspaceId: this.workspaceId })" in text
     assert "this.$root.requestFileRead({ workspaceId: this.workspaceId, path: node.path })" in text
+    assert "this.$root.requestFileBinary({ workspaceId: this.workspaceId, path: file.path })" in text
     assert "this.$root.requestFileWrite({" in text
     assert "this.$root.requestFileExists({ workspaceId: this.workspaceId, path })" in text
     assert "filesFetch(" not in text
     assert "function requestFileTree(payload = {})" in app
+    assert "function requestFileBinary(payload = {})" in app
+    assert "requestEvent: 'files:binary'" in app
     assert "socket.emit(requestEvent, _wsData({ ...payload, request_id: requestId }));" in app

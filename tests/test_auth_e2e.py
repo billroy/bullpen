@@ -106,6 +106,13 @@ def _session_cookie_header(response):
     return ""
 
 
+def _received(client, name):
+    for event in client.get_received():
+        if event["name"] == name:
+            return event["args"][0]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Auth ENABLED — HTTP
 # ---------------------------------------------------------------------------
@@ -244,33 +251,34 @@ class TestHttpAuthEnabled:
         r = auth_client.get("/logout")
         assert r.status_code == 405
 
-    def test_raw_file_unauthenticated_returns_401_when_xhr(self, auth_client):
+    def test_legacy_raw_file_route_removed_when_unauthenticated_xhr(self, auth_client):
         with open(os.path.join(auth_client.application.config["workspace"], "auth.txt"), "w", encoding="utf-8") as handle:
             handle.write("hello")
         r = auth_client.get(
             "/api/files/auth.txt?raw=1",
             headers={"X-Requested-With": "XMLHttpRequest"},
         )
+        assert "/api/files/<path:filepath>" not in {rule.rule for rule in auth_client.application.url_map.iter_rules()}
         assert r.status_code == 401
 
-    def test_raw_file_unauthenticated_redirects_when_browser(self, auth_client):
+    def test_legacy_raw_file_route_removed_when_unauthenticated_browser(self, auth_client):
         with open(os.path.join(auth_client.application.config["workspace"], "auth.txt"), "w", encoding="utf-8") as handle:
             handle.write("hello")
         r = auth_client.get("/api/files/auth.txt?raw=1")
+        assert "/api/files/<path:filepath>" not in {rule.rule for rule in auth_client.application.url_map.iter_rules()}
         assert r.status_code == 302
-        assert "/login" in r.headers["Location"]
 
     def test_next_param_preserved(self, auth_client):
         r = auth_client.get("/")
         loc = r.headers["Location"]
         assert "next=/" in loc
 
-    def test_authenticated_can_hit_raw_file_transport(self, auth_client):
+    def test_authenticated_raw_file_transport_route_is_removed(self, auth_client):
         with open(os.path.join(auth_client.application.config["workspace"], "auth.txt"), "w", encoding="utf-8") as handle:
             handle.write("hello")
         _login(auth_client)
         r = auth_client.get("/api/files/auth.txt?raw=1")
-        assert r.status_code == 200
+        assert r.status_code == 404
 
     def test_authenticated_index_200(self, auth_client):
         _login(auth_client)
@@ -300,6 +308,26 @@ class TestSocketIoAuthEnabled:
         events = sio_client.get_received()
         names = [e["name"] for e in events]
         assert "state:init" in names
+        sio_client.disconnect()
+
+    def test_socketio_authenticated_binary_file_read(self, auth_app):
+        with open(os.path.join(auth_app.config["workspace"], "auth.bin"), "wb") as handle:
+            handle.write(b"binary")
+        http = auth_app.test_client()
+        _login(http)
+        sio_client = socketio.test_client(auth_app, flask_test_client=http)
+        sio_client.get_received()
+
+        sio_client.emit("files:binary", {
+            "workspaceId": auth_app.config["startup_workspace_id"],
+            "request_id": "auth-binary",
+            "path": "auth.bin",
+        })
+
+        body = _received(sio_client, "files:binary")
+        assert body is not None
+        assert body["request_id"] == "auth-binary"
+        assert body["data"] == b"binary"
         sio_client.disconnect()
 
     def test_socketio_connect_mcp_token_accepted_without_session(self, auth_app):
@@ -343,11 +371,11 @@ class TestAuthDisabled:
         r = noauth_client.get("/")
         assert r.status_code == 200
 
-    def test_no_auth_raw_file_transport(self, noauth_client):
+    def test_no_auth_raw_file_transport_route_is_removed(self, noauth_client):
         with open(os.path.join(noauth_client.application.config["workspace"], "noauth.txt"), "w", encoding="utf-8") as handle:
             handle.write("hello")
         r = noauth_client.get("/api/files/noauth.txt?raw=1")
-        assert r.status_code == 200
+        assert r.status_code == 404
 
     def test_no_auth_login_page_redirects_to_index(self, noauth_client):
         # With auth disabled there is no login page — /login bounces
@@ -359,4 +387,22 @@ class TestAuthDisabled:
     def test_no_auth_socketio_connects(self, noauth_app):
         client = socketio.test_client(noauth_app)
         assert client.is_connected() is True
+        client.disconnect()
+
+    def test_no_auth_socketio_binary_file_read(self, noauth_app):
+        with open(os.path.join(noauth_app.config["workspace"], "noauth.bin"), "wb") as handle:
+            handle.write(b"binary")
+        client = socketio.test_client(noauth_app)
+        client.get_received()
+
+        client.emit("files:binary", {
+            "workspaceId": noauth_app.config["startup_workspace_id"],
+            "request_id": "noauth-binary",
+            "path": "noauth.bin",
+        })
+
+        body = _received(client, "files:binary")
+        assert body is not None
+        assert body["request_id"] == "noauth-binary"
+        assert body["data"] == b"binary"
         client.disconnect()
