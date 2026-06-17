@@ -1790,6 +1790,12 @@ def _assemble_prompt(bp_dir, worker, task):
             f"`update_ticket(status=...)`; Bullpen will apply that status "
             f"after this worker run finishes."
         )
+    parts.append(
+        "Bullpen workspace state files are server-owned. Do not edit `.bullpen/layout.json` "
+        "or `.bullpen/tasks` directly. For Value worker reads or writes, use the Bullpen "
+        "`list_values`, `get_value`, and `set_value` MCP tools. Updating a Value worker "
+        "must preserve its existing `name` label unless the task explicitly asks to rename it."
+    )
     prompt_body = _ticket_body_for_prompt(task.get("body", ""))
     if prompt_body:
         parts.append(render_untrusted_text_block("Ticket Body", prompt_body, "TASK_BODY"))

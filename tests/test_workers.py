@@ -1509,6 +1509,18 @@ class TestPromptAssembly:
         assert "Trust Boundary" in prompt
         assert "BEGIN TASK_BODY" in prompt
 
+    def test_prompt_tells_workers_to_use_mcp_for_value_updates(self, bp_dir, worker_slot):
+        task = create_task(bp_dir, "Refresh value cells")
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        task_data = read_task(bp_dir, task["id"])
+
+        prompt = _assemble_prompt(bp_dir, worker, task_data)
+
+        assert "Do not edit `.bullpen/layout.json`" in prompt
+        assert "`list_values`, `get_value`, and `set_value` MCP tools" in prompt
+        assert "preserve its existing `name` label" in prompt
+
     def test_task_metadata_is_delimited_as_untrusted(self, bp_dir, worker_slot):
         task = create_task(
             bp_dir,

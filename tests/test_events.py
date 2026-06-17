@@ -877,6 +877,25 @@ class TestWorkerEvents:
         assert [entry["value"] for entry in worker["history"]] == [5, 8]
         assert worker["history"][-1]["updated_at"] == worker["updated_at"]
 
+    def test_value_set_event_preserves_name_when_filling_blank_value(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "btc-usd", "value": "", "value_type": "auto"},
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "btc-usd", "value": "65583", "value_type": "number"})
+        updated = get_event(c, "layout:updated")
+        worker = updated["slots"][0]
+
+        assert worker["type"] == "value"
+        assert worker["name"] == "btc-usd"
+        assert worker["value"] == 65583
+        assert worker["value_type"] == "number"
+        assert worker["resolved_value_type"] == "number"
+
     def test_value_increment_event_updates_numeric_value(self, client):
         c, app = client
         c.emit("worker:add", {
