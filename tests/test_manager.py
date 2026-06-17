@@ -317,6 +317,8 @@ def test_manager_read_surfaces_use_socketio(tmp_path):
     ports = _manager_received(sio, "manager:ports:result")
     sio.emit("manager:setup-session", {"requestId": "setup-one", "profileId": profile["id"]})
     setup = _manager_received(sio, "manager:setup-session:result")
+    sio.emit("manager:setup-providers-start", {"requestId": "setup-start-one", "profileId": profile["id"]})
+    setup_start = _manager_received(sio, "manager:setup-providers-start:result")
 
     assert logs["requestId"] == "profile-logs"
     assert logs["text"] == "hello from manager\n"
@@ -324,10 +326,13 @@ def test_manager_read_surfaces_use_socketio(tmp_path):
     assert ports["profiles"][0]["id"] == profile["id"]
     assert setup["requestId"] == "setup-one"
     assert setup["error"] == "Provider setup is only available for microsandbox profiles"
+    assert setup_start["requestId"] == "setup-start-one"
+    assert setup_start["error"] == "Provider setup is only available for microsandbox profiles"
     removed_routes = {
         "/api/microsandbox/base-snapshots",
         "/api/microsandbox/base-snapshots/rebuild/logs",
         "/api/profiles/<profile_id>/setup-providers/session",
+        "/api/profiles/<profile_id>/setup-providers/start",
         "/api/profiles/<profile_id>/logs",
         "/api/ports",
     }
@@ -460,6 +465,8 @@ def test_manager_provider_setup_uses_raw_xterm_input():
     assert "socketRef.value.emit('manager:pty-input', { sessionId: state.setupSessionId, data })" in manager_js
     assert "terminal.value.onResize" in manager_js
     assert "manager:pty-resize" in manager_js
+    assert "managerRequest('manager:setup-providers-start', 'manager:setup-providers-start:result'" in manager_js
+    assert "setup-providers/start" not in manager_js
     assert 'class="terminal-input-row"' not in manager_js
     assert "const matchesStartingProfile = !state.setupSessionId && payload.profileId === state.setupProfileId;" in manager_js
     assert "if (!state.setupSessionId && payload.sessionId) state.setupSessionId = payload.sessionId;" in manager_js
@@ -586,8 +593,10 @@ def test_manager_header_menu_exposes_base_rebuild_actions():
     assert 'title="Main menu" aria-label="Main menu" @click.stop="toggleMainMenu"' in manager_js
     assert "Rebuild base snapshot" in manager_js
     assert "Base rebuild logs" in manager_js
-    assert "api('/api/microsandbox/base-snapshots/rebuild'" in manager_js
+    assert "managerRequest('manager:base-rebuild-start', 'manager:base-rebuild-start:result', { base })" in manager_js
     assert "managerRequest('manager:base-rebuild-logs', 'manager:base-rebuild-logs:result')" in manager_js
+    assert "/api/microsandbox/base-snapshots/rebuild" not in manager_js
+    assert "/api/" not in manager_js
     assert ".menu-wrap" in manager_css
     assert ".menu-panel" in manager_css
     assert "pointer-events: none;" in manager_css
@@ -605,7 +614,7 @@ def test_manager_dropdowns_open_on_enter_key():
     assert '<select v-model="form.base" :disabled="state.baseSnapshotsLoading" @keydown.enter="openDropdownOnEnter">' in manager_js
 
 
-def test_manager_api_rebuilds_microsandbox_base_in_background(tmp_path, monkeypatch):
+def test_manager_socketio_rebuilds_microsandbox_base_in_background(tmp_path, monkeypatch):
     class FakeProcess:
         def wait(self):
             return 0
@@ -624,13 +633,16 @@ def test_manager_api_rebuilds_microsandbox_base_in_background(tmp_path, monkeypa
     monkeypatch.setattr(manager_mod.subprocess, "Popen", lambda argv, **kwargs: calls.append((argv, kwargs)) or FakeProcess())
     app, socketio = create_manager_app(home=tmp_path / "manager")
 
-    response = app.test_client().post(
-        "/api/microsandbox/base-snapshots/rebuild",
-        json={"base": "bullpen-microsandbox-local-v2"},
-    )
+    client = socketio.test_client(app)
+    client.get_received()
+    client.emit("manager:base-rebuild-start", {
+        "requestId": "base-rebuild",
+        "base": "bullpen-microsandbox-local-v2",
+    })
+    response = _manager_received(client, "manager:base-rebuild-start:result")
 
-    assert response.status_code == 200
-    assert response.get_json()["started"] is True
+    assert response["requestId"] == "base-rebuild"
+    assert response["started"] is True
     assert calls
     argv, kwargs = calls[0]
     assert "deploy-sandbox.py" in argv[1]
@@ -638,14 +650,13 @@ def test_manager_api_rebuilds_microsandbox_base_in_background(tmp_path, monkeypa
     assert argv[argv.index("--base") + 1] == "bullpen-microsandbox-local-v2"
     assert kwargs["cwd"] == str(manager_mod.repo_root())
 
-    client = socketio.test_client(app)
-    client.get_received()
     client.emit("manager:base-rebuild-logs", {"requestId": "base-logs"})
     logs = _manager_received(client, "manager:base-rebuild-logs:result")
     assert logs["requestId"] == "base-logs"
     assert logs["prepare"]["running"] is False
     assert logs["prepare"]["returncode"] == 0
     assert "deploy-sandbox.py" in logs["text"]
+    assert "/api/microsandbox/base-snapshots/rebuild" not in {rule.rule for rule in app.url_map.iter_rules()}
     assert "/api/microsandbox/base-snapshots/rebuild/logs" not in {rule.rule for rule in app.url_map.iter_rules()}
     client.disconnect()
 

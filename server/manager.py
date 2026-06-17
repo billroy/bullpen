@@ -1510,25 +1510,6 @@ def create_manager_app(
     def favicon():
         return ("", 204)
 
-    @app.route("/api/microsandbox/base-snapshots/rebuild", methods=["POST"])
-    def api_microsandbox_base_rebuild():
-        payload = request.get_json(silent=True) or {}
-        try:
-            return jsonify(base_rebuild.start(base=payload.get("base")))
-        except ManagerError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    @app.route("/api/profiles/<profile_id>/setup-providers/start", methods=["POST"])
-    def api_setup_providers(profile_id):
-        try:
-            result = runtime.setup_providers(profile_id)
-            if isinstance(result.get("profile"), dict):
-                result = dict(result)
-                result["profile"] = profile_payload(result["profile"])
-            return jsonify(result)
-        except ManagerError as exc:
-            return jsonify({"error": str(exc)}), 400
-
     @socketio.on("connect")
     def on_connect():
         socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
@@ -1602,6 +1583,16 @@ def create_manager_app(
             result = {"requestId": data.get("requestId"), "error": str(exc), "snapshots": []}
         socketio.emit("manager:base-snapshots:result", result, to=request.sid)
 
+    @socketio.on("manager:base-rebuild-start")
+    def on_manager_base_rebuild_start(payload):
+        data = payload or {}
+        try:
+            result = dict(base_rebuild.start(base=data.get("base")))
+            result["requestId"] = data.get("requestId")
+        except ManagerError as exc:
+            result = {"requestId": data.get("requestId"), "error": str(exc)}
+        socketio.emit("manager:base-rebuild-start:result", result, to=request.sid)
+
     @socketio.on("manager:base-rebuild-logs")
     def on_manager_base_rebuild_logs(payload):
         data = payload or {}
@@ -1621,6 +1612,19 @@ def create_manager_app(
             socketio.emit("manager:setup-session:result", result, to=request.sid)
         except ManagerError as exc:
             socketio.emit("manager:setup-session:result", {"requestId": data.get("requestId"), "error": str(exc)}, to=request.sid)
+
+    @socketio.on("manager:setup-providers-start")
+    def on_manager_setup_providers_start(payload):
+        data = payload or {}
+        try:
+            result = runtime.setup_providers(str(data.get("profileId") or ""))
+            if isinstance(result.get("profile"), dict):
+                result = dict(result)
+                result["profile"] = profile_payload(result["profile"])
+            result["requestId"] = data.get("requestId")
+        except ManagerError as exc:
+            result = {"requestId": data.get("requestId"), "error": str(exc)}
+        socketio.emit("manager:setup-providers-start:result", result, to=request.sid)
 
     @socketio.on("manager:profile-logs")
     def on_manager_profile_logs(payload):

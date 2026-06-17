@@ -190,18 +190,6 @@ createApp({
       return String(text || '').replace(/(^|[^\x1b])\[([0-9;]*)m/g, (_match, prefix, codes) => `${prefix}\x1b[${codes}m`);
     }
 
-    async function api(path, options = {}) {
-      const response = await fetch(path, {
-        headers: { 'Content-Type': 'application/json' },
-        ...options,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || `Request failed: ${response.status}`);
-      }
-      return data;
-    }
-
     let managerRequestSeq = 0;
     function managerRequest(requestEvent, responseEvent, payload = {}) {
       return new Promise((resolve, reject) => {
@@ -373,10 +361,7 @@ createApp({
       state.baseRebuildBusy = true;
       state.baseRebuildLogOpen = true;
       try {
-        const data = await api('/api/microsandbox/base-snapshots/rebuild', {
-          method: 'POST',
-          body: JSON.stringify({ base }),
-        });
+        const data = await managerRequest('manager:base-rebuild-start', 'manager:base-rebuild-start:result', { base });
         updateBaseRebuildState(data.prepare);
         await loadBaseRebuildLogs();
       } catch (err) {
@@ -428,7 +413,7 @@ createApp({
       try {
         await nextTick();
         await ensureTerminal();
-        const data = await api(`/api/profiles/${profile.id}/setup-providers/start`, { method: 'POST', body: '{}' });
+        const data = await managerRequest('manager:setup-providers-start', 'manager:setup-providers-start:result', { profileId: profile.id });
         state.setupSessionId = data.sessionId;
         state.setupProfileId = profile.id;
         syncTerminalPtySize();

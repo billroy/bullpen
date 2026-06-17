@@ -51,6 +51,8 @@ leaving only narrowly justified HTTP surfaces.
   - `/api/microsandbox/base-snapshots`
   - `/api/microsandbox/base-snapshots/rebuild/logs`
   - `/api/ports`
+  - `/api/profiles/<profile_id>/setup-providers/start`
+  - `/api/microsandbox/base-snapshots/rebuild`
 
 These now use Socket.IO:
 
@@ -77,6 +79,8 @@ These now use Socket.IO:
 - `manager:profile-create`
 - `manager:profile-delete`
 - `manager:profile-action`
+- `manager:setup-providers-start`
+- `manager:base-rebuild-start`
 
 ## Current Main-App REST Surface
 
@@ -84,23 +88,18 @@ None currently identified.
 
 ## Manager/Admin REST Surface
 
-`server/manager.py` has a separate admin/management UI with these REST routes:
-
-- `/api/profiles/<profile_id>/setup-providers/start`
-- `/api/microsandbox/base-snapshots/rebuild`
+None currently identified.
 
 Assessment:
 
-- These are mutating manager/admin actions.
 - The manager UI already has a Socket.IO lifecycle for live profile updates and
-  PTY traffic, so the remaining mutations should move to request/response
-  manager Socket.IO events.
+- PTY traffic.
+- All identified manager/admin `/api/*` routes have been moved to Socket.IO.
 
 Remediation:
 
-1. Move provider setup start to manager Socket.IO.
-2. Move base snapshot rebuild start to manager Socket.IO.
-4. If any manager REST route remains, document the reason and harden it with
+1. Keep manager mutations on request/response Socket.IO events.
+2. If any manager REST route returns, document the reason and harden it with
    CSRF/origin checks.
 
 ## Order Of Operations
@@ -109,7 +108,7 @@ Remediation:
    - workspace/all import
    - workspace/all export
    - raw file download/media transport
-2. Remove manager/admin mutation REST.
+2. Keep manager/admin REST at zero identified routes.
 
 ## Acceptance Criteria
 
