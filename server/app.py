@@ -31,7 +31,6 @@ from server import auth
 from server.events import register_events
 from server.init import init_workspace
 from server.persistence import read_json, write_json, read_frontmatter, ensure_within, atomic_write
-from server.transfer import transfer_worker, TransferError
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
@@ -678,114 +677,6 @@ def create_app(
             return jsonify({"ok": True})
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/worker/transfer", methods=["POST"])
-    @auth.require_auth
-    def worker_transfer():
-        """Copy or move a worker between workspaces."""
-        data = request.get_json(silent=True)
-        if not data or not isinstance(data, dict):
-            return jsonify({"error": "invalid JSON body"}), 400
-
-        try:
-            result = transfer_worker(
-                manager,
-                source_workspace_id=data.get("source_workspace_id"),
-                source_slot=data.get("source_slot"),
-                dest_workspace_id=data.get("dest_workspace_id"),
-                dest_slot=data.get("dest_slot"),
-                mode=data.get("mode", "copy"),
-                copy_profile=bool(data.get("copy_profile", False)),
-            )
-        except TransferError as e:
-            return jsonify({"error": str(e)}), e.status
-
-        # Notify destination workspace clients
-        dst_ws = manager.get(data.get("dest_workspace_id"))
-        if dst_ws:
-            dst_layout = read_json(os.path.join(dst_ws.bp_dir, "layout.json"))
-            dst_config = read_json(os.path.join(dst_ws.bp_dir, "config.json"))
-            dst_layout = serialize_layout(dst_layout, viewer=ViewerContext(can_edit=True), config=dst_config)
-            dst_layout["workspaceId"] = dst_ws.id
-            socketio.emit("layout:updated", dst_layout, to=dst_ws.id)
-
-        # On move, also notify source workspace clients
-        if data.get("mode") == "move":
-            src_ws = manager.get(data.get("source_workspace_id"))
-            if src_ws:
-                src_layout = read_json(os.path.join(src_ws.bp_dir, "layout.json"))
-                src_config = read_json(os.path.join(src_ws.bp_dir, "config.json"))
-                src_layout = serialize_layout(src_layout, viewer=ViewerContext(can_edit=True), config=src_config)
-                src_layout["workspaceId"] = src_ws.id
-                socketio.emit("layout:updated", src_layout, to=src_ws.id)
-
-        return jsonify(result)
-
-    @app.route("/api/worker/transfer_group", methods=["POST"])
-    @auth.require_auth
-    def worker_transfer_group():
-        """Copy or move multiple workers between workspaces."""
-        data = request.get_json(silent=True)
-        if not data or not isinstance(data, dict):
-            return jsonify({"error": "invalid JSON body"}), 400
-
-        source_slots = data.get("source_slots")
-        if not isinstance(source_slots, list) or not source_slots:
-            return jsonify({"error": "source_slots must be a non-empty list"}), 400
-
-        seen = set()
-        slots = []
-        for raw in source_slots:
-            try:
-                slot = int(raw)
-            except (TypeError, ValueError):
-                return jsonify({"error": "source_slots must contain integers"}), 400
-            if slot in seen:
-                continue
-            seen.add(slot)
-            slots.append(slot)
-
-        results = []
-        warnings = []
-        try:
-            for slot in slots:
-                result = transfer_worker(
-                    manager,
-                    source_workspace_id=data.get("source_workspace_id"),
-                    source_slot=slot,
-                    dest_workspace_id=data.get("dest_workspace_id"),
-                    dest_slot=None,
-                    mode=data.get("mode", "copy"),
-                    copy_profile=bool(data.get("copy_profile", False)),
-                )
-                results.append(result)
-                warnings.extend(result.get("warnings") or [])
-        except TransferError as e:
-            return jsonify({"error": str(e), "results": results}), e.status
-
-        dst_ws = manager.get(data.get("dest_workspace_id"))
-        if dst_ws:
-            dst_layout = read_json(os.path.join(dst_ws.bp_dir, "layout.json"))
-            dst_config = read_json(os.path.join(dst_ws.bp_dir, "config.json"))
-            dst_layout = serialize_layout(dst_layout, viewer=ViewerContext(can_edit=True), config=dst_config)
-            dst_layout["workspaceId"] = dst_ws.id
-            socketio.emit("layout:updated", dst_layout, to=dst_ws.id)
-
-        if data.get("mode") == "move":
-            src_ws = manager.get(data.get("source_workspace_id"))
-            if src_ws:
-                src_layout = read_json(os.path.join(src_ws.bp_dir, "layout.json"))
-                src_config = read_json(os.path.join(src_ws.bp_dir, "config.json"))
-                src_layout = serialize_layout(src_layout, viewer=ViewerContext(can_edit=True), config=src_config)
-                src_layout["workspaceId"] = src_ws.id
-                socketio.emit("layout:updated", src_layout, to=src_ws.id)
-
-        return jsonify({
-            "ok": True,
-            "count": len(results),
-            "results": results,
-            "warnings": warnings,
-        })
 
     def _export_workspace_zip_bytes(ws):
         mem = BytesIO()

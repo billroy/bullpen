@@ -30,6 +30,7 @@ from server import workers as worker_mod
 from server import service_worker as service_worker_mod
 from server import values as value_mod
 from server.workers import _terminate_proc
+from server.transfer import TransferError, transfer_worker
 from server.locks import write_lock as _write_lock
 from server import mcp_auth
 from server.bento_carrier import BentoCarrierError, inspect_bento
@@ -69,9 +70,11 @@ from server.validation import (
 from server.worker_types import (
     NOTIFICATION_KOKORO_VOICES,
     NOTIFICATION_SPEECH_ENGINES,
+    ViewerContext,
     copy_worker_slot,
     normalize_layout,
     normalize_worker_slot,
+    serialize_layout,
 )
 
 
@@ -471,6 +474,16 @@ def register_events(socketio, app):
                 bp_dir = None
             if bp_dir:
                 service_worker_mod.emit_workspace_states(bp_dir, ws_id, socketio=socketio)
+
+    def _emit_workspace_layout(ws_id):
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            return
+        layout = read_json(os.path.join(ws.bp_dir, "layout.json"))
+        config = read_json(os.path.join(ws.bp_dir, "config.json"))
+        layout = serialize_layout(layout, viewer=ViewerContext(can_edit=True), config=config)
+        _emit("layout:updated", layout, ws.id)
 
     def _archive_tasks_by_status(bp_dir, status, ws_id):
         """Archive live tasks with a matching status and clean worker references."""
@@ -1147,6 +1160,87 @@ def register_events(socketio, app):
             layout["slots"][slot] = None
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
+
+    @socketio.on("worker:transfer")
+    def on_worker_transfer(data):
+        if not isinstance(data, dict):
+            emit("worker:transfer:error", {"ok": False, "error": "invalid transfer payload"})
+            return
+
+        manager = app.config["manager"]
+        source_ws_id = data.get("source_workspace_id") or data.get("workspaceId")
+        if not _ensure_workspace_membership(source_ws_id):
+            return
+
+        raw_slots = data.get("source_slots")
+        if isinstance(raw_slots, list) and raw_slots:
+            seen = set()
+            slots = []
+            for raw in raw_slots:
+                try:
+                    slot = int(raw)
+                except (TypeError, ValueError):
+                    emit("worker:transfer:error", {
+                        "workspaceId": source_ws_id,
+                        "ok": False,
+                        "error": "source_slots must contain integers",
+                    })
+                    return
+                if slot in seen:
+                    continue
+                seen.add(slot)
+                slots.append(slot)
+        else:
+            try:
+                slots = [int(data.get("source_slot"))]
+            except (TypeError, ValueError):
+                emit("worker:transfer:error", {
+                    "workspaceId": source_ws_id,
+                    "ok": False,
+                    "error": "source_slot is required",
+                })
+                return
+
+        results = []
+        warnings = []
+        try:
+            for slot in slots:
+                result = transfer_worker(
+                    manager,
+                    source_workspace_id=source_ws_id,
+                    source_slot=slot,
+                    dest_workspace_id=data.get("dest_workspace_id"),
+                    dest_slot=data.get("dest_slot") if len(slots) == 1 else None,
+                    mode=data.get("mode", "copy"),
+                    copy_profile=bool(data.get("copy_profile", False)),
+                )
+                results.append(result)
+                warnings.extend(result.get("warnings") or [])
+        except TransferError as e:
+            emit("worker:transfer:error", {
+                "workspaceId": source_ws_id,
+                "ok": False,
+                "error": str(e),
+                "status": e.status,
+                "results": results,
+            })
+            return
+
+        dest_ws_id = data.get("dest_workspace_id")
+        if dest_ws_id:
+            _emit_workspace_layout(dest_ws_id)
+        if data.get("mode") == "move":
+            _emit_workspace_layout(source_ws_id)
+
+        emit("worker:transferred", {
+            "workspaceId": source_ws_id,
+            "ok": True,
+            "count": len(results),
+            "results": results,
+            "warnings": warnings,
+            "dest_workspace_id": dest_ws_id,
+            "mode": data.get("mode", "copy"),
+        })
 
     @socketio.on("worker:move")
     @with_lock

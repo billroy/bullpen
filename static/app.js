@@ -1317,19 +1317,42 @@ const app = createApp({
       transferSlots.value = [];
       focusWorkerGridSoon();
     }
+    function _requestWorkerTransfer(payload) {
+      return new Promise((resolve, reject) => {
+        const expectedWorkspaceId = payload.source_workspace_id || payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Worker transfer timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('worker:transferred', onTransferred);
+          socket.off('worker:transfer:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onTransferred = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Transfer failed'));
+        };
+        socket.on('worker:transferred', onTransferred);
+        socket.on('worker:transfer:error', onError);
+        socket.emit('worker:transfer', _wsData(payload));
+      });
+    }
     async function transferWorker(payload) {
       try {
         const groupTransfer = Array.isArray(payload.source_slots) && payload.source_slots.length > 1;
-        const resp = await fetch(groupTransfer ? '/api/worker/transfer_group' : '/api/worker/transfer', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await resp.json();
-        if (!resp.ok) {
-          addToast(data.error || 'Transfer failed', 'error');
-          return;
-        }
+        const data = await _requestWorkerTransfer(payload);
         const destName = projects.find(p => p.id === payload.dest_workspace_id)?.name || 'workspace';
         const subject = groupTransfer ? `${payload.source_slots.length} workers` : 'Worker';
         addToast(`${subject} ${payload.mode === 'move' ? 'moved' : 'copied'} to ${destName}`);

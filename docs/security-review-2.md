@@ -37,7 +37,7 @@ Evidence:
 
 Impact:
 
-If a browser has an authenticated Bullpen session, another same-site origin, misconfigured proxy, browser extension, compromised local page, or future relaxation of `SameSite`/cookie rules can drive state-changing operations. The most sensitive target is `/api/files/<path>` because it can write workspace code; imports can replace `.bullpen` worker state; transfer can alter worker topology.
+If a browser has an authenticated Bullpen session, another same-site origin, misconfigured proxy, browser extension, compromised local page, or future relaxation of `SameSite`/cookie rules can drive state-changing operations. The most sensitive target is `/api/files/<path>` because it can write workspace code; imports can replace `.bullpen` worker state.
 
 Risk is mitigated by `SameSite=Lax`, but not eliminated. Relying on cookie SameSite alone is weaker than explicit CSRF/origin checks for a tool that can write code and start processes.
 
@@ -46,7 +46,7 @@ Remediation:
 - Require `X-CSRF-Token` on every non-GET HTTP route when auth is enabled.
 - Expose a general `/api/csrf` endpoint or include the token in initial state.
 - Reject mutating requests with missing/untrusted `Origin` or `Referer` when a browser origin is present.
-- Add tests for PUT `/api/files`, POST `/api/import/*`, and POST `/api/worker/transfer` without/with valid CSRF.
+- Add tests for PUT `/api/files` and POST `/api/import/*` without/with valid CSRF.
 
 ### P1: Authenticated users can register or create arbitrary local project paths
 
@@ -226,7 +226,7 @@ Remediation:
 
 ## Suggested Security Test Additions
 
-- HTTP CSRF tests for `/api/files/<path>` PUT, `/api/import/workspace`, `/api/import/all`, and `/api/worker/transfer`.
+- HTTP CSRF tests for `/api/files/<path>` PUT, `/api/import/workspace`, and `/api/import/all`.
 - Project path tests covering configured root allowlist, symlink escapes, absolute paths outside roots, and Docker `/workspace` expectations.
 - Import tests that flag or pause shell/service workers, scheduled triggers, and command fields.
 - Frontend supply-chain test that rejects unpinned CDN URLs and missing SRI.

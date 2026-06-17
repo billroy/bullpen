@@ -862,6 +862,66 @@ class TestTaskEvents:
 
 
 class TestWorkerEvents:
+    def test_worker_transfer_copies_over_socket(self):
+        with tempfile.TemporaryDirectory(prefix="bullpen_transfer_socket_") as root:
+            ws_a = os.path.join(root, "project-a")
+            ws_b = os.path.join(root, "project-b")
+            os.makedirs(ws_a)
+            os.makedirs(ws_b)
+            app = create_app(ws_a, no_browser=True)
+            manager = app.config["manager"]
+            ws_a_id = app.config["startup_workspace_id"]
+            ws_b_id = manager.register_project(ws_b, name="Project B")
+
+            bp_a = manager.get_bp_dir(ws_a_id)
+            layout = read_json(os.path.join(bp_a, "layout.json"))
+            while len(layout["slots"]) <= 0:
+                layout["slots"].append(None)
+            layout["slots"][0] = {
+                "name": "Alpha",
+                "state": "idle",
+                "task_queue": [],
+                "activation": "manual",
+                "disposition": "review",
+            }
+            write_json(os.path.join(bp_a, "layout.json"), layout)
+
+            source = socketio.test_client(app)
+            dest = socketio.test_client(app)
+            source.get_received()
+            dest.get_received()
+            dest.emit("project:join", {"workspaceId": ws_b_id})
+            dest.get_received()
+
+            source.emit("worker:transfer", {
+                "workspaceId": ws_a_id,
+                "source_workspace_id": ws_a_id,
+                "source_slot": 0,
+                "source_slots": [0],
+                "dest_workspace_id": ws_b_id,
+                "mode": "copy",
+            })
+
+            transferred = _wait_for_event(source, "worker:transferred")
+            dest_layout = _wait_for_event(dest, "layout:updated")
+
+            assert transferred is not None
+            assert transferred["workspaceId"] == ws_a_id
+            assert transferred["ok"] is True
+            assert transferred["count"] == 1
+            assert dest_layout is not None
+            assert dest_layout["workspaceId"] == ws_b_id
+            assert any(slot and slot.get("name") == "Alpha" for slot in dest_layout["slots"])
+
+            source.disconnect()
+            dest.disconnect()
+
+    def test_worker_transfer_rest_routes_are_removed(self, client):
+        _c, app = client
+        routes = {rule.rule for rule in app.url_map.iter_rules()}
+        assert "/api/worker/transfer" not in routes
+        assert "/api/worker/transfer_group" not in routes
+
     def test_add_worker(self, client):
         c, app = client
         c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})

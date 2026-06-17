@@ -256,7 +256,10 @@ def test_worker_transfer_modal_supports_group_payloads():
     modal_text = _read("static/components/WorkerTransferModal.js")
     assert "const transferSlots = ref([]);" in app_text
     assert ":slot-indices=\"transferSlots\"" in app_text
-    assert "fetch(groupTransfer ? '/api/worker/transfer_group' : '/api/worker/transfer'" in app_text
+    assert "socket.emit('worker:transfer', _wsData(payload));" in app_text
+    assert "socket.on('worker:transferred', onTransferred);" in app_text
+    assert "socket.on('worker:transfer:error', onError);" in app_text
+    assert "/api/worker/transfer" not in app_text
     assert "props: ['visible', 'worker', 'slotIndex', 'slotIndices'" in modal_text
     assert "source_slots: this.resolvedSlots" in modal_text
     assert "transferSubject()" in modal_text
