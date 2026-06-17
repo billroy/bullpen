@@ -53,6 +53,7 @@ def test_live_agent_component_syncs_user_messages_between_windows():
 
 def test_live_agent_project_switch_preserves_live_agent_mode():
     text = _read("static/app.js")
+    assert "const currentChatTab = chatTabs.find(t => t.id === activeTab.value && t.workspaceId === currentWsId);" in text
     assert "const wasLiveAgent = !!currentChatTab;" in text
     assert "const ensuredChatTab = _ensureChatTabForWorkspace(wsId);" in text
     assert "const preferred = chatTabs.find(t => t.id === lastLiveAgentTabByWorkspace[wsId] && t.workspaceId === wsId);" in text
@@ -62,8 +63,15 @@ def test_live_agent_project_switch_preserves_live_agent_mode():
 
 def test_live_agent_tabs_remember_last_active_per_workspace():
     text = _read("static/app.js")
+    assert "const tab = chatTabs.find(t => t.id === tabId && t.workspaceId === wsId)" in text
     assert "lastLiveAgentTabByWorkspace[tab.workspaceId] = tab.id;" in text
     assert "lastLiveAgentTabByWorkspace[currentChatTab.workspaceId] = currentChatTab.id;" in text
     assert "@click=\"setActiveTab(tab.id)\"" in text
     assert "connected, activeTab, setActiveTab," in text
     assert "if (lastLiveAgentTabByWorkspace[wsId] === tabId)" in text
+
+
+def test_live_agent_components_are_scoped_to_active_workspace():
+    text = _read("static/app.js")
+    assert 'v-show="activeTab === ct.id && ct.workspaceId === activeWorkspaceId"' in text
+    assert ':key="ct.workspaceId + \':\' + ct.id"' in text

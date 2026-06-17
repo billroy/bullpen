@@ -1825,6 +1825,61 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 13, "outpu
         assert usage["input_tokens"] == 13
         assert usage["output_tokens"] == 5
 
+    def test_opencode_chat_mcp_config_uses_requested_workspace(self, client, monkeypatch, tmp_path):
+        c, app = client
+        fake_opencode = tmp_path / "opencode"
+        capture_path = tmp_path / "opencode-chat-workspace-capture.json"
+        fake_opencode.write_text(
+            """#!/usr/bin/env python3
+import json
+import os
+
+config_path = os.environ.get("OPENCODE_CONFIG", "")
+config = {}
+if config_path:
+    with open(config_path, encoding="utf-8") as f:
+        config = json.load(f)
+
+with open(os.environ["BULLPEN_OPENCODE_CHAT_CAPTURE"], "w", encoding="utf-8") as f:
+    json.dump({
+        "cwd": os.getcwd(),
+        "opencode_config": config,
+    }, f)
+
+print(json.dumps({"type": "text", "part": {"text": "workspace ok"}}), flush=True)
+""",
+            encoding="utf-8",
+        )
+        fake_opencode.chmod(0o755)
+        monkeypatch.setenv("BULLPEN_OPENCODE_PATH", str(fake_opencode))
+        monkeypatch.setenv("BULLPEN_OPENCODE_CHAT_CAPTURE", str(capture_path))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+        with tempfile.TemporaryDirectory(prefix="bullpen_opencode_chat_ws_") as parent:
+            project_path = os.path.join(parent, "speaky-like-project")
+            c.emit("project:new", {"path": project_path})
+            events = c.get_received()
+            project_updates = [evt for evt in events if evt["name"] == "projects:updated"]
+            listed = project_updates[-1]["args"][0]
+            ws_id = next(p["id"] for p in listed if p["name"] == "speaky-like-project")
+            target_bp_dir = os.path.join(project_path, ".bullpen")
+
+            c.emit("chat:send", {
+                "workspaceId": ws_id,
+                "sessionId": "session-opencode-workspace",
+                "provider": "opencode",
+                "model": "opencode/mimo-v2.5-free",
+                "message": "list values",
+            })
+            assert _wait_for_event(c, "chat:done")
+
+            capture = json.loads(capture_path.read_text(encoding="utf-8"))
+            mcp = capture["opencode_config"]["mcp"]["bullpen"]
+            command_paths = {os.path.realpath(item) for item in mcp["command"]}
+            assert os.path.realpath(capture["cwd"]) == os.path.realpath(project_path)
+            assert os.path.realpath(target_bp_dir) in command_paths
+            assert os.path.realpath(app.config["bp_dir"]) not in command_paths
+
     def test_chat_emits_error_on_provider_failure(self, client):
         c, _ = client
         register_adapter("chat-failing-mock", ChatFailingAdapter())

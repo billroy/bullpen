@@ -328,7 +328,8 @@ const app = createApp({
       // a default entry until state:init arrives from the project:join below.
       if (!workspaces[wsId] && !projects.some(p => p.id === wsId)) return;
       _getWs(wsId);
-      const currentChatTab = chatTabs.find(t => t.id === activeTab.value);
+      const currentWsId = activeWorkspaceId.value;
+      const currentChatTab = chatTabs.find(t => t.id === activeTab.value && t.workspaceId === currentWsId);
       if (currentChatTab?.workspaceId) {
         lastLiveAgentTabByWorkspace[currentChatTab.workspaceId] = currentChatTab.id;
       }
@@ -487,7 +488,9 @@ const app = createApp({
     }
 
     function _rememberLiveAgentTab(tabId) {
-      const tab = chatTabs.find(t => t.id === tabId);
+      const wsId = activeWorkspaceId.value;
+      const tab = chatTabs.find(t => t.id === tabId && t.workspaceId === wsId)
+        || chatTabs.find(t => t.id === tabId);
       if (tab?.workspaceId) lastLiveAgentTabByWorkspace[tab.workspaceId] = tab.id;
     }
 
@@ -2070,8 +2073,8 @@ const app = createApp({
             />
             <LiveAgentChatTab
               v-for="ct in chatTabs"
-              v-show="activeTab === ct.id"
-              :key="ct.id"
+              v-show="activeTab === ct.id && ct.workspaceId === activeWorkspaceId"
+              :key="ct.workspaceId + ':' + ct.id"
               :session-id="ct.sessionId"
               :workspace-id="ct.workspaceId"
               :last-ai-selection="globalSettings.last_ai_selection"
