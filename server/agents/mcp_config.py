@@ -111,17 +111,27 @@ def codex_mcp_overrides(bp_dir: str) -> list[str]:
     ]
 
 
-def opencode_mcp_config(bp_dir: str) -> dict:
+def opencode_mcp_config(bp_dir: str, *, launcher_path: str | None = None) -> dict:
     spec = bullpen_mcp_server_spec(bp_dir)
+    # OpenCode bootstraps project config for paths it sees in local MCP command
+    # definitions and environment. Avoid exposing the Bullpen source tree in
+    # either place; the adapter supplies a temp launcher that imports the helper.
+    mcp_cwd = os.path.abspath(bp_dir)
+    if launcher_path:
+        command = [spec.command, os.path.abspath(launcher_path), *spec.args[1:]]
+        environment = {}
+    else:
+        command = [spec.command, "-m", "server.mcp_tools", *spec.args[1:]]
+        environment = spec.env
     return {
         "$schema": "https://opencode.ai/config.json",
         "mcp": {
             "bullpen": {
                 "type": "local",
                 "enabled": True,
-                "command": [spec.command, *spec.args],
-                "cwd": spec.cwd,
-                "environment": spec.env,
+                "command": command,
+                "cwd": mcp_cwd,
+                "environment": environment,
             },
         },
     }

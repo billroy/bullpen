@@ -1843,6 +1843,7 @@ if config_path:
 with open(os.environ["BULLPEN_OPENCODE_CHAT_CAPTURE"], "w", encoding="utf-8") as f:
     json.dump({
         "cwd": os.getcwd(),
+        "tmpdir": os.environ.get("TMPDIR", ""),
         "opencode_config": config,
     }, f)
 
@@ -1877,8 +1878,12 @@ print(json.dumps({"type": "text", "part": {"text": "workspace ok"}}), flush=True
             mcp = capture["opencode_config"]["mcp"]["bullpen"]
             command_paths = {os.path.realpath(item) for item in mcp["command"]}
             assert os.path.realpath(capture["cwd"]) == os.path.realpath(project_path)
+            assert os.path.dirname(mcp["command"][1]) == capture["tmpdir"]
+            assert mcp["command"][1].endswith("bullpen_mcp_launcher.py")
+            assert mcp["environment"] == {}
             assert os.path.realpath(target_bp_dir) in command_paths
             assert os.path.realpath(app.config["bp_dir"]) not in command_paths
+            assert os.path.realpath(mcp["cwd"]) == os.path.realpath(target_bp_dir)
 
     def test_chat_emits_error_on_provider_failure(self, client):
         c, _ = client

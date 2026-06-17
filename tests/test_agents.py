@@ -959,25 +959,47 @@ class TestOpenCodeAdapter:
         assert "test prompt" not in argv
         assert adapter.prompt_via_stdin() is True
 
-    def test_prepare_env_writes_opencode_mcp_config(self, tmp_workspace):
+    def test_prepare_env_writes_opencode_mcp_config(self, tmp_workspace, monkeypatch):
         adapter = OpenCodeAdapter()
         bp_dir = os.path.join(tmp_workspace, ".bullpen")
         os.makedirs(bp_dir, exist_ok=True)
         with open(os.path.join(bp_dir, "config.json"), "w", encoding="utf-8") as f:
             json.dump({"server_host": "0.0.0.0", "server_port": 5050}, f)
+        root = os.path.realpath(Path(opencode_mod.__file__).parents[2])
+        monkeypatch.setenv("PYTHONPATH", os.pathsep.join([root, "/kept/path"]))
+        monkeypatch.setenv("PWD", root)
+        monkeypatch.setenv("OLDPWD", root)
+        monkeypatch.setenv("INIT_CWD", root)
 
         env, cleanup_path = adapter.prepare_env(tmp_workspace, bp_dir=bp_dir)
         try:
             assert env["TMPDIR"] == cleanup_path
+            assert env["PYTHONPATH"] == "/kept/path"
+            assert env["PWD"] == os.path.abspath(tmp_workspace)
+            assert "OLDPWD" not in env
+            assert "INIT_CWD" not in env
             config_path = env["OPENCODE_CONFIG"]
             cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
             server = cfg["mcp"]["bullpen"]
             assert server["type"] == "local"
             assert server["enabled"] is True
             assert server["command"][0] == sys.executable
-            assert server["command"][1].endswith(os.path.join("server", "mcp_tools.py"))
+            assert os.path.dirname(server["command"][1]) == cleanup_path
+            assert server["command"][1].endswith("bullpen_mcp_launcher.py")
+            assert os.path.exists(server["command"][1])
+            assert not any(
+                item.endswith(os.path.join("server", "mcp_tools.py"))
+                for item in server["command"]
+            )
+            assert not any(
+                os.path.realpath(os.path.abspath(item)).startswith(root + os.sep)
+                for item in server["command"]
+                if os.path.isabs(item)
+            )
             assert "--bp-dir" in server["command"]
             assert os.path.abspath(bp_dir) in server["command"]
+            assert server["cwd"] == os.path.abspath(bp_dir)
+            assert server["environment"] == {}
             assert "--host" in server["command"]
             assert "127.0.0.1" in server["command"]
             assert "--port" in server["command"]

@@ -1080,6 +1080,8 @@ with open(os.environ["BULLPEN_OPENCODE_CAPTURE"], "w", encoding="utf-8") as f:
         "cwd": os.getcwd(),
         "prompt": prompt,
         "tmpdir": os.environ.get("TMPDIR", ""),
+        "pythonpath": os.environ.get("PYTHONPATH", ""),
+        "pwd": os.environ.get("PWD", ""),
         "opencode_config": config,
     }, f)
 
@@ -1093,6 +1095,8 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 11, "outpu
         monkeypatch.setenv("BULLPEN_OPENCODE_PATH", str(fake_opencode))
         monkeypatch.setenv("BULLPEN_OPENCODE_CAPTURE", str(capture_path))
         monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.setenv("PYTHONPATH", os.pathsep.join([os.getcwd(), "/kept/path"]))
+        monkeypatch.setenv("PWD", os.getcwd())
 
         layout = _load_layout(bp_dir)
         layout["slots"][worker_slot]["agent"] = "opencode"
@@ -1134,11 +1138,17 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 11, "outpu
         assert "Title: Lifecycle opencode" in capture["prompt"]
         assert "Run through the OpenCode adapter." in capture["prompt"]
         assert "bullpen-opencode-" in capture["tmpdir"]
+        assert capture["pythonpath"] == "/kept/path"
+        assert os.path.realpath(capture["pwd"]) == os.path.realpath(os.path.dirname(bp_dir))
         mcp = capture["opencode_config"]["mcp"]["bullpen"]
         assert mcp["type"] == "local"
         assert mcp["enabled"] is True
+        assert os.path.dirname(mcp["command"][1]) == capture["tmpdir"]
+        assert mcp["command"][1].endswith("bullpen_mcp_launcher.py")
+        assert mcp["environment"] == {}
         assert "--bp-dir" in mcp["command"]
         assert bp_dir in mcp["command"]
+        assert os.path.realpath(mcp["cwd"]) == os.path.realpath(bp_dir)
 
     def test_worker_success_appends_structured_usage_and_keeps_tokens_compatible(self, bp_dir, worker_slot):
         register_adapter("usage-mock", UsageAdapter(output="Usage output"))

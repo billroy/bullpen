@@ -115,21 +115,65 @@ class OpenCodeAdapter(AgentAdapter):
     def prepare_env(self, workspace, bp_dir=None, task_id=None):
         run_tmp = _make_isolated_tmpdir("bullpen-opencode-")
         env = os.environ.copy()
+        self._remove_source_pythonpath(env)
+        self._set_workspace_pwd(env, workspace)
         env["TMPDIR"] = run_tmp
         env["TMP"] = run_tmp
         env["TEMP"] = run_tmp
 
         if bp_dir:
             config_path = os.path.join(run_tmp, "opencode.json")
+            launcher_path = self._write_mcp_launcher(run_tmp)
             with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(self._mcp_config(bp_dir), f)
+                json.dump(self._mcp_config(bp_dir, launcher_path=launcher_path), f)
             env["OPENCODE_CONFIG"] = config_path
 
         return env, run_tmp
 
-    def _mcp_config(self, bp_dir):
+    def _write_mcp_launcher(self, run_tmp):
+        launcher_path = os.path.join(run_tmp, "bullpen_mcp_launcher.py")
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(launcher_path, "w", encoding="utf-8") as f:
+            f.write(
+                "import os\n"
+                "import sys\n\n"
+                f"ROOT = {root!r}\n"
+                "if ROOT not in sys.path:\n"
+                "    sys.path.insert(0, ROOT)\n\n"
+                "from server.mcp_tools import run_cli\n\n"
+                "raise SystemExit(run_cli())\n"
+            )
+        return launcher_path
+
+    def _remove_source_pythonpath(self, env):
+        root = os.path.realpath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        raw = env.get("PYTHONPATH")
+        if not raw:
+            return
+        kept = []
+        for part in raw.split(os.pathsep):
+            if not part:
+                continue
+            if os.path.realpath(os.path.abspath(part)) == root:
+                continue
+            kept.append(part)
+        if kept:
+            env["PYTHONPATH"] = os.pathsep.join(kept)
+        else:
+            env.pop("PYTHONPATH", None)
+
+    def _set_workspace_pwd(self, env, workspace):
+        if workspace:
+            env["PWD"] = os.path.abspath(workspace)
+        root = os.path.realpath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        for key in ("OLDPWD", "INIT_CWD"):
+            value = env.get(key)
+            if value and os.path.realpath(os.path.abspath(value)) == root:
+                env.pop(key, None)
+
+    def _mcp_config(self, bp_dir, *, launcher_path=None):
         """Return an OpenCode config object for Bullpen MCP tools."""
-        return opencode_mcp_config(bp_dir)
+        return opencode_mcp_config(bp_dir, launcher_path=launcher_path)
 
     def format_stream_line(self, line):
         """Extract readable text from OpenCode JSON events."""
