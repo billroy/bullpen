@@ -12,19 +12,25 @@ def _read(rel_path: str) -> str:
 
 def test_commits_tab_rows_open_diff_modal():
     text = _read("static/components/CommitsTab.js")
+    app = _read("static/app.js")
     assert "@click=\"openDiff(commit)\"" in text
     assert "class=\"modal-overlay commits-diff-overlay\"" in text
     assert "@keydown.escape=\"closeDiff\"" in text
-    assert "const diffUrl = `/api/commits/${encodeURIComponent(commit.hash)}/diff${query ? `?${query}` : ''}`;" in text
-    assert "const res = await fetch(diffUrl);" in text
+    assert "this.$root.requestCommitDiff({" in text
+    assert "function requestCommitDiff(payload = {})" in app
+    assert "socket.emit('commits:diff', _wsData({ ...payload, request_id: requestId }));" in app
+    assert "/api/commits" not in text
 
 
 def test_commits_tab_requests_are_workspace_scoped():
     text = _read("static/components/CommitsTab.js")
+    app = _read("static/app.js")
     assert "props: ['workspaceId', 'openDiffHash']" in text
     assert "emits: ['handled-open-diff-hash']" in text
-    assert "params.set('workspaceId', this.workspaceId);" in text
-    assert "fetch(`/api/commits?${params.toString()}`)" in text
+    assert "this.$root.requestCommits({" in text
+    assert "workspaceId: this.workspaceId" in text
+    assert "function requestCommits(payload = {})" in app
+    assert "socket.emit('commits:list', _wsData({ ...payload, request_id: requestId }));" in app
     assert "workspaceId(newId, oldId)" in text
     assert "openDiffHash:" in text
     assert "this.openDiffByHash(newHash);" in text

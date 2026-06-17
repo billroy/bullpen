@@ -109,17 +109,11 @@ const CommitsTab = {
       this.error = null;
       let loaded = 0;
       try {
-        const params = new URLSearchParams({
+        const data = await this.$root.requestCommits({
+          workspaceId: this.workspaceId,
           offset: String(this.offset),
           count: '10',
         });
-        if (this.workspaceId) params.set('workspaceId', this.workspaceId);
-        const res = await fetch(`/api/commits?${params.toString()}`);
-        if (res.status === 401) {
-          window.location = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
-          return;
-        }
-        const data = await res.json();
         if (data.error) {
           this.error = data.error;
           return;
@@ -150,18 +144,12 @@ const CommitsTab = {
       this.diffLoading = true;
       this.$nextTick(() => this.$refs.diffOverlay?.focus());
       try {
-        const params = new URLSearchParams();
-        if (this.workspaceId) params.set('workspaceId', this.workspaceId);
-        const query = params.toString();
-        const diffUrl = `/api/commits/${encodeURIComponent(commit.hash)}/diff${query ? `?${query}` : ''}`;
-        const res = await fetch(diffUrl);
-        if (res.status === 401) {
-          window.location = '/login?next=' + encodeURIComponent(window.location.pathname + window.location.search);
-          return;
-        }
-        const data = await res.json();
-        if (!res.ok || data.error) {
-          this.diffError = data.error || `Failed to load diff (${res.status})`;
+        const data = await this.$root.requestCommitDiff({
+          workspaceId: this.workspaceId,
+          hash: commit.hash,
+        });
+        if (data.error) {
+          this.diffError = data.error;
           return;
         }
         this.commitDiff = data.diff || '';

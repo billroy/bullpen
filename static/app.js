@@ -1417,6 +1417,73 @@ const app = createApp({
         socket.emit('models:opencode', _wsData({ ...payload, request_id: requestId }));
       });
     }
+    let commitsRequestSeq = 0;
+    function requestCommits(payload = {}) {
+      return new Promise((resolve, reject) => {
+        const requestId = `commits-list-${Date.now()}-${++commitsRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Commit list timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('commits:listed', onListed);
+          socket.off('commits:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onListed = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Failed to load commits'));
+        };
+        socket.on('commits:listed', onListed);
+        socket.on('commits:error', onError);
+        socket.emit('commits:list', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
+    function requestCommitDiff(payload = {}) {
+      return new Promise((resolve, reject) => {
+        const requestId = `commits-diff-${Date.now()}-${++commitsRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Commit diff timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('commits:diffed', onDiffed);
+          socket.off('commits:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onDiffed = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Failed to load diff'));
+        };
+        socket.on('commits:diffed', onDiffed);
+        socket.on('commits:error', onError);
+        socket.emit('commits:diff', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
     async function transferWorker(payload) {
       try {
         const groupTransfer = Array.isArray(payload.source_slots) && payload.source_slots.length > 1;
@@ -2085,7 +2152,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

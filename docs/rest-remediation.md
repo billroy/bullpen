@@ -26,6 +26,9 @@ leaving only narrowly justified HTTP surfaces.
   - `/api/service/preview`
 - OpenCode model lookup:
   - `/api/models/opencode`
+- Commit browsing:
+  - `/api/commits`
+  - `/api/commits/<commit_hash>/diff`
 
 These now use Socket.IO:
 
@@ -34,6 +37,8 @@ These now use Socket.IO:
 - `worker:transfer`
 - `service:preview`
 - `models:opencode`
+- `commits:list`
+- `commits:diff`
 
 ## Current Main-App REST Surface
 
@@ -86,31 +91,6 @@ Candidate events:
 - `files:written`
 - `files:error`
 
-### Commits
-
-- `/api/commits`
-- `/api/commits/<commit_hash>/diff`
-
-Assessment:
-
-- Commit browsing is app state/query behavior and belongs on Socket.IO.
-- It also shells out to git, so event responses should retain timeout and
-  validation behavior.
-
-Remediation:
-
-1. Add Socket.IO commit list and diff events.
-2. Migrate `CommitsTab`.
-3. Remove HTTP commit routes.
-
-Candidate events:
-
-- `commits:list`
-- `commits:listed`
-- `commits:diff`
-- `commits:diffed`
-- `commits:error`
-
 ## Manager/Admin REST Surface
 
 `server/manager.py` has a separate admin/management UI with these REST routes:
@@ -143,7 +123,6 @@ Remediation:
 ## Order Of Operations
 
 1. Remove app query routes:
-   - commits list/diff
    - file list/read
 2. Remove or contain app mutation/file transport:
    - file write

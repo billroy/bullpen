@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -751,6 +752,145 @@ def register_events(socketio, app):
         payload["request_id"] = (data or {}).get("request_id")
         payload["ok"] = payload.get("status") != "error"
         emit("models:opencode:listed", payload)
+
+    @socketio.on("commits:list")
+    def on_commits_list(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("commits:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            count = min(max(int((data or {}).get("count", 10)), 1), 50)
+        except (ValueError, TypeError):
+            count = 10
+        try:
+            offset = max(int((data or {}).get("offset", 0)), 0)
+        except (ValueError, TypeError):
+            offset = 0
+
+        fmt = "%H\x1f%h\x1f%s\x1f%an\x1f%ai\x1f%b\x1e"
+        try:
+            result = subprocess.run(
+                ["git", "log", f"-n{count}", f"--skip={offset}", f"--format={fmt}"],
+                capture_output=True, text=True, cwd=ws.path, timeout=10,
+            )
+        except Exception as e:
+            emit("commits:listed", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "commits": [],
+                "has_more": False,
+                "error": str(e),
+            })
+            return
+
+        if result.returncode != 0:
+            emit("commits:listed", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "commits": [],
+                "has_more": False,
+                "error": "Not a git repository",
+            })
+            return
+
+        commits = []
+        for record in result.stdout.split("\x1e"):
+            record = record.strip()
+            if not record:
+                continue
+            parts = record.split("\x1f", 5)
+            if len(parts) < 5:
+                continue
+            commits.append({
+                "hash": parts[0].strip(),
+                "short_hash": parts[1].strip(),
+                "subject": parts[2].strip(),
+                "author": parts[3].strip(),
+                "date": parts[4].strip(),
+                "body": parts[5].strip() if len(parts) > 5 else "",
+            })
+
+        try:
+            count_result = subprocess.run(
+                ["git", "rev-list", "--count", "HEAD"],
+                capture_output=True, text=True, cwd=ws.path, timeout=5,
+            )
+            total = int(count_result.stdout.strip()) if count_result.returncode == 0 else 0
+        except Exception:
+            total = 0
+        emit("commits:listed", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+            "commits": commits,
+            "has_more": (offset + len(commits)) < total,
+            "total": total,
+        })
+
+    @socketio.on("commits:diff")
+    def on_commits_diff(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        commit_hash = str((data or {}).get("hash") or "").strip()
+        if not ws:
+            emit("commits:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        if not re.fullmatch(r"[0-9a-fA-F]{7,40}", commit_hash):
+            emit("commits:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Invalid commit hash",
+            })
+            return
+        try:
+            result = subprocess.run(
+                ["git", "show", "--format=", "--patch", "--no-color", commit_hash],
+                capture_output=True, text=True, cwd=ws.path, timeout=10,
+            )
+        except Exception as e:
+            emit("commits:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": str(e),
+            })
+            return
+        if result.returncode != 0:
+            emit("commits:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Commit not found",
+            })
+            return
+        emit("commits:diffed", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+            "hash": commit_hash,
+            "diff": result.stdout,
+        })
 
     # --- Task events ---
 
