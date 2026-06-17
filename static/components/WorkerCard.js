@@ -229,6 +229,7 @@ const WorkerCard = {
               <h2>{{ valueGraphTitle }}</h2>
               <div class="value-history-header-actions">
                 <button class="btn btn-secondary" type="button" @click="exportValueHistoryCsv" :disabled="!valueHistoryRows.length">Export CSV</button>
+                <button class="btn btn-secondary" type="button" @click="clearValueHistory" :disabled="!valueHistoryRows.length">Clear</button>
                 <button class="btn btn-icon" type="button" @click="closeValueGraph">&times;</button>
               </div>
             </div>
@@ -255,12 +256,21 @@ const WorkerCard = {
                     <tr>
                       <th>Time</th>
                       <th>Value</th>
+                      <th class="value-history-action-header">Delete</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="(row, index) in valueHistoryRows" :key="row.updatedAt + '-' + index">
                       <td :title="row.updatedAt">{{ row.displayTime }}</td>
                       <td :title="row.displayValue">{{ row.displayValue }}</td>
+                      <td class="value-history-action-cell">
+                        <button
+                          class="value-history-delete-btn"
+                          type="button"
+                          title="Delete history row"
+                          aria-label="Delete history row"
+                          @click="deleteValueHistoryRow(index)">&times;</button>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
@@ -636,11 +646,12 @@ const WorkerCard = {
     valueHistoryRows() {
       if (!this.valueHistoryEnabled) return [];
       const history = Array.isArray(this.worker?.history) ? this.worker.history : [];
-      return history.map(entry => {
+      return history.map((entry, index) => {
         const updatedAt = String(entry?.updated_at || '').trim();
         const time = updatedAt ? Date.parse(updatedAt) : NaN;
         const rawValue = entry?.value;
         return {
+          index,
           rawValue,
           displayValue: rawValue === null || rawValue === undefined ? '' : String(rawValue),
           updatedAt,
@@ -959,6 +970,24 @@ const WorkerCard = {
     },
     closeValueGraph() {
       this.valueGraphOpen = false;
+    },
+    saveValueHistory(history) {
+      if (!this.valueHistoryEnabled) return;
+      const nextHistory = Array.isArray(history) ? history : [];
+      this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { history: nextHistory } });
+    },
+    deleteValueHistoryRow(index) {
+      if (!this.valueHistoryEnabled) return;
+      const history = Array.isArray(this.worker?.history) ? this.worker.history.slice() : [];
+      if (!Number.isInteger(index) || index < 0 || index >= history.length) return;
+      history.splice(index, 1);
+      this.saveValueHistory(history);
+    },
+    clearValueHistory() {
+      if (!this.valueHistoryEnabled || !this.valueHistoryRows.length) return;
+      if (!window.confirm('Clear all value history rows?')) return;
+      this.closeValueGraph();
+      this.saveValueHistory([]);
     },
     exportValueHistoryCsv() {
       if (!this.valueHistoryRows.length) return;
@@ -1429,10 +1458,7 @@ const WorkerCard = {
     },
     menuClearValueHistory() {
       this.closeMenuAndRestoreFocus();
-      if (!this.valueHistoryEnabled) return;
-      if (!window.confirm('Clear this value worker history?')) return;
-      this.closeValueGraph();
-      this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { history: [] } });
+      this.clearValueHistory();
     },
     menuWatch() {
       this.closeMenuAndRestoreFocus();

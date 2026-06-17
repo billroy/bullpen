@@ -4472,6 +4472,36 @@ body.worker-singleton-dragging * {
   font-variant-numeric: tabular-nums;
 }
 
+.value-history-table .value-history-action-header,
+.value-history-table .value-history-action-cell {
+  width: 44px;
+  padding-right: 6px;
+  padding-left: 6px;
+  text-align: center;
+}
+
+.value-history-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #dc2626;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.value-history-delete-btn:hover,
+.value-history-delete-btn:focus-visible {
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+  outline: none;
+}
+
 .value-history-table tbody tr:last-child td {
   border-bottom: 0;
 }

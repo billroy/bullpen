@@ -153,7 +153,14 @@ def test_numeric_value_worker_card_has_sparkline_and_graph_modal():
     assert "Clear History" in card
     assert "menuClearValueHistory()" in card
     assert "if (!this.valueHistoryEnabled) return;" in card
-    assert "this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { history: [] } });" in card
+    assert '@click="clearValueHistory"' in card
+    assert 'class="value-history-delete-btn"' in card
+    assert '@click="deleteValueHistoryRow(index)"' in card
+    assert "saveValueHistory(history)" in card
+    assert "deleteValueHistoryRow(index)" in card
+    assert "clearValueHistory()" in card
+    assert "this.$root.saveWorkerConfig({ slot: this.slotIndex, fields: { history: nextHistory } });" in card
+    assert "if (!window.confirm('Clear all value history rows?')) return;" in card
     assert "valueHistoryRows()" in card
     assert "if (!this.valueHistoryEnabled) return [];" in card
     assert "exportValueHistoryCsv()" in card
@@ -165,6 +172,76 @@ def test_numeric_value_worker_card_has_sparkline_and_graph_modal():
     assert ".value-graph-chart {" in css
     assert ".value-history-pane {" in css
     assert ".value-history-table {" in css
+    assert ".value-history-delete-btn {" in css
+
+
+def test_value_history_delete_and_clear_save_filtered_history():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "WorkerCard.js"))}, 'utf8');
+const calls = [];
+const context = {{
+  console,
+  WorkerCard: undefined,
+  window: {{ confirm: () => true }},
+  document: {{}},
+  URL: {{}},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = WorkerCard.methods;
+  const computed = WorkerCard.computed;
+  const component = {{
+    isValue: true,
+    slotIndex: 4,
+    valueGraphOpen: true,
+    worker: {{
+      save_history: true,
+      history: [
+        {{ value: 1, value_type: 'number', resolved_value_type: 'number', updated_at: '2026-06-17T10:00:00Z' }},
+        {{ value: 2, value_type: 'number', resolved_value_type: 'number', updated_at: '2026-06-17T11:00:00Z' }},
+        {{ value: 3, value_type: 'number', resolved_value_type: 'number', updated_at: '2026-06-17T12:00:00Z' }},
+      ],
+    }},
+    $root: {{ saveWorkerConfig(payload) {{ globalThis.__calls.push(payload); }} }},
+    formatHistoryTimestamp(value) {{ return value; }},
+    valueHistoryEnabled: true,
+    closeValueGraph: methods.closeValueGraph,
+    saveValueHistory: methods.saveValueHistory,
+    deleteValueHistoryRow: methods.deleteValueHistoryRow,
+    clearValueHistory: methods.clearValueHistory,
+  }};
+  Object.defineProperty(component, 'valueHistoryRows', {{
+    get() {{ return computed.valueHistoryRows.call(component); }},
+  }});
+  globalThis.__calls = [];
+  methods.deleteValueHistoryRow.call(component, 1);
+  methods.clearValueHistory.call(component);
+  globalThis.__result = {{ calls: globalThis.__calls, valueGraphOpen: component.valueGraphOpen }};
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["calls"][0] == {
+        "slot": 4,
+        "fields": {
+            "history": [
+                {"value": 1, "value_type": "number", "resolved_value_type": "number", "updated_at": "2026-06-17T10:00:00Z"},
+                {"value": 3, "value_type": "number", "resolved_value_type": "number", "updated_at": "2026-06-17T12:00:00Z"},
+            ],
+        },
+    }
+    assert payload["calls"][1] == {"slot": 4, "fields": {"history": []}}
+    assert payload["valueGraphOpen"] is False
 
 
 def test_value_shortcut_editor_parses_and_creates_values():
@@ -226,6 +303,72 @@ process.stdout.write(JSON.stringify(context.__parsed));
     assert parsed["plain"]["fields"]["name"] == ""
     assert parsed["plain"]["fields"]["value"] == "foo"
     assert parsed["emptyAfterColon"]["error"] == "Enter a value."
+
+
+def test_all_letters_start_value_shortcut_editor_in_blank_cell():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "BullpenTab.js"))}, 'utf8');
+const context = {{
+  console,
+  localStorage: {{ getItem: () => null, setItem: () => {{}} }},
+  WorkerCard: {{}},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = BullpenTab.methods;
+  const letters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const results = {{}};
+  for (const letter of letters) {{
+    const component = {{
+      selectedCell: {{ col: 2, row: 3 }},
+      ghostCell: null,
+      emptyMenuCoord: null,
+      showLibrary: false,
+      showGoTo: false,
+      showHelp: false,
+      opened: [],
+      fitCount: 0,
+      isWritableCoord(coord) {{ return !!coord; }},
+      itemAtCoord() {{ return null; }},
+      openValueShortcutEditor(coord, initialText) {{
+        this.opened.push({{ coord, initialText }});
+      }},
+      fitOccupied() {{ this.fitCount += 1; }},
+      jumpHome() {{}},
+      valueShortcutTargetCoord: methods.valueShortcutTargetCoord,
+      printableValueShortcutKey: methods.printableValueShortcutKey,
+    }};
+    const event = {{
+      key: letter,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      defaultPrevented: false,
+      target: null,
+      preventDefault() {{ this.defaultPrevented = true; }},
+    }};
+    methods.onKeydown.call(component, event);
+    results[letter] = {{ opened: component.opened, fitCount: component.fitCount, defaultPrevented: event.defaultPrevented }};
+  }}
+  globalThis.__results = results;
+`, context);
+process.stdout.write(JSON.stringify(context.__results));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    results = json.loads(result.stdout)
+
+    for letter, payload in results.items():
+        assert payload["defaultPrevented"] is True, letter
+        assert payload["fitCount"] == 0, letter
+        assert payload["opened"] == [{"coord": {"col": 2, "row": 3}, "initialText": letter}], letter
 
 
 def test_worksheet_clipboard_parser_handles_tabular_values():

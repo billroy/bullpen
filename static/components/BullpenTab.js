@@ -1344,6 +1344,11 @@ const BullpenTab = {
       if (e.key && e.key.length === 1) return e.key;
       return '';
     },
+    valueShortcutTargetCoord() {
+      const coord = this.selectedCell || this.ghostCell;
+      if (coord && this.isWritableCoord(coord) && !this.itemAtCoord(coord)) return coord;
+      return null;
+    },
     parseValueShortcutText(text) {
       const raw = String(text || '');
       if (!raw.trim()) return { error: 'Enter a value.' };
@@ -1557,6 +1562,9 @@ const BullpenTab = {
     onKeydown(e) {
       const t = e.target;
       const inTextInput = t && (t.isContentEditable || (typeof t.matches === 'function' && t.matches('input, textarea, select')));
+      const valueShortcutTarget = (!inTextInput && !this.emptyMenuCoord && !this.showLibrary && !this.showGoTo && !this.showHelp)
+        ? this.valueShortcutTargetCoord()
+        : null;
       if (this.emptyMenuCoord && !inTextInput && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (['ArrowUp', 'ArrowDown', 'Home', 'End', 'Escape'].includes(e.key)) {
           this.onEmptyMenuKeydown(e);
@@ -1636,7 +1644,7 @@ const BullpenTab = {
       if (e.key === 'Home') {
         e.preventDefault();
         this.jumpHome();
-      } else if (e.key.toLowerCase() === 'f') {
+      } else if (e.key.toLowerCase() === 'f' && !valueShortcutTarget) {
         e.preventDefault();
         this.fitOccupied();
       } else if (e.key === 'Escape') {
@@ -1661,12 +1669,9 @@ const BullpenTab = {
       }
       if (e.defaultPrevented) return;
       const shortcutKey = this.printableValueShortcutKey(e);
-      if (!inTextInput && shortcutKey && !this.emptyMenuCoord && !this.showLibrary && !this.showGoTo && !this.showHelp) {
-        const coord = this.selectedCell || this.ghostCell;
-        if (coord && this.isWritableCoord(coord) && !this.itemAtCoord(coord)) {
-          e.preventDefault();
-          this.openValueShortcutEditor(coord, shortcutKey);
-        }
+      if (shortcutKey && valueShortcutTarget) {
+        e.preventDefault();
+        this.openValueShortcutEditor(valueShortcutTarget, shortcutKey);
       }
     },
     setWorkerRef(el, slotIndex) {
