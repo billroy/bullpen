@@ -37,7 +37,9 @@ from server.bento_workers import (
     BULLPEN_BENTO_MIMETYPE,
     BULLPEN_PROFILE_ID,
     apply_worker_bento,
+    apply_worker_fragments_to_layout,
     build_worker_bento,
+    copy_worker_for_fragment,
     preview_worker_bento,
     worker_export_name as _bento_worker_export_name,
 )
@@ -375,33 +377,6 @@ def _nearest_empty_coord(layout, start_col, start_row, ignore_slot=None, cols=4)
     while _coord_occupied(layout, {"col": col, "row": row}, ignore_slot, cols) is not None:
         col += 1
     return {"col": col, "row": row}
-
-
-def _build_pasted_worker(source, coord, existing_names):
-    source_type = str(source.get("type") or "").strip()
-    if not source_type and "command" in source:
-        source_type = "shell"
-    if source_type == "value" and not str(source.get("name") or "").strip():
-        candidate = ""
-    else:
-        base_name = str(source.get("name") or "Worker")
-        candidate = base_name
-        suffix = 2
-        while candidate in existing_names:
-            candidate = f"{base_name} {suffix}"
-            suffix += 1
-        existing_names.add(candidate)
-
-    if (source_type or "ai") == "ai":
-        worker = {k: v for k, v in source.items() if k in _AI_COPY_FIELDS}
-    else:
-        source = {**source, "type": source_type}
-        worker = copy_worker_slot(source, reset_runtime=True)
-    worker = copy_worker_slot(worker, reset_runtime=True)
-    worker["row"] = coord["row"]
-    worker["col"] = coord["col"]
-    worker["name"] = candidate
-    return worker
 
 
 def _write_runtime_mcp_config(app, bp_dir):
@@ -1336,19 +1311,17 @@ def register_events(socketio, app):
 
         layout = _load_layout(bp_dir)
         config = read_json(os.path.join(bp_dir, "config.json"))
-        cols = _safe_legacy_cols(config)
-        occupied_slot = _coord_occupied(layout, coord, cols=cols)
-        if occupied_slot is not None:
-            if data.get("replace"):
-                layout["slots"][occupied_slot] = None
-            else:
-                emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
-                return
-
-        target = _first_empty_slot(layout)
-        existing_names = {s["name"] for s in layout["slots"] if s and s.get("name")}
-        worker = _build_pasted_worker(source, coord, existing_names)
-        layout["slots"][target] = worker
+        try:
+            result = apply_worker_fragments_to_layout(
+                layout,
+                [{"coord": coord, "worker": copy_worker_for_fragment(source)}],
+                config=config,
+                replace=bool(data.get("replace")),
+            )
+        except BentoCarrierError as e:
+            emit("error", {"message": e.message, "code": e.code})
+            return
+        layout = result["layout"]
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
 
@@ -1359,19 +1332,16 @@ def register_events(socketio, app):
         items = validate_worker_paste_group(data)
         layout = _load_layout(bp_dir)
         config = read_json(os.path.join(bp_dir, "config.json"))
-        cols = _safe_legacy_cols(config)
-
-        for item in items:
-            occupied_slot = _coord_occupied(layout, item["coord"], cols=cols)
-            if occupied_slot is not None:
-                emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
-                return
-
-        existing_names = {s["name"] for s in layout["slots"] if s and s.get("name")}
-        workers_to_add = [_build_pasted_worker(item["worker"], item["coord"], existing_names) for item in items]
-        for worker in workers_to_add:
-            target = _first_empty_slot(layout)
-            layout["slots"][target] = worker
+        fragments = [
+            {"coord": item["coord"], "worker": copy_worker_for_fragment(item["worker"])}
+            for item in items
+        ]
+        try:
+            result = apply_worker_fragments_to_layout(layout, fragments, config=config)
+        except BentoCarrierError as e:
+            emit("error", {"message": e.message, "code": e.code})
+            return
+        layout = result["layout"]
 
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)

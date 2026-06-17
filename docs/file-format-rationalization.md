@@ -650,6 +650,9 @@ Exit criteria:
 
 - Adapt worker copy/paste to the same package-fragment object model used by
   `.bento`, without requiring a zip carrier.
+- Start with the server-side paste/apply helper so existing frontend clipboard
+  payloads can continue working while worker paste and Bento import share
+  conflict, rename, and local binding behavior.
 - Add ticket copy/paste fragments after ticket package import is proven.
 - Keep worksheet TSV paste as-is while reserving richer worksheet fragments for
   later.

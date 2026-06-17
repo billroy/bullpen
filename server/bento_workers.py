@@ -453,7 +453,9 @@ def _occupied_coords(slots, *, cols):
     return occupied
 
 
-def _unique_worker_name(base, existing_names):
+def _unique_worker_name(base, existing_names, *, allow_blank=False):
+    if allow_blank and str(base or "") == "":
+        return ""
     base = str(base or "Worker").strip() or "Worker"
     if base not in existing_names:
         existing_names.add(base)
@@ -564,6 +566,112 @@ def _local_name_rewrites(workers, rename_map, package_name_counts):
     return rewritten
 
 
+def copy_worker_for_fragment(source):
+    """Return a pasted/fragment worker copy with runtime state reset."""
+    source = source if isinstance(source, dict) else {}
+    source_type = str(source.get("type") or "").strip()
+    if not source_type and "command" in source:
+        source_type = "shell"
+    if (source_type or "ai") == "ai":
+        worker = {
+            key: value
+            for key, value in source.items()
+            if key in {
+                "type", "row", "col", "profile", "name", "agent", "model", "activation",
+                "disposition", "watch_column", "expertise_prompt", "trust_mode", "max_retries",
+                "use_worktree", "auto_commit", "auto_pr", "trigger_time",
+                "trigger_interval_minutes", "trigger_every_day", "last_trigger_time",
+                "paused", "task_queue", "state", "color", "avatar",
+            }
+        }
+    else:
+        worker = {**source, "type": source_type}
+    return copy_worker_slot(worker, reset_runtime=True)
+
+
+def apply_worker_fragments_to_layout(layout, fragments, *, config, replace=False):
+    """Apply worker fragments to a normalized layout and return import metadata."""
+    layout = normalize_layout(layout, config=config)
+    slots = layout.setdefault("slots", [])
+    cols = _safe_cols(config)
+    fragments = list(fragments or [])
+    if not fragments:
+        raise BentoCarrierError("Worker fragment requires at least one worker", "missing-workers")
+
+    seen_targets = set()
+    prepared = []
+    for fragment in fragments:
+        worker = fragment.get("worker") if isinstance(fragment, dict) else None
+        coord = fragment.get("coord") if isinstance(fragment, dict) else None
+        if not isinstance(worker, dict) or not isinstance(coord, dict):
+            raise BentoCarrierError("Worker fragment item is invalid", "invalid-worker-fragment")
+        col = _safe_int(coord.get("col"), 0)
+        row = _safe_int(coord.get("row"), 0)
+        target = (col, row)
+        if target in seen_targets:
+            raise BentoCarrierError("Worker fragment has duplicate target coordinates", "coordinate_collision")
+        seen_targets.add(target)
+        occupied = _coord_occupied(slots, col, row, cols=cols)
+        if occupied:
+            if replace:
+                slot_index, _existing = occupied
+                slots[slot_index] = None
+            else:
+                raise BentoCarrierError("Coordinate already occupied", "coordinate_collision")
+        prepared.append((worker, col, row))
+
+    existing_names = {
+        worker.get("name")
+        for worker in slots
+        if isinstance(worker, dict) and worker.get("name")
+    }
+    package_name_counts = {}
+    for worker, _col, _row in prepared:
+        name = worker.get("name")
+        if name:
+            package_name_counts[name] = package_name_counts.get(name, 0) + 1
+
+    rename_map = {}
+    renamed = []
+    workers = []
+    for worker, col, row in prepared:
+        worker = copy_worker_slot(worker, reset_runtime=True)
+        original = worker.get("name") or ""
+        allow_blank = worker.get("type") == "value" and original == ""
+        final = _unique_worker_name(original, existing_names, allow_blank=allow_blank)
+        if final != original:
+            rename_map[original or "Worker"] = final
+            renamed.append({"from": original or "Worker", "to": final})
+        worker["name"] = final
+        worker["col"] = col
+        worker["row"] = row
+        workers.append(worker)
+
+    rewritten = _local_name_rewrites(workers, rename_map, package_name_counts)
+    added_slots = []
+    for worker in workers:
+        while len(slots) and slots[-1] is None:
+            slots.pop()
+        slot_index = None
+        for index, existing in enumerate(slots):
+            if existing is None:
+                slot_index = index
+                break
+        if slot_index is None:
+            slot_index = len(slots)
+            slots.append(None)
+        slots[slot_index] = worker
+        added_slots.append(slot_index)
+
+    layout = normalize_layout(layout, config=config)
+    return {
+        "layout": layout,
+        "slots": added_slots,
+        "renamed": renamed,
+        "rewritten_bindings": rewritten,
+    }
+
+
 def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approvals=None):
     """Import sanitized workers from a Bullpen Bento package into a workspace."""
     if mode not in {"merge", "add-only"}:
@@ -628,45 +736,15 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
         create_profile(bp_dir, profile)
         imported_profiles.append(profile_id)
 
-    existing_names = {
-        worker.get("name")
-        for worker in slots
-        if isinstance(worker, dict) and worker.get("name")
-    }
-    package_name_counts = {}
-    for worker in workers:
-        name = worker.get("name")
-        if name:
-            package_name_counts[name] = package_name_counts.get(name, 0) + 1
-    rename_map = {}
-    renamed = []
-    for worker in workers:
-        original = worker.get("name") or "Worker"
-        final = _unique_worker_name(original, existing_names)
-        if final != original:
-            rename_map[original] = final
-            renamed.append({"from": original, "to": final})
-        worker["name"] = final
-    rewritten = _local_name_rewrites(workers, rename_map, package_name_counts)
-
-    added_slots = []
-    for worker, col, row in positions:
-        worker["col"] = col
-        worker["row"] = row
-        while len(slots) and slots[-1] is None:
-            slots.pop()
-        slot_index = None
-        for index, existing in enumerate(slots):
-            if existing is None:
-                slot_index = index
-                break
-        if slot_index is None:
-            slot_index = len(slots)
-            slots.append(None)
-        slots[slot_index] = worker
-        added_slots.append(slot_index)
-
-    layout = normalize_layout(layout, config=config)
+    fragment_result = apply_worker_fragments_to_layout(
+        layout,
+        [
+            {"worker": worker, "coord": {"col": col, "row": row}}
+            for worker, col, row in positions
+        ],
+        config=config,
+    )
+    layout = fragment_result["layout"]
     write_json(os.path.join(bp_dir, "layout.json"), layout)
     for profile_id in skipped_profiles:
         warnings.append(f"profile '{profile_id}' already exists and was kept")
@@ -679,13 +757,13 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
             "workers": len(workers),
             "profiles": len(imported_profiles),
         },
-        "slots": added_slots,
+        "slots": fragment_result["slots"],
         "profiles": {
             "imported": sorted(imported_profiles),
             "skipped": sorted(skipped_profiles),
         },
-        "renamed": renamed,
-        "rewritten_bindings": rewritten,
+        "renamed": fragment_result["renamed"],
+        "rewritten_bindings": fragment_result["rewritten_bindings"],
         "sanitized": sanitized_reports,
         "placement": placement_result,
         "warnings": warnings,

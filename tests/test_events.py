@@ -1512,6 +1512,40 @@ class TestWorkerEvents:
         assert names[0] == "Copy"
         assert names[1].startswith("Copy")
 
+    def test_paste_worker_group_rewrites_package_local_binding_on_rename(self, client):
+        c, _ = client
+        c.emit("worker:paste", {
+            "coord": {"col": 0, "row": 0},
+            "worker": {
+                "name": "Right",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+            },
+        })
+        c.get_received()
+        c.emit("worker:paste_group", {"items": [
+            {"coord": {"col": 10, "row": 10}, "worker": {
+                "name": "Left",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+                "disposition": "worker:Right",
+            }},
+            {"coord": {"col": 11, "row": 10}, "worker": {
+                "name": "Right",
+                "profile": "feature-architect",
+                "agent": "claude",
+                "model": "claude-sonnet-4-6",
+            }},
+        ]})
+        layout = get_event(c, "layout:updated")
+        left = next(s for s in layout["slots"] if s and s.get("name") == "Left")
+        copied_right = next(s for s in layout["slots"] if s and s.get("name") == "Right copy")
+
+        assert left["disposition"] == "worker:Right copy"
+        assert copied_right["col"] == 11
+
     def test_paste_worker_group_rejects_on_any_collision(self, client):
         c, app = client
         c.emit("worker:add", {"coord": {"col": 1, "row": 0}, "profile": "feature-architect"})
