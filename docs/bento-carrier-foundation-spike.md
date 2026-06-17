@@ -119,8 +119,8 @@ routes were removed:
 - `/api/export/workers`
 - `/api/export/worker`
 
-Workspace and all-workspace zip endpoints remain under the separate REST
-endpoint audit ticket:
+Workspace and all-workspace zip behavior also moved to Socket.IO during REST
+remediation. The former routes were:
 
 - `/api/import/workspace`
 - `/api/import/all`
