@@ -597,6 +597,9 @@ Exit criteria:
 ### Slice 1: Worker Package MVP
 
 - Implement `.bento` export for one worker and selected worker groups.
+- Route primary worker-card and worker-group export actions through Socket.IO
+  `.bento` export while keeping legacy worker zip export available as a
+  maintenance action during migration.
 - Include referenced profiles.
 - Represent worker relationships using current Bullpen language:
   `worker:NAME`, `random:NAME`, `pass:DIRECTION`, and bare column dispositions.

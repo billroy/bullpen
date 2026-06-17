@@ -381,3 +381,5 @@ Ticket packages:
     Bento worker import, preserving existing clipboard payloads.
 12. Add server-side ticket paste fragments that reuse the ticket package import
     helper without assigning work to workers.
+13. Move primary worker-card and worker-group exports to the Socket.IO Bento
+    export event, leaving legacy zip export reachable during migration.

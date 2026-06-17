@@ -58,7 +58,8 @@ def test_app_wires_toolbar_export_import_events():
     assert "await _downloadZip('/api/export/all', 'bullpen-all.zip');" in text
     assert "await _downloadZip(url, 'bullpen-workers.zip');" in text
     assert "async function exportWorker(slot) {" in text
-    assert "await _downloadZip(url, 'bullpen-worker.zip');" in text
+    assert "socket.emit('bento:export', _wsData(payload));" in text
+    assert "await _downloadBentoExport({ kind: 'worker', slot }, 'bullpen-worker.bento');" in text
     assert "await _importZip('/api/import/all', file, 'All-workspace import complete');" in text
     assert "await _importZip(url, file, 'Workers import complete');" in text
 

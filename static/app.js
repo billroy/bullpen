@@ -1532,14 +1532,68 @@ const app = createApp({
       }
       const blob = await resp.blob();
       const name = _downloadNameFromDisposition(resp.headers.get('content-disposition'), fallbackName);
+      _downloadBlob(blob, name || fallbackName);
+    }
+
+    function _downloadBlob(blob, fallbackName) {
       const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = name || fallbackName;
+      link.download = fallbackName;
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(objectUrl);
+    }
+
+    function _bentoPayloadBytes(data) {
+      if (data instanceof ArrayBuffer) return data;
+      if (data instanceof Uint8Array) return data;
+      if (Array.isArray(data)) return new Uint8Array(data);
+      return data;
+    }
+
+    function _requestBentoExport(payload) {
+      return new Promise((resolve, reject) => {
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const expectedKind = payload.kind;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Bento export timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('bento:exported', onExported);
+          socket.off('bento:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          if (expectedKind && eventPayload.kind && eventPayload.kind !== expectedKind) return false;
+          return true;
+        };
+        const onExported = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Bento export failed'));
+        };
+        socket.on('bento:exported', onExported);
+        socket.on('bento:error', onError);
+        socket.emit('bento:export', _wsData(payload));
+      });
+    }
+
+    async function _downloadBentoExport(payload, fallbackName) {
+      const exported = await _requestBentoExport(payload);
+      const bytes = _bentoPayloadBytes(exported.data);
+      const blob = new Blob([bytes], { type: exported.mimetype || 'application/vnd.bullpen.bento+zip' });
+      _downloadBlob(blob, exported.filename || fallbackName);
+      return exported;
     }
 
     async function exportWorkspace() {
@@ -1567,8 +1621,7 @@ const app = createApp({
     async function exportWorker(slot) {
       if (!activeWorkspaceId.value || !Number.isInteger(slot)) return;
       try {
-        const url = `/api/export/worker?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}&slot=${encodeURIComponent(slot)}`;
-        await _downloadZip(url, 'bullpen-worker.zip');
+        await _downloadBentoExport({ kind: 'worker', slot }, 'bullpen-worker.bento');
         addToast('Worker export ready');
       } catch (e) {
         addToast('Worker export failed: ' + e.message, 'error');
@@ -1578,9 +1631,7 @@ const app = createApp({
       const validSlots = (slots || []).map(Number).filter(Number.isInteger);
       if (!activeWorkspaceId.value || !validSlots.length) return;
       try {
-        const slotParam = validSlots.map(slot => encodeURIComponent(slot)).join(',');
-        const url = `/api/export/workers?workspaceId=${encodeURIComponent(activeWorkspaceId.value)}&slots=${slotParam}`;
-        await _downloadZip(url, 'bullpen-worker-group.zip');
+        await _downloadBentoExport({ kind: 'worker-group', slots: validSlots }, 'bullpen-worker-group.bento');
         addToast(validSlots.length === 1 ? 'Worker export ready' : 'Worker group export ready');
       } catch (e) {
         addToast('Worker export failed: ' + e.message, 'error');

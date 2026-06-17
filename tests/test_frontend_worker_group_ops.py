@@ -23,6 +23,8 @@ def test_app_exposes_group_worker_socket_events():
     assert "function duplicateWorkers(slots)" in text
     assert "socket.emit('worker:duplicate_group'" in text
     assert "function exportWorkerGroup(slots)" in text
+    assert "await _downloadBentoExport({ kind: 'worker-group', slots: validSlots }, 'bullpen-worker-group.bento');" in text
+    assert "socket.emit('bento:export', _wsData(payload));" in text
 
 
 def test_bullpen_tab_builds_pass_reachable_groups_for_drag_and_copy():
