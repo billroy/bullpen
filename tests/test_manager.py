@@ -24,6 +24,13 @@ def _manager_received(client, name):
     return matches[-1]
 
 
+def _create_manager_profile_socket(client, **payload):
+    client.emit("manager:profile-create", {"requestId": f"create-{payload['displayName']}", "profile": payload})
+    result = _manager_received(client, "manager:profile-create:result")
+    assert "error" not in result
+    return result["profile"]
+
+
 def test_create_profile_allocates_ports_and_persists(tmp_path):
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
@@ -200,7 +207,7 @@ def test_create_microsandbox_profile_rejects_invalid_resources(tmp_path):
         )
 
 
-def test_manager_api_create_profile(tmp_path):
+def test_manager_socketio_create_profile(tmp_path):
     home = tmp_path / "manager"
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -209,30 +216,23 @@ def test_manager_api_create_profile(tmp_path):
     (source / "bullpen.py").write_text("", encoding="utf-8")
     app, socketio = create_manager_app(home=home)
 
-    client = app.test_client()
-    response = client.post(
-        "/api/profiles",
-        json={
-            "displayName": "API Instance",
-            "workspaceRoot": str(workspace),
-            "bullpenSource": str(source),
-        },
-    )
-
-    assert response.status_code == 201
-    data = response.get_json()
-    assert data["profile"]["id"] == "api-instance"
-    assert data["profile"]["ports"]["bullpen"] == 8080
-
     sio = socketio.test_client(app)
     sio.get_received()
+    profile = _create_manager_profile_socket(
+        sio,
+        displayName="Socket Instance",
+        workspaceRoot=str(workspace),
+        bullpenSource=str(source),
+    )
+
+    assert profile["id"] == "socket-instance"
+    assert profile["ports"]["bullpen"] == 8080
+
     sio.emit("manager:profiles", {"requestId": "profiles-one"})
     list_response = _manager_received(sio, "manager:profiles:result")
     assert list_response["requestId"] == "profiles-one"
-    assert list_response["profiles"][0]["id"] == "api-instance"
-    assert "/api/profiles" not in {
-        rule.rule for rule in app.url_map.iter_rules() if "GET" in rule.methods and "POST" not in rule.methods
-    }
+    assert list_response["profiles"][0]["id"] == "socket-instance"
+    assert "/api/profiles" not in {rule.rule for rule in app.url_map.iter_rules()}
     sio.disconnect()
 
 
@@ -262,19 +262,14 @@ def test_manager_api_profiles_include_deployment_info(tmp_path):
     (project / "README.md").write_text("hello\n", encoding="utf-8")
     app, socketio = create_manager_app(home=home)
 
-    client = app.test_client()
-    create_response = client.post(
-        "/api/profiles",
-        json={
-            "displayName": "Deployment Info",
-            "workspaceRoot": str(workspace_root),
-            "bullpenSource": str(source),
-        },
-    )
-    assert create_response.status_code == 201
-
     sio = socketio.test_client(app)
     sio.get_received()
+    _create_manager_profile_socket(
+        sio,
+        displayName="Deployment Info",
+        workspaceRoot=str(workspace_root),
+        bullpenSource=str(source),
+    )
     sio.emit("manager:profiles", {"requestId": "profiles-deployment"})
     response = _manager_received(sio, "manager:profiles:result")
 
@@ -304,22 +299,18 @@ def test_manager_read_surfaces_use_socketio(tmp_path):
     (source / "bullpen.py").write_text("", encoding="utf-8")
     app, socketio = create_manager_app(home=home)
     client = app.test_client()
-    create_response = client.post(
-        "/api/profiles",
-        json={
-            "displayName": "Socket Reads",
-            "workspaceRoot": str(workspace),
-            "bullpenSource": str(source),
-        },
+    sio = socketio.test_client(app)
+    sio.get_received()
+    profile = _create_manager_profile_socket(
+        sio,
+        displayName="Socket Reads",
+        workspaceRoot=str(workspace),
+        bullpenSource=str(source),
     )
-    assert create_response.status_code == 201
-    profile = create_response.get_json()["profile"]
     log_path = Path(profile["instanceHome"]) / "logs" / "bullpen.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text("hello from manager\n", encoding="utf-8")
 
-    sio = socketio.test_client(app)
-    sio.get_received()
     sio.emit("manager:profile-logs", {"requestId": "profile-logs", "profileId": profile["id"]})
     logs = _manager_received(sio, "manager:profile-logs:result")
     sio.emit("manager:ports", {"requestId": "ports-one"})
@@ -341,7 +332,58 @@ def test_manager_read_surfaces_use_socketio(tmp_path):
         "/api/ports",
     }
     assert removed_routes.isdisjoint({rule.rule for rule in app.url_map.iter_rules()})
-    assert client.get("/api/profiles").status_code == 405
+    assert client.get("/api/profiles").status_code == 404
+    sio.disconnect()
+
+
+def test_manager_profile_lifecycle_mutations_use_socketio(tmp_path, monkeypatch):
+    home = tmp_path / "manager"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "bullpen.py").write_text("", encoding="utf-8")
+    opened = []
+    monkeypatch.setattr(manager_mod.webbrowser, "open", lambda url: opened.append(url))
+    app, socketio = create_manager_app(home=home)
+    client = app.test_client()
+    sio = socketio.test_client(app)
+    sio.get_received()
+    profile = _create_manager_profile_socket(
+        sio,
+        displayName="Lifecycle",
+        workspaceRoot=str(workspace),
+        bullpenSource=str(source),
+    )
+
+    sio.emit("manager:profile-action", {
+        "requestId": "open-one",
+        "profileId": profile["id"],
+        "action": "open",
+    })
+    action = _manager_received(sio, "manager:profile-action:result")
+    sio.emit("manager:profile-delete", {
+        "requestId": "delete-one",
+        "profileId": profile["id"],
+    })
+    deleted = _manager_received(sio, "manager:profile-delete:result")
+    sio.emit("manager:profiles", {"requestId": "profiles-after-delete"})
+    listed = _manager_received(sio, "manager:profiles:result")
+
+    assert action["requestId"] == "open-one"
+    assert action["profile"]["id"] == profile["id"]
+    assert opened == [f"http://127.0.0.1:{profile['ports']['bullpen']}"]
+    assert deleted == {"requestId": "delete-one", "ok": True}
+    assert listed["profiles"] == []
+    removed_routes = {
+        "/api/profiles",
+        "/api/profiles/<profile_id>",
+        "/api/profiles/<profile_id>/<action>",
+    }
+    assert removed_routes.isdisjoint({rule.rule for rule in app.url_map.iter_rules()})
+    assert client.post("/api/profiles").status_code == 404
+    assert client.delete(f"/api/profiles/{profile['id']}").status_code == 404
+    assert client.post(f"/api/profiles/{profile['id']}/open").status_code == 404
     sio.disconnect()
 
 

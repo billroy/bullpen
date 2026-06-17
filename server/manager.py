@@ -1518,47 +1518,6 @@ def create_manager_app(
         except ManagerError as exc:
             return jsonify({"error": str(exc)}), 400
 
-    @app.route("/api/profiles", methods=["POST"])
-    def api_create_profile():
-        try:
-            profile = create_profile(registry, request.get_json(silent=True) or {})
-            socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
-            return jsonify({"profile": profile_payload(profile)}), 201
-        except ManagerError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    @app.route("/api/profiles/<profile_id>", methods=["DELETE"])
-    def api_delete_profile(profile_id):
-        try:
-            runtime.stop(profile_id)
-        except ManagerError:
-            pass
-        try:
-            registry.delete(profile_id)
-            socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
-            return jsonify({"ok": True})
-        except ManagerError as exc:
-            return jsonify({"error": str(exc)}), 404
-
-    @app.route("/api/profiles/<profile_id>/<action>", methods=["POST"])
-    def api_profile_action(profile_id, action):
-        try:
-            if action == "start":
-                profile = runtime.start(profile_id)
-            elif action == "stop":
-                profile = runtime.stop(profile_id)
-            elif action == "restart":
-                profile = runtime.restart(profile_id)
-            elif action == "open":
-                profile = registry.get(profile_id)
-                port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
-                webbrowser.open(f"http://{LOCALHOST}:{port}")
-            else:
-                return jsonify({"error": f"Unknown action: {action}"}), 404
-            return jsonify({"profile": profile_payload(profile)})
-        except ManagerError as exc:
-            return jsonify({"error": str(exc)}), 400
-
     @app.route("/api/profiles/<profile_id>/setup-providers/start", methods=["POST"])
     def api_setup_providers(profile_id):
         try:
@@ -1583,6 +1542,56 @@ def create_manager_app(
             {"requestId": data.get("requestId"), "profiles": profiles_payload(registry)},
             to=request.sid,
         )
+
+    @socketio.on("manager:profile-create")
+    def on_manager_profile_create(payload):
+        data = payload or {}
+        try:
+            profile = create_profile(registry, data.get("profile") or {})
+            result = {"requestId": data.get("requestId"), "profile": profile_payload(profile)}
+            socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
+        except ManagerError as exc:
+            result = {"requestId": data.get("requestId"), "error": str(exc)}
+        socketio.emit("manager:profile-create:result", result, to=request.sid)
+
+    @socketio.on("manager:profile-delete")
+    def on_manager_profile_delete(payload):
+        data = payload or {}
+        profile_id = str(data.get("profileId") or "")
+        try:
+            runtime.stop(profile_id)
+        except ManagerError:
+            pass
+        try:
+            registry.delete(profile_id)
+            result = {"requestId": data.get("requestId"), "ok": True}
+            socketio.emit("manager:updated", {"profiles": profiles_payload(registry)})
+        except ManagerError as exc:
+            result = {"requestId": data.get("requestId"), "error": str(exc)}
+        socketio.emit("manager:profile-delete:result", result, to=request.sid)
+
+    @socketio.on("manager:profile-action")
+    def on_manager_profile_action(payload):
+        data = payload or {}
+        profile_id = str(data.get("profileId") or "")
+        action = str(data.get("action") or "")
+        try:
+            if action == "start":
+                profile = runtime.start(profile_id)
+            elif action == "stop":
+                profile = runtime.stop(profile_id)
+            elif action == "restart":
+                profile = runtime.restart(profile_id)
+            elif action == "open":
+                profile = registry.get(profile_id)
+                port = int((profile.get("ports") or {}).get("bullpen") or DEFAULT_BULLPEN_PORT)
+                webbrowser.open(f"http://{LOCALHOST}:{port}")
+            else:
+                raise ManagerError(f"Unknown action: {action}")
+            result = {"requestId": data.get("requestId"), "profile": profile_payload(profile)}
+        except ManagerError as exc:
+            result = {"requestId": data.get("requestId"), "error": str(exc)}
+        socketio.emit("manager:profile-action:result", result, to=request.sid)
 
     @socketio.on("manager:base-snapshots")
     def on_manager_base_snapshots(payload):

@@ -41,8 +41,11 @@ leaving only narrowly justified HTTP surfaces.
   - `/api/export/all`
   - `/api/import/workspace`
   - `/api/import/all`
-- Manager/admin read/query routes:
+- Manager/admin routes:
   - `GET /api/profiles`
+  - `POST /api/profiles`
+  - `DELETE /api/profiles/<profile_id>`
+  - `/api/profiles/<profile_id>/<action>`
   - `/api/profiles/<profile_id>/setup-providers/session`
   - `/api/profiles/<profile_id>/logs`
   - `/api/microsandbox/base-snapshots`
@@ -71,6 +74,9 @@ These now use Socket.IO:
 - `manager:base-snapshots`
 - `manager:base-rebuild-logs`
 - `manager:ports`
+- `manager:profile-create`
+- `manager:profile-delete`
+- `manager:profile-action`
 
 ## Current Main-App REST Surface
 
@@ -80,9 +86,6 @@ None currently identified.
 
 `server/manager.py` has a separate admin/management UI with these REST routes:
 
-- `POST /api/profiles`
-- `DELETE /api/profiles/<profile_id>`
-- `/api/profiles/<profile_id>/<action>`
 - `/api/profiles/<profile_id>/setup-providers/start`
 - `/api/microsandbox/base-snapshots/rebuild`
 
@@ -95,9 +98,8 @@ Assessment:
 
 Remediation:
 
-1. Move profile create/delete/start/stop/restart/open to manager Socket.IO.
-2. Move provider setup start to manager Socket.IO.
-3. Move base snapshot rebuild start to manager Socket.IO.
+1. Move provider setup start to manager Socket.IO.
+2. Move base snapshot rebuild start to manager Socket.IO.
 4. If any manager REST route remains, document the reason and harden it with
    CSRF/origin checks.
 

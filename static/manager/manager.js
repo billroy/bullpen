@@ -327,10 +327,7 @@ createApp({
     async function createProfile() {
       state.error = '';
       try {
-        const data = await api('/api/profiles', {
-          method: 'POST',
-          body: JSON.stringify(form),
-        });
+        const data = await managerRequest('manager:profile-create', 'manager:profile-create:result', { profile: { ...form } });
         state.selectedId = data.profile.id;
         resetCreateForm();
         closeCreateModal();
@@ -345,7 +342,7 @@ createApp({
       state.error = '';
       state.actionBusy = `${profile.id}:${name}`;
       try {
-        await api(`/api/profiles/${profile.id}/${name}`, { method: 'POST', body: '{}' });
+        await managerRequest('manager:profile-action', 'manager:profile-action:result', { profileId: profile.id, action: name });
         await refresh();
       } catch (err) {
         state.error = err.message;
@@ -410,7 +407,7 @@ createApp({
       if (!confirm(`Delete profile "${profile.displayName}"? This will not delete the workspace.`)) return;
       state.error = '';
       try {
-        await api(`/api/profiles/${profile.id}`, { method: 'DELETE' });
+        await managerRequest('manager:profile-delete', 'manager:profile-delete:result', { profileId: profile.id });
         state.selectedId = null;
         resetSetupState();
         await refresh();
