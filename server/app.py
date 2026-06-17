@@ -34,7 +34,7 @@ from server.persistence import read_json, write_json, read_frontmatter, ensure_w
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
-from server.worker_types import ViewerContext, get_worker_type, normalize_layout, normalize_worker_slot, serialize_layout
+from server.worker_types import ViewerContext, normalize_layout, serialize_layout
 from server.workspace_manager import WorkspaceManager, projects_root
 from server import service_worker as service_worker_mod
 from server import mcp_auth
@@ -805,59 +805,6 @@ def create_app(
             as_attachment=True,
             download_name=export_name,
         )
-
-    @app.route("/api/service/preview", methods=["POST"])
-    @auth.require_auth
-    def service_preview():
-        payload = request.get_json(silent=True) or {}
-        ws, error = _workspace_from_id(_workspace_id_from_payload(payload), activate=True)
-        if error:
-            return error
-        slot = payload.get("slot")
-        try:
-            slot = int(slot)
-        except (TypeError, ValueError):
-            return jsonify({"error": "slot is required"}), 400
-
-        config = read_json(os.path.join(ws.bp_dir, "config.json"))
-        layout = normalize_layout(read_json(os.path.join(ws.bp_dir, "layout.json")), config=config)
-        slots = layout.get("slots", [])
-        if slot < 0 or slot >= len(slots) or not slots[slot]:
-            return jsonify({"error": "Service worker slot not found"}), 404
-
-        worker = dict(slots[slot])
-        if worker.get("type") != "service":
-            return jsonify({"error": "Selected worker is not a Service worker"}), 400
-        fields = payload.get("fields") or {}
-        if not isinstance(fields, dict):
-            return jsonify({"error": "fields must be an object"}), 400
-        for key, value in fields.items():
-            if key not in {"task_queue", "state", "started_at"}:
-                worker[key] = value
-        worker = normalize_worker_slot(worker, index=slot, config=config)
-        errors = get_worker_type("service").validate_config(worker)
-        if errors:
-            return jsonify({"error": errors[0]}), 400
-
-        try:
-            preview = service_worker_mod.resolve_service_preview(worker, ws.path, slot, bp_dir=ws.bp_dir)
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        suggested_port = None
-        if worker.get("port") is None:
-            suggested_port = service_worker_mod.suggest_service_port(layout, ignore_slot=slot)
-
-        return jsonify({
-            "cwd": preview["cwd"],
-            "procfile_path": preview["procfile_path"],
-            "command_source": preview["command_source"],
-            "process_names": preview["process_names"],
-            "selected_process": preview["selected_process"],
-            "suggested_port": suggested_port,
-            "raw_command": preview["raw_command"],
-            "resolved_command": preview["resolved_command_redacted"],
-            "warnings": preview["warnings"],
-        })
 
     @app.route("/api/import/workspace", methods=["POST"])
     @auth.require_auth

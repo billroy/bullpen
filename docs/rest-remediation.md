@@ -22,12 +22,15 @@ leaving only narrowly justified HTTP surfaces.
 - Cross-workspace worker transfer:
   - `/api/worker/transfer`
   - `/api/worker/transfer_group`
+- Service worker preview:
+  - `/api/service/preview`
 
 These now use Socket.IO:
 
 - `bento:export`
 - `bento:import`
 - `worker:transfer`
+- `service:preview`
 
 ## Current Main-App REST Surface
 
@@ -121,22 +124,6 @@ Remediation:
 2. Migrate `WorkerConfigModal` and `LiveAgentChatTab`.
 3. Remove the HTTP route.
 
-### Service Preview
-
-- `POST /api/service/preview`
-
-Assessment:
-
-- This is an app command/query used by the worker configuration UI.
-- It already depends on workspace state and selected worker slot, so Socket.IO
-  is the natural transport.
-
-Remediation:
-
-1. Add `service:preview` Socket.IO handling.
-2. Migrate `WorkerConfigModal`.
-3. Remove the HTTP route.
-
 ## Manager/Admin REST Surface
 
 `server/manager.py` has a separate admin/management UI with these REST routes:
@@ -169,7 +156,6 @@ Remediation:
 ## Order Of Operations
 
 1. Remove low-risk UI support routes with clear socket replacements:
-   - `service:preview`
    - `models:opencode`
 2. Remove app query routes:
    - commits list/diff

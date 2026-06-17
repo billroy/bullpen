@@ -1328,23 +1328,12 @@ const WorkerConfigModal = {
         env: (this.form.env || []).map(e => ({ key: e.key || '', value: e.value || '' })),
       };
       try {
-        const resp = await fetch('/api/service/preview', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({
-            workspaceId: this.$root.activeWorkspaceId,
-            slot: this.slotIndex,
-            fields,
-          }),
+        const data = await this.$root.requestServicePreview({
+          workspaceId: this.$root.activeWorkspaceId,
+          slot: this.slotIndex,
+          fields,
         });
-        const data = await resp.json();
         if (seq !== this.servicePreviewSeq) return;
-        if (!resp.ok) {
-          this.servicePreview = null;
-          this.servicePreviewError = data.error || 'Preview unavailable';
-          return;
-        }
         this.serviceSuggestedPort = Number.isInteger(data.suggested_port) ? data.suggested_port : null;
         this.servicePreview = data;
         this.servicePreviewError = '';

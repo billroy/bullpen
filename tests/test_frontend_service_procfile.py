@@ -12,16 +12,22 @@ def _read(rel_path: str) -> str:
 
 def test_worker_config_modal_exposes_service_procfile_controls():
     text = _read("static/components/WorkerConfigModal.js")
+    app = _read("static/app.js")
     assert "Command Source" in text
     assert 'option value="manual">Inline command' in text
     assert 'option value="procfile">Procfile' in text
     assert "Procfile process" in text
     assert "Resolved command preview" in text
-    assert "fetch('/api/service/preview'" in text
+    assert "this.$root.requestServicePreview({" in text
+    assert "fetch('/api/service/preview'" not in text
     assert "Suggested open port:" in text
     assert "data.suggested_port" in text
     assert "servicePortAutoFilled" in text
     assert "activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop')" in text
+    assert "function requestServicePreview(payload)" in app
+    assert "socket.emit('service:preview', _wsData({ ...payload, request_id: requestId }));" in app
+    assert "socket.on('service:previewed', onPreviewed);" in app
+    assert "socket.on('service:preview:error', onError);" in app
 
 
 def test_worker_config_modal_uses_assignment_policy_labels():

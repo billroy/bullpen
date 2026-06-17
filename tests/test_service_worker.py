@@ -5,7 +5,7 @@ import os
 import sys
 import time
 
-from server.app import create_app
+from server.app import create_app, socketio
 from server.init import init_workspace
 from server.persistence import read_json, write_json
 from server.tasks import create_task, read_task, update_task
@@ -28,6 +28,13 @@ class FakeSocket:
 
     def emit(self, event, payload, to=None):
         self.events.append((event, dict(payload), to))
+
+
+def _received(client, name):
+    for event in client.get_received():
+        if event["name"] == name:
+            return event["args"][0]
+    return None
 
 
 def _write_script(path, body):
@@ -276,17 +283,19 @@ def test_suggest_service_port_skips_reserved_worker_ports(monkeypatch):
     assert suggested == 3003
 
 
-def test_service_preview_api_merges_unsaved_procfile_fields(tmp_workspace):
+def test_service_preview_event_merges_unsaved_procfile_fields(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     _write_script(os.path.join(tmp_workspace, "Procfile"), "web: python3 app.py --port=$PORT\n")
     _install_service_worker(bp_dir, tmp_workspace, command="python3 old.py")
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
+    client.get_received()
 
-    resp = client.post(
-        "/api/service/preview",
-        json={
+    client.emit(
+        "service:preview",
+        {
             "workspaceId": app.config["startup_workspace_id"],
+            "request_id": "preview-one",
             "slot": 0,
             "fields": {
                 "command_source": "procfile",
@@ -296,15 +305,17 @@ def test_service_preview_api_merges_unsaved_procfile_fields(tmp_workspace):
         },
     )
 
-    assert resp.status_code == 200
-    data = resp.get_json()
+    data = _received(client, "service:previewed")
+    assert data is not None
+    assert data["request_id"] == "preview-one"
     assert data["command_source"] == "procfile"
     assert data["selected_process"] == "web"
     assert data["suggested_port"] is None
     assert data["resolved_command"] == "python3 app.py --port=3200"
+    client.disconnect()
 
 
-def test_service_preview_api_suggests_open_port_when_none_configured(tmp_workspace, monkeypatch):
+def test_service_preview_event_suggests_open_port_when_none_configured(tmp_workspace, monkeypatch):
     bp_dir = init_workspace(tmp_workspace)
     _write_script(os.path.join(tmp_workspace, "Procfile"), "web: python3 app.py --port=$PORT\n")
     _install_service_worker(
@@ -318,13 +329,15 @@ def test_service_preview_api_suggests_open_port_when_none_configured(tmp_workspa
     layout["slots"].append({"type": "service", "name": "Taken", "port": 3000})
     write_json(os.path.join(bp_dir, "layout.json"), layout)
     app = create_app(tmp_workspace, no_browser=True)
-    client = app.test_client()
+    client = socketio.test_client(app)
+    client.get_received()
     monkeypatch.setattr("server.service_worker._port_is_bindable", lambda port: port not in {3001, 3002})
 
-    resp = client.post(
-        "/api/service/preview",
-        json={
+    client.emit(
+        "service:preview",
+        {
             "workspaceId": app.config["startup_workspace_id"],
+            "request_id": "preview-two",
             "slot": 0,
             "fields": {
                 "command_source": "procfile",
@@ -333,9 +346,19 @@ def test_service_preview_api_suggests_open_port_when_none_configured(tmp_workspa
         },
     )
 
-    assert resp.status_code == 200
-    data = resp.get_json()
+    data = _received(client, "service:previewed")
+    assert data is not None
+    assert data["request_id"] == "preview-two"
     assert data["suggested_port"] == 3003
+    client.disconnect()
+
+
+def test_service_preview_rest_route_is_removed(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+
+    routes = {rule.rule for rule in app.url_map.iter_rules()}
+    assert "/api/service/preview" not in routes
 
 
 def test_procfile_service_restart_rereads_procfile(tmp_workspace):

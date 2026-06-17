@@ -72,6 +72,7 @@ from server.worker_types import (
     NOTIFICATION_SPEECH_ENGINES,
     ViewerContext,
     copy_worker_slot,
+    get_worker_type,
     normalize_layout,
     normalize_worker_slot,
     serialize_layout,
@@ -484,6 +485,14 @@ def register_events(socketio, app):
         config = read_json(os.path.join(ws.bp_dir, "config.json"))
         layout = serialize_layout(layout, viewer=ViewerContext(can_edit=True), config=config)
         _emit("layout:updated", layout, ws.id)
+
+    def _emit_service_preview_error(data, ws_id, message):
+        emit("service:preview:error", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": False,
+            "error": message,
+        })
 
     def _archive_tasks_by_status(bp_dir, status, ws_id):
         """Archive live tasks with a matching status and clean worker references."""
@@ -1941,6 +1950,65 @@ def register_events(socketio, app):
             })
 
     # --- Service worker events ---
+
+    @socketio.on("service:preview")
+    def on_service_preview(data):
+        ws_id, bp_dir = _resolve(data or {})
+        if not ws_id or not bp_dir:
+            return
+        try:
+            slot = int((data or {}).get("slot"))
+        except (TypeError, ValueError):
+            _emit_service_preview_error(data, ws_id, "slot is required")
+            return
+
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
+        slots = layout.get("slots", [])
+        if slot < 0 or slot >= len(slots) or not slots[slot]:
+            _emit_service_preview_error(data, ws_id, "Service worker slot not found")
+            return
+
+        worker = dict(slots[slot])
+        if worker.get("type") != "service":
+            _emit_service_preview_error(data, ws_id, "Selected worker is not a Service worker")
+            return
+        fields = (data or {}).get("fields") or {}
+        if not isinstance(fields, dict):
+            _emit_service_preview_error(data, ws_id, "fields must be an object")
+            return
+        for key, value in fields.items():
+            if key not in {"task_queue", "state", "started_at"}:
+                worker[key] = value
+        worker = normalize_worker_slot(worker, index=slot, config=config)
+        errors = get_worker_type("service").validate_config(worker)
+        if errors:
+            _emit_service_preview_error(data, ws_id, errors[0])
+            return
+
+        try:
+            preview = service_worker_mod.resolve_service_preview(worker, os.path.dirname(bp_dir), slot, bp_dir=bp_dir)
+        except ValueError as e:
+            _emit_service_preview_error(data, ws_id, str(e))
+            return
+        suggested_port = None
+        if worker.get("port") is None:
+            suggested_port = service_worker_mod.suggest_service_port(layout, ignore_slot=slot)
+
+        emit("service:previewed", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+            "cwd": preview["cwd"],
+            "procfile_path": preview["procfile_path"],
+            "command_source": preview["command_source"],
+            "process_names": preview["process_names"],
+            "selected_process": preview["selected_process"],
+            "suggested_port": suggested_port,
+            "raw_command": preview["raw_command"],
+            "resolved_command": preview["resolved_command_redacted"],
+            "warnings": preview["warnings"],
+        })
 
     @socketio.on("service:start")
     def on_service_start(data):

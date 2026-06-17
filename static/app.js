@@ -1349,6 +1349,40 @@ const app = createApp({
         socket.emit('worker:transfer', _wsData(payload));
       });
     }
+    let servicePreviewRequestSeq = 0;
+    function requestServicePreview(payload) {
+      return new Promise((resolve, reject) => {
+        const requestId = `service-preview-${Date.now()}-${++servicePreviewRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Service preview timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('service:previewed', onPreviewed);
+          socket.off('service:preview:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onPreviewed = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Preview unavailable'));
+        };
+        socket.on('service:previewed', onPreviewed);
+        socket.on('service:preview:error', onError);
+        socket.emit('service:preview', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
     async function transferWorker(payload) {
       try {
         const groupTransfer = Array.isArray(payload.source_slots) && payload.source_slots.length > 1;
@@ -2017,7 +2051,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,
