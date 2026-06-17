@@ -16,6 +16,13 @@ from flask_socketio import emit, join_room, rooms
 
 from server import tasks as task_mod
 from server import opencode_models
+from server.file_browser import (
+    FileBrowserError,
+    build_file_tree,
+    file_exists,
+    read_text_file,
+    write_text_file,
+)
 from server.persistence import read_json, write_json, atomic_write
 from server.profiles import create_profile, list_profiles
 from server.teams import save_team, load_team, list_teams
@@ -891,6 +898,133 @@ def register_events(socketio, app):
             "hash": commit_hash,
             "diff": result.stdout,
         })
+
+    @socketio.on("files:list")
+    def on_files_list(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        emit("files:listed", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+            "tree": build_file_tree(ws.path),
+        })
+
+    @socketio.on("files:read")
+    def on_files_read(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            result = read_text_file(ws.path, str((data or {}).get("path") or ""))
+        except FileBrowserError as e:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "status": e.status,
+            })
+            return
+        result.update({
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+        })
+        emit("files:read", result)
+
+    @socketio.on("files:exists")
+    def on_files_exists(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            exists = file_exists(ws.path, str((data or {}).get("path") or ""))
+        except FileBrowserError as e:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "status": e.status,
+            })
+            return
+        emit("files:exists:result", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+            "path": str((data or {}).get("path") or ""),
+            "exists": exists,
+        })
+
+    @socketio.on("files:write")
+    def on_files_write(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            result = write_text_file(
+                ws.path,
+                str((data or {}).get("path") or ""),
+                str((data or {}).get("content") or ""),
+                create=bool((data or {}).get("create")),
+            )
+        except FileBrowserError as e:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "status": e.status,
+            })
+            return
+        result.update({
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+        })
+        emit("files:written", result)
+        socketio.emit("files:changed", {"workspaceId": ws_id}, to=ws_id)
 
     # --- Task events ---
 

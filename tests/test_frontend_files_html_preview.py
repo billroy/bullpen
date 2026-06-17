@@ -31,7 +31,13 @@ def test_files_tab_has_distinct_loaded_empty_and_error_states():
     assert "this.treeError = 'Could not load files';" in text
 
 
-def test_files_fetch_identifies_api_requests_for_auth_failures():
+def test_files_tab_uses_socket_events_for_app_file_operations():
     text = _read("static/components/FilesTab.js")
-    assert "headers.set('Accept', 'application/json');" in text
-    assert "headers.set('X-Requested-With', 'XMLHttpRequest');" in text
+    app = _read("static/app.js")
+    assert "this.$root.requestFileTree({ workspaceId: this.workspaceId })" in text
+    assert "this.$root.requestFileRead({ workspaceId: this.workspaceId, path: node.path })" in text
+    assert "this.$root.requestFileWrite({" in text
+    assert "this.$root.requestFileExists({ workspaceId: this.workspaceId, path })" in text
+    assert "filesFetch(" not in text
+    assert "function requestFileTree(payload = {})" in app
+    assert "socket.emit(requestEvent, _wsData({ ...payload, request_id: requestId }));" in app

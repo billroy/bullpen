@@ -29,6 +29,10 @@ leaving only narrowly justified HTTP surfaces.
 - Commit browsing:
   - `/api/commits`
   - `/api/commits/<commit_hash>/diff`
+- File tree/read/write app behavior:
+  - `/api/files`
+  - text `GET /api/files/<path>`
+  - `PUT /api/files/<path>`
 
 These now use Socket.IO:
 
@@ -39,6 +43,10 @@ These now use Socket.IO:
 - `models:opencode`
 - `commits:list`
 - `commits:diff`
+- `files:list`
+- `files:read`
+- `files:exists`
+- `files:write`
 
 ## Current Main-App REST Surface
 
@@ -67,29 +75,23 @@ Remediation:
 
 ### Files
 
-- `/api/files`
-- `/api/files/<path>`
-- `PUT /api/files/<path>`
+- raw/download/media `GET /api/files/<path>?raw=1`
+- image/PDF media `GET /api/files/<path>`
 
 Assessment:
 
-- Current file browsing/editing is a main app feature, so this is architectural
-  REST creep.
-- `PUT /api/files/<path>` is high-risk because it writes workspace files.
+- File browsing/editing is now Socket.IO app behavior.
+- The remaining HTTP path is a browser file transport for downloads, PDF/embed,
+  image preview, and raw HTML attachment handling.
+- This route remains suspect and should be revisited, but it is not an app state
+  query or mutation endpoint.
 
 Remediation:
 
-1. Add Socket.IO file events for tree/list, read, and write.
-2. Preserve existing path traversal and size checks in the event path.
-3. Remove HTTP file routes after `FilesTab` is migrated.
-
-Candidate events:
-
-- `files:list`
-- `files:read`
-- `files:write`
-- `files:written`
-- `files:error`
+1. Keep raw/media HTTP route isolated from JSON app behavior.
+2. Preserve path traversal checks and HTML-as-attachment behavior.
+3. Decide later whether downloads/media previews should move to blob URLs fed by
+   Socket.IO binary payloads.
 
 ## Manager/Admin REST Surface
 
@@ -122,13 +124,11 @@ Remediation:
 
 ## Order Of Operations
 
-1. Remove app query routes:
-   - file list/read
-2. Remove or contain app mutation/file transport:
-   - file write
+1. Remove or contain app mutation/file transport:
    - workspace/all import
    - workspace/all export
-3. Audit and remediate manager/admin REST.
+   - raw file download/media transport
+2. Audit and remediate manager/admin REST.
 
 ## Acceptance Criteria
 

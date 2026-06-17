@@ -2,7 +2,6 @@
 
 import os
 import re
-import subprocess
 import sys
 import json
 import tempfile
@@ -30,7 +29,8 @@ from flask_socketio import SocketIO, join_room
 from server import auth
 from server.events import register_events
 from server.init import init_workspace
-from server.persistence import read_json, write_json, read_frontmatter, ensure_within, atomic_write
+from server.persistence import read_json, write_json, read_frontmatter, ensure_within
+from server.file_browser import FileBrowserError, is_textual_mime, workspace_file_path
 from server.profiles import list_profiles
 from server.scheduler import Scheduler
 from server.teams import list_teams
@@ -77,18 +77,6 @@ _LOGIN_THROTTLE_MAX_FAILURES = 5
 _LOGIN_THROTTLE_BLOCK_SECONDS = 60
 _DEFAULT_SESSION_DAYS = 30
 _MAX_SESSION_DAYS = 365
-_TEXTUAL_APPLICATION_MIME_PREFIXES = (
-    "application/json",
-    "application/ld+json",
-    "application/xml",
-    "application/javascript",
-    "application/x-javascript",
-    "application/ecmascript",
-    "application/x-sh",
-    "application/x-shellscript",
-)
-
-
 def _origin_host(origin):
     if not origin:
         return ""
@@ -119,17 +107,6 @@ def _normalize_origin(origin):
     if not scheme or not netloc:
         return ""
     return f"{scheme}://{netloc}"
-
-
-def _is_textual_mime(mime):
-    if not mime:
-        return True
-    if mime.startswith("text/"):
-        return True
-    return any(
-        mime == prefix or mime.startswith(prefix + ";")
-        for prefix in _TEXTUAL_APPLICATION_MIME_PREFIXES
-    )
 
 
 def _safe_int(value, default=0):
@@ -502,30 +479,18 @@ def create_app(
             return None, (jsonify({"error": "Unknown workspace"}), 404)
         return ws, None
 
-    @app.route("/api/files")
-    @auth.require_auth
-    def file_tree():
-        """Return workspace file tree."""
-        ws, error = _workspace_from_id(_workspace_id_from_args())
-        if error:
-            return error
-        ws_path = ws.path
-        tree = build_file_tree(ws_path)
-        return jsonify(tree)
-
     @app.route("/api/files/<path:filepath>")
     @auth.require_auth
-    def file_content(filepath):
-        """Return file content."""
+    def raw_file_content(filepath):
+        """Serve raw/downloadable workspace files only."""
         ws, error = _workspace_from_id(_workspace_id_from_args())
         if error:
             return error
         ws_path = ws.path
-        full_path = os.path.join(ws_path, filepath)
         try:
-            ensure_within(full_path, ws_path)
-        except ValueError:
-            abort(403)
+            full_path = workspace_file_path(ws_path, filepath)
+        except FileBrowserError as e:
+            return jsonify({"error": e.message}), e.status
 
         if not os.path.isfile(full_path):
             abort(404)
@@ -542,47 +507,10 @@ def create_app(
                 send_kwargs["download_name"] = os.path.basename(full_path)
             return send_file(full_path, **send_kwargs)
 
-        if mime and (mime.startswith("image/") or not _is_textual_mime(mime)):
+        if mime and (mime.startswith("image/") or not is_textual_mime(mime)):
             return send_file(full_path, mimetype=mime)
 
-        try:
-            with open(full_path, "r", errors="replace") as f:
-                content = f.read()
-            return jsonify({"path": filepath, "content": content, "mime": mime or "text/plain"})
-        except Exception:
-            abort(500)
-
-    @app.route("/api/files/<path:filepath>", methods=["PUT"])
-    @auth.require_auth
-    def file_write(filepath):
-        """Write file content."""
-        ws, error = _workspace_from_id(_workspace_id_from_args())
-        if error:
-            return error
-        ws_path = ws.path
-        full_path = os.path.join(ws_path, filepath)
-        try:
-            ensure_within(full_path, ws_path)
-        except ValueError:
-            abort(403)
-
-        content = request.get_data(as_text=True)
-        if len(content) > 1_000_000:
-            return jsonify({"error": "File too large (max 1MB)"}), 400
-        if request.args.get("create") == "1" and os.path.exists(full_path):
-            return jsonify({"error": "File already exists"}), 409
-
-        # Reject binary content
-        try:
-            content.encode("utf-8")
-        except UnicodeEncodeError:
-            return jsonify({"error": "Binary files cannot be edited"}), 400
-
-        try:
-            atomic_write(full_path, content)
-            return jsonify({"ok": True})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Use Socket.IO file events for text file content"}), 400
 
     def _export_workspace_zip_bytes(ws):
         mem = BytesIO()
@@ -848,64 +776,6 @@ def _is_safe_next(next_url):
     if "://" in next_url:
         return False
     return True
-
-
-def build_file_tree(workspace):
-    """Build file tree excluding .git, node_modules, gitignored paths."""
-    excluded = {".git", "node_modules", "__pycache__", ".pytest_cache", ".venv", "venv"}
-
-    # Try to get gitignored paths
-    gitignored = set()
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
-            capture_output=True, text=True, cwd=workspace, timeout=5,
-        )
-        if result.returncode == 0:
-            for line in result.stdout.strip().split("\n"):
-                if line:
-                    gitignored.add(line.rstrip("/"))
-        # Always show .bullpen regardless of .gitignore
-        gitignored.discard(".bullpen")
-    except Exception:
-        pass
-
-    MAX_DEPTH = 20
-    MAX_NODES = 10_000
-    node_count = [0]  # mutable counter for nested scope
-
-    def walk(path, rel="", depth=0):
-        entries = []
-        if depth >= MAX_DEPTH or node_count[0] >= MAX_NODES:
-            return entries
-        try:
-            items = sorted(os.listdir(path))
-        except PermissionError:
-            return entries
-
-        for name in items:
-            if node_count[0] >= MAX_NODES:
-                break
-            if name.startswith(".") and name in excluded:
-                continue
-            rel_path = os.path.join(rel, name) if rel else name
-            if rel_path in gitignored or name in excluded:
-                continue
-            full = os.path.join(path, name)
-            node_count[0] += 1
-            if os.path.islink(full):
-                # Skip symlinked directories to prevent traversal/loops
-                if os.path.isdir(full):
-                    continue
-                entries.append({"name": name, "path": rel_path, "type": "file"})
-            elif os.path.isdir(full):
-                children = walk(full, rel_path, depth + 1)
-                entries.append({"name": name, "path": rel_path, "type": "dir", "children": children})
-            else:
-                entries.append({"name": name, "path": rel_path, "type": "file"})
-        return entries
-
-    return walk(workspace)
 
 
 def reconcile(bp_dir):

@@ -1,20 +1,3 @@
-// Shared fetch wrapper that redirects to /login on a 401. Returning null
-// lets callers bail out early without crashing on res.json().
-async function filesFetch(input, init) {
-  const options = init ? { ...init } : {};
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
-  if (!headers.has('X-Requested-With')) headers.set('X-Requested-With', 'XMLHttpRequest');
-  options.headers = headers;
-  const res = await fetch(input, options);
-  if (res.status === 401) {
-    window.location = '/login?next=' +
-      encodeURIComponent(window.location.pathname + window.location.search);
-    return null;
-  }
-  return res;
-}
-
 const FileTreeNode = {
   name: 'FileTreeNode',
   props: ['node', 'depth', 'activePath'],
@@ -290,14 +273,8 @@ const FilesTab = {
       this.loadingTree = true;
       this.treeError = '';
       try {
-        const res = await filesFetch(this._filesUrl());
-        if (!res) return;
-        if (!res.ok) {
-          this.tree = [];
-          this.treeError = 'Could not load files';
-          return;
-        }
-        this.tree = await res.json();
+        const data = await this.$root.requestFileTree({ workspaceId: this.workspaceId });
+        this.tree = Array.isArray(data.tree) ? data.tree : [];
       } catch (e) {
         console.error('Failed to load file tree', e);
         this.tree = [];
@@ -324,10 +301,7 @@ const FilesTab = {
         return;
       }
       try {
-        const res = await filesFetch(this._filesUrl(node.path));
-        if (!res) return;
-        if (!res.ok) throw new Error('Failed to load');
-        const data = await res.json();
+        const data = await this.$root.requestFileRead({ workspaceId: this.workspaceId, path: node.path });
         const file = { path: node.path, name: node.name, content: data.content };
         this.openFiles.push(file);
         this.activeFile = file;
@@ -401,18 +375,12 @@ const FilesTab = {
     async saveEdit() {
       try {
         const content = this._aceValue();
-        const params = this.activeFile?.isNew ? { create: '1' } : {};
-        const res = await filesFetch(this._filesUrl(this.activeFile.path, params), {
-          method: 'PUT',
-          headers: { 'Content-Type': 'text/plain' },
-          body: content,
+        await this.$root.requestFileWrite({
+          workspaceId: this.workspaceId,
+          path: this.activeFile.path,
+          content,
+          create: !!this.activeFile?.isNew,
         });
-        if (!res) return;
-        if (!res.ok) {
-          const data = await res.json();
-          alert('Save failed: ' + (data.error || 'Unknown error'));
-          return;
-        }
         this.activeFile.content = content;
         this.activeFile.isNew = false;
         this.editContent = content;
@@ -432,10 +400,7 @@ const FilesTab = {
     async reloadActiveFile() {
       if (!this.activeFile || this.isImage || this.isPdf) return;
       try {
-        const res = await filesFetch(this._filesUrl(this.activeFile.path));
-        if (!res) return;
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await this.$root.requestFileRead({ workspaceId: this.workspaceId, path: this.activeFile.path });
         this.activeFile.content = data.content;
       } catch (e) {
         // Silently skip reload failures
@@ -464,12 +429,8 @@ const FilesTab = {
     },
     async _fileExists(path) {
       try {
-        const res = await filesFetch(this._filesUrl(path), { method: 'HEAD' });
-        if (!res) return null;
-        if (res.status === 404) return false;
-        if (res.ok) return true;
-        alert('Could not verify whether that file exists.');
-        return null;
+        const data = await this.$root.requestFileExists({ workspaceId: this.workspaceId, path });
+        return !!data.exists;
       } catch (e) {
         alert('Could not verify whether that file exists.');
         return null;

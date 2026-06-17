@@ -1484,6 +1484,76 @@ const app = createApp({
         socket.emit('commits:diff', _wsData({ ...payload, request_id: requestId }));
       });
     }
+    let filesRequestSeq = 0;
+    function _requestFileEvent({ requestEvent, successEvent, payload = {}, timeoutMessage, errorMessage }) {
+      return new Promise((resolve, reject) => {
+        const requestId = `files-${Date.now()}-${++filesRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error(timeoutMessage || 'File request timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off(successEvent, onSuccess);
+          socket.off('files:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onSuccess = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || errorMessage || 'File request failed'));
+        };
+        socket.on(successEvent, onSuccess);
+        socket.on('files:error', onError);
+        socket.emit(requestEvent, _wsData({ ...payload, request_id: requestId }));
+      });
+    }
+    function requestFileTree(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:list',
+        successEvent: 'files:listed',
+        payload,
+        timeoutMessage: 'File tree request timed out',
+        errorMessage: 'Could not load files',
+      });
+    }
+    function requestFileRead(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:read',
+        successEvent: 'files:read',
+        payload,
+        timeoutMessage: 'File read timed out',
+        errorMessage: 'Failed to load file',
+      });
+    }
+    function requestFileExists(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:exists',
+        successEvent: 'files:exists:result',
+        payload,
+        timeoutMessage: 'File existence check timed out',
+        errorMessage: 'Could not verify whether that file exists.',
+      });
+    }
+    function requestFileWrite(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:write',
+        successEvent: 'files:written',
+        payload,
+        timeoutMessage: 'File save timed out',
+        errorMessage: 'Save failed',
+      });
+    }
     async function transferWorker(payload) {
       try {
         const groupTransfer = Array.isArray(payload.source_slots) && payload.source_slots.length > 1;
@@ -2152,7 +2222,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileExists, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

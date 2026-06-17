@@ -244,34 +244,32 @@ class TestHttpAuthEnabled:
         r = auth_client.get("/logout")
         assert r.status_code == 405
 
-    def test_api_files_unauthenticated_returns_401_when_xhr(self, auth_client):
+    def test_raw_file_unauthenticated_returns_401_when_xhr(self, auth_client):
+        with open(os.path.join(auth_client.application.config["workspace"], "auth.txt"), "w", encoding="utf-8") as handle:
+            handle.write("hello")
         r = auth_client.get(
-            "/api/files",
+            "/api/files/auth.txt?raw=1",
             headers={"X-Requested-With": "XMLHttpRequest"},
         )
         assert r.status_code == 401
 
-    def test_api_files_unauthenticated_redirects_when_browser(self, auth_client):
-        r = auth_client.get("/api/files")
+    def test_raw_file_unauthenticated_redirects_when_browser(self, auth_client):
+        with open(os.path.join(auth_client.application.config["workspace"], "auth.txt"), "w", encoding="utf-8") as handle:
+            handle.write("hello")
+        r = auth_client.get("/api/files/auth.txt?raw=1")
         assert r.status_code == 302
         assert "/login" in r.headers["Location"]
-
-    def test_file_write_unauthenticated_rejected(self, auth_client):
-        r = auth_client.put(
-            "/api/files/foo.txt",
-            data="hi",
-            headers={"X-Requested-With": "XMLHttpRequest"},
-        )
-        assert r.status_code == 401
 
     def test_next_param_preserved(self, auth_client):
         r = auth_client.get("/")
         loc = r.headers["Location"]
         assert "next=/" in loc
 
-    def test_authenticated_can_hit_api(self, auth_client):
+    def test_authenticated_can_hit_raw_file_transport(self, auth_client):
+        with open(os.path.join(auth_client.application.config["workspace"], "auth.txt"), "w", encoding="utf-8") as handle:
+            handle.write("hello")
         _login(auth_client)
-        r = auth_client.get("/api/files")
+        r = auth_client.get("/api/files/auth.txt?raw=1")
         assert r.status_code == 200
 
     def test_authenticated_index_200(self, auth_client):
@@ -345,8 +343,10 @@ class TestAuthDisabled:
         r = noauth_client.get("/")
         assert r.status_code == 200
 
-    def test_no_auth_api_files(self, noauth_client):
-        r = noauth_client.get("/api/files")
+    def test_no_auth_raw_file_transport(self, noauth_client):
+        with open(os.path.join(noauth_client.application.config["workspace"], "noauth.txt"), "w", encoding="utf-8") as handle:
+            handle.write("hello")
+        r = noauth_client.get("/api/files/noauth.txt?raw=1")
         assert r.status_code == 200
 
     def test_no_auth_login_page_redirects_to_index(self, noauth_client):

@@ -58,9 +58,8 @@ def test_files_tab_create_flow_verifies_existence_and_create_only_save():
     assert "Enter a file name, not a path." in text
     assert "[\\/\\\\?#\\u0000-\\u001f]" in text
     assert "async _fileExists(path)" in text
-    assert "method: 'HEAD'" in text
-    assert "if (res.status === 404) return false;" in text
-    assert "const params = this.activeFile?.isNew ? { create: '1' } : {};" in text
+    assert "this.$root.requestFileExists({ workspaceId: this.workspaceId, path })" in text
+    assert "create: !!this.activeFile?.isNew" in text
     assert "this.activeFile.isNew = false;" in text
     assert "if (cancelled?.isNew) this._removeOpenFile(cancelled.path);" in text
 
@@ -68,7 +67,8 @@ def test_files_tab_create_flow_verifies_existence_and_create_only_save():
 def test_files_tab_saves_from_ace_and_keeps_size_guard():
     text = _read("static/components/FilesTab.js")
     assert "const content = this._aceValue();" in text
-    assert "body: content" in text
+    assert "content," in text
+    assert "this.$root.requestFileWrite({" in text
     assert "this.activeFile.content = content;" in text
     assert "this.activeFile.content && this.activeFile.content.length > 1_000_000" in text
 
