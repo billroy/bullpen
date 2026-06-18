@@ -60,10 +60,14 @@ def test_app_wires_toolbar_export_import_events():
     assert "await _downloadBentoExport({ kind: 'worker-group', slots }, 'bullpen-workers.bento');" in text
     assert "async function exportWorker(slot) {" in text
     assert "socket.emit('archive:export', _wsData({ ...payload, request_id: requestId }));" in text
-    assert "socket.emit('bento:export', _wsData(payload));" in text
+    assert "const requestId = payload.request_id || _nextRequestId('bento-export');" in text
+    assert "const requestId = payload.request_id || _nextRequestId('bento-preview');" in text
+    assert "const requestId = payload.request_id || _nextRequestId('bento-import');" in text
+    assert "if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;" in text
+    assert "socket.emit('bento:export', _wsData({ ...payload, request_id: requestId }));" in text
     assert "await _downloadBentoExport({ kind: 'worker', slot }, 'bullpen-worker.bento');" in text
     assert "socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));" in text
-    assert "socket.emit('bento:preview', _wsData(payload));" in text
+    assert "socket.emit('bento:preview', _wsData({ ...payload, request_id: requestId }));" in text
     assert "const preview = await _requestBentoPreview({ file: data });" in text
     assert "const BENTO_RISKY_CAPABILITY_LABELS = {" in text
     assert "commands: 'command fields'" in text
@@ -87,7 +91,7 @@ def test_app_wires_toolbar_export_import_events():
     assert "payload.target_status = targetStatus;" in text
     assert "payload.placement = { strategy: 'preserve', state: placement.state };" in text
     assert "return _requestBentoImport(_bentoImportPayloadForPreview(data, preview));" in text
-    assert "socket.emit('bento:import', _wsData(payload));" in text
+    assert "socket.emit('bento:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "const data = await file.arrayBuffer();" in text
     assert "const result = await _importArchiveFile(file, 'all');" in text
     assert "Package import complete' + (count ? ` (${count})` : '')" in text

@@ -1769,6 +1769,7 @@ const app = createApp({
 
     function _requestBentoExport(payload) {
       return new Promise((resolve, reject) => {
+        const requestId = payload.request_id || _nextRequestId('bento-export');
         const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
         const expectedKind = payload.kind;
         const timer = setTimeout(() => {
@@ -1782,6 +1783,7 @@ const app = createApp({
         };
         const matches = (eventPayload) => {
           if (!eventPayload) return false;
+          if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;
           if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
           if (expectedKind && eventPayload.kind && eventPayload.kind !== expectedKind) return false;
           return true;
@@ -1798,7 +1800,7 @@ const app = createApp({
         };
         socket.on('bento:exported', onExported);
         socket.on('bento:error', onError);
-        socket.emit('bento:export', _wsData(payload));
+        socket.emit('bento:export', _wsData({ ...payload, request_id: requestId }));
       });
     }
 
@@ -1857,6 +1859,7 @@ const app = createApp({
 
     function _requestBentoPreview(payload) {
       return new Promise((resolve, reject) => {
+        const requestId = payload.request_id || _nextRequestId('bento-preview');
         const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
         const timer = setTimeout(() => {
           cleanup();
@@ -1869,6 +1872,7 @@ const app = createApp({
         };
         const matches = (eventPayload) => {
           if (!eventPayload) return false;
+          if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;
           if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
           return true;
         };
@@ -1884,12 +1888,13 @@ const app = createApp({
         };
         socket.on('bento:previewed', onPreviewed);
         socket.on('bento:error', onError);
-        socket.emit('bento:preview', _wsData(payload));
+        socket.emit('bento:preview', _wsData({ ...payload, request_id: requestId }));
       });
     }
 
     function _requestBentoImport(payload) {
       return new Promise((resolve, reject) => {
+        const requestId = payload.request_id || _nextRequestId('bento-import');
         const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
         const timer = setTimeout(() => {
           cleanup();
@@ -1902,6 +1907,7 @@ const app = createApp({
         };
         const matches = (eventPayload) => {
           if (!eventPayload) return false;
+          if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;
           if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
           return true;
         };
@@ -1917,7 +1923,7 @@ const app = createApp({
         };
         socket.on('bento:imported', onImported);
         socket.on('bento:error', onError);
-        socket.emit('bento:import', _wsData(payload));
+        socket.emit('bento:import', _wsData({ ...payload, request_id: requestId }));
       });
     }
 

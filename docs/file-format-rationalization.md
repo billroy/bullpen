@@ -724,6 +724,10 @@ Suggested initial package Socket.IO events:
 The event names are illustrative. The key architectural point is that import
 preview and import apply are separate Socket.IO operations.
 
+Current baseline: Bento preview, import, and export requests carry a
+client-generated `request_id`; success and error events echo it so concurrent
+package operations can ignore unrelated replies.
+
 ## Aft: Deferred Work
 
 The following work should be kept out of the first package implementation unless

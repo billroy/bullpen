@@ -68,9 +68,10 @@ def test_export_single_worker_bento_includes_manifest_worker_and_profile(tmp_wor
         {"id": "custom-worker", "name": "Custom Worker", "workspaceId": "local"},
     )
 
-    exported = _export_worker(client, kind="worker", slot=0)
+    exported = _export_worker(client, kind="worker", slot=0, request_id="export-worker-1")
 
     assert exported["mimetype"] == "application/vnd.bullpen.bento+zip"
+    assert exported["request_id"] == "export-worker-1"
     assert exported["filename"].startswith("bullpen-worker-Builder-")
     assert exported["filename"].endswith(".bento")
     manifest = _read_zip_json(exported["data"], "bento.json")

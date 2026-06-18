@@ -331,9 +331,11 @@ def test_bento_preview_event_returns_carrier_preview(tmp_workspace):
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
 
-    client.emit("bento:preview", {"file": _valid_bento().getvalue()})
+    client.emit("bento:preview", {"file": _valid_bento().getvalue(), "request_id": "preview-1"})
 
-    assert _received(client, "bento:previewed")["ok"] is True
+    preview = _received(client, "bento:previewed")
+    assert preview["ok"] is True
+    assert preview["request_id"] == "preview-1"
 
 
 def test_bento_preview_event_rejects_missing_upload(tmp_workspace):
@@ -341,9 +343,11 @@ def test_bento_preview_event_rejects_missing_upload(tmp_workspace):
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
 
-    client.emit("bento:preview", {})
+    client.emit("bento:preview", {"request_id": "preview-missing"})
 
-    assert _received(client, "bento:error")["code"] == "missing-upload"
+    error = _received(client, "bento:error")
+    assert error["code"] == "missing-upload"
+    assert error["request_id"] == "preview-missing"
 
 
 def test_bento_preview_event_rejects_invalid_archive(tmp_workspace):
@@ -361,9 +365,11 @@ def test_bento_import_event_rejects_invalid_archive(tmp_workspace):
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
 
-    client.emit("bento:import", {"file": b"not a zip"})
+    client.emit("bento:import", {"file": b"not a zip", "request_id": "import-bad"})
 
-    assert _received(client, "bento:error")["code"] == "invalid-zip"
+    error = _received(client, "bento:error")
+    assert error["code"] == "invalid-zip"
+    assert error["request_id"] == "import-bad"
 
 
 def test_bento_preview_event_rejects_unsupported_mixed_bullpen_package(tmp_workspace):

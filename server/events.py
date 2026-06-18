@@ -627,6 +627,21 @@ def register_events(socketio, app):
             return declared
         return inferred
 
+    def _bento_event_base(ws_id, data):
+        base = {"workspaceId": ws_id}
+        request_id = (data or {}).get("request_id") if isinstance(data, dict) else None
+        if request_id:
+            base["request_id"] = str(request_id)
+        return base
+
+    def _emit_bento_error(ws_id, data, error, code):
+        emit("bento:error", {
+            **_bento_event_base(ws_id, data),
+            "ok": False,
+            "error": error,
+            "code": code,
+        })
+
     @socketio.on("bento:preview")
     def on_bento_preview(data):
         ws_id, bp_dir = _resolve(data or {})
@@ -645,19 +660,14 @@ def register_events(socketio, app):
                 elif kind in {"worker", "worker-group"}:
                     preview = preview_worker_bento(fileobj, bp_dir=bp_dir)
                 else:
-                    emit("bento:error", {
-                        "workspaceId": ws_id,
-                        "ok": False,
-                        "error": "Unsupported Bullpen Bento package kind",
-                        "code": "unsupported-kind",
-                    })
+                    _emit_bento_error(ws_id, data, "Unsupported Bullpen Bento package kind", "unsupported-kind")
                     return
             else:
                 preview = carrier_preview
-            preview["workspaceId"] = ws_id
+            preview.update(_bento_event_base(ws_id, data))
             emit("bento:previewed", preview)
         except BentoCarrierError as e:
-            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": e.message, "code": e.code})
+            _emit_bento_error(ws_id, data, e.message, e.code)
 
     @socketio.on("bento:export")
     def on_bento_export(data):
@@ -667,7 +677,7 @@ def register_events(socketio, app):
         manager = app.config["manager"]
         ws = manager.get(ws_id)
         if not ws:
-            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Unknown workspace", "code": "unknown-workspace"})
+            _emit_bento_error(ws_id, data, "Unknown workspace", "unknown-workspace")
             return
         kind = str((data or {}).get("kind") or "").strip()
         slots = _normalized_worker_slots_for_bp(bp_dir)
@@ -675,7 +685,7 @@ def register_events(socketio, app):
             if kind == "worker":
                 slot = int((data or {}).get("slot"))
                 if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
-                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Unknown worker slot", "code": "unknown-worker-slot"})
+                    _emit_bento_error(ws_id, data, "Unknown worker slot", "unknown-worker-slot")
                     return
                 worker = slots[slot]
                 filename = (
@@ -696,17 +706,12 @@ def register_events(socketio, app):
                         continue
                     seen.add(slot)
                     if slot < 0 or slot >= len(slots) or not isinstance(slots[slot], dict):
-                        emit("bento:error", {
-                            "workspaceId": ws_id,
-                            "ok": False,
-                            "error": f"Unknown worker slot: {slot}",
-                            "code": "unknown-worker-slot",
-                        })
+                        _emit_bento_error(ws_id, data, f"Unknown worker slot: {slot}", "unknown-worker-slot")
                         return
                     selected.append(slots[slot])
                     selected_indices.append(slot)
                 if not selected:
-                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "slots must include at least one worker", "code": "missing-slots"})
+                    _emit_bento_error(ws_id, data, "slots must include at least one worker", "missing-slots")
                     return
                 workspace_name = _bento_worker_export_name(ws.name, "workspace")
                 filename = f"bullpen-worker-group-{workspace_name}-{ws.id[:8]}.bento"
@@ -715,7 +720,7 @@ def register_events(socketio, app):
                 task_id = str((data or {}).get("id") or "").strip()
                 task = task_mod.read_task(bp_dir, task_id)
                 if not task:
-                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Unknown ticket", "code": "unknown-ticket"})
+                    _emit_bento_error(ws_id, data, "Unknown ticket", "unknown-ticket")
                     return
                 filename = (
                     f"bullpen-ticket-{_bento_worker_export_name(task.get('title'), task.get('id') or 'ticket')}-"
@@ -736,29 +741,24 @@ def register_events(socketio, app):
                     seen.add(task_id)
                     task = task_mod.read_task(bp_dir, task_id)
                     if not task:
-                        emit("bento:error", {
-                            "workspaceId": ws_id,
-                            "ok": False,
-                            "error": f"Unknown ticket: {task_id}",
-                            "code": "unknown-ticket",
-                        })
+                        _emit_bento_error(ws_id, data, f"Unknown ticket: {task_id}", "unknown-ticket")
                         return
                     selected.append(task)
                     selected_ids.append(task_id)
                 if not selected:
-                    emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "ids must include at least one ticket", "code": "missing-tickets"})
+                    _emit_bento_error(ws_id, data, "ids must include at least one ticket", "missing-tickets")
                     return
                 workspace_name = _bento_worker_export_name(ws.name, "workspace")
                 filename = f"bullpen-ticket-bundle-{workspace_name}-{ws.id[:8]}.bento"
                 package = build_ticket_bento(ws, selected, kind="ticket-bundle", selected_ids=selected_ids)
             else:
-                emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "kind must be worker, worker-group, ticket, or ticket-bundle", "code": "invalid-kind"})
+                _emit_bento_error(ws_id, data, "kind must be worker, worker-group, ticket, or ticket-bundle", "invalid-kind")
                 return
         except (TypeError, ValueError):
-            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "Invalid Bento export request", "code": "invalid-export-request"})
+            _emit_bento_error(ws_id, data, "Invalid Bento export request", "invalid-export-request")
             return
         emit("bento:exported", {
-            "workspaceId": ws_id,
+            **_bento_event_base(ws_id, data),
             "ok": True,
             "kind": kind,
             "filename": filename,
@@ -799,17 +799,12 @@ def register_events(socketio, app):
                     layout = result.pop("layout")
                     _emit("layout:updated", layout, ws_id)
                 else:
-                    emit("bento:error", {
-                        "workspaceId": ws_id,
-                        "ok": False,
-                        "error": "Unsupported Bullpen Bento package kind",
-                        "code": "unsupported-kind",
-                    })
+                    _emit_bento_error(ws_id, data, "Unsupported Bullpen Bento package kind", "unsupported-kind")
                     return
-            result["workspaceId"] = ws_id
+            result.update(_bento_event_base(ws_id, data))
             emit("bento:imported", result)
         except BentoCarrierError as e:
-            emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": e.message, "code": e.code})
+            _emit_bento_error(ws_id, data, e.message, e.code)
 
     @socketio.on("archive:export")
     def on_archive_export(data):
