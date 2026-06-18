@@ -99,8 +99,9 @@ This keeps file naming simple while avoiding extension sprawl:
 ## Bullpen Profile Kinds
 
 The carrier manifest does not require package kinds. The Bullpen profile can
-define a `kind` hint for UX and default import behavior. The actual contents are
-still described by `items`.
+define a `kind` hint for UX and default import behavior, but the current
+implementation treats that hint as confirmation, not proof. The actual contents
+are still described by `items`.
 
 Initial package kinds:
 
@@ -116,6 +117,13 @@ Initial package kinds:
 The package kind is not a security boundary, and it is not a carrier-level type
 system. Import code MUST inspect every item and apply the relevant validations
 and approvals.
+
+Current baseline support is deliberately strict: worker and ticket packages
+must include classifiable item hints such as `bullpen_type`, and any declared
+`bullpen.kind` must match the inferred item kind exactly. Packages without
+classifiable item hints, mismatched declared kinds, or unsupported/mixed item
+sets preview/import as unsupported until path/field-based classification is
+implemented deliberately.
 
 ## Bullpen Profile Contracts
 

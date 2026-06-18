@@ -110,8 +110,9 @@ Behavior:
   trusted.
 - `bento:import` validates the carrier before reading package semantics or
   mutating workspace state.
-- Bullpen packages route by declared `bullpen.kind` when present, and by
-  manifest item hints when kind is absent.
+- Bullpen packages route by classifiable item hints. Declared `bullpen.kind`
+  must match the inferred item kind exactly when present; unsupported, mixed,
+  unhinted, or mismatched packages fail closed with `unsupported-kind`.
 
 ## Legacy Routing
 
