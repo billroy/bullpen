@@ -620,7 +620,7 @@ def register_events(socketio, app):
         worker_kinds = {"worker", "worker-group"}
         supported_kinds = ticket_kinds | worker_kinds
         if declared:
-            if declared not in supported_kinds or inferred == "unsupported":
+            if declared not in supported_kinds or inferred in {None, "unsupported"}:
                 return "unsupported"
             if inferred and inferred != declared:
                 return "unsupported"

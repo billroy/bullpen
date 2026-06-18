@@ -96,6 +96,27 @@ def _mismatched_bullpen_bento(*, declared_kind="ticket", item_type="worker"):
     })
 
 
+def _unhinted_declared_bullpen_bento():
+    manifest = {
+        "format": "bento",
+        "version": "1",
+        "profiles": [{"id": "org.bullpen.share", "version": "1", "label": "Bullpen Share"}],
+        "items": [
+            {
+                "id": "worker.one",
+                "media_type": "application/json",
+                "path": "payload/workers/one.json",
+            }
+        ],
+        "attributes": [],
+        "bullpen": {"kind": "worker"},
+    }
+    return _zip_bytes({
+        "bento.json": json.dumps(manifest),
+        "payload/workers/one.json": json.dumps({"name": "Worker", "type": "ai"}),
+    })
+
+
 def _expect_code(archive, code, *, limits=None):
     with pytest.raises(BentoCarrierError) as err:
         inspect_bento(archive, limits=limits)
@@ -400,6 +421,16 @@ def test_bento_preview_event_rejects_declared_bundle_kind_for_single_item(tmp_wo
 
     package = _mismatched_bullpen_bento(declared_kind="ticket-bundle", item_type="ticket")
     client.emit("bento:preview", {"file": package.getvalue()})
+
+    assert _received(client, "bento:error")["code"] == "unsupported-kind"
+
+
+def test_bento_preview_event_rejects_declared_kind_without_item_hints(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    client.emit("bento:preview", {"file": _unhinted_declared_bullpen_bento().getvalue()})
 
     assert _received(client, "bento:error")["code"] == "unsupported-kind"
 
