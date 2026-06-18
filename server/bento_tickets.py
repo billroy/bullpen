@@ -95,7 +95,8 @@ def _safe_type(value):
 
 def _safe_import_status(value):
     status = str(value or _SAFE_IMPORT_STATUS).strip() or _SAFE_IMPORT_STATUS
-    if status in _ACTIVE_IMPORT_STATUSES:
+    normalized = status.replace("-", "_").lower()
+    if normalized in _ACTIVE_IMPORT_STATUSES:
         return _SAFE_IMPORT_STATUS
     return status
 
