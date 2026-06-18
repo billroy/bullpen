@@ -1,5 +1,5 @@
 const BentoImportReviewModal = {
-  props: ['visible', 'preview', 'columns'],
+  props: ['visible', 'preview', 'columns', 'layout', 'gridCols'],
   emits: ['close', 'apply'],
   data() {
     return {
@@ -31,9 +31,9 @@ const BentoImportReviewModal = {
             </div>
           </section>
 
-          <section v-if="hasPlacementConflict" class="bento-review-section">
+          <section v-if="placementRows.length" class="bento-review-section">
             <div class="bento-review-heading">Placement</div>
-            <label class="form-label">
+            <label v-if="hasPlacementConflict" class="form-label">
               Strategy
               <select class="form-select" v-model="placementStrategy">
                 <option value="place-right">Place right</option>
@@ -50,6 +50,18 @@ const BentoImportReviewModal = {
                 Row
                 <input class="form-input" type="number" v-model.number="anchorRow">
               </label>
+            </div>
+            <div class="bento-placement-table">
+              <div class="bento-placement-row bento-placement-header">
+                <span>Worker</span>
+                <span>Source</span>
+                <span>Target</span>
+              </div>
+              <div v-for="row in placementRows" :key="row.key" class="bento-placement-row">
+                <span class="bento-review-item-name">{{ row.name }}</span>
+                <span>{{ coordLabel(row.from) }}</span>
+                <span>{{ coordLabel(row.to) }}</span>
+              </div>
             </div>
           </section>
 
@@ -104,6 +116,74 @@ const BentoImportReviewModal = {
     hasPlacementConflict() {
       return this.preview?.bullpen?.placement?.status === 'conflict';
     },
+    placementRequests() {
+      const requested = this.preview?.bullpen?.placement?.requested;
+      return Array.isArray(requested) ? requested : [];
+    },
+    workerPlacementItems() {
+      const byId = {};
+      for (const item of this.items) {
+        if (item?.item_id) byId[item.item_id] = item;
+      }
+      return this.placementRequests.map((request, index) => {
+        const item = byId[request.item_id] || this.items[index] || {};
+        const coord = request.coord || item.coord || {};
+        return {
+          key: request.item_id || item.item_id || `worker-${index}`,
+          name: item.name || item.label || `Worker ${index + 1}`,
+          coord: {
+            col: this.safeInt(coord.col, 0),
+            row: this.safeInt(coord.row, 0),
+          },
+        };
+      });
+    },
+    occupiedCoords() {
+      const slots = Array.isArray(this.layout?.slots) ? this.layout.slots : [];
+      const cols = Math.max(this.safeInt(this.gridCols, 4), 1);
+      return slots
+        .map((worker, index) => {
+          if (!worker || typeof worker !== 'object') return null;
+          return {
+            col: this.safeInt(worker.col, index % cols),
+            row: this.safeInt(worker.row, Math.floor(index / cols)),
+          };
+        })
+        .filter(Boolean);
+    },
+    placementAnchor() {
+      const items = this.workerPlacementItems;
+      if (!items.length) return { col: 0, row: 0 };
+      if (!this.hasPlacementConflict) {
+        return {
+          col: Math.min(...items.map(item => item.coord.col)),
+          row: Math.min(...items.map(item => item.coord.row)),
+        };
+      }
+      if (this.placementStrategy === 'choose-anchor') {
+        return {
+          col: this.safeInt(this.anchorCol, 0),
+          row: this.safeInt(this.anchorRow, 0),
+        };
+      }
+      return this.autoPlacementAnchor(this.placementStrategy, items);
+    },
+    placementRows() {
+      const items = this.workerPlacementItems;
+      if (!items.length) return [];
+      const sourceMinCol = Math.min(...items.map(item => item.coord.col));
+      const sourceMinRow = Math.min(...items.map(item => item.coord.row));
+      const anchor = this.placementAnchor;
+      return items.map(item => ({
+        key: item.key,
+        name: item.name,
+        from: item.coord,
+        to: {
+          col: anchor.col + (item.coord.col - sourceMinCol),
+          row: anchor.row + (item.coord.row - sourceMinRow),
+        },
+      }));
+    },
     capabilityEntries() {
       const labels = {
         commands: 'Command fields',
@@ -150,6 +230,52 @@ const BentoImportReviewModal = {
     },
   },
   methods: {
+    safeInt(value, fallback) {
+      const number = Number(value);
+      return Number.isFinite(number) ? Math.trunc(number) : fallback;
+    },
+    coordLabel(coord) {
+      return `${coord?.col ?? 0},${coord?.row ?? 0}`;
+    },
+    candidatePositions(items, anchor) {
+      if (!items.length) return [];
+      const sourceMinCol = Math.min(...items.map(item => item.coord.col));
+      const sourceMinRow = Math.min(...items.map(item => item.coord.row));
+      return items.map(item => ({
+        col: anchor.col + (item.coord.col - sourceMinCol),
+        row: anchor.row + (item.coord.row - sourceMinRow),
+      }));
+    },
+    positionsAvailable(positions) {
+      const seen = new Set();
+      const occupied = new Set(this.occupiedCoords.map(coord => `${coord.col},${coord.row}`));
+      for (const coord of positions) {
+        if (coord.col < 0 || coord.row < 0) return false;
+        const key = `${coord.col},${coord.row}`;
+        if (seen.has(key) || occupied.has(key)) return false;
+        seen.add(key);
+      }
+      return true;
+    },
+    autoPlacementAnchor(strategy, items) {
+      const occupied = this.occupiedCoords;
+      if (!occupied.length) return { col: 0, row: 0 };
+      let anchor = strategy === 'place-below'
+        ? {
+            col: Math.min(...occupied.map(coord => coord.col)),
+            row: Math.max(...occupied.map(coord => coord.row)) + 1,
+          }
+        : {
+            col: Math.max(...occupied.map(coord => coord.col)) + 1,
+            row: Math.min(...occupied.map(coord => coord.row)),
+          };
+      while (!this.positionsAvailable(this.candidatePositions(items, anchor))) {
+        anchor = strategy === 'place-below'
+          ? { col: anchor.col, row: anchor.row + 1 }
+          : { col: anchor.col + 1, row: anchor.row };
+      }
+      return anchor;
+    },
     resetForm() {
       this.placementStrategy = 'place-right';
       this.anchorCol = 0;

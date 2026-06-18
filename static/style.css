@@ -4632,6 +4632,33 @@ body.worker-singleton-dragging * {
   gap: 10px;
 }
 
+.bento-placement-table {
+  display: grid;
+  gap: 4px;
+}
+
+.bento-placement-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 72px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bento-placement-header {
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .bento-review-warnings {
   margin: 0;
   padding-left: 18px;

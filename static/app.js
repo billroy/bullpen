@@ -2648,6 +2648,8 @@ const app = createApp({
         :visible="bentoImportReview.visible"
         :preview="bentoImportReview.preview"
         :columns="state.config.columns"
+        :layout="state.layout"
+        :grid-cols="state.config.grid?.cols || 4"
         @close="closeBentoImportReview"
         @apply="applyBentoImportReview"
       />

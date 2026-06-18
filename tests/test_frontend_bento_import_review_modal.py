@@ -17,6 +17,8 @@ def test_bento_import_review_modal_is_loaded_and_registered():
     assert '<script src="/components/BentoImportReviewModal.js"></script>' in index
     assert "BentoImportReviewModal," in app
     assert ":visible=\"bentoImportReview.visible\"" in app
+    assert ":layout=\"state.layout\"" in app
+    assert ":grid-cols=\"state.config.grid?.cols || 4\"" in app
     assert "@apply=\"applyBentoImportReview\"" in app
 
 
@@ -32,6 +34,12 @@ def test_bento_import_review_modal_exposes_package_decisions():
     assert "decisions.approvals = { ...this.approvals };" in text
     assert "decisions.target_status = this.targetStatus;" in text
     assert "new Set(['assigned', 'in_progress', 'in-progress'])" in text
+    assert "props: ['visible', 'preview', 'columns', 'layout', 'gridCols']" in text
+    assert "placementRows()" in text
+    assert "autoPlacementAnchor(strategy, items)" in text
+    assert "positionsAvailable(positions)" in text
+    assert "coordLabel(row.to)" in text
+    assert "class=\"bento-placement-table\"" in text
     assert "class=\"modal modal-wide bento-import-modal\"" in text
 
 
@@ -42,3 +50,5 @@ def test_bento_import_review_styles_exist():
     assert ".bento-review-section" in css
     assert ".bento-review-items" in css
     assert ".bento-anchor-grid" in css
+    assert ".bento-placement-table" in css
+    assert ".bento-placement-row" in css

@@ -672,7 +672,8 @@ Exit criteria:
 Current baseline: package import preserves placement when preview reports all
 target cells are available. When preview reports a conflict, the import review
 modal lets the user choose `place-right`, `place-below`, or an explicit
-`choose-anchor` coordinate for `bento:import`.
+`choose-anchor` coordinate for `bento:import`. The modal shows worker source
+and target coordinates before apply.
 
 ### Slice 2: Approval Gates
 
