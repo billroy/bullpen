@@ -622,9 +622,7 @@ def register_events(socketio, app):
         if declared:
             if declared not in supported_kinds or inferred == "unsupported":
                 return "unsupported"
-            if inferred in ticket_kinds and declared not in ticket_kinds:
-                return "unsupported"
-            if inferred in worker_kinds and declared not in worker_kinds:
+            if inferred and inferred != declared:
                 return "unsupported"
             return declared
         return inferred

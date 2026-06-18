@@ -68,25 +68,31 @@ def _mixed_bullpen_bento():
     })
 
 
-def _mismatched_bullpen_bento():
+def _mismatched_bullpen_bento(*, declared_kind="ticket", item_type="worker"):
+    item_path = f"payload/{item_type}s/one.json"
     manifest = {
         "format": "bento",
         "version": "1",
         "profiles": [{"id": "org.bullpen.share", "version": "1", "label": "Bullpen Share"}],
         "items": [
             {
-                "id": "worker.one",
+                "id": f"{item_type}.one",
                 "media_type": "application/json",
-                "path": "payload/workers/one.json",
-                "bullpen_type": "worker",
+                "path": item_path,
+                "bullpen_type": item_type,
             }
         ],
         "attributes": [],
-        "bullpen": {"kind": "ticket"},
+        "bullpen": {"kind": declared_kind},
     }
+    payload = (
+        {"title": "Ticket"}
+        if item_type == "ticket"
+        else {"name": "Worker", "type": "ai"}
+    )
     return _zip_bytes({
         "bento.json": json.dumps(manifest),
-        "payload/workers/one.json": json.dumps({"name": "Worker", "type": "ai"}),
+        item_path: json.dumps(payload),
     })
 
 
@@ -385,6 +391,17 @@ def test_bento_import_event_rejects_declared_kind_item_mismatch_without_mutation
     assert _received(client, "bento:error")["code"] == "unsupported-kind"
     assert read_json(os.path.join(bp_dir, "config.json")) == before_config
     assert read_json(os.path.join(bp_dir, "layout.json")) == before_layout
+
+
+def test_bento_preview_event_rejects_declared_bundle_kind_for_single_item(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    package = _mismatched_bullpen_bento(declared_kind="ticket-bundle", item_type="ticket")
+    client.emit("bento:preview", {"file": package.getvalue()})
+
+    assert _received(client, "bento:error")["code"] == "unsupported-kind"
 
 
 def test_bento_preview_event_does_not_mutate_workspace(tmp_workspace):
