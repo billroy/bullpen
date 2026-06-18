@@ -1935,6 +1935,7 @@ const app = createApp({
       notifications: 'notification settings',
       git: 'git automation settings',
     };
+    const BENTO_ACTIVE_TICKET_STATUSES = new Set(['assigned', 'in_progress', 'in-progress']);
 
     function _bentoImportApprovalsForPreview(preview) {
       const capabilities = preview?.bullpen?.capabilities;
@@ -1979,6 +1980,34 @@ const app = createApp({
       throw new Error('Invalid Bento placement choice');
     }
 
+    function _bentoTicketTargetStatusForPreview(preview) {
+      const kind = preview?.bullpen?.kind || preview?.kind;
+      if (kind !== 'ticket' && kind !== 'ticket-bundle') return null;
+      const fallback = preview?.bullpen?.import?.target_status || 'backlog';
+      const columns = Array.isArray(state.config?.columns) ? state.config.columns : [];
+      const safeColumns = columns
+        .filter(column => column && typeof column === 'object')
+        .map(column => ({
+          key: String(column.key || '').trim(),
+          label: String(column.label || column.key || '').trim(),
+        }))
+        .filter(column => column.key && !BENTO_ACTIVE_TICKET_STATUSES.has(column.key));
+      if (!safeColumns.length) return fallback;
+      const options = safeColumns.map(column => {
+        return column.label && column.label !== column.key ? `${column.key} (${column.label})` : column.key;
+      }).join(', ');
+      const choice = window.prompt(
+        `Import tickets to which column?\n\nAvailable dormant columns: ${options}`,
+        fallback
+      );
+      if (choice === null) {
+        throw new Error('Bento import canceled');
+      }
+      const selected = String(choice || '').trim();
+      if (!selected) return fallback;
+      return safeColumns.some(column => column.key === selected) ? selected : fallback;
+    }
+
     function _bentoImportPayloadForPreview(data, preview) {
       const payload = { file: data };
       const placement = preview?.bullpen?.placement;
@@ -1991,6 +2020,10 @@ const app = createApp({
       const approvals = _bentoImportApprovalsForPreview(preview);
       if (approvals) {
         payload.approvals = approvals;
+      }
+      const targetStatus = _bentoTicketTargetStatusForPreview(preview);
+      if (targetStatus) {
+        payload.target_status = targetStatus;
       }
       return payload;
     }

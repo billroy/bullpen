@@ -80,6 +80,11 @@ def test_app_wires_toolbar_export_import_events():
     assert "return { strategy: 'place-below' };" in text
     assert "strategy: 'choose-anchor'" in text
     assert "payload.placement = _bentoConflictPlacementForPreview(preview);" in text
+    assert "const BENTO_ACTIVE_TICKET_STATUSES = new Set(['assigned', 'in_progress', 'in-progress']);" in text
+    assert "function _bentoTicketTargetStatusForPreview(preview)" in text
+    assert "Import tickets to which column?" in text
+    assert "!BENTO_ACTIVE_TICKET_STATUSES.has(column.key)" in text
+    assert "payload.target_status = targetStatus;" in text
     assert "payload.placement = { strategy: 'preserve', state: placement.state };" in text
     assert "return _requestBentoImport(_bentoImportPayloadForPreview(data, preview));" in text
     assert "socket.emit('bento:import', _wsData(payload));" in text

@@ -678,6 +678,11 @@ Status: Implemented baseline.
 - Default imported tickets to a selected human column, initially `backlog`.
 - Clear `assigned_to`, queue relationships, and active statuses by default.
 
+Current baseline: ticket package import asks for a target column from the
+workspace's configured dormant columns. `assigned`, `in_progress`, and
+`in-progress` are excluded from the prompt, and the backend still normalizes
+active target statuses to `backlog` if a client sends one.
+
 Exit criteria:
 
 - Ticket bundles can import without assigning work to a worker.
@@ -775,8 +780,8 @@ work should solve the package, preview, conflict, and approval model first.
 
 ## Open Questions
 
-- Should ticket package import default to `backlog` or the currently visible
-  column?
+- Should ticket package import eventually use a richer picker tied to the
+  currently visible board column, or keep the explicit dormant-column prompt?
 - Should command-based workers import as disabled, or import enabled with
   command execution requiring approval only when first run?
 - What is the minimum app/version metadata needed for compatibility warnings?
