@@ -39,6 +39,29 @@ def _import(client, data, **payload):
     return _received(client, "bento:imported")
 
 
+def _ticket_bento_without_declared_kind(ticket):
+    mem = io.BytesIO()
+    item = {
+        "id": "ticket.1",
+        "media_type": "application/json",
+        "path": "payload/tickets/ticket.1.json",
+        "label": ticket.get("title") or "Ticket",
+        "bullpen_type": "ticket",
+    }
+    manifest = {
+        "format": "bento",
+        "version": "1",
+        "profiles": [{"id": "org.bullpen.share", "version": "1", "label": "Bullpen Share"}],
+        "items": [item],
+        "attributes": [],
+    }
+    with zipfile.ZipFile(mem, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("bento.json", json.dumps(manifest))
+        zf.writestr(item["path"], json.dumps(ticket))
+    mem.seek(0)
+    return mem.getvalue()
+
+
 def test_export_single_ticket_bento_includes_manifest_and_payload(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
@@ -81,6 +104,32 @@ def test_ticket_bento_preview_reports_safe_import_plan(tmp_workspace):
         "assignments_cleared": True,
     }
     assert preview["bullpen"]["items"][0]["warnings"] == ["ticket will import unassigned into backlog"]
+
+
+def test_ticket_bento_without_declared_kind_routes_by_item_hint(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    package = _ticket_bento_without_declared_kind({
+        "id": "source-ticket",
+        "title": "Loose package ticket",
+        "body": "Classify me by item hint.",
+        "type": "task",
+        "priority": "normal",
+        "tags": ["loose"],
+        "status": "review",
+    })
+
+    preview = _preview(client, package)
+    before_ids = {item["id"] for item in list_tasks(bp_dir)}
+    imported = _import(client, package)
+
+    created = [item for item in list_tasks(bp_dir) if item["id"] not in before_ids]
+    assert preview["kind"] == "ticket"
+    assert preview["bullpen"]["items"][0]["title"] == "Loose package ticket"
+    assert imported["imported"] == {"tickets": 1}
+    assert len(created) == 1
+    assert read_task(bp_dir, created[0]["id"])["source_task_id"] == "source-ticket"
 
 
 def test_import_single_ticket_creates_new_backlog_ticket_without_assignment(tmp_workspace):

@@ -596,6 +596,24 @@ def register_events(socketio, app):
             return BytesIO(payload)
         raise ValueError("Archive payload must be bytes")
 
+    def _bento_kind(manifest):
+        declared = (manifest.get("bullpen") or {}).get("kind") if isinstance(manifest, dict) else None
+        if declared:
+            return declared
+        items = manifest.get("items") if isinstance(manifest, dict) else []
+        item_types = [
+            item.get("bullpen_type")
+            for item in (items or [])
+            if isinstance(item, dict) and item.get("bullpen_type")
+        ]
+        unique_types = set(item_types)
+        if unique_types == {"ticket"}:
+            return "ticket" if len(item_types) == 1 else "ticket-bundle"
+        if unique_types <= {"worker", "profile"} and "worker" in unique_types:
+            worker_count = sum(1 for item_type in item_types if item_type == "worker")
+            return "worker" if worker_count == 1 else "worker-group"
+        return declared
+
     @socketio.on("bento:preview")
     def on_bento_preview(data):
         ws_id, bp_dir = _resolve(data or {})
@@ -607,7 +625,7 @@ def register_events(socketio, app):
             if any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier_preview.get("profiles", [])):
                 fileobj.seek(0)
                 manifest = _bento_load_manifest(fileobj)
-                kind = (manifest.get("bullpen") or {}).get("kind")
+                kind = _bento_kind(manifest)
                 fileobj.seek(0)
                 if kind in {"ticket", "ticket-bundle"}:
                     preview = preview_ticket_bento(fileobj, bp_dir=bp_dir)
@@ -735,7 +753,7 @@ def register_events(socketio, app):
             inspect_bento(fileobj)
             fileobj.seek(0)
             manifest = _bento_load_manifest(fileobj)
-            kind = (manifest.get("bullpen") or {}).get("kind")
+            kind = _bento_kind(manifest)
             fileobj.seek(0)
             with _write_lock:
                 if kind in {"ticket", "ticket-bundle"}:
