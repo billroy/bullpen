@@ -31,6 +31,7 @@ bounded scope:
 - per-import approval for preserving command, environment, service,
   notification, and git automation fields
 - ticket target-column selection limited to dormant columns
+- one coherent import review modal for implemented worker and ticket decisions
 
 The next implementation plan should treat this as a proven first package layer,
 not as an open-ended file-format redesign. Worksheet, project-template,
@@ -40,8 +41,8 @@ must continue to fail closed until their semantics are deliberately specified.
 
 Follow-on planning should stay split into two lanes:
 
-- Import UX polish: replace native prompts with one coherent preview/apply
-  surface for the implemented worker and ticket package kinds.
+- Import UX polish: continue refining the coherent preview/apply surface for
+  the implemented worker and ticket package kinds.
 - New package kinds: decide and specify the next supported kind before adding
   worksheet, project-template, project-snapshot, or mixed-package behavior.
 
@@ -669,14 +670,13 @@ Exit criteria:
 - Imported workers are dormant and have runtime state stripped.
 
 Current baseline: package import preserves placement when preview reports all
-target cells are available. When preview reports a conflict, the shared import
-action asks for a placement choice and sends either `place-right`, `place-below`,
-or a user-entered `choose-anchor` coordinate to `bento:import`. A grid-native
-review UI remains future UX work.
+target cells are available. When preview reports a conflict, the import review
+modal lets the user choose `place-right`, `place-below`, or an explicit
+`choose-anchor` coordinate for `bento:import`.
 
 ### Slice 2: Approval Gates
 
-Status: Partially implemented; polished preview UI remains.
+Status: Implemented modal baseline; placement visualization polish remains.
 
 - Add import apply options for risky capability preservation.
 - Default to sanitizing command, service, notification, git, queue, assignment,
@@ -685,10 +685,10 @@ Status: Partially implemented; polished preview UI remains.
 - Apply approvals only to the current import operation.
 
 Current baseline: the shared package import action performs preview first and
-asks for per-import approval before preserving command, environment, service,
-notification, or git automation fields. Declined capabilities are imported
-stripped through the existing backend sanitizer. Runtime state and queues remain
-non-preservable.
+shows per-import approval controls before preserving command, environment,
+service, notification, or git automation fields. Declined capabilities are
+imported stripped through the existing backend sanitizer. Runtime state and
+queues remain non-preservable.
 
 Exit criteria:
 
@@ -708,9 +708,9 @@ Status: Implemented baseline.
 - Default imported tickets to a selected human column, initially `backlog`.
 - Clear `assigned_to`, queue relationships, and active statuses by default.
 
-Current baseline: ticket package import asks for a target column from the
-workspace's configured dormant columns. `assigned`, `in_progress`, and
-`in-progress` are excluded from the prompt, and the backend still normalizes
+Current baseline: ticket package import offers a target column from the
+workspace's configured dormant columns in the import review modal. `assigned`,
+`in_progress`, and `in-progress` are excluded, and the backend still normalizes
 active target statuses to `backlog` if a client sends one.
 
 Exit criteria:

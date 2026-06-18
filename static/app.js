@@ -17,6 +17,7 @@ const app = createApp({
     WorkerConfigModal,
     WorkerTransferModal,
     ColumnManagerModal,
+    BentoImportReviewModal,
     ToastContainer,
   },
   setup() {
@@ -396,6 +397,12 @@ const app = createApp({
     const transferSlot = ref(null);
     const transferSlots = ref([]);
     const transferMode = ref('copy');
+    const bentoImportReview = reactive({
+      visible: false,
+      preview: null,
+      resolve: null,
+      reject: null,
+    });
     const quickCreateClearToken = ref(0);
     const pendingQuickCreates = reactive([]);
 
@@ -1934,102 +1941,48 @@ const app = createApp({
       }, 0);
     }
 
-    const BENTO_RISKY_CAPABILITY_LABELS = {
-      commands: 'command fields',
-      env: 'environment variables',
-      services: 'service worker settings',
-      notifications: 'notification settings',
-      git: 'git automation settings',
-    };
-    const BENTO_ACTIVE_TICKET_STATUSES = new Set(['assigned', 'in_progress', 'in-progress']);
-
-    function _bentoImportApprovalsForPreview(preview) {
-      const capabilities = preview?.bullpen?.capabilities;
-      if (!capabilities || typeof capabilities !== 'object') return null;
-      const approvals = {};
-      for (const [capability, label] of Object.entries(BENTO_RISKY_CAPABILITY_LABELS)) {
-        const count = Number(capabilities[capability] || 0);
-        if (!Number.isFinite(count) || count <= 0) continue;
-        approvals[capability] = window.confirm(
-          `This package includes ${label} on ${count} worker${count === 1 ? '' : 's'}.\n\n` +
-          'Preserve this capability for this import? Cancel imports it stripped.'
-        );
-      }
-      return Object.keys(approvals).length ? approvals : null;
+    function _reviewBentoImport(preview) {
+      return new Promise((resolve, reject) => {
+        bentoImportReview.preview = preview;
+        bentoImportReview.resolve = resolve;
+        bentoImportReview.reject = reject;
+        bentoImportReview.visible = true;
+      });
     }
 
-    function _bentoConflictPlacementForPreview(preview) {
-      const placement = preview?.bullpen?.placement;
-      if (placement?.status !== 'conflict') return null;
-      const choice = window.prompt(
-        'Package placement conflicts with existing workers.\n\n' +
-        'Enter R to place right, B to place below, or "col,row" for an anchor cell.',
-        'R'
-      );
-      if (choice === null) {
-        throw new Error('Bento import canceled');
-      }
-      const normalized = String(choice || '').trim().toLowerCase();
-      if (!normalized || normalized === 'r' || normalized === 'right') {
-        return { strategy: 'place-right' };
-      }
-      if (normalized === 'b' || normalized === 'below') {
-        return { strategy: 'place-below' };
-      }
-      const match = normalized.match(/^(-?\d+)\s*,\s*(-?\d+)$/);
-      if (match) {
-        return {
-          strategy: 'choose-anchor',
-          anchor: { col: Number(match[1]), row: Number(match[2]) },
-        };
-      }
-      throw new Error('Invalid Bento placement choice');
+    function closeBentoImportReview() {
+      const reject = bentoImportReview.reject;
+      bentoImportReview.visible = false;
+      bentoImportReview.preview = null;
+      bentoImportReview.resolve = null;
+      bentoImportReview.reject = null;
+      if (reject) reject(new Error('Bento import canceled'));
     }
 
-    function _bentoTicketTargetStatusForPreview(preview) {
-      const kind = preview?.bullpen?.kind || preview?.kind;
-      if (kind !== 'ticket' && kind !== 'ticket-bundle') return null;
-      const fallback = preview?.bullpen?.import?.target_status || 'backlog';
-      const columns = Array.isArray(state.config?.columns) ? state.config.columns : [];
-      const safeColumns = columns
-        .filter(column => column && typeof column === 'object')
-        .map(column => ({
-          key: String(column.key || '').trim(),
-          label: String(column.label || column.key || '').trim(),
-        }))
-        .filter(column => column.key && !BENTO_ACTIVE_TICKET_STATUSES.has(column.key));
-      if (!safeColumns.length) return fallback;
-      const options = safeColumns.map(column => {
-        return column.label && column.label !== column.key ? `${column.key} (${column.label})` : column.key;
-      }).join(', ');
-      const choice = window.prompt(
-        `Import tickets to which column?\n\nAvailable dormant columns: ${options}`,
-        fallback
-      );
-      if (choice === null) {
-        throw new Error('Bento import canceled');
-      }
-      const selected = String(choice || '').trim();
-      if (!selected) return fallback;
-      return safeColumns.some(column => column.key === selected) ? selected : fallback;
+    function applyBentoImportReview(decisions) {
+      const resolve = bentoImportReview.resolve;
+      bentoImportReview.visible = false;
+      bentoImportReview.preview = null;
+      bentoImportReview.resolve = null;
+      bentoImportReview.reject = null;
+      if (resolve) resolve(decisions || {});
     }
 
-    function _bentoImportPayloadForPreview(data, preview) {
+    async function _bentoImportPayloadForPreview(data, preview) {
+      const decisions = await _reviewBentoImport(preview);
       const payload = { file: data };
       const placement = preview?.bullpen?.placement;
       if (placement?.status === 'conflict') {
-        payload.placement = _bentoConflictPlacementForPreview(preview);
+        payload.placement = decisions.placement;
       }
       if (placement?.status === 'available' && placement?.state) {
         payload.placement = { strategy: 'preserve', state: placement.state };
       }
-      const approvals = _bentoImportApprovalsForPreview(preview);
-      if (approvals) {
-        payload.approvals = approvals;
+      if (decisions.approvals) {
+        payload.approvals = decisions.approvals;
       }
-      const targetStatus = _bentoTicketTargetStatusForPreview(preview);
-      if (targetStatus) {
-        payload.target_status = targetStatus;
+      if (decisions.target_status) {
+        payload.target_status = decisions.target_status;
       }
       return payload;
     }
@@ -2038,7 +1991,7 @@ const app = createApp({
       if (!file) return null;
       const data = await file.arrayBuffer();
       const preview = await _requestBentoPreview({ file: data });
-      return _requestBentoImport(_bentoImportPayloadForPreview(data, preview));
+      return _requestBentoImport(await _bentoImportPayloadForPreview(data, preview));
     }
 
     function _requestArchiveImport(payload) {
@@ -2419,7 +2372,7 @@ const app = createApp({
       state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded, projectSettings, globalSettings,
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
-      showCreateModal, showColumnManager, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
+      showCreateModal, showColumnManager, bentoImportReview, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
@@ -2428,7 +2381,7 @@ const app = createApp({
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,
-      closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal,
+      closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal, closeBentoImportReview, applyBentoImportReview,
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       terminalTabs, addTerminalTab, closeTerminalTab, restartTerminal, sendTerminalInput, resizeTerminal, setTerminalRef, onTerminalReady,
@@ -2690,6 +2643,13 @@ const app = createApp({
         :tasks="state.tasks"
         @close="closeColumnManager"
         @save="saveColumns"
+      />
+      <BentoImportReviewModal
+        :visible="bentoImportReview.visible"
+        :preview="bentoImportReview.preview"
+        :columns="state.config.columns"
+        @close="closeBentoImportReview"
+        @apply="applyBentoImportReview"
       />
       <ToastContainer :toasts="toasts" @dismiss="dismissToast" />
     </div>

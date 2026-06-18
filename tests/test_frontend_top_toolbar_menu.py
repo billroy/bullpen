@@ -69,28 +69,16 @@ def test_app_wires_toolbar_export_import_events():
     assert "socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "socket.emit('bento:preview', _wsData({ ...payload, request_id: requestId }));" in text
     assert "const preview = await _requestBentoPreview({ file: data });" in text
-    assert "const BENTO_RISKY_CAPABILITY_LABELS = {" in text
-    assert "commands: 'command fields'" in text
-    assert "env: 'environment variables'" in text
-    assert "services: 'service worker settings'" in text
-    assert "notifications: 'notification settings'" in text
-    assert "git: 'git automation settings'" in text
-    assert "function _bentoImportApprovalsForPreview(preview)" in text
-    assert "window.confirm(" in text
-    assert "payload.approvals = approvals;" in text
-    assert "function _bentoConflictPlacementForPreview(preview)" in text
-    assert "window.prompt(" in text
-    assert "return { strategy: 'place-right' };" in text
-    assert "return { strategy: 'place-below' };" in text
-    assert "strategy: 'choose-anchor'" in text
-    assert "payload.placement = _bentoConflictPlacementForPreview(preview);" in text
-    assert "const BENTO_ACTIVE_TICKET_STATUSES = new Set(['assigned', 'in_progress', 'in-progress']);" in text
-    assert "function _bentoTicketTargetStatusForPreview(preview)" in text
-    assert "Import tickets to which column?" in text
-    assert "!BENTO_ACTIVE_TICKET_STATUSES.has(column.key)" in text
-    assert "payload.target_status = targetStatus;" in text
+    assert "function _reviewBentoImport(preview)" in text
+    assert "bentoImportReview.visible = true;" in text
+    assert "function applyBentoImportReview(decisions)" in text
+    assert "const decisions = await _reviewBentoImport(preview);" in text
+    assert "payload.placement = decisions.placement;" in text
+    assert "payload.approvals = decisions.approvals;" in text
+    assert "payload.target_status = decisions.target_status;" in text
     assert "payload.placement = { strategy: 'preserve', state: placement.state };" in text
-    assert "return _requestBentoImport(_bentoImportPayloadForPreview(data, preview));" in text
+    assert "return _requestBentoImport(await _bentoImportPayloadForPreview(data, preview));" in text
+    assert "<BentoImportReviewModal" in text
     assert "socket.emit('bento:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "const data = await file.arrayBuffer();" in text
     assert "const result = await _importArchiveFile(file, 'all');" in text
