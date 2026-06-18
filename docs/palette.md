@@ -327,9 +327,9 @@ that require new argument pickers can land disabled or as follow-up work.
 | New Project | Existing `project:new`; needs path argument/picker. |
 | Clone Project | Existing `project:clone`; needs URL and optional path. |
 | Remove Project | Existing `project:remove`; destructive confirmation. |
-| Export Project | Existing export workspace. |
+| Export This Project | Existing export workspace. |
 | Export Workers | Existing export workers. |
-| Export All | Existing export all. |
+| Export All Projects | Existing export all. |
 | Import... | Opens one file picker and detects Bento package, project zip, or all-workspace zip before importing. |
 
 ### Files

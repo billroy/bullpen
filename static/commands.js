@@ -243,7 +243,7 @@
       }),
       command({
         id: 'project.export',
-        title: 'Export Project',
+        title: 'Export This Project',
         subtitle: 'Download the active project as a zip',
         group: 'Project',
         aliases: ['export project', 'export workspace'],
@@ -261,7 +261,7 @@
       }),
       command({
         id: 'project.export_all',
-        title: 'Export All',
+        title: 'Export All Projects',
         subtitle: 'Download all Bullpen project data as a zip',
         group: 'Project',
         aliases: ['export all'],

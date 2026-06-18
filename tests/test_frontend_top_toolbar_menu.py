@@ -21,9 +21,11 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"git-branch\"" in text
     assert "class=\"project-menu-item\" @click=\"onLogout\"><i class=\"menu-item-icon\" data-lucide=\"log-out\"" in text
     assert "<span class=\"menu-item-label\">Toggle Left Pane</span></button>" in text
-    assert "<span class=\"menu-item-label\">Export Project</span></button>" in text
     assert "<span class=\"menu-item-label\">Export Workers</span></button>" in text
-    assert "<span class=\"menu-item-label\">Export All</span></button>" in text
+    assert "<span class=\"menu-item-label\">Export This Project</span></button>" in text
+    assert "<span class=\"menu-item-label\">Export All Projects</span></button>" in text
+    assert text.index("Export Workers") < text.index("Export This Project")
+    assert text.index("Export This Project") < text.index("Export All Projects")
     assert "<span class=\"menu-item-label\">Import...</span></button>" in text
     assert "<span class=\"menu-item-label\">Import Project</span></button>" not in text
     assert "<span class=\"menu-item-label\">Import Package</span></button>" not in text

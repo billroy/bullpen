@@ -500,9 +500,9 @@ const TopToolbar = {
             <div v-if="showMainMenu" class="project-menu toolbar-menu">
               <button class="project-menu-item" @click="onToggleLeftPane"><i class="menu-item-icon" data-lucide="panel-left" aria-hidden="true"></i><span class="menu-item-label">Toggle Left Pane</span></button>
               <button class="project-menu-item" @click="onToggleWorkerMinimap"><i class="menu-item-icon" data-lucide="map" aria-hidden="true"></i><span class="menu-item-label">{{ workerMinimapCollapsed ? 'Show Minimap' : 'Hide Minimap' }}</span></button>
-              <button class="project-menu-item" @click="onExportWorkspace"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Project</span></button>
               <button class="project-menu-item" @click="onExportWorkers"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Workers</span></button>
-              <button class="project-menu-item" @click="onExportAll"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export All</span></button>
+              <button class="project-menu-item" @click="onExportWorkspace"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export This Project</span></button>
+              <button class="project-menu-item" @click="onExportAll"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export All Projects</span></button>
               <button class="project-menu-item" @click="triggerImport"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import...</span></button>
               <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="git-branch" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
               <button class="project-menu-item" @click="onLogout"><i class="menu-item-icon" data-lucide="log-out" aria-hidden="true"></i><span class="menu-item-label">Logout</span></button>

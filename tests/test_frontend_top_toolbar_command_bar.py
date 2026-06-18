@@ -46,6 +46,9 @@ def test_command_registry_supports_ticket_and_ui_commands():
     assert "id: 'ambient.change'" in text
     assert "id: 'volume.set'" in text
     assert "id: 'chat.new'" in text
+    assert "title: 'Export This Project'" in text
+    assert "title: 'Export Workers'" in text
+    assert "title: 'Export All Projects'" in text
     assert "id: 'project.import'" in text
     assert "id: 'packages.import'" not in text
     assert "id: 'project.import_all'" not in text
