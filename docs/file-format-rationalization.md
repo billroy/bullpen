@@ -1,6 +1,6 @@
 # File Format Rationalization
 
-Status: Proposal
+Status: Implemented baseline with deferred slices
 
 ## Purpose
 
@@ -585,6 +585,8 @@ expanding to every share surface.
 
 ### Slice 0: Carrier Foundation
 
+Status: Implemented.
+
 - Implement Bento detection for uploaded zip-like files.
 - Implement local carrier validation:
   - archive limits
@@ -604,10 +606,11 @@ Exit criteria:
 
 ### Slice 1: Worker Package MVP
 
+Status: Implemented baseline.
+
 - Implement `.bento` export for one worker and selected worker groups.
 - Route primary worker-card and worker-group export actions through Socket.IO
-  `.bento` export while keeping legacy worker zip export available as a
-  maintenance action during migration.
+  `.bento` export. Legacy worker zip REST routes have been removed.
 - Include referenced profiles.
 - Represent worker relationships using current Bullpen language:
   `worker:NAME`, `random:NAME`, `pass:DIRECTION`, and bare column dispositions.
@@ -629,6 +632,8 @@ Exit criteria:
 
 ### Slice 2: Approval Gates
 
+Status: Partially implemented; UX review remains.
+
 - Add import apply options for risky capability preservation.
 - Default to sanitizing command, service, notification, git, queue, assignment,
   and runtime fields.
@@ -645,6 +650,8 @@ Exit criteria:
 
 ### Slice 3: Tickets
 
+Status: Implemented baseline.
+
 - Implement `.bento` export for one ticket and ticket bundles over Socket.IO.
 - Generate new local ticket IDs on import.
 - Preserve original IDs only as source metadata.
@@ -658,6 +665,9 @@ Exit criteria:
   instruction/risk warnings.
 
 ### Slice 4: Internal Fragments
+
+Status: Partially implemented for server-side worker/ticket fragment helpers;
+frontend clipboard convergence remains deferred.
 
 - Adapt worker copy/paste to the same package-fragment object model used by
   `.bento`, without requiring a zip carrier.

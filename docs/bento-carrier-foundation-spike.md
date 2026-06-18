@@ -1,20 +1,21 @@
 # Bento Carrier Foundation Spike
 
-Status: Planning spike output
+Status: Implemented baseline
 
 ## Readiness
 
-Ready to implement as a bounded carrier-only spike. Do not include Bullpen
-worker, ticket, clipboard, scanner, or social semantics in this slice.
+Implemented as a bounded carrier foundation in `server/bento_carrier.py`, with
+Socket.IO preview support in `server/events.py` and focused tests in
+`tests/test_bento_carrier.py`.
 
-The current import code already has useful archive-hardening pieces in
-`server/app.py`, but they are embedded in legacy import routes and extraction is
-coupled to immediate apply. The carrier spike should pull that concern into a
-small, testable module before any package contents can mutate workspace state.
+The first implementation also moved beyond the carrier-only slice to support
+Bullpen worker, worker-group, ticket, and ticket-bundle packages. Clipboard,
+worksheet, scanner, social, project-template, and project-snapshot semantics
+remain outside this baseline.
 
 ## Proposed Module Boundary
 
-Add `server/bento_carrier.py`.
+`server/bento_carrier.py` owns carrier inspection.
 
 Responsibilities:
 
@@ -92,20 +93,25 @@ Error shape for Socket.IO result events:
 
 ## Socket.IO Event Shape
 
-Add `bento:preview`.
+Implemented events:
+
+- `bento:preview`
+- `bento:export`
+- `bento:import`
 
 Behavior:
 
 - Uses the existing authenticated Socket.IO session.
 - Accepts package bytes in `file` or `data`.
-- Does not apply or extract into workspace state.
+- `bento:preview` does not apply or extract into workspace state.
 - Emits `bento:previewed` with carrier-only preview for valid Bento files.
 - Emits `bento:error` with a stable error code for invalid archives.
 - Emits unsupported profile information without treating unsupported profiles as
   trusted.
-
-Do not add `bento:import` in this spike unless it only emits a clear "not
-implemented" error. Import apply belongs to the worker package planner slice.
+- `bento:import` validates the carrier before reading package semantics or
+  mutating workspace state.
+- Bullpen packages route by declared `bullpen.kind` when present, and by
+  manifest item hints when kind is absent.
 
 ## Legacy Routing
 
@@ -205,22 +211,22 @@ Event behavior:
   not a crash.
 - Legacy import/export tests still pass.
 
-## Open Decisions
+## Closed Decisions
 
-- Whether preview is stateless for Slice 0. Recommendation: stateless.
-- Whether `inspect_bento` should read from `ZipFile` only or extract to temp.
-  Recommendation: validate from `ZipFile`, then add extraction only when an
-  apply path needs it.
-- Whether strict Bento limits should differ from legacy ZIP limits.
-  Recommendation: yes, stricter for Bento preview.
-- Whether unsupported profiles are successful preview events or errors.
-  Recommendation: successful preview, since the carrier is valid; only
-  application is unsupported.
+- Preview is stateless.
+- `inspect_bento` validates from `ZipFile`; it does not extract.
+- Bento preview uses stricter defaults than legacy ZIP import/export.
+- Unsupported profiles are successful carrier previews, not errors.
 
 ## Implementation Tickets
+
+Completed:
 
 1. Add `server/bento_carrier.py` with carrier inspection and typed errors.
 2. Add focused carrier unit tests in `tests/test_bento_carrier.py`.
 3. Add `bento:preview` using the carrier inspector.
 4. Add Socket.IO tests proving preview does not mutate workspace state.
 5. Run existing legacy import/export tests to verify no regression.
+
+Follow-up now belongs in narrower worker/ticket/package UX tickets rather than
+this carrier spike.
