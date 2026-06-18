@@ -272,6 +272,16 @@ def test_bento_preview_event_rejects_invalid_archive(tmp_workspace):
     assert _received(client, "bento:error")["code"] == "invalid-zip"
 
 
+def test_bento_import_event_rejects_invalid_archive(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    client.emit("bento:import", {"file": b"not a zip"})
+
+    assert _received(client, "bento:error")["code"] == "invalid-zip"
+
+
 def test_bento_preview_event_does_not_mutate_workspace(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)

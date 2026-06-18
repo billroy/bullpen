@@ -732,6 +732,8 @@ def register_events(socketio, app):
             return
         try:
             fileobj = _bento_fileobj(data or {})
+            inspect_bento(fileobj)
+            fileobj.seek(0)
             manifest = _bento_load_manifest(fileobj)
             kind = (manifest.get("bullpen") or {}).get("kind")
             fileobj.seek(0)
