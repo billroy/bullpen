@@ -1,6 +1,6 @@
 # Bento Planning Spikes
 
-Status: Planning
+Status: Completed; superseded by implemented baseline
 
 ## Purpose
 
@@ -9,6 +9,13 @@ touches live Bullpen state. Treat the first planning pass as two spikes, not as
 a broad implementation kickoff. The goal is to prove the carrier boundary and
 the worker package planner before expanding into tickets, clipboard fragments,
 scanners, or social distribution.
+
+Completion note: both spikes have been implemented as the current Socket.IO
+Bento baseline. Carrier validation, worker package planning, ticket packages,
+capability approvals, placement conflict choices, target-column ticket import,
+and request-correlated Socket.IO replies now exist. Remaining work should be
+planned as focused UX polish or explicit new package kinds, not as continuation
+of these spikes.
 
 ## Spike 1: Carrier Foundation
 

@@ -15,6 +15,29 @@ hold Bullpen share artifacts without making Bullpen semantics part of the file
 format itself. Backup-like exports remain possible, but they should not define
 the core user experience.
 
+## Implementation Readiness
+
+The implemented baseline is ready for follow-on implementation planning within a
+bounded scope:
+
+- safe carrier validation and carrier-only preview
+- Socket.IO Bento export, preview, and import events
+- worker and worker-group packages
+- ticket and ticket-bundle packages
+- preview-before-apply import discipline
+- request-correlated Socket.IO replies
+- dormant imports with runtime state stripped
+- explicit worker placement choices on conflict
+- per-import approval for preserving command, environment, service,
+  notification, and git automation fields
+- ticket target-column selection limited to dormant columns
+
+The next implementation plan should treat this as a proven first package layer,
+not as an open-ended file-format redesign. Worksheet, project-template,
+project-snapshot, scanner, gallery/social sharing, and grid-native/polished
+preview UI work are separate future plans. Unsupported or mixed package kinds
+must continue to fail closed until their semantics are deliberately specified.
+
 ## Current Inventory
 
 Before the Bento worker-package migration, Bullpen had three
