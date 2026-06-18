@@ -47,6 +47,9 @@ def test_command_registry_supports_ticket_and_ui_commands():
     assert "id: 'volume.set'" in text
     assert "id: 'chat.new'" in text
     assert "id: 'project.import'" in text
+    assert "id: 'packages.import'" in text
+    assert "title: 'Import Package'" in text
+    assert "aliases: ['import package', 'import workers', 'import bento']" in text
     assert "Usage: >view kanban|list" in text
     assert "Usage: >scope live|archived" in text
     assert "Usage: >volume 0-100" in text
