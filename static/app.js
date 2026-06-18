@@ -1951,11 +1951,39 @@ const app = createApp({
       return Object.keys(approvals).length ? approvals : null;
     }
 
+    function _bentoConflictPlacementForPreview(preview) {
+      const placement = preview?.bullpen?.placement;
+      if (placement?.status !== 'conflict') return null;
+      const choice = window.prompt(
+        'Package placement conflicts with existing workers.\n\n' +
+        'Enter R to place right, B to place below, or "col,row" for an anchor cell.',
+        'R'
+      );
+      if (choice === null) {
+        throw new Error('Bento import canceled');
+      }
+      const normalized = String(choice || '').trim().toLowerCase();
+      if (!normalized || normalized === 'r' || normalized === 'right') {
+        return { strategy: 'place-right' };
+      }
+      if (normalized === 'b' || normalized === 'below') {
+        return { strategy: 'place-below' };
+      }
+      const match = normalized.match(/^(-?\d+)\s*,\s*(-?\d+)$/);
+      if (match) {
+        return {
+          strategy: 'choose-anchor',
+          anchor: { col: Number(match[1]), row: Number(match[2]) },
+        };
+      }
+      throw new Error('Invalid Bento placement choice');
+    }
+
     function _bentoImportPayloadForPreview(data, preview) {
       const payload = { file: data };
       const placement = preview?.bullpen?.placement;
       if (placement?.status === 'conflict') {
-        throw new Error('Bento import has placement conflicts; placement review is required');
+        payload.placement = _bentoConflictPlacementForPreview(preview);
       }
       if (placement?.status === 'available' && placement?.state) {
         payload.placement = { strategy: 'preserve', state: placement.state };

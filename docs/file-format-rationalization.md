@@ -638,6 +638,12 @@ Exit criteria:
 - Conflicting placement produces a preview choice instead of silent movement.
 - Imported workers are dormant and have runtime state stripped.
 
+Current baseline: package import preserves placement when preview reports all
+target cells are available. When preview reports a conflict, the shared import
+action asks for a placement choice and sends either `place-right`, `place-below`,
+or a user-entered `choose-anchor` coordinate to `bento:import`. A grid-native
+review UI remains future UX work.
+
 ### Slice 2: Approval Gates
 
 Status: Partially implemented; polished preview UI remains.
