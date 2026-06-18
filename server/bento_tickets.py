@@ -15,6 +15,7 @@ from server.bento_workers import BULLPEN_PROFILE_ID, BULLPEN_PROFILE_VERSION, wo
 
 _VALID_PRIORITIES = {"urgent", "high", "normal", "low"}
 _SAFE_IMPORT_STATUS = "backlog"
+_ACTIVE_IMPORT_STATUSES = {"assigned", "in_progress", "in-progress"}
 
 
 def _created_at():
@@ -92,6 +93,13 @@ def _safe_type(value):
     return text[:40] or "task"
 
 
+def _safe_import_status(value):
+    status = str(value or _SAFE_IMPORT_STATUS).strip() or _SAFE_IMPORT_STATUS
+    if status in _ACTIVE_IMPORT_STATUSES:
+        return _SAFE_IMPORT_STATUS
+    return status
+
+
 def sanitize_ticket_for_package(ticket):
     ticket = ticket if isinstance(ticket, dict) else {}
     return {
@@ -109,7 +117,7 @@ def sanitize_ticket_for_package(ticket):
 
 def sanitize_ticket_for_import(ticket, *, target_status=None):
     ticket = sanitize_ticket_for_package(ticket)
-    status = str(target_status or _SAFE_IMPORT_STATUS).strip() or _SAFE_IMPORT_STATUS
+    status = _safe_import_status(target_status)
     sanitized = {
         "title": ticket["title"],
         "body": ticket["body"],
@@ -288,7 +296,7 @@ def apply_ticket_fragments(bp_dir, tickets, *, target_status=None, kind="ticket-
         },
         "tickets": created,
         "sanitized": sanitized_reports,
-        "target_status": target_status or _SAFE_IMPORT_STATUS,
+        "target_status": _safe_import_status(target_status),
         "warnings": [],
     }
 

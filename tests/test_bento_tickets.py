@@ -194,3 +194,19 @@ def test_export_and_import_ticket_bundle(tmp_workspace):
     assert titles == {"First bundle ticket", "Second bundle ticket"}
     assert {task["status"] for task in created} == {"inbox"}
     assert {task["assigned_to"] for task in created} == {""}
+
+
+def test_ticket_bento_import_refuses_active_target_status(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    task = create_task(bp_dir, "Dormant import target")
+    exported = _export(client, kind="ticket", id=task["id"])
+
+    imported = _import(client, exported["data"], target_status="assigned")
+
+    created = imported["tickets"]
+    assert imported["target_status"] == "backlog"
+    assert len(created) == 1
+    assert created[0]["status"] == "backlog"
+    assert created[0]["assigned_to"] == ""
