@@ -640,13 +640,19 @@ Exit criteria:
 
 ### Slice 2: Approval Gates
 
-Status: Partially implemented; UX review remains.
+Status: Partially implemented; polished preview UI remains.
 
 - Add import apply options for risky capability preservation.
 - Default to sanitizing command, service, notification, git, queue, assignment,
   and runtime fields.
 - Show targeted approval controls for each risky capability group.
 - Apply approvals only to the current import operation.
+
+Current baseline: the shared package import action performs preview first and
+asks for per-import approval before preserving command, environment, service,
+notification, or git automation fields. Declined capabilities are imported
+stripped through the existing backend sanitizer. Runtime state and queues remain
+non-preservable.
 
 Exit criteria:
 

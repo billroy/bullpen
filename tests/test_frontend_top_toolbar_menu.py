@@ -65,6 +65,15 @@ def test_app_wires_toolbar_export_import_events():
     assert "socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "socket.emit('bento:preview', _wsData(payload));" in text
     assert "const preview = await _requestBentoPreview({ file: data });" in text
+    assert "const BENTO_RISKY_CAPABILITY_LABELS = {" in text
+    assert "commands: 'command fields'" in text
+    assert "env: 'environment variables'" in text
+    assert "services: 'service worker settings'" in text
+    assert "notifications: 'notification settings'" in text
+    assert "git: 'git automation settings'" in text
+    assert "function _bentoImportApprovalsForPreview(preview)" in text
+    assert "window.confirm(" in text
+    assert "payload.approvals = approvals;" in text
     assert "Bento import has placement conflicts; placement review is required" in text
     assert "payload.placement = { strategy: 'preserve', state: placement.state };" in text
     assert "return _requestBentoImport(_bentoImportPayloadForPreview(data, preview));" in text

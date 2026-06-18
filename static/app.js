@@ -1928,6 +1928,29 @@ const app = createApp({
       }, 0);
     }
 
+    const BENTO_RISKY_CAPABILITY_LABELS = {
+      commands: 'command fields',
+      env: 'environment variables',
+      services: 'service worker settings',
+      notifications: 'notification settings',
+      git: 'git automation settings',
+    };
+
+    function _bentoImportApprovalsForPreview(preview) {
+      const capabilities = preview?.bullpen?.capabilities;
+      if (!capabilities || typeof capabilities !== 'object') return null;
+      const approvals = {};
+      for (const [capability, label] of Object.entries(BENTO_RISKY_CAPABILITY_LABELS)) {
+        const count = Number(capabilities[capability] || 0);
+        if (!Number.isFinite(count) || count <= 0) continue;
+        approvals[capability] = window.confirm(
+          `This package includes ${label} on ${count} worker${count === 1 ? '' : 's'}.\n\n` +
+          'Preserve this capability for this import? Cancel imports it stripped.'
+        );
+      }
+      return Object.keys(approvals).length ? approvals : null;
+    }
+
     function _bentoImportPayloadForPreview(data, preview) {
       const payload = { file: data };
       const placement = preview?.bullpen?.placement;
@@ -1936,6 +1959,10 @@ const app = createApp({
       }
       if (placement?.status === 'available' && placement?.state) {
         payload.placement = { strategy: 'preserve', state: placement.state };
+      }
+      const approvals = _bentoImportApprovalsForPreview(preview);
+      if (approvals) {
+        payload.approvals = approvals;
       }
       return payload;
     }
