@@ -708,7 +708,8 @@ def register_events(socketio, app):
                 if not selected:
                     emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "slots must include at least one worker", "code": "missing-slots"})
                     return
-                filename = f"bullpen-worker-group-{ws.name}-{ws.id[:8]}.bento"
+                workspace_name = _bento_worker_export_name(ws.name, "workspace")
+                filename = f"bullpen-worker-group-{workspace_name}-{ws.id[:8]}.bento"
                 package = build_worker_bento(ws, selected, kind="worker-group", selected_slots=selected_indices)
             elif kind == "ticket":
                 task_id = str((data or {}).get("id") or "").strip()
@@ -747,7 +748,8 @@ def register_events(socketio, app):
                 if not selected:
                     emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "ids must include at least one ticket", "code": "missing-tickets"})
                     return
-                filename = f"bullpen-ticket-bundle-{ws.name}-{ws.id[:8]}.bento"
+                workspace_name = _bento_worker_export_name(ws.name, "workspace")
+                filename = f"bullpen-ticket-bundle-{workspace_name}-{ws.id[:8]}.bento"
                 package = build_ticket_bento(ws, selected, kind="ticket-bundle", selected_ids=selected_ids)
             else:
                 emit("bento:error", {"workspaceId": ws_id, "ok": False, "error": "kind must be worker, worker-group, ticket, or ticket-bundle", "code": "invalid-kind"})

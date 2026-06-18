@@ -93,6 +93,8 @@ def test_export_worker_group_bento_preserves_relative_positions(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
+    ws_id = app.config["startup_workspace_id"]
+    app.config["manager"].get(ws_id).name = "Project: alpha/beta?"
     write_json(
         os.path.join(bp_dir, "layout.json"),
         {
@@ -105,6 +107,8 @@ def test_export_worker_group_bento_preserves_relative_positions(tmp_workspace):
 
     exported = _export_worker(client, kind="worker-group", slots=[0, 1])
 
+    assert exported["filename"].startswith("bullpen-worker-group-Project-alpha-beta-")
+    assert exported["filename"].endswith(".bento")
     manifest = _read_zip_json(exported["data"], "bento.json")
     assert manifest["bullpen"]["kind"] == "worker-group"
     worker_items = [item for item in manifest["items"] if item["bullpen_type"] == "worker"]

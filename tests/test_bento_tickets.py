@@ -181,12 +181,16 @@ def test_export_and_import_ticket_bundle(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
+    ws_id = app.config["startup_workspace_id"]
+    app.config["manager"].get(ws_id).name = "Tickets: alpha/beta?"
     first = create_task(bp_dir, "First bundle ticket", priority="low")
     second = create_task(bp_dir, "Second bundle ticket", priority="urgent")
 
     exported = _export(client, kind="ticket-bundle", ids=[first["id"], second["id"]])
     imported = _import(client, exported["data"], target_status="inbox")
 
+    assert exported["filename"].startswith("bullpen-ticket-bundle-Tickets-alpha-beta-")
+    assert exported["filename"].endswith(".bento")
     created = imported["tickets"]
     titles = {task["title"] for task in created}
     assert imported["kind"] == "ticket-bundle"
