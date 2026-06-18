@@ -38,6 +38,13 @@ project-snapshot, scanner, gallery/social sharing, and grid-native/polished
 preview UI work are separate future plans. Unsupported or mixed package kinds
 must continue to fail closed until their semantics are deliberately specified.
 
+Follow-on planning should stay split into two lanes:
+
+- Import UX polish: replace native prompts with one coherent preview/apply
+  surface for the implemented worker and ticket package kinds.
+- New package kinds: decide and specify the next supported kind before adding
+  worksheet, project-template, project-snapshot, or mixed-package behavior.
+
 ## Current Inventory
 
 Before the Bento worker-package migration, Bullpen had three
