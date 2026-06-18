@@ -91,6 +91,40 @@ def export_all_zip_bytes(manager):
     return mem
 
 
+def _normalized_zip_names(zf):
+    return {
+        (info.filename or "").replace("\\", "/")
+        for info in zf.infolist()
+        if info.filename and not info.filename.endswith("/")
+    }
+
+
+def detect_import_archive_type(fileobj):
+    try:
+        with zipfile.ZipFile(fileobj, "r") as zf:
+            names = _normalized_zip_names(zf)
+            if "bento.json" in names:
+                return {"ok": True, "type": "bento"}
+            if "bullpen-export.json" in names:
+                try:
+                    manifest = json.loads(zf.read("bullpen-export.json"))
+                except (KeyError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+                    raise ValueError("Archive contains invalid Bullpen export manifest") from exc
+                if isinstance(manifest, dict) and manifest.get("schema") == "bullpen-export-all-v1":
+                    return {"ok": True, "type": "all", "schema": manifest.get("schema")}
+                raise ValueError("Archive contains unsupported Bullpen export manifest")
+            if any(name.startswith("workspaces/") and "/.bullpen/" in name for name in names):
+                return {"ok": True, "type": "all", "legacy": True}
+            if any(name.startswith(".bullpen/") for name in names) or "config.json" in names:
+                return {"ok": True, "type": "workspace"}
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Invalid zip file") from exc
+    finally:
+        if hasattr(fileobj, "seek"):
+            fileobj.seek(0)
+    raise ValueError("Archive type could not be detected")
+
+
 def safe_extract_zip(zf, target_dir):
     total_size = 0
     total_compressed_size = 0

@@ -293,20 +293,26 @@ Import must be preview-first.
 
 Import flow:
 
-1. User selects a `.bento` file or legacy Bullpen archive.
-2. Server validates zip structure, size, entry count, paths, and manifest.
-3. Server builds a safe preview from carrier metadata and supported Bullpen
-   profile semantics.
-4. UI shows a preview:
+1. User chooses **Import...** and selects a `.bento` package, project `.zip`,
+   or all-workspace `.zip`.
+2. Server inspects the archive without mutating workspace state:
+   - root `bento.json` routes to package import
+   - root `bullpen-export.json` or `workspaces/.../.bullpen` routes to
+     all-workspace import
+   - `.bullpen/...` or root `config.json` routes to active-project import
+3. Server validates zip structure, size, entry count, paths, and manifest.
+4. Server builds a safe preview from carrier metadata and supported Bullpen
+   profile semantics when the file is a Bento package.
+5. UI shows a preview:
    - Bullpen profile kind, if present
    - item counts by type
    - names of workers, tickets, worksheets, and profiles
    - command/service/notification capabilities
    - conflicts and suggested resolutions
-5. User chooses an import mode.
-6. User explicitly approves risky capabilities.
-7. Server imports using a transaction-like plan.
-8. UI reports added, skipped, renamed, and rejected items.
+6. User chooses an import mode.
+7. User explicitly approves risky capabilities.
+8. Server imports using a transaction-like plan.
+9. UI reports added, skipped, renamed, and rejected items.
 
 Import modes:
 

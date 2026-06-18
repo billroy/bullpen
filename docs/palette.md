@@ -330,9 +330,7 @@ that require new argument pickers can land disabled or as follow-up work.
 | Export Project | Existing export workspace. |
 | Export Workers | Existing export workers. |
 | Export All | Existing export all. |
-| Import Project | Existing import workspace; file picker command. |
-| Import Workers | Existing import workers; file picker command. |
-| Import All | Existing import all; file picker command. |
+| Import... | Opens one file picker and detects Bento package, project zip, or all-workspace zip before importing. |
 
 ### Files
 

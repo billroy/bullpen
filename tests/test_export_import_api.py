@@ -50,6 +50,20 @@ def _archive_error(client, data, **payload):
     return _received(client, "archive:error")
 
 
+def _inspect_import(client, data, **payload):
+    body = {"file": data}
+    body.update(payload)
+    client.emit("import:inspect", body)
+    return _received(client, "import:inspected")
+
+
+def _inspect_import_error(client, data, **payload):
+    body = {"file": data}
+    body.update(payload)
+    client.emit("import:inspect", body)
+    return _received(client, "import:error")
+
+
 def test_export_workspace_returns_zip_with_bullpen_dir(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
@@ -72,6 +86,22 @@ def test_export_workspace_returns_zip_with_bullpen_dir(tmp_workspace):
     assert "server_host" not in exported_config
     assert "server_port" not in exported_config
     assert "mcp_token" not in exported_config
+
+
+def test_import_inspect_detects_workspace_archive(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    payload = {
+        ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
+    }
+
+    inspected = _inspect_import(client, _zip_bytes(payload).getvalue(), request_id="inspect-workspace")
+
+    assert inspected["ok"] is True
+    assert inspected["import_type"] == "workspace"
+    assert inspected["request_id"] == "inspect-workspace"
 
 
 def test_import_workspace_replaces_config_from_zip(tmp_workspace):
@@ -97,6 +127,39 @@ def test_import_workspace_replaces_config_from_zip(tmp_workspace):
     assert config["server_port"] == app.config["port"]
     assert "mcp_token" not in config
     assert mcp_auth.read_workspace_mcp_token(bp_dir) == original_token
+
+
+def test_import_inspect_detects_all_workspace_archive(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    payload = {
+        "bullpen-export.json": json.dumps({"schema": "bullpen-export-all-v1", "workspaces": []}),
+        "workspaces/example/.bullpen/config.json": json.dumps({"name": "Imported"}),
+    }
+
+    inspected = _inspect_import(client, _zip_bytes(payload).getvalue())
+
+    assert inspected["ok"] is True
+    assert inspected["import_type"] == "all"
+    assert inspected["schema"] == "bullpen-export-all-v1"
+
+
+def test_import_inspect_detects_legacy_all_workspace_archive(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    payload = {
+        "workspaces/example/.bullpen/config.json": json.dumps({"name": "Imported"}),
+    }
+
+    inspected = _inspect_import(client, _zip_bytes(payload).getvalue())
+
+    assert inspected["ok"] is True
+    assert inspected["import_type"] == "all"
+    assert inspected["legacy"] is True
 
 
 def test_export_all_and_import_all_round_trip(tmp_workspace):
@@ -213,6 +276,18 @@ def test_legacy_archive_routes_are_removed(tmp_workspace):
     assert client.get("/api/export/all").status_code == 404
     assert client.post("/api/import/workspace").status_code in {404, 405}
     assert client.post("/api/import/all").status_code in {404, 405}
+
+
+def test_import_inspect_rejects_unknown_archive(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    error = _inspect_import_error(client, _zip_bytes({"notes.txt": "hello"}).getvalue())
+
+    assert error["ok"] is False
+    assert error["code"] == "unknown-import-type"
+    assert error["error"] == "Archive type could not be detected"
 
 
 def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):

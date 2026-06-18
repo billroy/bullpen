@@ -2037,6 +2037,84 @@ const app = createApp({
       return _requestArchiveImport({ kind, file: data });
     }
 
+    function _requestImportInspect(payload) {
+      return new Promise((resolve, reject) => {
+        const requestId = payload.request_id || _nextRequestId('import-inspect');
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Import inspection timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('import:inspected', onInspected);
+          socket.off('import:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload) return false;
+          if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onInspected = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Import inspection failed'));
+        };
+        socket.on('import:inspected', onInspected);
+        socket.on('import:error', onError);
+        socket.emit('import:inspect', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
+
+    async function importAny(file) {
+      if (!file) return null;
+      if (!activeWorkspaceId.value) return null;
+      try {
+        const data = await file.arrayBuffer();
+        const inspected = await _requestImportInspect({ file: data });
+        if (inspected.import_type === 'bento') {
+          const preview = inspected.preview || await _requestBentoPreview({ file: data });
+          const result = await _requestBentoImport(await _bentoImportPayloadForPreview(data, preview));
+          const count = _bentoImportCount(result?.imported);
+          addToast('Package import complete' + (count ? ` (${count})` : ''));
+          return result;
+        }
+        if (inspected.import_type === 'workspace' || inspected.import_type === 'all') {
+          const result = await _requestArchiveImport({ kind: inspected.import_type, file: data });
+          if (inspected.import_type === 'workspace') {
+            addToast('Workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
+          } else {
+            addToast('All-workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
+          }
+          return result;
+        }
+        throw new Error('Unsupported import type');
+      } catch (e) {
+        addToast('Import failed: ' + e.message, 'error');
+        return null;
+      }
+    }
+
+    function importAnyFromPicker() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.bento,.zip,application/zip,application/vnd.bullpen.bento+zip,application/vnd.bento+zip';
+      input.style.display = 'none';
+      input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        input.remove();
+        if (file) importAny(file);
+      }, { once: true });
+      document.body.appendChild(input);
+      input.click();
+    }
+
     async function exportWorkspace() {
       if (!activeWorkspaceId.value) return;
       try {
@@ -2268,6 +2346,7 @@ const app = createApp({
           exportWorkspace,
           exportWorkers,
           exportAll,
+          importAnyFromPicker,
           setTheme,
           setAmbientPreset,
           setAmbientVolume,
@@ -2427,9 +2506,7 @@ const app = createApp({
         @export-workspace="exportWorkspace"
         @export-workers="exportWorkers"
         @export-all="exportAll"
-        @import-workspace="importWorkspace"
-        @import-workers="importWorkers"
-        @import-all="importAll"
+        @import-file="importAny"
         @set-theme="setTheme"
         @set-ambient-preset="setAmbientPreset"
         @set-ambient-volume="setAmbientVolume"

@@ -17,9 +17,7 @@ const TopToolbar = {
     'set-worker-minimap-collapsed',
     'export-workspace',
     'export-all',
-    'import-workers',
-    'import-workspace',
-    'import-all',
+    'import-file',
     'quick-create-task',
     'run-palette-command',
     'run-palette-input',
@@ -354,22 +352,10 @@ const TopToolbar = {
       this.showMainMenu = false;
       this.$emit('export-all');
     },
-    triggerImportWorkers() {
-      if (!this.$refs.workersImportInput) return;
-      this.$refs.workersImportInput.value = '';
-      this.$refs.workersImportInput.click();
-      this.showMainMenu = false;
-    },
-    triggerImportWorkspace() {
-      if (!this.$refs.workspaceImportInput) return;
-      this.$refs.workspaceImportInput.value = '';
-      this.$refs.workspaceImportInput.click();
-      this.showMainMenu = false;
-    },
-    triggerImportAll() {
-      if (!this.$refs.allImportInput) return;
-      this.$refs.allImportInput.value = '';
-      this.$refs.allImportInput.click();
+    triggerImport() {
+      if (!this.$refs.importInput) return;
+      this.$refs.importInput.value = '';
+      this.$refs.importInput.click();
       this.showMainMenu = false;
     },
     onOpenGitHub() {
@@ -402,20 +388,10 @@ const TopToolbar = {
       document.body.appendChild(form);
       form.submit();
     },
-    onImportWorkspaceSelected(event) {
+    onImportSelected(event) {
       const file = event?.target?.files?.[0];
       if (!file) return;
-      this.$emit('import-workspace', file);
-    },
-    onImportWorkersSelected(event) {
-      const file = event?.target?.files?.[0];
-      if (!file) return;
-      this.$emit('import-workers', file);
-    },
-    onImportAllSelected(event) {
-      const file = event?.target?.files?.[0];
-      if (!file) return;
-      this.$emit('import-all', file);
+      this.$emit('import-file', file);
     },
     onPaletteKeydown(event) {
       if (event.key === 'ArrowDown') {
@@ -527,32 +503,16 @@ const TopToolbar = {
               <button class="project-menu-item" @click="onExportWorkspace"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Project</span></button>
               <button class="project-menu-item" @click="onExportWorkers"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export Workers</span></button>
               <button class="project-menu-item" @click="onExportAll"><i class="menu-item-icon" data-lucide="download" aria-hidden="true"></i><span class="menu-item-label">Export All</span></button>
-              <button class="project-menu-item" @click="triggerImportWorkspace"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Project</span></button>
-              <button class="project-menu-item" @click="triggerImportWorkers"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import Package</span></button>
-              <button class="project-menu-item" @click="triggerImportAll"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import All</span></button>
+              <button class="project-menu-item" @click="triggerImport"><i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i><span class="menu-item-label">Import...</span></button>
               <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="git-branch" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
               <button class="project-menu-item" @click="onLogout"><i class="menu-item-icon" data-lucide="log-out" aria-hidden="true"></i><span class="menu-item-label">Logout</span></button>
             </div>
             <input
-              ref="workersImportInput"
+              ref="importInput"
               type="file"
-              accept=".bento,application/vnd.bullpen.bento+zip,application/vnd.bento+zip"
+              accept=".bento,.zip,application/zip,application/vnd.bullpen.bento+zip,application/vnd.bento+zip"
               class="toolbar-import-input"
-              @change="onImportWorkersSelected"
-            >
-            <input
-              ref="workspaceImportInput"
-              type="file"
-              accept=".zip,application/zip"
-              class="toolbar-import-input"
-              @change="onImportWorkspaceSelected"
-            >
-            <input
-              ref="allImportInput"
-              type="file"
-              accept=".zip,application/zip"
-              class="toolbar-import-input"
-              @change="onImportAllSelected"
+              @change="onImportSelected"
             >
           </div>
           <span class="toolbar-name">

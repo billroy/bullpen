@@ -16,6 +16,7 @@ from flask_socketio import emit, join_room, rooms
 
 from server import tasks as task_mod
 from server.archive_transport import (
+    detect_import_archive_type,
     export_all_zip_bytes,
     export_workspace_zip_bytes,
     import_all_archive,
@@ -596,6 +597,20 @@ def register_events(socketio, app):
             return BytesIO(payload)
         raise ValueError("Archive payload must be bytes")
 
+    def _build_bento_preview(fileobj, bp_dir):
+        carrier_preview = inspect_bento(fileobj)
+        if any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier_preview.get("profiles", [])):
+            fileobj.seek(0)
+            manifest = _bento_load_manifest(fileobj)
+            kind = _bento_kind(manifest)
+            fileobj.seek(0)
+            if kind in {"ticket", "ticket-bundle"}:
+                return preview_ticket_bento(fileobj, bp_dir=bp_dir)
+            if kind in {"worker", "worker-group"}:
+                return preview_worker_bento(fileobj, bp_dir=bp_dir)
+            raise BentoCarrierError("Unsupported Bullpen Bento package kind", "unsupported-kind")
+        return carrier_preview
+
     def _bento_kind(manifest):
         declared = (manifest.get("bullpen") or {}).get("kind") if isinstance(manifest, dict) else None
         if declared:
@@ -649,21 +664,7 @@ def register_events(socketio, app):
             return
         try:
             fileobj = _bento_fileobj(data or {})
-            carrier_preview = inspect_bento(fileobj)
-            if any(profile.get("id") == BULLPEN_PROFILE_ID for profile in carrier_preview.get("profiles", [])):
-                fileobj.seek(0)
-                manifest = _bento_load_manifest(fileobj)
-                kind = _bento_kind(manifest)
-                fileobj.seek(0)
-                if kind in {"ticket", "ticket-bundle"}:
-                    preview = preview_ticket_bento(fileobj, bp_dir=bp_dir)
-                elif kind in {"worker", "worker-group"}:
-                    preview = preview_worker_bento(fileobj, bp_dir=bp_dir)
-                else:
-                    _emit_bento_error(ws_id, data, "Unsupported Bullpen Bento package kind", "unsupported-kind")
-                    return
-            else:
-                preview = carrier_preview
+            preview = _build_bento_preview(fileobj, bp_dir)
             preview.update(_bento_event_base(ws_id, data))
             emit("bento:previewed", preview)
         except BentoCarrierError as e:
@@ -902,6 +903,49 @@ def register_events(socketio, app):
                 "ok": False,
                 "error": str(e),
                 "code": "archive-import-failed",
+            })
+
+    @socketio.on("import:inspect")
+    def on_import_inspect(data):
+        payload = data or {}
+        ws_id, bp_dir = _resolve(payload)
+        if not ws_id:
+            return
+        try:
+            fileobj = _archive_fileobj(payload)
+            detected = detect_import_archive_type(fileobj)
+            result = {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": True,
+                "import_type": detected.get("type"),
+            }
+            if detected.get("schema"):
+                result["schema"] = detected["schema"]
+            if detected.get("legacy"):
+                result["legacy"] = True
+            if detected.get("type") == "bento":
+                fileobj.seek(0)
+                preview = _build_bento_preview(fileobj, bp_dir)
+                preview.update(_bento_event_base(ws_id, payload))
+                result["preview"] = preview
+                result["kind"] = preview.get("kind")
+            emit("import:inspected", result)
+        except BentoCarrierError as e:
+            emit("import:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "code": e.code,
+            })
+        except ValueError as e:
+            emit("import:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": str(e),
+                "code": "unknown-import-type",
             })
 
     @socketio.on("models:opencode")

@@ -338,6 +338,20 @@ def test_bento_preview_event_returns_carrier_preview(tmp_workspace):
     assert preview["request_id"] == "preview-1"
 
 
+def test_import_inspect_detects_bento_package_and_returns_preview(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    client.emit("import:inspect", {"file": _valid_bento().getvalue(), "request_id": "inspect-bento"})
+
+    inspected = _received(client, "import:inspected")
+    assert inspected["ok"] is True
+    assert inspected["import_type"] == "bento"
+    assert inspected["request_id"] == "inspect-bento"
+    assert inspected["preview"]["format"] == "bento"
+
+
 def test_bento_preview_event_rejects_missing_upload(tmp_workspace):
     init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)

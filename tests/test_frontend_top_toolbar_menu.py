@@ -16,19 +16,18 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "class=\"project-menu-item\" @click=\"onExportWorkspace\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
     assert "class=\"project-menu-item\" @click=\"onExportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
     assert "class=\"project-menu-item\" @click=\"onExportAll\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
-    assert "class=\"project-menu-item\" @click=\"triggerImportWorkspace\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
-    assert "class=\"project-menu-item\" @click=\"triggerImportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
-    assert "class=\"project-menu-item\" @click=\"triggerImportAll\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
-    assert "accept=\".bento,application/vnd.bullpen.bento+zip,application/vnd.bento+zip\"" in text
+    assert "class=\"project-menu-item\" @click=\"triggerImport\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
+    assert "accept=\".bento,.zip,application/zip,application/vnd.bullpen.bento+zip,application/vnd.bento+zip\"" in text
     assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"git-branch\"" in text
     assert "class=\"project-menu-item\" @click=\"onLogout\"><i class=\"menu-item-icon\" data-lucide=\"log-out\"" in text
     assert "<span class=\"menu-item-label\">Toggle Left Pane</span></button>" in text
     assert "<span class=\"menu-item-label\">Export Project</span></button>" in text
     assert "<span class=\"menu-item-label\">Export Workers</span></button>" in text
     assert "<span class=\"menu-item-label\">Export All</span></button>" in text
-    assert "<span class=\"menu-item-label\">Import Project</span></button>" in text
-    assert "<span class=\"menu-item-label\">Import Package</span></button>" in text
-    assert "<span class=\"menu-item-label\">Import All</span></button>" in text
+    assert "<span class=\"menu-item-label\">Import...</span></button>" in text
+    assert "<span class=\"menu-item-label\">Import Project</span></button>" not in text
+    assert "<span class=\"menu-item-label\">Import Package</span></button>" not in text
+    assert "<span class=\"menu-item-label\">Import All</span></button>" not in text
     assert "<span class=\"menu-item-label\">Bullpen on GitHub</span></button>" in text
     assert "<span class=\"menu-item-label\">Logout</span></button>" in text
     assert "window.open('https://github.com/billroy/bullpen', '_blank', 'noopener,noreferrer');" in text
@@ -53,9 +52,10 @@ def test_app_wires_toolbar_export_import_events():
     assert "@export-workspace=\"exportWorkspace\"" in text
     assert "@export-workers=\"exportWorkers\"" in text
     assert "@export-all=\"exportAll\"" in text
-    assert "@import-workspace=\"importWorkspace\"" in text
-    assert "@import-workers=\"importWorkers\"" in text
-    assert "@import-all=\"importAll\"" in text
+    assert "@import-file=\"importAny\"" in text
+    assert "@import-workspace=\"importWorkspace\"" not in text
+    assert "@import-workers=\"importWorkers\"" not in text
+    assert "@import-all=\"importAll\"" not in text
     assert "await _downloadArchiveExport({ kind: 'all' }, 'bullpen-all.zip');" in text
     assert "await _downloadBentoExport({ kind: 'worker-group', slots }, 'bullpen-workers.bento');" in text
     assert "async function exportWorker(slot) {" in text
@@ -67,8 +67,10 @@ def test_app_wires_toolbar_export_import_events():
     assert "socket.emit('bento:export', _wsData({ ...payload, request_id: requestId }));" in text
     assert "await _downloadBentoExport({ kind: 'worker', slot }, 'bullpen-worker.bento');" in text
     assert "socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));" in text
+    assert "socket.emit('import:inspect', _wsData({ ...payload, request_id: requestId }));" in text
     assert "socket.emit('bento:preview', _wsData({ ...payload, request_id: requestId }));" in text
-    assert "const preview = await _requestBentoPreview({ file: data });" in text
+    assert "const inspected = await _requestImportInspect({ file: data });" in text
+    assert "const preview = inspected.preview || await _requestBentoPreview({ file: data });" in text
     assert "function _reviewBentoImport(preview)" in text
     assert "bentoImportReview.visible = true;" in text
     assert "function applyBentoImportReview(decisions)" in text
@@ -81,6 +83,7 @@ def test_app_wires_toolbar_export_import_events():
     assert "<BentoImportReviewModal" in text
     assert "socket.emit('bento:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "const data = await file.arrayBuffer();" in text
+    assert "async function importAny(file) {" in text
     assert "const result = await _importArchiveFile(file, 'all');" in text
     assert "Package import complete' + (count ? ` (${count})` : '')" in text
     assert "/api/export/workspace" not in text
