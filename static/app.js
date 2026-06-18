@@ -2061,9 +2061,9 @@ const app = createApp({
       try {
         const result = await _importBentoFile(file);
         const count = _bentoImportCount(result?.imported);
-        addToast('Workers import complete' + (count ? ` (${count})` : ''));
+        addToast('Package import complete' + (count ? ` (${count})` : ''));
       } catch (e) {
-        addToast('Workers import failed: ' + e.message, 'error');
+        addToast('Package import failed: ' + e.message, 'error');
       }
     }
 

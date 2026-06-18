@@ -27,7 +27,7 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "<span class=\"menu-item-label\">Export Workers</span></button>" in text
     assert "<span class=\"menu-item-label\">Export All</span></button>" in text
     assert "<span class=\"menu-item-label\">Import Project</span></button>" in text
-    assert "<span class=\"menu-item-label\">Import Workers</span></button>" in text
+    assert "<span class=\"menu-item-label\">Import Package</span></button>" in text
     assert "<span class=\"menu-item-label\">Import All</span></button>" in text
     assert "<span class=\"menu-item-label\">Bullpen on GitHub</span></button>" in text
     assert "<span class=\"menu-item-label\">Logout</span></button>" in text
@@ -71,7 +71,7 @@ def test_app_wires_toolbar_export_import_events():
     assert "socket.emit('bento:import', _wsData(payload));" in text
     assert "const data = await file.arrayBuffer();" in text
     assert "const result = await _importArchiveFile(file, 'all');" in text
-    assert "Workers import complete' + (count ? ` (${count})` : '')" in text
+    assert "Package import complete' + (count ? ` (${count})` : '')" in text
     assert "/api/export/workspace" not in text
     assert "/api/export/all" not in text
     assert "/api/import/workspace" not in text
