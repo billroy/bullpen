@@ -51,6 +51,17 @@ const BentoImportReviewModal = {
                 <input class="form-input" type="number" v-model.number="anchorRow">
               </label>
             </div>
+            <div v-if="placementFootprintRows.length" class="bento-placement-footprint" :style="placementFootprintStyle">
+              <template v-for="cell in placementFootprintCells" :key="cell.key">
+                <div
+                  class="bento-placement-cell"
+                  :class="{ occupied: cell.occupied, target: cell.target, overlap: cell.occupied && cell.target }"
+                  :title="cell.title"
+                >
+                  <span>{{ cell.label }}</span>
+                </div>
+              </template>
+            </div>
             <div class="bento-placement-table">
               <div class="bento-placement-row bento-placement-header">
                 <span>Worker</span>
@@ -183,6 +194,52 @@ const BentoImportReviewModal = {
           row: anchor.row + (item.coord.row - sourceMinRow),
         },
       }));
+    },
+    placementFootprintBounds() {
+      const targetCoords = this.placementRows.map(row => row.to);
+      const coords = [...this.occupiedCoords, ...targetCoords];
+      if (!coords.length) return null;
+      return {
+        minCol: Math.min(...coords.map(coord => coord.col)),
+        maxCol: Math.max(...coords.map(coord => coord.col)),
+        minRow: Math.min(...coords.map(coord => coord.row)),
+        maxRow: Math.max(...coords.map(coord => coord.row)),
+      };
+    },
+    placementFootprintCols() {
+      const bounds = this.placementFootprintBounds;
+      if (!bounds) return [];
+      return Array.from({ length: bounds.maxCol - bounds.minCol + 1 }, (_value, index) => bounds.minCol + index);
+    },
+    placementFootprintRows() {
+      const bounds = this.placementFootprintBounds;
+      if (!bounds) return [];
+      return Array.from({ length: bounds.maxRow - bounds.minRow + 1 }, (_value, index) => bounds.minRow + index);
+    },
+    placementFootprintStyle() {
+      return {
+        gridTemplateColumns: `repeat(${Math.max(this.placementFootprintCols.length, 1)}, 28px)`,
+      };
+    },
+    placementFootprintCells() {
+      const occupied = new Set(this.occupiedCoords.map(coord => `${coord.col},${coord.row}`));
+      const targets = new Map(this.placementRows.map(row => [`${row.to.col},${row.to.row}`, row.name]));
+      const cells = [];
+      for (const row of this.placementFootprintRows) {
+        for (const col of this.placementFootprintCols) {
+          const key = `${col},${row}`;
+          const targetName = targets.get(key);
+          const isOccupied = occupied.has(key);
+          cells.push({
+            key,
+            occupied: isOccupied,
+            target: Boolean(targetName),
+            label: targetName ? 'I' : (isOccupied ? 'O' : ''),
+            title: `${key}${targetName ? ` target: ${targetName}` : ''}${isOccupied ? ' occupied' : ''}`,
+          });
+        }
+      }
+      return cells;
     },
     capabilityEntries() {
       const labels = {

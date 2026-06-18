@@ -39,6 +39,10 @@ def test_bento_import_review_modal_exposes_package_decisions():
     assert "autoPlacementAnchor(strategy, items)" in text
     assert "positionsAvailable(positions)" in text
     assert "coordLabel(row.to)" in text
+    assert "placementFootprintCells()" in text
+    assert "placementFootprintStyle()" in text
+    assert "class=\"bento-placement-footprint\"" in text
+    assert "class=\"bento-placement-cell\"" in text
     assert "class=\"bento-placement-table\"" in text
     assert "class=\"modal modal-wide bento-import-modal\"" in text
 
@@ -52,3 +56,6 @@ def test_bento_import_review_styles_exist():
     assert ".bento-anchor-grid" in css
     assert ".bento-placement-table" in css
     assert ".bento-placement-row" in css
+    assert ".bento-placement-footprint" in css
+    assert ".bento-placement-cell.target" in css
+    assert ".bento-placement-cell.occupied" in css

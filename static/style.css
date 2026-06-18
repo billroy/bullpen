@@ -4637,6 +4637,46 @@ body.worker-singleton-dragging * {
   gap: 4px;
 }
 
+.bento-placement-footprint {
+  display: grid;
+  gap: 3px;
+  max-width: 100%;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+}
+
+.bento-placement-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.bento-placement-cell.occupied {
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+}
+
+.bento-placement-cell.target {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-primary);
+}
+
+.bento-placement-cell.overlap {
+  border-color: #dc2626;
+  background: color-mix(in srgb, #dc2626 25%, transparent);
+}
+
 .bento-placement-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px 72px;

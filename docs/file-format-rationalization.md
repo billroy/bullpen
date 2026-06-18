@@ -34,17 +34,18 @@ bounded scope:
 - one coherent import review modal for implemented worker and ticket decisions
 
 The next implementation plan should treat this as a proven first package layer,
-not as an open-ended file-format redesign. Worksheet, project-template,
-project-snapshot, scanner, gallery/social sharing, and grid-native/polished
-preview UI work are separate future plans. Unsupported or mixed package kinds
-must continue to fail closed until their semantics are deliberately specified.
+not as an open-ended file-format redesign. Additional package kinds are deferred
+for this line. Worksheet, project-template, project-snapshot, scanner,
+gallery/social sharing, and any mixed-package behavior remain separate future
+plans. Unsupported or mixed package kinds must continue to fail closed until
+their semantics are deliberately specified.
 
 Follow-on planning should stay split into two lanes:
 
 - Import UX polish: continue refining the coherent preview/apply surface for
   the implemented worker and ticket package kinds.
-- New package kinds: decide and specify the next supported kind before adding
-  worksheet, project-template, project-snapshot, or mixed-package behavior.
+- New package kinds: deferred. Reopen only with a specific worksheet,
+  project-template, project-snapshot, or mixed-package proposal.
 
 ## Current Inventory
 
@@ -134,7 +135,7 @@ define a `kind` hint for UX and default import behavior, but the current
 implementation treats that hint as confirmation, not proof. The actual contents
 are still described by `items`.
 
-Initial package kinds:
+Reserved package kind vocabulary:
 
 - `worker`
 - `worker-group`
@@ -144,6 +145,10 @@ Initial package kinds:
 - `project-template`
 - `project-snapshot`
 - `mixed`
+
+Only `worker`, `worker-group`, `ticket`, and `ticket-bundle` are in the current
+implementation scope. All other package kinds are deferred and must continue to
+preview/import as unsupported.
 
 The package kind is not a security boundary, and it is not a carrier-level type
 system. Import code MUST inspect every item and apply the relevant validations
