@@ -599,7 +599,7 @@ def register_events(socketio, app):
     def _bento_kind(manifest):
         declared = (manifest.get("bullpen") or {}).get("kind") if isinstance(manifest, dict) else None
         if declared:
-            return declared
+            declared = str(declared)
         items = manifest.get("items") if isinstance(manifest, dict) else []
         item_types = [
             item.get("bullpen_type")
@@ -607,14 +607,27 @@ def register_events(socketio, app):
             if isinstance(item, dict) and item.get("bullpen_type")
         ]
         unique_types = set(item_types)
+        inferred = None
         if unique_types == {"ticket"}:
-            return "ticket" if len(item_types) == 1 else "ticket-bundle"
-        if unique_types <= {"worker", "profile"} and "worker" in unique_types:
+            inferred = "ticket" if len(item_types) == 1 else "ticket-bundle"
+        elif unique_types <= {"worker", "profile"} and "worker" in unique_types:
             worker_count = sum(1 for item_type in item_types if item_type == "worker")
-            return "worker" if worker_count == 1 else "worker-group"
-        if unique_types:
-            return "unsupported"
-        return declared
+            inferred = "worker" if worker_count == 1 else "worker-group"
+        elif unique_types:
+            inferred = "unsupported"
+
+        ticket_kinds = {"ticket", "ticket-bundle"}
+        worker_kinds = {"worker", "worker-group"}
+        supported_kinds = ticket_kinds | worker_kinds
+        if declared:
+            if declared not in supported_kinds or inferred == "unsupported":
+                return "unsupported"
+            if inferred in ticket_kinds and declared not in ticket_kinds:
+                return "unsupported"
+            if inferred in worker_kinds and declared not in worker_kinds:
+                return "unsupported"
+            return declared
+        return inferred
 
     @socketio.on("bento:preview")
     def on_bento_preview(data):

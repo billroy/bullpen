@@ -68,6 +68,28 @@ def _mixed_bullpen_bento():
     })
 
 
+def _mismatched_bullpen_bento():
+    manifest = {
+        "format": "bento",
+        "version": "1",
+        "profiles": [{"id": "org.bullpen.share", "version": "1", "label": "Bullpen Share"}],
+        "items": [
+            {
+                "id": "worker.one",
+                "media_type": "application/json",
+                "path": "payload/workers/one.json",
+                "bullpen_type": "worker",
+            }
+        ],
+        "attributes": [],
+        "bullpen": {"kind": "ticket"},
+    }
+    return _zip_bytes({
+        "bento.json": json.dumps(manifest),
+        "payload/workers/one.json": json.dumps({"name": "Worker", "type": "ai"}),
+    })
+
+
 def _expect_code(archive, code, *, limits=None):
     with pytest.raises(BentoCarrierError) as err:
         inspect_bento(archive, limits=limits)
@@ -335,6 +357,30 @@ def test_bento_import_event_rejects_unsupported_mixed_bullpen_package_without_mu
     before_layout = read_json(os.path.join(bp_dir, "layout.json"))
 
     client.emit("bento:import", {"file": _mixed_bullpen_bento().getvalue()})
+
+    assert _received(client, "bento:error")["code"] == "unsupported-kind"
+    assert read_json(os.path.join(bp_dir, "config.json")) == before_config
+    assert read_json(os.path.join(bp_dir, "layout.json")) == before_layout
+
+
+def test_bento_preview_event_rejects_declared_kind_item_mismatch(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    client.emit("bento:preview", {"file": _mismatched_bullpen_bento().getvalue()})
+
+    assert _received(client, "bento:error")["code"] == "unsupported-kind"
+
+
+def test_bento_import_event_rejects_declared_kind_item_mismatch_without_mutation(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    before_config = read_json(os.path.join(bp_dir, "config.json"))
+    before_layout = read_json(os.path.join(bp_dir, "layout.json"))
+
+    client.emit("bento:import", {"file": _mismatched_bullpen_bento().getvalue()})
 
     assert _received(client, "bento:error")["code"] == "unsupported-kind"
     assert read_json(os.path.join(bp_dir, "config.json")) == before_config
