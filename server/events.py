@@ -612,6 +612,8 @@ def register_events(socketio, app):
         if unique_types <= {"worker", "profile"} and "worker" in unique_types:
             worker_count = sum(1 for item_type in item_types if item_type == "worker")
             return "worker" if worker_count == 1 else "worker-group"
+        if unique_types:
+            return "unsupported"
         return declared
 
     @socketio.on("bento:preview")
@@ -629,8 +631,16 @@ def register_events(socketio, app):
                 fileobj.seek(0)
                 if kind in {"ticket", "ticket-bundle"}:
                     preview = preview_ticket_bento(fileobj, bp_dir=bp_dir)
-                else:
+                elif kind in {"worker", "worker-group"}:
                     preview = preview_worker_bento(fileobj, bp_dir=bp_dir)
+                else:
+                    emit("bento:error", {
+                        "workspaceId": ws_id,
+                        "ok": False,
+                        "error": "Unsupported Bullpen Bento package kind",
+                        "code": "unsupported-kind",
+                    })
+                    return
             else:
                 preview = carrier_preview
             preview["workspaceId"] = ws_id
@@ -765,7 +775,7 @@ def register_events(socketio, app):
                     tickets = result.get("tickets") or []
                     for task in tickets:
                         _emit("task:created", task, ws_id)
-                else:
+                elif kind in {"worker", "worker-group"}:
                     result = apply_worker_bento(
                         fileobj,
                         bp_dir=bp_dir,
@@ -775,6 +785,14 @@ def register_events(socketio, app):
                     )
                     layout = result.pop("layout")
                     _emit("layout:updated", layout, ws_id)
+                else:
+                    emit("bento:error", {
+                        "workspaceId": ws_id,
+                        "ok": False,
+                        "error": "Unsupported Bullpen Bento package kind",
+                        "code": "unsupported-kind",
+                    })
+                    return
             result["workspaceId"] = ws_id
             emit("bento:imported", result)
         except BentoCarrierError as e:
