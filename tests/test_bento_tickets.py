@@ -203,7 +203,7 @@ def test_ticket_bento_import_refuses_active_target_status(tmp_workspace):
     task = create_task(bp_dir, "Dormant import target")
     exported = _export(client, kind="ticket", id=task["id"])
 
-    imported = _import(client, exported["data"], target_status="Assigned")
+    imported = _import(client, exported["data"], target_status="In Progress")
 
     created = imported["tickets"]
     assert imported["target_status"] == "backlog"
