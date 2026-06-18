@@ -1928,11 +1928,23 @@ const app = createApp({
       }, 0);
     }
 
+    function _bentoImportPayloadForPreview(data, preview) {
+      const payload = { file: data };
+      const placement = preview?.bullpen?.placement;
+      if (placement?.status === 'conflict') {
+        throw new Error('Bento import has placement conflicts; placement review is required');
+      }
+      if (placement?.status === 'available' && placement?.state) {
+        payload.placement = { strategy: 'preserve', state: placement.state };
+      }
+      return payload;
+    }
+
     async function _importBentoFile(file) {
       if (!file) return null;
       const data = await file.arrayBuffer();
-      await _requestBentoPreview({ file: data });
-      return _requestBentoImport({ file: data });
+      const preview = await _requestBentoPreview({ file: data });
+      return _requestBentoImport(_bentoImportPayloadForPreview(data, preview));
     }
 
     function _requestArchiveImport(payload) {
