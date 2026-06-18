@@ -199,6 +199,13 @@ def test_rejects_windows_drive_prefix():
     )
 
 
+def test_rejects_windows_drive_relative_prefix():
+    _expect_code(
+        _zip_bytes({"bento.json": _bento_manifest(), "C:payload/item.json": "{}"}),
+        "absolute-path",
+    )
+
+
 def test_rejects_symlink_member():
     info = zipfile.ZipInfo("payload/link")
     info.create_system = 3

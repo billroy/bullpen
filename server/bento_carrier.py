@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 import zipfile
 
 
@@ -65,6 +66,8 @@ def _normalize_member_name(name):
         raise BentoCarrierError("Archive contains an empty path", "empty-path")
     if raw.startswith("/"):
         raise BentoCarrierError("Archive contains an absolute path", "absolute-path")
+    if re.match(r"^[A-Za-z]:", raw):
+        raise BentoCarrierError("Archive contains an invalid absolute path", "absolute-path")
     parts = [part for part in raw.split("/") if part not in ("", ".")]
     if not parts:
         raise BentoCarrierError("Archive contains an empty normalized path", "empty-path")
