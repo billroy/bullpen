@@ -1855,6 +1855,39 @@ const app = createApp({
       return exported;
     }
 
+    function _requestBentoPreview(payload) {
+      return new Promise((resolve, reject) => {
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Bento preview timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('bento:previewed', onPreviewed);
+          socket.off('bento:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onPreviewed = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Bento preview failed'));
+        };
+        socket.on('bento:previewed', onPreviewed);
+        socket.on('bento:error', onError);
+        socket.emit('bento:preview', _wsData(payload));
+      });
+    }
+
     function _requestBentoImport(payload) {
       return new Promise((resolve, reject) => {
         const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
@@ -1898,6 +1931,7 @@ const app = createApp({
     async function _importBentoFile(file) {
       if (!file) return null;
       const data = await file.arrayBuffer();
+      await _requestBentoPreview({ file: data });
       return _requestBentoImport({ file: data });
     }
 
