@@ -291,6 +291,69 @@ def test_notification_worker_speech_template_can_reference_value_worker():
         tmp.cleanup()
 
 
+def test_notification_worker_speech_template_can_reference_value_trigger_metadata():
+    tmp, app, client = _make_client()
+    try:
+        client.emit("worker:add", {
+            "slot": 1,
+            "type": "value",
+            "fields": {
+                "name": "temperature",
+                "value": "40",
+                "value_type": "number",
+            },
+        })
+        assert _event_payloads(client, "layout:updated")
+
+        notification = {
+            "toast": {"enabled": False, "template": "{ticket.title}", "variant": "stage", "duration_ms": 1000},
+            "speech": {"enabled": True, "template": "{ticket.value_trigger.new_value}", "engine": "kokoro", "voice": "af_heart", "rate": 1, "volume": 1},
+            "sound": {"enabled": False, "effect": "done", "repeat_count": 1, "gap_ms": 250, "volume": 1},
+            "flash": {"enabled": False, "sequence": [], "opacity": 0.35},
+            "policy": {"cooldown_ms": 0, "dedupe_window_ms": 0},
+        }
+        client.emit("worker:add", {
+            "slot": 0,
+            "type": "notification",
+            "fields": {
+                "name": "Temperature Notify",
+                "disposition": "review",
+                "notification": notification,
+            },
+        })
+        assert _event_payloads(client, "layout:updated")
+        client.emit("worker:configure", {
+            "slot": 0,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "temperature",
+            },
+        })
+        assert _event_payloads(client, "layout:updated")
+
+        notification_events = []
+        client.emit("value:set", {"ref": "temperature", "value": "42", "value_type": "number"})
+        deadline = time.time() + 3
+        while time.time() < deadline and not notification_events:
+            notification_events.extend(_event_payloads(client, "notification:fire"))
+            if notification_events:
+                break
+            time.sleep(0.05)
+
+        assert notification_events
+        fired = notification_events[-1]
+        assert fired["channels"]["speech"]["enabled"] is True
+        assert fired["channels"]["speech"]["text"] == "42"
+
+        _complete_notification(client, fired)
+        updated = _wait_for_task_status(app.config["bp_dir"], fired["ticket"]["id"], "review")
+        assert updated["assigned_to"] == ""
+    finally:
+        client.disconnect()
+        tmp.cleanup()
+
+
 def test_notification_worker_manual_start_empty_queue_creates_synthetic_ticket():
     tmp, app, client = _make_client()
     try:

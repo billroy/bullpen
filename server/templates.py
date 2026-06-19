@@ -9,7 +9,7 @@ from server.values import find_value_by_ref, value_ref_warning
 
 
 CONTEXT_PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)?)\}")
-VALUE_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9][A-Za-z0-9 _.\-]{0,127})\}")
+VALUE_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z0-9][A-Za-z0-9 _.\-_]{0,127})\}")
 
 
 @dataclass(frozen=True)

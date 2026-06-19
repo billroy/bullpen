@@ -1,5 +1,6 @@
 """Worker state machine, queue management, agent execution."""
 
+import ast
 import collections
 import json
 import logging
@@ -1105,21 +1106,43 @@ def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     )
 
 
+def _coerce_value_trigger_context(value):
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    for loader in (json.loads, ast.literal_eval):
+        try:
+            parsed = loader(text)
+        except (ValueError, SyntaxError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
 def _notification_context(bp_dir, slot_index, worker, task):
     workspace = os.path.dirname(bp_dir)
     try:
         config = read_json(os.path.join(bp_dir, "config.json"))
     except Exception:
         config = {}
+    ticket_context = {
+        "id": task.get("id", ""),
+        "title": task.get("title", ""),
+        "status": task.get("status", ""),
+        "priority": task.get("priority", ""),
+        "type": task.get("type", ""),
+        "assigned_to": task.get("assigned_to", ""),
+    }
+    value_trigger = _coerce_value_trigger_context(task.get("value_trigger"))
+    if value_trigger is not None:
+        ticket_context["value_trigger"] = value_trigger
     return {
-        "ticket": {
-            "id": task.get("id", ""),
-            "title": task.get("title", ""),
-            "status": task.get("status", ""),
-            "priority": task.get("priority", ""),
-            "type": task.get("type", ""),
-            "assigned_to": task.get("assigned_to", ""),
-        },
+        "ticket": ticket_context,
         "worker": {
             "name": worker.get("name", "Notification"),
             "type": worker.get("type", "notification"),
