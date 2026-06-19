@@ -190,6 +190,10 @@ const WorkerConfigModal = {
             trigger_time: w.trigger_time || '',
             trigger_interval_minutes: w.trigger_interval_minutes || 60,
             trigger_every_day: w.trigger_every_day || false,
+            value_trigger_scope: w.value_trigger_scope || 'name',
+            value_trigger_ref: w.value_trigger_ref || '',
+            value_trigger_fire_on_noop: w.value_trigger_fire_on_noop !== undefined ? !!w.value_trigger_fire_on_noop : true,
+            value_trigger_cooldown_seconds: w.value_trigger_cooldown_seconds ?? 0,
             paused: w.paused || false,
             color: w.color || '',
             // Shell-specific fields
@@ -270,6 +274,9 @@ const WorkerConfigModal = {
     },
     isValue() {
       return this.form.type === 'value';
+    },
+    canUseValueChangeTrigger() {
+      return this.isAI || this.isShell || this.isNotification;
     },
     isProcfileService() {
       return this.isService && this.form.command_source === 'procfile';
@@ -413,6 +420,47 @@ const WorkerConfigModal = {
     },
     valueUnitOptions() {
       return VALUE_UNIT_OPTIONS;
+    },
+    valueTriggerOptions() {
+      const workers = Array.isArray(this.workers) ? this.workers : [];
+      return workers
+        .map((worker, slot) => {
+          if (!window.isValueWorker?.(worker)) return null;
+          const coord = window.GridGeometry?.coordToCellRef?.(worker) || '';
+          const name = String(worker?.name || '').trim();
+          const scope = name ? 'name' : 'coord';
+          const ref = name || coord;
+          if (!ref) return null;
+          const value = worker?.value === null || worker?.value === undefined ? '' : String(worker.value);
+          const labelName = name || '(unnamed)';
+          return {
+            key: `${scope}:${encodeURIComponent(ref)}`,
+            scope,
+            ref,
+            slot,
+            label: `${labelName} ${coord ? `(${coord})` : ''}${value ? ` = ${value}` : ''}`,
+          };
+        })
+        .filter(Boolean);
+    },
+    valueTriggerSelection: {
+      get() {
+        const scope = String(this.form.value_trigger_scope || 'name');
+        if (scope === 'any') return 'any:';
+        return `${scope}:${encodeURIComponent(String(this.form.value_trigger_ref || ''))}`;
+      },
+      set(selection) {
+        const text = String(selection || 'any:');
+        const idx = text.indexOf(':');
+        const scope = idx >= 0 ? text.slice(0, idx) : 'any';
+        const rawRef = idx >= 0 ? text.slice(idx + 1) : '';
+        let ref = rawRef;
+        try {
+          ref = decodeURIComponent(rawRef);
+        } catch (_err) {}
+        this.form.value_trigger_scope = ['any', 'name', 'coord'].includes(scope) ? scope : 'any';
+        this.form.value_trigger_ref = this.form.value_trigger_scope === 'any' ? '' : ref;
+      },
     },
     valueUnitIsOther() {
       return this.valueUnitMode === '__other__';
@@ -1001,6 +1049,7 @@ const WorkerConfigModal = {
                 <option value="manual">Hold for Run</option>
                 <option value="at_time">At Time</option>
                 <option value="on_interval">On Interval</option>
+                <option v-if="canUseValueChangeTrigger" value="on_value_change">On Value Change</option>
               </select>
             </label>
             <label class="form-label" v-if="form.activation === 'on_queue'">
@@ -1022,6 +1071,23 @@ const WorkerConfigModal = {
               Interval (minutes)
               <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
             </label>
+            <template v-if="canUseValueChangeTrigger && form.activation === 'on_value_change'">
+              <label class="form-label">
+                Value
+                <select class="form-select" v-model="valueTriggerSelection">
+                  <option value="any:">Any Value</option>
+                  <option v-for="option in valueTriggerOptions" :key="option.key" :value="option.key">{{ option.label }}</option>
+                </select>
+              </label>
+              <label class="form-label">
+                Cooldown (seconds)
+                <input class="form-input" type="number" v-model.number="form.value_trigger_cooldown_seconds" min="0" max="86400">
+              </label>
+              <label class="form-label form-label-inline">
+                <input type="checkbox" v-model="form.value_trigger_fire_on_noop">
+                Fire on no-op writes
+              </label>
+            </template>
             <label class="form-label form-label-inline" v-if="canPauseWorker">
               <input type="checkbox" v-model="form.paused">
               Paused
@@ -1554,6 +1620,25 @@ const WorkerConfigModal = {
           fields.auto_commit = false;
           fields.auto_pr = false;
         }
+      }
+      if (!this.canUseValueChangeTrigger || fields.activation !== 'on_value_change') {
+        delete fields.value_trigger_scope;
+        delete fields.value_trigger_ref;
+        delete fields.value_trigger_fire_on_noop;
+        delete fields.value_trigger_cooldown_seconds;
+      } else {
+        fields.value_trigger_scope = ['any', 'name', 'coord'].includes(String(fields.value_trigger_scope || ''))
+          ? String(fields.value_trigger_scope)
+          : 'any';
+        fields.value_trigger_ref = String(fields.value_trigger_ref || '').trim();
+        if (fields.value_trigger_scope === 'any') {
+          fields.value_trigger_ref = '';
+        } else if (fields.value_trigger_scope === 'coord') {
+          const parsed = window.GridGeometry?.parseCellRef?.(fields.value_trigger_ref);
+          if (parsed) fields.value_trigger_ref = window.GridGeometry.coordToCellRef(parsed);
+        }
+        fields.value_trigger_fire_on_noop = fields.value_trigger_fire_on_noop !== false;
+        fields.value_trigger_cooldown_seconds = Math.max(0, Math.min(Number(fields.value_trigger_cooldown_seconds || 0), 86400));
       }
       delete fields.type;
       this.$emit('save', { slot: this.slotIndex, fields });

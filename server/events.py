@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import threading
 import time
+import hashlib
+import copy
 from io import BytesIO
 from datetime import datetime, timezone
 
@@ -2067,6 +2069,9 @@ def register_events(socketio, app):
             emit("error", {"message": "No worker in slot"})
             return
 
+        value_write_old_slot = None
+        if worker.get("type") == "value" and any(k in fields for k in ("value", "value_type")):
+            value_write_old_slot = copy.deepcopy(worker)
         for k, v in fields.items():
             if k not in ("task_queue", "state"):
                 worker[k] = v
@@ -2082,6 +2087,13 @@ def register_events(socketio, app):
 
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
+        if value_write_old_slot is not None:
+            _fire_value_change_triggers(
+                bp_dir, layout, slot_index, value_write_old_slot,
+                updated_at=worker.get("updated_at") or _now_iso(),
+                changed_by="worker_configure",
+                ws_id=ws_id,
+            )
 
         # If activation or watch_column changed, check for unclaimed tasks
         if ("activation" in fields or "watch_column" in fields):
@@ -2137,6 +2149,168 @@ def register_events(socketio, app):
             return None
         return match
 
+    def _value_slot_event_payload(slot, index, coord, old_slot, *, updated_at, changed_by):
+        old_slot = old_slot if isinstance(old_slot, dict) else {}
+        old_payload = value_mod.normalize_value_payload(
+            old_slot.get("value", ""), old_slot.get("value_type", slot.get("value_type", "auto"))
+        )
+        new_payload = value_mod.normalize_value_payload(slot.get("value", ""), slot.get("value_type", "auto"))
+        changed = (
+            old_payload.get("value") != new_payload.get("value")
+            or old_payload.get("resolved_value_type") != new_payload.get("resolved_value_type")
+        )
+        coord_ref = value_mod.coord_to_cell_ref(coord)
+        event_seed = json.dumps(
+            {
+                "slot": index,
+                "coord": coord_ref,
+                "old": old_payload,
+                "new": new_payload,
+                "updated_at": updated_at,
+                "changed_by": changed_by,
+            },
+            sort_keys=True,
+            default=str,
+        )
+        digest = hashlib.sha1(event_seed.encode("utf-8")).hexdigest()[:12]
+        return {
+            "event_id": f"value:{index}:{updated_at}:{digest}",
+            "value_slot": index,
+            "value_name": str(slot.get("name") or ""),
+            "value_coord": coord_ref,
+            "units": str(slot.get("unit") or ""),
+            "old_value": old_payload.get("value"),
+            "old_value_type": old_payload.get("resolved_value_type"),
+            "new_value": new_payload.get("value"),
+            "new_value_type": new_payload.get("resolved_value_type"),
+            "changed": changed,
+            "changed_at": updated_at,
+            "changed_by": changed_by,
+        }
+
+    def _value_trigger_matches(value_event, worker):
+        scope = str((worker or {}).get("value_trigger_scope") or "name").strip().lower()
+        ref = str((worker or {}).get("value_trigger_ref") or "").strip()
+        if scope == "any":
+            return True
+        if scope == "name":
+            if not ref:
+                return False
+            return value_mod.value_name_key(ref) == value_mod.value_name_key(value_event.get("value_name"))
+        if scope == "coord":
+            coord = value_mod.parse_cell_ref(ref)
+            if coord is None:
+                return False
+            return value_mod.coord_to_cell_ref(coord) == value_event.get("value_coord")
+        return False
+
+    def _parse_iso_seconds(value):
+        try:
+            return datetime.strptime(str(value or ""), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return None
+
+    def _value_trigger_in_cooldown(worker, now_dt):
+        try:
+            cooldown = int(worker.get("value_trigger_cooldown_seconds") or 0)
+        except (TypeError, ValueError):
+            cooldown = 0
+        if cooldown <= 0:
+            return False
+        last = _parse_iso_seconds(worker.get("last_value_trigger_time"))
+        if last is None:
+            return False
+        return (now_dt - last).total_seconds() < cooldown
+
+    def _create_value_trigger_task(bp_dir, slot_index, worker, value_event, socketio, ws_id):
+        worker_name = worker.get("name", "Worker")
+        value_label = value_event.get("value_name") or value_event.get("value_coord") or "value"
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        scope = str(worker.get("value_trigger_scope") or "name")
+        configured_ref = str(worker.get("value_trigger_ref") or "")
+        title = f"[Auto] {worker_name} - value write {value_label} - {timestamp}"
+        body = (
+            f"Worker: {worker_name}\n"
+            f"Worker type: {worker.get('type', 'ai')}\n"
+            "Trigger kind: on_value_change\n"
+            f"Workspace: {os.path.dirname(bp_dir)}\n\n"
+            "Value written:\n"
+            f"- Name: {value_event.get('value_name') or '(unnamed)'}\n"
+            f"- Coordinate: {value_event.get('value_coord') or ''}\n"
+            f"- Units: {value_event.get('units') or ''}\n"
+            f"- Old value: {value_event.get('old_value')}\n"
+            f"- New value: {value_event.get('new_value')}\n"
+            f"- Changed: {str(bool(value_event.get('changed'))).lower()}\n"
+            f"- Changed at: {value_event.get('changed_at')}\n"
+            f"- Changed by: {value_event.get('changed_by')}\n"
+        )
+        task = task_mod.create_task(
+            bp_dir,
+            title,
+            description=body,
+            task_type="chore",
+            priority="normal",
+            tags=["synthetic", "worker-run", "value-change"],
+        )
+        trigger_meta = {
+            **value_event,
+            "scope": scope,
+            "configured_ref": configured_ref,
+        }
+        task = task_mod.update_task(bp_dir, task["id"], {
+            "synthetic_run": True,
+            "trigger_kind": "on_value_change",
+            "synthetic_run_key": f"{slot_index}:on_value_change:{value_event.get('event_id')}",
+            "value_trigger": trigger_meta,
+        })
+        _emit("task:created", task, ws_id)
+        worker_mod.assign_task(bp_dir, slot_index, task["id"], socketio, ws_id, suppress_auto_start=True)
+        return task
+
+    def _fire_value_change_triggers(bp_dir, layout, value_index, old_slot, *, updated_at, changed_by, ws_id):
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+        value_slot = layout.get("slots", [])[value_index]
+        coord = value_mod.value_coord(value_slot, index=value_index, cols=cols)
+        if coord is None:
+            return
+        value_event = _value_slot_event_payload(value_slot, value_index, coord, old_slot, updated_at=updated_at, changed_by=changed_by)
+        now_dt = _parse_iso_seconds(updated_at) or datetime.now(timezone.utc)
+        slots_to_start = []
+        touched_runtime = False
+        for slot_index, worker in enumerate(layout.get("slots", [])):
+            if not isinstance(worker, dict):
+                continue
+            if worker.get("activation") != "on_value_change":
+                continue
+            if worker.get("type") not in ("ai", "shell", "notification"):
+                continue
+            if not value_event["changed"] and not bool(worker.get("value_trigger_fire_on_noop", True)):
+                continue
+            if worker_mod.worker_start_blocked(bp_dir, worker)[0]:
+                continue
+            if _value_trigger_in_cooldown(worker, now_dt):
+                continue
+            if not _value_trigger_matches(value_event, worker):
+                continue
+            worker["last_value_trigger_time"] = updated_at
+            touched_runtime = True
+            layout["slots"][slot_index] = worker
+            _save_layout(bp_dir, layout)
+            _create_value_trigger_task(bp_dir, slot_index, worker, value_event, socketio, ws_id)
+            slots_to_start.append(slot_index)
+            layout = _load_layout(bp_dir)
+        if touched_runtime:
+            _emit("layout:updated", layout, ws_id)
+        for slot_index in slots_to_start:
+            try:
+                current = _load_layout(bp_dir).get("slots", [])
+                queue = current[slot_index].get("task_queue", []) if slot_index < len(current) and current[slot_index] else []
+                expected_task_id = queue[0] if queue else None
+                worker_mod._defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id)
+            except Exception:
+                logging.exception("Failed to schedule value-change worker start")
+
     @socketio.on("value:set")
     @with_lock
     def on_value_set(data):
@@ -2153,6 +2327,7 @@ def register_events(socketio, app):
         if not match:
             return
         slot = match["slot"]
+        old_slot = copy.deepcopy(slot)
         value_type = data.get("value_type", slot.get("value_type", "auto"))
         if value_mod.normalize_value_type(value_type) == "number" and not value_mod.is_plain_number(data.get("value")):
             emit("error", {"message": "value must be numeric"})
@@ -2169,6 +2344,12 @@ def register_events(socketio, app):
         layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
+        _fire_value_change_triggers(
+            bp_dir, layout, match["index"], old_slot,
+            updated_at=updated_at,
+            changed_by="value:set",
+            ws_id=ws_id,
+        )
 
     @socketio.on("value:increment")
     @with_lock
@@ -2186,6 +2367,7 @@ def register_events(socketio, app):
         if not match:
             return
         slot = match["slot"]
+        old_slot = copy.deepcopy(slot)
         if slot.get("resolved_value_type") != "number" or isinstance(slot.get("value"), bool):
             emit("error", {"message": f"Value is not numeric: {ref}"})
             return
@@ -2211,6 +2393,12 @@ def register_events(socketio, app):
         layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
+        _fire_value_change_triggers(
+            bp_dir, layout, match["index"], old_slot,
+            updated_at=updated_at,
+            changed_by="value:increment",
+            ws_id=ws_id,
+        )
 
     @socketio.on("layout:update")
     @with_lock

@@ -1063,6 +1063,158 @@ class TestWorkerEvents:
 
         assert error["message"] == "value must be numeric"
 
+    def test_value_set_triggers_named_value_worker_synthetic_ticket(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+            },
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Counter", "value": "8", "value_type": "number"})
+
+        created = get_event(c, "task:created")
+        assert created is not None
+        assert created["synthetic_run"] is True
+        assert created["trigger_kind"] == "on_value_change"
+        assert created["value_trigger"]["scope"] == "name"
+        assert created["value_trigger"]["configured_ref"] == "Counter"
+        assert created["value_trigger"]["old_value"] == 5
+        assert created["value_trigger"]["new_value"] == 8
+        assert created["value_trigger"]["changed"] is True
+        task = task_mod.read_task(app.config["bp_dir"], created["id"])
+        assert task["status"] == "assigned"
+        assert task["assigned_to"] == 1
+        layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert created["id"] in layout["slots"][1]["task_queue"]
+        assert starts and starts[-1][0][1] == 1
+
+    def test_value_configure_triggers_with_old_and_new_value(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+            },
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("worker:configure", {"slot": 0, "fields": {"value": "6"}})
+
+        created = get_event(c, "task:created")
+        assert created is not None
+        assert created["value_trigger"]["old_value"] == 5
+        assert created["value_trigger"]["new_value"] == 6
+        assert created["value_trigger"]["changed_by"] == "worker_configure"
+        assert starts and starts[-1][0][1] == 1
+
+    def test_value_set_triggers_unnamed_coordinate_value_worker(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "coord": {"col": 0, "row": 0},
+            "type": "value",
+            "fields": {"name": "", "value": "5", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "A1 Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "coord",
+                "value_trigger_ref": "a1",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][1]["value_trigger_ref"] == "A1"
+
+        c.emit("value:set", {"ref": "A1", "value": "9", "value_type": "number"})
+
+        created = get_event(c, "task:created")
+        assert created is not None
+        assert created["value_trigger"]["scope"] == "coord"
+        assert created["value_trigger"]["configured_ref"] == "A1"
+        assert created["value_trigger"]["value_name"] == ""
+        assert created["value_trigger"]["value_coord"] == "A1"
+        task = task_mod.read_task(app.config["bp_dir"], created["id"])
+        assert task["assigned_to"] == 1
+        assert starts and starts[-1][0][1] == 1
+
+    def test_value_noop_write_can_be_suppressed_per_worker(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+                "value_trigger_fire_on_noop": False,
+            },
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Counter", "value": "5", "value_type": "number"})
+
+        assert get_event(c, "task:created") is None
+        assert starts == []
+        assert task_mod.list_tasks(app.config["bp_dir"]) == []
+
     def test_marker_worker_start_via_socket_completes_without_deadlock(self, client):
         c, app = client
         c.emit("worker:add", {

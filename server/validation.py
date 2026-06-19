@@ -20,7 +20,8 @@ VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_TYPES = {"task", "bug", "feature", "chore"}
 VALID_AGENTS = {"antigravity", "claude", "codex", "opencode"}
 VALID_WORKER_COLOR_KEYS = {"antigravity", "claude", "codex", "opencode", "shell", "service", "marker", "notification", "value"}
-VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval"}
+VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval", "on_value_change"}
+VALID_VALUE_TRIGGER_SCOPES = {"any", "name", "coord"}
 VALID_DISPOSITIONS = {"review", "done"}
 VALID_THEMES = {
     "dark", "light", "dracula", "nord", "gruvbox", "tokyo-night", "catppuccin",
@@ -283,6 +284,22 @@ def validate_worker_configure(data, max_slots=100):
     if "paused" in fields:
         sanitized["paused"] = bool(fields["paused"])
         consumed.add("paused")
+    if "value_trigger_scope" in fields:
+        sanitized["value_trigger_scope"] = _enum(
+            fields["value_trigger_scope"], VALID_VALUE_TRIGGER_SCOPES, "value_trigger_scope"
+        )
+        consumed.add("value_trigger_scope")
+    if "value_trigger_ref" in fields:
+        sanitized["value_trigger_ref"] = _str(fields["value_trigger_ref"], MAX_TITLE, "value_trigger_ref").strip()
+        consumed.add("value_trigger_ref")
+    if "value_trigger_fire_on_noop" in fields:
+        sanitized["value_trigger_fire_on_noop"] = bool(fields["value_trigger_fire_on_noop"])
+        consumed.add("value_trigger_fire_on_noop")
+    if "value_trigger_cooldown_seconds" in fields:
+        sanitized["value_trigger_cooldown_seconds"] = _int(
+            fields["value_trigger_cooldown_seconds"], "value_trigger_cooldown_seconds", min_val=0, max_val=86400
+        )
+        consumed.add("value_trigger_cooldown_seconds")
 
     # Type-specific and unknown-type fields are admitted here and canonicalized
     # by the worker type normalization layer. Runtime ownership stays server-only.

@@ -8,10 +8,12 @@ from dataclasses import dataclass
 from server.model_aliases import normalize_model
 from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
 from server.values import (
+    coord_to_cell_ref as value_coord_to_cell_ref,
     normalize_format as normalize_value_format,
     normalize_unit as normalize_value_unit,
     normalize_value_history,
     normalize_value_payload,
+    parse_cell_ref as parse_value_cell_ref,
 )
 
 
@@ -22,6 +24,8 @@ SERVICE_HEALTH_TYPES = {"none", "http", "shell"}
 SERVICE_CRASH_POLICIES = {"stay-crashed"}
 SERVICE_COMMAND_SOURCES = {"manual", "procfile"}
 SERVICE_LOG_MAX_BYTES_DEFAULT = 5 * 1024 * 1024
+VALUE_TRIGGER_WORKER_TYPES = {"ai", "shell", "notification"}
+VALUE_TRIGGER_SCOPES = {"any", "name", "coord"}
 NOTIFICATION_TOAST_VARIANTS = {"stage", "success", "warning", "error"}
 NOTIFICATION_SPEECH_ENGINES = {"default", "web-speech", "kokoro"}
 NOTIFICATION_KOKORO_VOICES = {
@@ -312,6 +316,39 @@ def _normalize_env(env):
     return normalized
 
 
+def _normalize_value_trigger_fields(slot, *, default_activation):
+    """Normalize value-change trigger config and remove it from unsupported types."""
+    if slot.get("type") not in VALUE_TRIGGER_WORKER_TYPES:
+        if slot.get("activation") == "on_value_change":
+            slot["activation"] = default_activation
+        for key in (
+            "value_trigger_scope",
+            "value_trigger_ref",
+            "value_trigger_fire_on_noop",
+            "value_trigger_cooldown_seconds",
+            "last_value_trigger_time",
+        ):
+            slot.pop(key, None)
+        return
+
+    scope = str(slot.get("value_trigger_scope") or "name").strip().lower()
+    if scope not in VALUE_TRIGGER_SCOPES:
+        scope = "name"
+    ref = str(slot.get("value_trigger_ref") or "").strip()
+    if scope == "coord":
+        coord = parse_value_cell_ref(ref)
+        ref = value_coord_to_cell_ref(coord) if coord else ref.upper()
+    elif scope == "any":
+        ref = ""
+    slot["value_trigger_scope"] = scope
+    slot["value_trigger_ref"] = ref
+    slot["value_trigger_fire_on_noop"] = bool(slot.get("value_trigger_fire_on_noop", True))
+    slot["value_trigger_cooldown_seconds"] = max(
+        0, min(_safe_int(slot.get("value_trigger_cooldown_seconds"), 0), 86400)
+    )
+    slot.setdefault("last_value_trigger_time", None)
+
+
 def _normalize_service_port(value):
     if value in (None, ""):
         return None
@@ -459,6 +496,7 @@ def normalize_worker_slot(raw, *, index, config):
     if not isinstance(slot.get("task_queue"), list):
         slot["task_queue"] = []
     slot["state"] = str(slot.get("state") or "idle")
+    _normalize_value_trigger_fields(slot, default_activation=default_activation)
 
     if type_id == "ai":
         slot["agent"] = str(slot.get("agent") or "claude")
