@@ -14,6 +14,7 @@ _AI_TRANSFER_FIELDS = {
     "trigger_every_day", "color", "avatar",
 }
 _MAX_TRANSFER_SLOT = 200
+_BUSY_STATES = {"working", "retrying", "starting", "running", "healthy", "unhealthy"}
 
 
 class TransferError(Exception):
@@ -68,6 +69,15 @@ def _first_empty_slot(slots):
     return len(slots) - 1
 
 
+def _worker_is_busy(worker):
+    """Return True only for runtime state that would be orphaned by a move."""
+    if not isinstance(worker, dict):
+        return False
+    state = str(worker.get("state") or "idle").strip().lower()
+    queue = worker.get("task_queue")
+    return state in _BUSY_STATES or bool(worker.get("started_at")) or bool(queue)
+
+
 def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id,
                     dest_slot, mode, copy_profile=False):
     """Copy or move a worker between workspaces.
@@ -110,7 +120,7 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
             raise TransferError("source slot is empty", 400)
 
         # Busy worker cannot be moved
-        if mode == "move" and source_worker.get("state") != "idle":
+        if mode == "move" and _worker_is_busy(source_worker):
             raise TransferError(
                 "worker is busy; copy it instead or wait for it to finish", 409)
 

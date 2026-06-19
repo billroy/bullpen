@@ -250,6 +250,39 @@ class TestTransferBusyWorker:
         with pytest.raises(TransferError, match="worker is busy"):
             transfer_worker(manager, id_a, 0, id_b, None, "move")
 
+    @pytest.mark.parametrize("state", [None, "", "idle", "stopped", "crashed"])
+    def test_inactive_state_move_allowed(self, two_workspaces, state):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+        worker = _make_worker("Alpha", state=state)
+        if state is None:
+            worker.pop("state", None)
+        _set_worker(bp_a, 0, worker)
+
+        result = transfer_worker(manager, id_a, 0, id_b, None, "move")
+
+        assert result["ok"] is True
+        src_layout = read_json(os.path.join(bp_a, "layout.json"))
+        assert len(src_layout["slots"]) == 0 or src_layout["slots"][0] is None
+
+    def test_idle_move_with_started_at_rejected(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+        _set_worker(bp_a, 0, _make_worker("Alpha", state="idle",
+                                           started_at="2026-06-19T12:00:00Z"))
+
+        with pytest.raises(TransferError, match="worker is busy"):
+            transfer_worker(manager, id_a, 0, id_b, None, "move")
+
+    def test_idle_move_with_queue_rejected(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+        _set_worker(bp_a, 0, _make_worker("Alpha", state="idle",
+                                           task_queue=["task-1"]))
+
+        with pytest.raises(TransferError, match="worker is busy"):
+            transfer_worker(manager, id_a, 0, id_b, None, "move")
+
     def test_busy_copy_allowed(self, two_workspaces):
         manager, id_a, id_b = two_workspaces
         bp_a = manager.get_bp_dir(id_a)
