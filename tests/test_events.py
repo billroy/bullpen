@@ -1182,6 +1182,67 @@ class TestWorkerEvents:
         assert task["assigned_to"] == 1
         assert starts and starts[-1][0][1] == 1
 
+    def test_value_add_after_move_triggers_absolute_coordinate_watcher(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        i32 = {"col": 8, "row": 31}
+        j33 = {"col": 9, "row": 32}
+        c.emit("worker:add", {
+            "coord": i32,
+            "type": "value",
+            "fields": {"name": "", "value": "first", "value_type": "string"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "I32 Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "coord",
+                "value_trigger_ref": "i32",
+            },
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][1]["value_trigger_ref"] == "I32"
+
+        c.emit("value:set", {"ref": "I32", "value": "second", "value_type": "string"})
+        created = get_event(c, "task:created")
+        assert created is not None
+        assert created["value_trigger"]["value_coord"] == "I32"
+        assert created["value_trigger"]["new_value"] == "second"
+        c.get_received()
+
+        value_slot = next(
+            index for index, slot in enumerate(layout["slots"])
+            if slot and slot.get("type") == "value" and slot.get("col") == i32["col"] and slot.get("row") == i32["row"]
+        )
+        c.emit("worker:move", {"from": value_slot, "to_coord": j33})
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("worker:add", {
+            "coord": i32,
+            "type": "value",
+            "fields": {"name": "", "value": "foo bar", "value_type": "string"},
+        })
+        events = c.get_received()
+        assert any(evt["name"] == "layout:updated" for evt in events)
+        created = next((evt["args"][0] for evt in events if evt["name"] == "task:created"), None)
+        assert created is not None
+        assert created["value_trigger"]["changed_by"] == "worker:add"
+        assert created["value_trigger"]["value_coord"] == "I32"
+        assert created["value_trigger"]["old_value"] == ""
+        assert created["value_trigger"]["new_value"] == "foo bar"
+
+        c.emit("value:set", {"ref": "J33", "value": "moved cell", "value_type": "string"})
+        assert not any(evt["name"] == "task:created" for evt in c.get_received())
+        assert len(starts) == 2
+
     def test_value_noop_write_can_be_suppressed_per_worker(self, client, monkeypatch):
         c, app = client
         starts = []

@@ -1689,6 +1689,13 @@ def register_events(socketio, app):
         layout["slots"][slot_index] = worker
         _save_layout(bp_dir, layout)
         _emit("layout:updated", layout, ws_id)
+        if worker_type == "value":
+            _fire_value_change_triggers(
+                bp_dir, layout, slot_index, {},
+                updated_at=worker.get("updated_at") or _now_iso(),
+                changed_by="worker:add",
+                ws_id=ws_id,
+            )
 
     @socketio.on("worker:remove")
     @with_lock
