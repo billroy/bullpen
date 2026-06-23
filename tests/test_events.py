@@ -1042,6 +1042,22 @@ class TestWorkerEvents:
         assert "task_queue" not in worker
         assert "state" not in worker
 
+    def test_add_value_worker_allows_null_auto_value(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "foo", "value": None, "value_type": "auto"},
+        })
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+
+        assert worker["type"] == "value"
+        assert worker["name"] == "foo"
+        assert worker["value"] is None
+        assert worker["value_type"] == "auto"
+        assert worker["resolved_value_type"] == "null"
+
     def test_add_value_worker_can_save_initial_history(self, client):
         c, app = client
         c.emit("worker:add", {

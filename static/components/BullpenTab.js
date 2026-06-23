@@ -1361,9 +1361,9 @@ const BullpenTab = {
         const slash = label.lastIndexOf('/');
         name = (slash >= 0 ? label.slice(0, slash) : label).trim();
         unit = slash >= 0 ? label.slice(slash + 1).trim() : '';
-        value = raw.slice(colon + 1).trim();
+        value = raw.slice(colon + 1).trim() || null;
       }
-      if (!value) return { error: 'Enter a value.' };
+      if (value === '') return { error: 'Enter a value.' };
       return {
         fields: {
           name,

@@ -262,6 +262,13 @@ def parse_plain_number(value: object):
 
 def normalize_value_payload(value: object, value_type: object = "auto") -> dict:
     declared = normalize_value_type(value_type)
+    if declared == "auto" and value is None:
+        return {
+            "value": None,
+            "value_type": declared,
+            "resolved_value_type": "null",
+        }
+
     if declared == "string":
         return {
             "value": _normalize_string(value),

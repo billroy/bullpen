@@ -41,6 +41,11 @@ def test_value_payload_auto_detects_plain_numbers_without_erasing_strings():
         "value_type": "auto",
         "resolved_value_type": "string",
     }
+    assert normalize_value_payload(None) == {
+        "value": None,
+        "value_type": "auto",
+        "resolved_value_type": "null",
+    }
     assert normalize_value_payload("007", "string") == {
         "value": "007",
         "value_type": "string",

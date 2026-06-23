@@ -302,7 +302,8 @@ process.stdout.write(JSON.stringify(context.__parsed));
     assert parsed["unit"]["fields"]["value"] == "32"
     assert parsed["plain"]["fields"]["name"] == ""
     assert parsed["plain"]["fields"]["value"] == "foo"
-    assert parsed["emptyAfterColon"]["error"] == "Enter a value."
+    assert parsed["emptyAfterColon"]["fields"]["name"] == "name"
+    assert parsed["emptyAfterColon"]["fields"]["value"] is None
 
 
 def test_all_letters_start_value_shortcut_editor_in_blank_cell():
