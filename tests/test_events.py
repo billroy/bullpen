@@ -2940,6 +2940,51 @@ class TestProjectEvents:
             assert created["title"] == "Appears without refresh"
             assert created["workspaceId"] == ws_id
 
+    def test_task_move_project_moves_ticket_between_workspaces(self, client):
+        c, app = client
+        source_ws_id = app.config["startup_workspace_id"]
+        c.emit("task:create", {
+            "workspaceId": source_ws_id,
+            "title": "Move me elsewhere",
+            "description": "Keep my body",
+            "status": "review",
+        })
+        task = get_event(c, "task:created")
+
+        with tempfile.TemporaryDirectory(prefix="bullpen_move_project_parent_") as parent:
+            path = os.path.join(parent, "move-destination")
+            c.emit("project:new", {"path": path})
+            project_events = c.get_received()
+            state_inits = [evt for evt in project_events if evt["name"] == "state:init"]
+            dest_ws_id = state_inits[-1]["args"][0]["workspaceId"]
+
+            c.emit("task:move-project", {
+                "workspaceId": source_ws_id,
+                "id": task["id"],
+                "dest_workspace_id": dest_ws_id,
+            })
+            events = c.get_received()
+
+            deleted = [evt["args"][0] for evt in events if evt["name"] == "task:deleted"]
+            created = [evt["args"][0] for evt in events if evt["name"] == "task:created"]
+            moved = [evt["args"][0] for evt in events if evt["name"] == "task:moved-project"]
+
+            assert deleted[-1]["id"] == task["id"]
+            assert deleted[-1]["workspaceId"] == source_ws_id
+            assert created[-1]["id"] == task["id"]
+            assert created[-1]["workspaceId"] == dest_ws_id
+            assert created[-1]["title"] == "Move me elsewhere"
+            assert created[-1]["status"] == "review"
+            assert "Keep my body" in created[-1]["body"]
+            assert moved[-1]["ok"] is True
+            assert moved[-1]["workspaceId"] == source_ws_id
+            assert moved[-1]["dest_workspace_id"] == dest_ws_id
+
+            assert task_mod.read_task(app.config["bp_dir"], task["id"]) is None
+            moved_task = task_mod.read_task(os.path.join(path, ".bullpen"), task["id"])
+            assert moved_task["title"] == "Move me elsewhere"
+            assert moved_task["status"] == "review"
+
     def test_project_remove_unregisters_but_keeps_workspace_files(self, client):
         c, _ = client
         with tempfile.TemporaryDirectory(prefix="bullpen_remove_project_parent_") as parent:

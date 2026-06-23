@@ -878,6 +878,13 @@ const app = createApp({
         socket.emit('task:list', _wsData({ scope: 'archived' }));
       }
     });
+    socket.on('task:moved-project', (data) => {
+      const destName = projects.find(p => p.id === data.dest_workspace_id)?.name || 'project';
+      addToast(`Ticket moved to ${destName}`);
+    });
+    socket.on('task:move-project:error', (data) => {
+      addToast(data?.error ? `Ticket move failed: ${data.error}` : 'Ticket move failed', 'error');
+    });
     socket.on('task:list', (data) => {
       const wsId = data.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
@@ -1239,6 +1246,16 @@ const app = createApp({
       if (!_taskActionAllowedAfterDeferredUpdate(id)) return false;
       return emitSocketAction('task:update', { id, status }, {
         offlineMessage: 'Disconnected from Bullpen server. Ticket move was not saved.',
+      });
+    }
+    function moveTaskProject({ id, destWorkspaceId }) {
+      if (!_taskActionAllowedAfterDeferredUpdate(id)) return false;
+      if (!destWorkspaceId || destWorkspaceId === activeWorkspaceId.value) return false;
+      return emitSocketAction('task:move-project', {
+        id,
+        dest_workspace_id: destWorkspaceId,
+      }, {
+        offlineMessage: 'Disconnected from Bullpen server. Ticket project move was not saved.',
       });
     }
     function moveColumnTasks({ fromStatus, toStatus }) {
@@ -2522,7 +2539,7 @@ const app = createApp({
       showCreateModal, showColumnManager, bentoImportReview, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setAmbientMuteWhileIdle, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentAmbientMuteWhileIdle, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
-      moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
+      moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
       stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
@@ -2612,6 +2629,7 @@ const app = createApp({
           @new-project="newProject"
           @clone-project="cloneProject"
           @remove-project="removeProject"
+          @move-task-project="moveTaskProject"
           @configure-worker="configureSlot = $event"
           @open-focus="openFocusTab"
           @transfer-worker="openTransfer"

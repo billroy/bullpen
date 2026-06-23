@@ -116,6 +116,22 @@ def test_switch_workspace_does_not_early_return_on_unjoined_workspace():
     assert "if (!workspaces[wsId]) return;" not in text
 
 
+def test_project_rows_accept_ticket_drop_to_move_between_projects():
+    left_pane = _read("static/components/LeftPane.js")
+    app = _read("static/app.js")
+    css = _read("static/style.css")
+
+    assert "'move-task-project'" in left_pane
+    assert "@dragover.prevent=\"onProjectDragOver($event, p)\"" in left_pane
+    assert "@drop.prevent=\"onProjectDrop($event, p)\"" in left_pane
+    assert "this.$emit('move-task-project', { id: taskId, destWorkspaceId: project.id });" in left_pane
+    assert "@move-task-project=\"moveTaskProject\"" in app
+    assert "socket.on('task:moved-project'" in app
+    assert "socket.on('task:move-project:error'" in app
+    assert "emitSocketAction('task:move-project'" in app
+    assert ".project-item.drag-over" in css
+
+
 def test_projects_update_restores_remembered_or_first_available_workspace():
     text = _read("static/app.js")
     assert "const ACTIVE_PROJECT_STORAGE_KEY = 'bullpen.activeWorkspaceId';" in text

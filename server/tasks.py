@@ -113,6 +113,27 @@ def update_task(bp_dir, task_id, fields):
     return _with_reported_task_time({**meta, "id": slug or task_id, "body": body})
 
 
+def move_task_to_bp_dir(source_bp_dir, dest_bp_dir, task_id):
+    """Move a live task file between Bullpen task stores."""
+    source_tasks_dir = _tasks_dir(source_bp_dir)
+    dest_tasks_dir = _tasks_dir(dest_bp_dir)
+    src = os.path.join(source_tasks_dir, f"{task_id}.md")
+    dst = os.path.join(dest_tasks_dir, f"{task_id}.md")
+    ensure_within(src, source_tasks_dir)
+    ensure_within(dst, dest_tasks_dir)
+    if not os.path.exists(src):
+        raise FileNotFoundError(task_id)
+    if os.path.exists(dst):
+        raise FileExistsError(task_id)
+
+    meta, body, slug = read_frontmatter(src)
+    slug = slug or task_id
+    meta["updated_at"] = _now_iso()
+    write_frontmatter(dst, meta, body, slug)
+    os.remove(src)
+    return _with_reported_task_time({**meta, "id": slug, "body": body})
+
+
 def delete_task(bp_dir, task_id):
     """Delete a task by ID."""
     path = os.path.join(_tasks_dir(bp_dir), f"{task_id}.md")

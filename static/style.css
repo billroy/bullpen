@@ -1064,6 +1064,12 @@ body {
   background: var(--bg-hover);
 }
 
+.project-item.drag-over {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: 1px solid var(--accent);
+}
+
 .project-item.active {
   color: var(--text-primary);
   font-weight: 600;

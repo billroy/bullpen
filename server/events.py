@@ -1444,6 +1444,76 @@ def register_events(socketio, app):
                 bp_dir, fields["status"], socketio, ws_id,
             )
 
+    @socketio.on("task:move-project")
+    @with_lock
+    def on_task_move_project(data):
+        if not isinstance(data, dict):
+            emit("task:move-project:error", {"ok": False, "error": "invalid move payload"})
+            return
+        source_ws_id, source_bp_dir = _resolve(data)
+        if not _ensure_workspace_membership(source_ws_id):
+            return
+        dest_ws_id = str(data.get("dest_workspace_id") or "").strip()
+        task_id = validate_id(data)
+        if not dest_ws_id:
+            emit("task:move-project:error", {
+                "workspaceId": source_ws_id,
+                "ok": False,
+                "error": "dest_workspace_id is required",
+            })
+            return
+        if dest_ws_id == source_ws_id:
+            emit("task:move-project:error", {
+                "workspaceId": source_ws_id,
+                "ok": False,
+                "error": "destination workspace must differ from source workspace",
+            })
+            return
+        if not _ensure_workspace_membership(dest_ws_id):
+            emit("task:move-project:error", {
+                "workspaceId": source_ws_id,
+                "ok": False,
+                "error": f"Unknown workspace: {dest_ws_id}",
+            })
+            return
+
+        manager = app.config["manager"]
+        try:
+            dest_bp_dir = manager.get_bp_dir(dest_ws_id)
+            if task_mod.read_task(source_bp_dir, task_id) is None:
+                raise FileNotFoundError(task_id)
+            if task_mod.read_task(dest_bp_dir, task_id) is not None:
+                raise FileExistsError(task_id)
+            worker_mod.yank_from_worker(source_bp_dir, task_id, socketio, source_ws_id)
+            task = task_mod.move_task_to_bp_dir(source_bp_dir, dest_bp_dir, task_id)
+        except FileNotFoundError:
+            emit("task:move-project:error", {
+                "workspaceId": source_ws_id,
+                "ok": False,
+                "error": "Ticket not found",
+                "id": task_id,
+                "dest_workspace_id": dest_ws_id,
+            })
+            return
+        except FileExistsError:
+            emit("task:move-project:error", {
+                "workspaceId": source_ws_id,
+                "ok": False,
+                "error": "Destination project already has a ticket with this id",
+                "id": task_id,
+                "dest_workspace_id": dest_ws_id,
+            })
+            return
+
+        _emit("task:deleted", {"id": task_id}, source_ws_id)
+        _emit("task:created", task, dest_ws_id)
+        emit("task:moved-project", {
+            "workspaceId": source_ws_id,
+            "ok": True,
+            "id": task_id,
+            "dest_workspace_id": dest_ws_id,
+        })
+
     @socketio.on("notification:speak")
     @with_lock
     def on_notification_speak(data):

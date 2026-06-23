@@ -1,6 +1,6 @@
 const LeftPane = {
   props: ['tasks', 'layout', 'visible', 'config', 'projects', 'projectsLoaded', 'projectsRoot', 'activeWorkspaceId', 'workspaces', 'multipleWorkspaces'],
-  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project', 'configure-worker', 'open-focus', 'transfer-worker', 'copy-worker'],
+  emits: ['new-task', 'select-task', 'switch-workspace', 'add-project', 'new-project', 'clone-project', 'remove-project', 'configure-worker', 'open-focus', 'transfer-worker', 'copy-worker', 'move-task-project'],
   template: `
     <div class="left-pane" :class="{ collapsed: !visible, resizing: !!resizing }" :style="leftPaneStyle">
       <div
@@ -30,7 +30,10 @@ const LeftPane = {
         <div v-if="projects.length > 0" class="project-list">
           <div v-for="p in projects" :key="p.id"
                class="project-item"
-               :class="{ active: p.id === activeWorkspaceId, unavailable: p.available === false }"
+               :class="{ active: p.id === activeWorkspaceId, unavailable: p.available === false, 'drag-over': projectDragOverId === p.id }"
+               @dragover.prevent="onProjectDragOver($event, p)"
+               @dragleave="onProjectDragLeave($event, p)"
+               @drop.prevent="onProjectDrop($event, p)"
                @click="p.available !== false && $emit('switch-workspace', p.id)"
                :title="p.available === false ? 'Directory not found: ' + p.path : ''">
             <span class="project-name">
@@ -333,6 +336,7 @@ const LeftPane = {
   data() {
     return {
       rosterDragSlot: null,
+      projectDragOverId: null,
       openRosterWorkerMenuSlot: null,
       rosterWorkerMenuPos: { top: 0, left: 0 },
       selectedColumn: 'inbox',
@@ -385,6 +389,37 @@ const LeftPane = {
     onDragEnd(e) {
       const taskId = e?.dataTransfer?.getData?.(window.BULLPEN_TASK_DND_MIME) || window.BULLPEN_TASK_DRAG_TASK_ID;
       window.dispatchEvent(new CustomEvent('bullpen:task-drag:end', { detail: { taskId } }));
+    },
+    isTaskDragEvent(e) {
+      const types = e?.dataTransfer?.types || [];
+      return types.includes(window.BULLPEN_TASK_DND_MIME) || (window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain'));
+    },
+    taskIdFromDragEvent(e) {
+      return e?.dataTransfer?.getData?.(window.BULLPEN_TASK_DND_MIME)
+        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e?.dataTransfer?.getData?.('text/plain') : '');
+    },
+    onProjectDragOver(e, project) {
+      if (!project || project.available === false || project.id === this.activeWorkspaceId || !this.isTaskDragEvent(e)) {
+        if (e?.dataTransfer) e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      e.dataTransfer.dropEffect = 'move';
+      this.projectDragOverId = project.id;
+    },
+    onProjectDragLeave(e, project) {
+      if (this.projectDragOverId === project?.id) this.projectDragOverId = null;
+    },
+    onProjectDrop(e, project) {
+      const taskId = this.taskIdFromDragEvent(e);
+      try {
+        if (!project || project.available === false || project.id === this.activeWorkspaceId || !taskId) return;
+        this.$emit('move-task-project', { id: taskId, destWorkspaceId: project.id });
+      } finally {
+        this.projectDragOverId = null;
+        if (window.BULLPEN_TASK_DRAG_ACTIVE) {
+          window.dispatchEvent(new CustomEvent('bullpen:task-drag:end', { detail: { taskId } }));
+        }
+      }
     },
     agentColor(agent) {
       return agentColor(agent);
