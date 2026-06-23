@@ -652,7 +652,7 @@ def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
         "unit_name": labels["name"],
         "formatted_value": format_value(slot.get("value", ""), slot.get("format")),
         "format": slot.get("format", {"kind": "auto"}),
-        "save_history": bool(slot.get("save_history", False)),
+        "save_history": bool(slot["save_history"]) if "save_history" in slot else True,
         "updated_at": slot.get("updated_at", ""),
         "history": slot.get("history", []),
     }

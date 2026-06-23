@@ -1036,11 +1036,24 @@ class TestWorkerEvents:
         assert worker["value"] == "00123"
         assert worker["resolved_value_type"] == "string"
         assert worker["format"] == {"kind": "number", "places": 10}
-        assert worker["save_history"] is False
+        assert worker["save_history"] is True
         assert worker["updated_at"]
-        assert worker["history"] == []
+        assert [entry["value"] for entry in worker["history"]] == ["00123"]
         assert "task_queue" not in worker
         assert "state" not in worker
+
+    def test_add_value_worker_can_disable_default_history(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Build Number", "value": "00123", "value_type": "auto", "save_history": False},
+        })
+        layout = get_event(c, "layout:updated")
+        worker = layout["slots"][0]
+
+        assert worker["save_history"] is False
+        assert worker["history"] == []
 
     def test_add_value_worker_allows_null_auto_value(self, client):
         c, app = client

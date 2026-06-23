@@ -226,7 +226,7 @@ const WorkerConfigModal = {
             resolved_value_type: w.resolved_value_type || 'string',
             unit: w.unit || '',
             format: w.format && typeof w.format === 'object' ? { ...w.format } : { kind: 'auto' },
-            save_history: w.save_history !== undefined ? !!w.save_history : Array.isArray(w.history) && w.history.length > 0,
+            save_history: w.save_history !== undefined ? !!w.save_history : true,
             notification: cloneNotificationForm(w.notification),
           };
           const hasKnownUnit = VALUE_UNIT_OPTIONS.some(option => option.value === this.form.unit);

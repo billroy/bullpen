@@ -1797,7 +1797,7 @@ def register_events(socketio, app):
                 "value": fields.get("value", ""),
                 "value_type": fields.get("value_type", "auto"),
                 "format": fields.get("format") if isinstance(fields.get("format"), dict) else {"kind": "auto"},
-                "save_history": bool(fields.get("save_history", False)),
+                "save_history": bool(fields["save_history"]) if "save_history" in fields else True,
                 "icon": "equal",
                 "color": "value",
                 "updated_at": updated_at,

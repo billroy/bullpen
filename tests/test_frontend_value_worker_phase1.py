@@ -44,7 +44,7 @@ def test_value_worker_can_be_created_from_library():
     assert "type: 'value'" in text
     assert "value_type: 'auto'" in text
     assert "unit: ''" in text
-    assert "save_history: false" in text
+    assert "save_history: true" in text
 
 
 def test_value_worker_config_modal_has_value_fields_only():

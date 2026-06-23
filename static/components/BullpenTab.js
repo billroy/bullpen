@@ -1988,7 +1988,7 @@ const BullpenTab = {
           value: '',
           value_type: 'auto',
           format: { kind: 'auto' },
-          save_history: false,
+          save_history: true,
         },
       });
     },

@@ -574,7 +574,7 @@ def normalize_worker_slot(raw, *, index, config):
     elif type_id == "value":
         payload = normalize_value_payload(slot.get("value"), slot.get("value_type"))
         history = normalize_value_history(slot.get("history"))
-        save_history = bool(slot.get("save_history", bool(history)))
+        save_history = bool(slot["save_history"]) if "save_history" in slot else True
         slot["name"] = str(raw.get("name") or "").strip()
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
