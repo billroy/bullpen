@@ -127,7 +127,7 @@ def test_toolbar_exposes_worker_pause_and_stop_line_controls():
     assert "AUTOMATION PAUSED" in text
     assert "window.confirm(" in text
     assert ".toolbar-stop-sign-icon" in css
-    assert "font-size: 10px;" in css
+    assert "font-size: 11.5px;" in css
 
 
 def test_app_wires_toolbar_worker_pause_events():

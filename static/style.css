@@ -673,7 +673,8 @@ body {
   background: #fff;
   color: #fff;
   clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
-  font-size: 10px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 11.5px;
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1;
@@ -693,8 +694,12 @@ body {
 
 .toolbar-stop-sign-icon::after {
   content: "STOP";
-  position: relative;
+  position: absolute;
+  top: 50%;
+  left: 50%;
   z-index: 1;
+  transform: translate(-50%, -50%) scaleX(0.6);
+  transform-origin: center;
 }
 
 .toolbar-btn-icon {
@@ -1281,7 +1286,8 @@ body {
   background: #fff;
   color: #fff;
   clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
-  font-size: 4px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 6.5px;
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1;
@@ -1297,8 +1303,12 @@ body {
 
 .menu-stop-sign-icon::after {
   content: "STOP";
-  position: relative;
+  position: absolute;
+  top: 50%;
+  left: 50%;
   z-index: 1;
+  transform: translate(-50%, -50%) scaleX(0.58);
+  transform-origin: center;
 }
 
 .toolbar-safety-menu {
