@@ -178,6 +178,26 @@ class TestWorkerConfigureValidation:
         with pytest.raises(ValidationError, match="must be <="):
             validate_worker_configure({"slot": 0, "fields": {"max_retries": 99}})
 
+    def test_value_trigger_condition_fields_are_validated(self):
+        _, fields = validate_worker_configure({
+            "slot": 0,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_condition_operator": "contains",
+                "value_trigger_condition_value": " 2026 ",
+            },
+        })
+
+        assert fields["value_trigger_condition_operator"] == "contains"
+        assert fields["value_trigger_condition_value"] == "2026"
+
+    def test_value_trigger_condition_operator_rejects_unknown_values(self):
+        with pytest.raises(ValidationError, match="Invalid value_trigger_condition_operator"):
+            validate_worker_configure({
+                "slot": 0,
+                "fields": {"value_trigger_condition_operator": "starts_with"},
+            })
+
 
 class TestPayloadSize:
     def test_oversized_payload_rejected(self):

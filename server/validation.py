@@ -22,6 +22,7 @@ VALID_AGENTS = {"antigravity", "claude", "codex", "opencode"}
 VALID_WORKER_COLOR_KEYS = {"antigravity", "claude", "codex", "opencode", "shell", "service", "marker", "notification", "value"}
 VALID_ACTIVATIONS = {"on_drop", "on_queue", "manual", "at_time", "on_interval", "on_value_change"}
 VALID_VALUE_TRIGGER_SCOPES = {"any", "name", "coord"}
+VALID_VALUE_TRIGGER_CONDITION_OPERATORS = {"any", "contains", "<", "<=", "==", ">", ">="}
 VALID_DISPOSITIONS = {"review", "done"}
 VALID_THEMES = {
     "dark", "light", "dracula", "nord", "gruvbox", "tokyo-night", "catppuccin",
@@ -300,6 +301,18 @@ def validate_worker_configure(data, max_slots=100):
             fields["value_trigger_cooldown_seconds"], "value_trigger_cooldown_seconds", min_val=0, max_val=86400
         )
         consumed.add("value_trigger_cooldown_seconds")
+    if "value_trigger_condition_operator" in fields:
+        sanitized["value_trigger_condition_operator"] = _enum(
+            fields["value_trigger_condition_operator"],
+            VALID_VALUE_TRIGGER_CONDITION_OPERATORS,
+            "value_trigger_condition_operator",
+        )
+        consumed.add("value_trigger_condition_operator")
+    if "value_trigger_condition_value" in fields:
+        sanitized["value_trigger_condition_value"] = _str(
+            fields["value_trigger_condition_value"], MAX_TITLE, "value_trigger_condition_value"
+        ).strip()
+        consumed.add("value_trigger_condition_value")
 
     # Type-specific and unknown-type fields are admitted here and canonicalized
     # by the worker type normalization layer. Runtime ownership stays server-only.

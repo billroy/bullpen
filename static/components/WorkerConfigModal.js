@@ -194,6 +194,8 @@ const WorkerConfigModal = {
             value_trigger_ref: w.value_trigger_ref || '',
             value_trigger_fire_on_noop: w.value_trigger_fire_on_noop !== undefined ? !!w.value_trigger_fire_on_noop : true,
             value_trigger_cooldown_seconds: w.value_trigger_cooldown_seconds ?? 0,
+            value_trigger_condition_operator: w.value_trigger_condition_operator || 'any',
+            value_trigger_condition_value: w.value_trigger_condition_value || '',
             paused: w.paused || false,
             color: w.color || '',
             // Shell-specific fields
@@ -1626,6 +1628,8 @@ const WorkerConfigModal = {
         delete fields.value_trigger_ref;
         delete fields.value_trigger_fire_on_noop;
         delete fields.value_trigger_cooldown_seconds;
+        delete fields.value_trigger_condition_operator;
+        delete fields.value_trigger_condition_value;
       } else {
         fields.value_trigger_scope = ['any', 'name', 'coord'].includes(String(fields.value_trigger_scope || ''))
           ? String(fields.value_trigger_scope)
@@ -1639,6 +1643,13 @@ const WorkerConfigModal = {
         }
         fields.value_trigger_fire_on_noop = fields.value_trigger_fire_on_noop !== false;
         fields.value_trigger_cooldown_seconds = Math.max(0, Math.min(Number(fields.value_trigger_cooldown_seconds || 0), 86400));
+        fields.value_trigger_condition_operator = ['any', 'contains', '<', '<=', '==', '>', '>='].includes(String(fields.value_trigger_condition_operator || ''))
+          ? String(fields.value_trigger_condition_operator)
+          : 'any';
+        fields.value_trigger_condition_value = String(fields.value_trigger_condition_value || '').trim();
+        if (fields.value_trigger_condition_operator === 'any') {
+          fields.value_trigger_condition_value = '';
+        }
       }
       delete fields.type;
       this.$emit('save', { slot: this.slotIndex, fields });

@@ -428,6 +428,75 @@ def test_value_worker_type_is_registered_non_runnable():
     assert worker_type.runnable() is False
 
 
+def test_value_trigger_condition_fields_normalize_for_eligible_workers(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+
+    slot = normalize_worker_slot(
+        {
+            "type": "notification",
+            "row": 0,
+            "col": 0,
+            "name": "Watch Release",
+            "activation": "on_value_change",
+            "value_trigger_scope": "any",
+            "value_trigger_condition_operator": "contains",
+            "value_trigger_condition_value": " 2026 ",
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["value_trigger_condition_operator"] == "contains"
+    assert slot["value_trigger_condition_value"] == "2026"
+
+
+def test_value_trigger_condition_any_clears_condition_value(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+
+    slot = normalize_worker_slot(
+        {
+            "type": "shell",
+            "row": 0,
+            "col": 0,
+            "name": "Any Watcher",
+            "activation": "on_value_change",
+            "value_trigger_condition_operator": "bogus",
+            "value_trigger_condition_value": "ignored",
+        },
+        index=0,
+        config=config,
+    )
+
+    assert slot["value_trigger_condition_operator"] == "any"
+    assert slot["value_trigger_condition_value"] == ""
+
+
+def test_value_trigger_condition_fields_removed_from_unsupported_workers(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+
+    slot = normalize_worker_slot(
+        {
+            "type": "value",
+            "row": 0,
+            "col": 0,
+            "name": "Data",
+            "value": "2026",
+            "activation": "on_value_change",
+            "value_trigger_condition_operator": "contains",
+            "value_trigger_condition_value": "2026",
+        },
+        index=0,
+        config=config,
+    )
+
+    assert "activation" not in slot
+    assert "value_trigger_condition_operator" not in slot
+    assert "value_trigger_condition_value" not in slot
+
+
 def test_unknown_worker_type_transfer_preserves_fields(tmp_path):
     ws_a = str(tmp_path / "a")
     ws_b = str(tmp_path / "b")

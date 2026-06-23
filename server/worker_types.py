@@ -26,6 +26,7 @@ SERVICE_COMMAND_SOURCES = {"manual", "procfile"}
 SERVICE_LOG_MAX_BYTES_DEFAULT = 5 * 1024 * 1024
 VALUE_TRIGGER_WORKER_TYPES = {"ai", "shell", "notification"}
 VALUE_TRIGGER_SCOPES = {"any", "name", "coord"}
+VALUE_TRIGGER_CONDITION_OPERATORS = {"any", "contains", "<", "<=", "==", ">", ">="}
 NOTIFICATION_TOAST_VARIANTS = {"stage", "success", "warning", "error"}
 NOTIFICATION_SPEECH_ENGINES = {"default", "web-speech", "kokoro"}
 NOTIFICATION_KOKORO_VOICES = {
@@ -326,6 +327,8 @@ def _normalize_value_trigger_fields(slot, *, default_activation):
             "value_trigger_ref",
             "value_trigger_fire_on_noop",
             "value_trigger_cooldown_seconds",
+            "value_trigger_condition_operator",
+            "value_trigger_condition_value",
             "last_value_trigger_time",
         ):
             slot.pop(key, None)
@@ -346,6 +349,14 @@ def _normalize_value_trigger_fields(slot, *, default_activation):
     slot["value_trigger_cooldown_seconds"] = max(
         0, min(_safe_int(slot.get("value_trigger_cooldown_seconds"), 0), 86400)
     )
+    operator = str(slot.get("value_trigger_condition_operator") or "any").strip().lower()
+    if operator not in VALUE_TRIGGER_CONDITION_OPERATORS:
+        operator = "any"
+    condition_value = str(slot.get("value_trigger_condition_value") or "").strip()
+    if operator == "any":
+        condition_value = ""
+    slot["value_trigger_condition_operator"] = operator
+    slot["value_trigger_condition_value"] = condition_value
     slot.setdefault("last_value_trigger_time", None)
 
 

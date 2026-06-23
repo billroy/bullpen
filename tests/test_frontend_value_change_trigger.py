@@ -40,3 +40,14 @@ def test_worker_config_modal_drops_trigger_fields_when_not_applicable():
     assert "delete fields.value_trigger_ref;" in text
     assert "delete fields.value_trigger_fire_on_noop;" in text
     assert "delete fields.value_trigger_cooldown_seconds;" in text
+    assert "delete fields.value_trigger_condition_operator;" in text
+    assert "delete fields.value_trigger_condition_value;" in text
+
+
+def test_worker_config_modal_round_trips_value_trigger_condition_fields():
+    text = _read("static/components/WorkerConfigModal.js")
+
+    assert "value_trigger_condition_operator: w.value_trigger_condition_operator || 'any'" in text
+    assert "value_trigger_condition_value: w.value_trigger_condition_value || ''" in text
+    assert "fields.value_trigger_condition_operator = ['any', 'contains', '<', '<=', '==', '>', '>='].includes" in text
+    assert "fields.value_trigger_condition_value = String(fields.value_trigger_condition_value || '').trim();" in text
