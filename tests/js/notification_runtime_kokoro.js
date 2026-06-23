@@ -13,6 +13,7 @@ const calls = {
   objectUrls: [],
   revoked: [],
   emitted: [],
+  ducks: [],
 };
 
 class FakeAudio {
@@ -79,6 +80,17 @@ const context = {
     },
     matchMedia: () => ({ matches: false }),
     localStorage: { getItem: () => null, setItem() {} },
+    ambientAudio: {
+      _holdAmbientDuck(depth) {
+        calls.ducks.push({ type: 'hold', depth });
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          calls.ducks.push({ type: 'release', depth });
+        };
+      },
+    },
   },
 };
 context.globalThis = context;
@@ -131,7 +143,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     worker: { name: 'Kokoro Notify' },
   });
 
-  await waitFor(() => calls.generated.length === 1 && calls.played.length === 1);
+  await waitFor(() => calls.generated.length === 1 && calls.played.length === 1 && calls.ducks.length === 2);
 
   if (calls.imports[0] !== 'test-loader') {
     throw new Error(`Expected Kokoro import, got ${calls.imports[0]}`);
@@ -157,6 +169,9 @@ async function waitFor(predicate, timeoutMs = 1000) {
   if (runtime.getKokoroStatus().status !== 'ready') {
     throw new Error(`Expected Kokoro ready status, got ${runtime.getKokoroStatus().status}`);
   }
+  if (calls.ducks[0].type !== 'hold' || calls.ducks[0].depth !== 6 || calls.ducks[1].type !== 'release') {
+    throw new Error('Generated speech did not duck and restore ambient audio');
+  }
 
   runtime.speak({
     enabled: true,
@@ -169,7 +184,7 @@ async function waitFor(predicate, timeoutMs = 1000) {
     worker: { name: 'Kokoro Notify' },
   });
 
-  await waitFor(() => calls.generated.length === 2);
+  await waitFor(() => calls.generated.length === 2 && calls.ducks.length === 4);
   if (calls.generated[1].opts.voice !== 'af_heart') {
     throw new Error(`Expected invalid Kokoro voice to fall back to af_heart, got ${calls.generated[1].opts.voice}`);
   }
@@ -211,6 +226,9 @@ async function waitFor(predicate, timeoutMs = 1000) {
   }
   if (calls.emitted[0].payload.task_id !== 'ticket-1') {
     throw new Error('Completion payload did not include ticket id');
+  }
+  if (calls.ducks.length !== 6 || calls.ducks.filter(item => item.type === 'hold').length !== 3 || calls.ducks.filter(item => item.type === 'release').length !== 3) {
+    throw new Error(`Expected generated speech duck holds to be balanced, got ${JSON.stringify(calls.ducks)}`);
   }
 
   calls.emitted.length = 0;

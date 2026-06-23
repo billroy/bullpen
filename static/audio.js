@@ -17,6 +17,8 @@ class AudioEngine {
     this._ambientMuted = false;
     this._ambientIntensity = 10;
     this._ambientGainTarget = 0;
+    this._ambientDucks = new Map();
+    this._nextAmbientDuckId = 1;
   }
 
   _init() {
@@ -176,7 +178,7 @@ class AudioEngine {
 
     // Fade in over 2s
     this._ambientGain.gain.setValueAtTime(0.001, now);
-    this._ambientGain.gain.linearRampToValueAtTime(targetVol, now + 2);
+    this._ambientGain.gain.linearRampToValueAtTime(this._ambientDuckedTarget(targetVol), now + 2);
 
     this._ambientActive = true;
     this._ambientPreset = preset;
@@ -206,7 +208,7 @@ class AudioEngine {
     this._ambientGainTarget = targetVol;
     this._ambientGain.gain.cancelScheduledValues(now);
     this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
-    this._ambientGain.gain.linearRampToValueAtTime(targetVol, now + 0.5);
+    this._ambientGain.gain.linearRampToValueAtTime(this._ambientDuckedTarget(targetVol), now + 0.5);
   }
 
   _teardownAmbient() {
@@ -253,12 +255,49 @@ class AudioEngine {
     this._ambientGainTarget = vol;
     this._ambientGain.gain.cancelScheduledValues(now);
     this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
-    this._ambientGain.gain.linearRampToValueAtTime(vol, now + 0.5);
+    this._ambientGain.gain.linearRampToValueAtTime(this._ambientDuckedTarget(vol), now + 0.5);
   }
 
   _ambientVolume(intensity) {
     // intensity 1 → 0.113, intensity 20 → 0.708  (+7 dB over original)
     return 0.113 + (intensity - 1) * (0.595 / 19);
+  }
+
+  _ambientDuckedTarget(target = this._ambientGainTarget) {
+    if (this._ambientMuted) return 0;
+    let depth = 0;
+    for (const duck of this._ambientDucks.values()) {
+      depth = Math.max(depth, duck.depth);
+    }
+    if (depth <= 0) return target;
+    return target * Math.pow(10, -depth / 20);
+  }
+
+  _applyAmbientDuckState(rampSeconds = 0.15) {
+    if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
+    const now = this._ctx.currentTime;
+    const target = this._ambientDuckedTarget();
+    this._ambientGain.gain.cancelScheduledValues(now);
+    this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
+    this._ambientGain.gain.linearRampToValueAtTime(target, now + rampSeconds);
+  }
+
+  /**
+   * Hold ambient audio at a ducked level until the returned release function is called.
+   * Multiple holds use the strongest depth instead of stacking attenuation.
+   */
+  _holdAmbientDuck(dBDepth = 6) {
+    const id = this._nextAmbientDuckId++;
+    const depth = Math.max(0, Number(Math.abs(dBDepth)) || 0);
+    this._ambientDucks.set(id, { depth });
+    this._applyAmbientDuckState(0.04);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this._ambientDucks.delete(id);
+      this._applyAmbientDuckState(0.15);
+    };
   }
 
   // ── Toast notification sound ─────────────────────────────────
@@ -571,18 +610,9 @@ class AudioEngine {
    * @param {number} durationMs  How long to stay ducked before restoring
    */
   _duckAmbient(dBDepth = 6, durationMs = 300) {
-    if (!this._ambientActive || !this._ambientGain || !this._ctx || this._ambientMuted) return;
-    const now = this._ctx.currentTime;
-    const current = this._ambientGain.gain.value;
-    const target = Math.max(0, Number(this._ambientGainTarget || 0));
-    if (target <= 0) return;
-    const factor = Math.pow(10, -Math.abs(dBDepth) / 20);
-    const ducked = Math.min(current, target * factor);
-    this._ambientGain.gain.cancelScheduledValues(now);
-    this._ambientGain.gain.setValueAtTime(current, now);
-    this._ambientGain.gain.linearRampToValueAtTime(ducked, now + 0.04);
-    this._ambientGain.gain.setValueAtTime(ducked, now + durationMs / 1000);
-    this._ambientGain.gain.linearRampToValueAtTime(target, now + durationMs / 1000 + 0.15);
+    if (this._ambientMuted) return;
+    const release = this._holdAmbientDuck(dBDepth);
+    setTimeout(release, Math.max(0, Number(durationMs) || 0));
   }
 
   // ── Channel join / leave sounds ────────────────────────────────

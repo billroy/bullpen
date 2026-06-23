@@ -141,6 +141,10 @@
         this._currentAudio?.pause?.();
       } catch (_err) {}
       this._currentAudio = null;
+      try {
+        this._currentSpeechDuckRelease?.();
+      } catch (_err) {}
+      this._currentSpeechDuckRelease = null;
     },
 
     init(socket) {
@@ -454,29 +458,58 @@
       return new Promise((resolve, reject) => {
         const audio = new Audio(url);
         this._currentAudio = audio;
+        const releaseDuck = this._startAmbientSpeechDuck();
+        this._currentSpeechDuckRelease = releaseDuck;
+        let finished = false;
+        const finish = (callback) => {
+          if (finished) return;
+          finished = true;
+          if (this._currentAudio === audio) this._currentAudio = null;
+          if (this._currentSpeechDuckRelease === releaseDuck) this._currentSpeechDuckRelease = null;
+          try { releaseDuck(); } catch (_err) {}
+          callback();
+        };
         audio.volume = Math.max(0, Math.min(Number(speech.volume ?? 1), 1));
         audio.playbackRate = Math.max(0.5, Math.min(Number(speech.rate ?? 1), 2));
         audio.onended = () => {
-          if (this._currentAudio === audio) this._currentAudio = null;
-          resolve();
+          finish(resolve);
         };
         audio.onerror = () => {
-          if (this._currentAudio === audio) this._currentAudio = null;
-          reject(new Error('Generated Kokoro audio could not play'));
+          finish(() => reject(new Error('Generated Kokoro audio could not play')));
         };
         try {
           const playResult = audio.play();
-          if (playResult?.catch) playResult.catch(reject);
+          if (playResult?.catch) playResult.catch(err => finish(() => reject(err)));
         } catch (err) {
-          reject(err);
+          finish(() => reject(err));
         }
       });
+    },
+
+    _startAmbientSpeechDuck() {
+      const audio = window.ambientAudio;
+      if (!audio || typeof audio._holdAmbientDuck !== 'function') return () => {};
+      try {
+        return audio._holdAmbientDuck(6);
+      } catch (_err) {
+        return () => {};
+      }
     },
 
     _speakWebSpeech(speech, done) {
       const synth = window.speechSynthesis;
       if (!synth) return false;
       const utterance = new SpeechSynthesisUtterance(String(speech.text || ''));
+      const releaseDuck = this._startAmbientSpeechDuck();
+      this._currentSpeechDuckRelease = releaseDuck;
+      let finished = false;
+      const finish = (notifyDone = true) => {
+        if (finished) return;
+        finished = true;
+        if (this._currentSpeechDuckRelease === releaseDuck) this._currentSpeechDuckRelease = null;
+        try { releaseDuck(); } catch (_err) {}
+        if (notifyDone && typeof done === 'function') done();
+      };
       utterance.rate = Math.max(0.5, Math.min(Number(speech.rate ?? 1), 2));
       utterance.volume = Math.max(0, Math.min(Number(speech.volume ?? 1), 1));
       const voiceName = String(speech.voice || '').trim();
@@ -488,15 +521,16 @@
         }
       }
       utterance.onend = () => {
-        if (typeof done === 'function') done();
+        finish();
       };
       utterance.onerror = () => {
-        if (typeof done === 'function') done();
+        finish();
       };
       try {
         synth.speak(utterance);
         return true;
       } catch (_err) {
+        finish(false);
         return false;
       }
     },

@@ -198,20 +198,123 @@ audio.startAmbient('server_room', 10);
 const target = audio._ambientGainTarget;
 audio._ambientGain.gain.value = target;
 audio._duckAmbient(6, 300);
+const ducked = audio._ambientGain.gain.value;
 
 // Simulate the next event arriving while the previous duck is still attenuated.
 audio._ambientGain.gain.value = target * Math.pow(10, -6 / 20);
 audio._duckAmbient(6, 300);
-const restoredAfterOverlap = audio._ambientGain.gain.value;
+const duckedAfterOverlap = audio._ambientGain.gain.value;
 
-process.stdout.write(JSON.stringify({{ target, restoredAfterOverlap }}));
+setTimeout(() => {{
+  const restoredAfterOverlap = audio._ambientGain.gain.value;
+  process.stdout.write(JSON.stringify({{ target, ducked, duckedAfterOverlap, restoredAfterOverlap }}));
+}}, 360);
 """
     result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["target"] > 0
+    assert payload["ducked"] < payload["target"]
+    assert abs(payload["duckedAfterOverlap"] - payload["ducked"]) < 0.000001
     assert abs(payload["restoredAfterOverlap"] - payload["target"]) < 0.000001
+
+
+def test_ambient_duck_holds_use_strongest_depth_and_restore_in_order():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "audio.js"))}, 'utf8');
+
+class Param {{
+  constructor() {{ this.value = 0; }}
+  cancelScheduledValues() {{}}
+  setValueAtTime(value) {{ this.value = value; }}
+  linearRampToValueAtTime(value) {{ this.value = value; }}
+}}
+class FakeNode {{
+  constructor() {{
+    this.gain = new Param();
+    this.frequency = new Param();
+    this.Q = new Param();
+    this.context = {{}};
+  }}
+  connect(dest) {{ this.dest = dest; return dest; }}
+  start() {{}}
+  stop() {{}}
+  disconnect() {{}}
+}}
+class FakeBuffer {{
+  getChannelData() {{ return new Float32Array(4); }}
+}}
+class FakeAudioContext {{
+  constructor() {{
+    this.currentTime = 0;
+    this.sampleRate = 1;
+    this.state = 'running';
+    this.destination = {{}};
+  }}
+  createGain() {{ return new FakeNode(); }}
+  createOscillator() {{ return new FakeNode(); }}
+  createBuffer() {{ return new FakeBuffer(); }}
+  createBufferSource() {{ return new FakeNode(); }}
+  createBiquadFilter() {{ return new FakeNode(); }}
+  resume() {{}}
+}}
+
+const context = {{
+  window: {{ AudioContext: FakeAudioContext }},
+  console,
+  Math,
+  setTimeout,
+}};
+vm.createContext(context);
+vm.runInContext(source, context);
+
+const audio = context.window.ambientAudio;
+audio.startAmbient('server_room', 10);
+const target = audio._ambientGainTarget;
+audio._ambientGain.gain.value = target;
+const releaseSpeechA = audio._holdAmbientDuck(6);
+const speechDuck = audio._ambientGain.gain.value;
+const releaseSpeechB = audio._holdAmbientDuck(6);
+const stillOneSpeechDuck = audio._ambientGain.gain.value;
+const releaseEvent = audio._holdAmbientDuck(12);
+const eventDuck = audio._ambientGain.gain.value;
+releaseEvent();
+const backToSpeechDuck = audio._ambientGain.gain.value;
+releaseSpeechA();
+const stillSpeechDuck = audio._ambientGain.gain.value;
+releaseSpeechB();
+const restored = audio._ambientGain.gain.value;
+
+process.stdout.write(JSON.stringify({{
+  target,
+  speechDuck,
+  stillOneSpeechDuck,
+  eventDuck,
+  backToSpeechDuck,
+  stillSpeechDuck,
+  restored,
+}}));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["target"] > 0
+    assert payload["speechDuck"] < payload["target"]
+    assert abs(payload["stillOneSpeechDuck"] - payload["speechDuck"]) < 0.000001
+    assert payload["eventDuck"] < payload["speechDuck"]
+    assert abs(payload["backToSpeechDuck"] - payload["speechDuck"]) < 0.000001
+    assert abs(payload["stillSpeechDuck"] - payload["speechDuck"]) < 0.000001
+    assert abs(payload["restored"] - payload["target"]) < 0.000001
 
 
 def test_value_update_sound_fires_only_for_known_value_changes():

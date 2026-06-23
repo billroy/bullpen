@@ -75,6 +75,9 @@ def test_notification_worker_runtime_caps_and_settings_exist():
     assert "prefers-reduced-motion: reduce" in text
     assert "stopSpeech()" in text
     assert "window.ambientAudio.setVolume?.(volume)" in text
+    assert "_startAmbientSpeechDuck" in text
+    assert "audio._holdAmbientDuck(6)" in text
+    assert "this._currentSpeechDuckRelease?.();" in text
     assert "Notification workers" in toolbar
     assert "onToggleNotificationFlag" in toolbar
 
