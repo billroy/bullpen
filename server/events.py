@@ -2326,12 +2326,20 @@ def register_events(socketio, app):
             return False
         return (now_dt - last).total_seconds() < cooldown
 
-    def _create_value_trigger_task(bp_dir, slot_index, worker, value_event, socketio, ws_id):
+    def _create_value_trigger_task(bp_dir, slot_index, worker, value_event, socketio, ws_id, condition_result=None):
         worker_name = worker.get("name", "Worker")
         value_label = value_event.get("value_name") or value_event.get("value_coord") or "value"
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
         scope = str(worker.get("value_trigger_scope") or "name")
         configured_ref = str(worker.get("value_trigger_ref") or "")
+        condition_result = condition_result or _condition_result("any", "", matched=True)
+        condition_line = ""
+        if condition_result.get("operator") != "any":
+            condition_line = (
+                "\n"
+                f"Condition: new value {condition_result.get('operator')} "
+                f"{condition_result.get('configured_value')} (matched)\n"
+            )
         title = f"[Auto] {worker_name} - value write {value_label} - {timestamp}"
         body = (
             f"Worker: {worker_name}\n"
@@ -2347,6 +2355,7 @@ def register_events(socketio, app):
             f"- Changed: {str(bool(value_event.get('changed'))).lower()}\n"
             f"- Changed at: {value_event.get('changed_at')}\n"
             f"- Changed by: {value_event.get('changed_by')}\n"
+            f"{condition_line}"
         )
         task = task_mod.create_task(
             bp_dir,
@@ -2360,6 +2369,7 @@ def register_events(socketio, app):
             **value_event,
             "scope": scope,
             "configured_ref": configured_ref,
+            "condition": condition_result,
         }
         task = task_mod.update_task(bp_dir, task["id"], {
             "synthetic_run": True,
@@ -2397,11 +2407,24 @@ def register_events(socketio, app):
                 continue
             if not _value_trigger_matches(value_event, worker):
                 continue
+            condition_result = _value_trigger_condition_matches(value_event, worker)
+            if not condition_result.get("matched"):
+                logging.debug(
+                    "Value trigger condition did not match: slot=%s event=%s operator=%s configured_value=%r "
+                    "value_type=%s error=%s",
+                    slot_index,
+                    value_event.get("event_id"),
+                    condition_result.get("operator"),
+                    condition_result.get("configured_value"),
+                    value_event.get("new_value_type"),
+                    condition_result.get("error"),
+                )
+                continue
             worker["last_value_trigger_time"] = updated_at
             touched_runtime = True
             layout["slots"][slot_index] = worker
             _save_layout(bp_dir, layout)
-            _create_value_trigger_task(bp_dir, slot_index, worker, value_event, socketio, ws_id)
+            _create_value_trigger_task(bp_dir, slot_index, worker, value_event, socketio, ws_id, condition_result)
             slots_to_start.append(slot_index)
             layout = _load_layout(bp_dir)
         if touched_runtime:

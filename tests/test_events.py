@@ -1182,12 +1182,146 @@ class TestWorkerEvents:
         assert created["value_trigger"]["old_value"] == 5
         assert created["value_trigger"]["new_value"] == 8
         assert created["value_trigger"]["changed"] is True
+        assert created["value_trigger"]["condition"]["operator"] == "any"
+        assert created["value_trigger"]["condition"]["matched"] is True
         task = task_mod.read_task(app.config["bp_dir"], created["id"])
         assert task["status"] == "assigned"
         assert task["assigned_to"] == 1
         layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
         assert created["id"] in layout["slots"][1]["task_queue"]
         assert starts and starts[-1][0][1] == 1
+
+    def test_value_trigger_condition_filters_without_consuming_cooldown(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "4", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+                "value_trigger_cooldown_seconds": 60,
+                "value_trigger_condition_operator": ">=",
+                "value_trigger_condition_value": "5",
+            },
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Counter", "value": "4.9", "value_type": "number"})
+
+        assert get_event(c, "task:created") is None
+        layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert layout["slots"][1]["last_value_trigger_time"] is None
+        assert starts == []
+
+        c.emit("value:set", {"ref": "Counter", "value": "5", "value_type": "number"})
+
+        created = get_event(c, "task:created")
+        assert created is not None
+        assert created["value_trigger"]["condition"] == {
+            "matched": True,
+            "operator": ">=",
+            "configured_value": "5",
+            "coerced_value": 5,
+            "coerced_value_type": "number",
+            "error": None,
+        }
+        assert starts and starts[-1][0][1] == 1
+
+    def test_value_trigger_invalid_numeric_condition_does_not_fire_or_update_cooldown(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "4", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+                "value_trigger_cooldown_seconds": 60,
+                "value_trigger_condition_operator": ">=",
+                "value_trigger_condition_value": "5%",
+            },
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Counter", "value": "6", "value_type": "number"})
+
+        assert get_event(c, "task:created") is None
+        layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert layout["slots"][1]["last_value_trigger_time"] is None
+        assert starts == []
+
+    def test_value_trigger_contains_condition_matches_string_and_number(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Release", "value": "release/2025-12", "value_type": "string"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "value",
+            "fields": {"name": "Version", "value": "2025.12", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:add", {
+            "slot": 2,
+            "type": "notification",
+            "fields": {"name": "Release Watcher"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure", {
+            "slot": 2,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "any",
+                "value_trigger_condition_operator": "contains",
+                "value_trigger_condition_value": "2026",
+            },
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Release", "value": "release/2026-06", "value_type": "string"})
+        created = get_event(c, "task:created")
+        assert created is not None
+        assert created["value_trigger"]["condition"]["operator"] == "contains"
+        assert created["value_trigger"]["condition"]["coerced_value_type"] == "string"
+
+        c.emit("value:set", {"ref": "Version", "value": "2026.06", "value_type": "number"})
+        created = get_event(c, "task:created")
+        assert created is not None
+        assert created["value_trigger"]["value_name"] == "Version"
+        assert created["value_trigger"]["condition"]["operator"] == "contains"
+        assert len(starts) == 2
 
     def test_value_configure_triggers_with_old_and_new_value(self, client, monkeypatch):
         c, app = client
