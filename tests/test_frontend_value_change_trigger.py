@@ -19,6 +19,9 @@ def test_worker_config_modal_exposes_value_change_trigger_controls():
     assert 'v-for="option in valueTriggerOptions"' in text
     assert 'v-model="form.value_trigger_fire_on_noop"' in text
     assert 'v-model.number="form.value_trigger_cooldown_seconds"' in text
+    assert 'v-model="form.value_trigger_condition_operator"' in text
+    assert 'v-model="form.value_trigger_condition_value"' in text
+    assert '<option value="contains">Contains</option>' in text
 
 
 def test_worker_config_modal_saves_named_and_unnamed_value_refs():
@@ -51,3 +54,15 @@ def test_worker_config_modal_round_trips_value_trigger_condition_fields():
     assert "value_trigger_condition_value: w.value_trigger_condition_value || ''" in text
     assert "fields.value_trigger_condition_operator = ['any', 'contains', '<', '<=', '==', '>', '>='].includes" in text
     assert "fields.value_trigger_condition_value = String(fields.value_trigger_condition_value || '').trim();" in text
+
+
+def test_worker_config_modal_shows_value_trigger_condition_guidance():
+    text = _read("static/components/WorkerConfigModal.js")
+
+    assert "valueTriggerSelectedOption()" in text
+    assert "valueTriggerConditionHint()" in text
+    assert "valueTriggerConditionWarning()" in text
+    assert "Contains compares against the value text." in text
+    assert "Text values use alphabetic ordering." in text
+    assert "Comparison value is not a valid number yet." in text
+    assert "valueTriggerConditionOperator !== 'any'" in text

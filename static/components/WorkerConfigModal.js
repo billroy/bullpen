@@ -440,6 +440,8 @@ const WorkerConfigModal = {
             scope,
             ref,
             slot,
+            resolvedValueType: worker?.resolved_value_type || 'string',
+            valueType: worker?.value_type || 'auto',
             label: `${labelName} ${coord ? `(${coord})` : ''}${value ? ` = ${value}` : ''}`,
           };
         })
@@ -463,6 +465,41 @@ const WorkerConfigModal = {
         this.form.value_trigger_scope = ['any', 'name', 'coord'].includes(scope) ? scope : 'any';
         this.form.value_trigger_ref = this.form.value_trigger_scope === 'any' ? '' : ref;
       },
+    },
+    valueTriggerSelectedOption() {
+      const scope = String(this.form.value_trigger_scope || 'name');
+      if (scope === 'any') return null;
+      const ref = String(this.form.value_trigger_ref || '');
+      return this.valueTriggerOptions.find(option => option.scope === scope && option.ref === ref) || null;
+    },
+    valueTriggerConditionOperator() {
+      const operator = String(this.form.value_trigger_condition_operator || 'any');
+      return ['any', 'contains', '<', '<=', '==', '>', '>='].includes(operator) ? operator : 'any';
+    },
+    valueTriggerUsesRelationalCondition() {
+      return ['<', '<=', '==', '>', '>='].includes(this.valueTriggerConditionOperator);
+    },
+    valueTriggerConditionHint() {
+      if (this.valueTriggerConditionOperator === 'any') return '';
+      if (!this.valueTriggerSelectedOption) {
+        if (this.valueTriggerConditionOperator === 'contains') return 'Containment uses the changed value text at run time.';
+        return 'Comparison is interpreted using the changed value at run time.';
+      }
+      const resolved = String(this.valueTriggerSelectedOption.resolvedValueType || 'string');
+      if (resolved === 'number' && this.valueTriggerConditionOperator === 'contains') {
+        return 'Contains compares against the value text.';
+      }
+      if (resolved === 'number') return 'Comparison value will be parsed as a number.';
+      if (this.valueTriggerUsesRelationalCondition) return 'Text values use alphabetic ordering.';
+      return 'Comparison value will be matched as text.';
+    },
+    valueTriggerConditionWarning() {
+      if (!this.valueTriggerSelectedOption || !this.valueTriggerUsesRelationalCondition) return '';
+      const resolved = String(this.valueTriggerSelectedOption.resolvedValueType || 'string');
+      if (resolved !== 'number') return '';
+      const text = String(this.form.value_trigger_condition_value || '').trim();
+      if (!text) return 'Comparison value is not a valid number yet.';
+      return /^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(text) ? '' : 'Comparison value is not a valid number yet.';
     },
     valueUnitIsOther() {
       return this.valueUnitMode === '__other__';
@@ -1080,6 +1117,24 @@ const WorkerConfigModal = {
                   <option value="any:">Any Value</option>
                   <option v-for="option in valueTriggerOptions" :key="option.key" :value="option.key">{{ option.label }}</option>
                 </select>
+              </label>
+              <label class="form-label">
+                Condition
+                <select class="form-select" v-model="form.value_trigger_condition_operator">
+                  <option value="any">Any change</option>
+                  <option value="contains">Contains</option>
+                  <option :value="'<'">Less than</option>
+                  <option :value="'<='">Less than or equal</option>
+                  <option value="==">Equal to</option>
+                  <option value=">">Greater than</option>
+                  <option value=">=">Greater than or equal</option>
+                </select>
+              </label>
+              <label class="form-label" v-if="valueTriggerConditionOperator !== 'any'">
+                Comparison Value
+                <input class="form-input" v-model="form.value_trigger_condition_value">
+                <span v-if="valueTriggerConditionHint" class="form-hint">{{ valueTriggerConditionHint }}</span>
+                <span v-if="valueTriggerConditionWarning" class="form-hint">{{ valueTriggerConditionWarning }}</span>
               </label>
               <label class="form-label">
                 Cooldown (seconds)
