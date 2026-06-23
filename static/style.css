@@ -4857,25 +4857,59 @@ body.worker-singleton-dragging * {
 
 .value-trigger-controls {
   display: grid;
-  flex: 1 1 100%;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 1fr) minmax(180px, 1fr) minmax(120px, 0.6fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
-  min-width: 100%;
+  width: 100%;
 }
 
 .value-trigger-controls .form-label {
   min-width: 0;
 }
 
-.value-trigger-controls .form-label-inline {
+.value-trigger-value {
+  grid-column: span 5;
+}
+
+.value-trigger-condition {
+  grid-column: span 3;
+}
+
+.value-trigger-comparison {
+  grid-column: span 4;
+}
+
+.value-trigger-cooldown {
+  grid-column: span 3;
+}
+
+.value-trigger-noop {
+  grid-column: span 4;
   align-self: end;
   min-height: 34px;
 }
 
+@media (max-width: 920px) {
+  .value-trigger-value,
+  .value-trigger-condition,
+  .value-trigger-comparison,
+  .value-trigger-cooldown,
+  .value-trigger-noop {
+    grid-column: span 6;
+  }
+}
+
 @media (max-width: 760px) {
   .value-trigger-controls {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .value-trigger-value,
+  .value-trigger-condition,
+  .value-trigger-comparison,
+  .value-trigger-cooldown,
+  .value-trigger-noop {
+    grid-column: 1;
   }
 }
 

@@ -1110,44 +1110,44 @@ const WorkerConfigModal = {
               Interval (minutes)
               <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
             </label>
-            <div v-if="canUseValueChangeTrigger && form.activation === 'on_value_change'" class="value-trigger-controls">
-              <label class="form-label">
-                Value
-                <select class="form-select" v-model="valueTriggerSelection">
-                  <option value="any:">Any Value</option>
-                  <option v-for="option in valueTriggerOptions" :key="option.key" :value="option.key">{{ option.label }}</option>
-                </select>
-              </label>
-              <label class="form-label">
-                Condition
-                <select class="form-select" v-model="form.value_trigger_condition_operator">
-                  <option value="any">Any change</option>
-                  <option value="contains">Contains</option>
-                  <option :value="'<'">Less than</option>
-                  <option :value="'<='">Less than or equal</option>
-                  <option value="==">Equal to</option>
-                  <option value=">">Greater than</option>
-                  <option value=">=">Greater than or equal</option>
-                </select>
-              </label>
-              <label class="form-label" v-if="valueTriggerConditionOperator !== 'any'">
-                Comparison Value
-                <input class="form-input" v-model="form.value_trigger_condition_value">
-                <span v-if="valueTriggerConditionHint" class="form-hint">{{ valueTriggerConditionHint }}</span>
-                <span v-if="valueTriggerConditionWarning" class="form-hint">{{ valueTriggerConditionWarning }}</span>
-              </label>
-              <label class="form-label">
-                Cooldown (seconds)
-                <input class="form-input" type="number" v-model.number="form.value_trigger_cooldown_seconds" min="0" max="86400">
-              </label>
-              <label class="form-label form-label-inline">
-                <input type="checkbox" v-model="form.value_trigger_fire_on_noop">
-                Fire on no-op writes
-              </label>
-            </div>
             <label class="form-label form-label-inline" v-if="canPauseWorker">
               <input type="checkbox" v-model="form.paused">
               Paused
+            </label>
+          </div>
+          <div v-if="!isService && !isValue && canUseValueChangeTrigger && form.activation === 'on_value_change'" class="value-trigger-controls">
+            <label class="form-label value-trigger-value">
+              Value
+              <select class="form-select" v-model="valueTriggerSelection">
+                <option value="any:">Any Value</option>
+                <option v-for="option in valueTriggerOptions" :key="option.key" :value="option.key">{{ option.label }}</option>
+              </select>
+            </label>
+            <label class="form-label value-trigger-condition">
+              Condition
+              <select class="form-select" v-model="form.value_trigger_condition_operator">
+                <option value="any">Any change</option>
+                <option value="contains">Contains</option>
+                <option :value="'<'">Less than</option>
+                <option :value="'<='">Less than or equal</option>
+                <option value="==">Equal to</option>
+                <option value=">">Greater than</option>
+                <option value=">=">Greater than or equal</option>
+              </select>
+            </label>
+            <label class="form-label value-trigger-comparison" v-if="valueTriggerConditionOperator !== 'any'">
+              Comparison Value
+              <input class="form-input" v-model="form.value_trigger_condition_value">
+              <span v-if="valueTriggerConditionHint" class="form-hint">{{ valueTriggerConditionHint }}</span>
+              <span v-if="valueTriggerConditionWarning" class="form-hint">{{ valueTriggerConditionWarning }}</span>
+            </label>
+            <label class="form-label value-trigger-cooldown">
+              Cooldown (seconds)
+              <input class="form-input" type="number" v-model.number="form.value_trigger_cooldown_seconds" min="0" max="86400">
+            </label>
+            <label class="form-label form-label-inline value-trigger-noop">
+              <input type="checkbox" v-model="form.value_trigger_fire_on_noop">
+              Fire on no-op writes
             </label>
           </div>
           <div v-if="!isService && !isValue" class="form-row">

@@ -14,7 +14,7 @@ def test_worker_config_modal_exposes_value_change_trigger_controls():
     text = _read("static/components/WorkerConfigModal.js")
 
     assert '<option v-if="canUseValueChangeTrigger" value="on_value_change">On Value Change</option>' in text
-    assert 'v-if="canUseValueChangeTrigger && form.activation === \'on_value_change\'"' in text
+    assert 'v-if="!isService && !isValue && canUseValueChangeTrigger && form.activation === \'on_value_change\'"' in text
     assert '<option value="any:">Any Value</option>' in text
     assert 'v-for="option in valueTriggerOptions"' in text
     assert 'v-model="form.value_trigger_fire_on_noop"' in text
@@ -73,9 +73,11 @@ def test_worker_config_modal_groups_value_trigger_controls():
     css = _read("static/style.css")
 
     assert 'class="form-row worker-trigger-row"' in text
+    assert 'v-if="!isService && !isValue && canUseValueChangeTrigger && form.activation === \'on_value_change\'"' in text
     assert 'class="value-trigger-controls"' in text
     assert ".worker-trigger-row" in css
     assert "flex-wrap: wrap;" in css
     assert ".value-trigger-controls" in css
-    assert "grid-template-columns:" in css
-    assert "flex: 1 1 100%;" in css
+    assert "grid-template-columns: repeat(12, minmax(0, 1fr));" in css
+    assert "width: 100%;" in css
+    assert ".value-trigger-comparison" in css
