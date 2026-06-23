@@ -255,6 +255,11 @@ def is_plain_number(value: object) -> bool:
     return _parse_plain_number(value) is not None
 
 
+def parse_plain_number(value: object):
+    """Parse Bullpen's plain numeric value grammar, or return None."""
+    return _parse_plain_number(value)
+
+
 def normalize_value_payload(value: object, value_type: object = "auto") -> dict:
     declared = normalize_value_type(value_type)
     if declared == "string":

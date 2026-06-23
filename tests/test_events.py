@@ -21,6 +21,88 @@ import server.workers as workers_mod
 from tests.conftest import MockAdapter
 
 
+def _condition(new_value, new_value_type, operator, configured_value):
+    return events_mod._value_trigger_condition_matches(
+        {"new_value": new_value, "new_value_type": new_value_type},
+        {
+            "value_trigger_condition_operator": operator,
+            "value_trigger_condition_value": configured_value,
+        },
+    )
+
+
+def test_value_trigger_condition_any_matches_without_value_type():
+    result = _condition(None, None, "any", "ignored")
+
+    assert result == {
+        "matched": True,
+        "operator": "any",
+        "configured_value": "",
+        "coerced_value": None,
+        "coerced_value_type": None,
+        "error": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("new_value", "operator", "configured_value", "expected"),
+    [
+        (5, ">=", "5", True),
+        (4.9, ">=", "5", False),
+        (5, "==", "5.0", True),
+        (5, "<", "10", True),
+        (5, ">", "10", False),
+    ],
+)
+def test_value_trigger_condition_numeric_relational_operators(new_value, operator, configured_value, expected):
+    result = _condition(new_value, "number", operator, configured_value)
+
+    assert result["matched"] is expected
+    assert result["coerced_value_type"] == "number"
+    assert result["error"] is None
+
+
+@pytest.mark.parametrize("configured_value", ["", "5%", "$5", "1,000", "NaN", "Infinity"])
+def test_value_trigger_condition_numeric_invalid_thresholds_do_not_match(configured_value):
+    result = _condition(5, "number", ">=", configured_value)
+
+    assert result["matched"] is False
+    assert result["coerced_value"] is None
+    assert result["coerced_value_type"] is None
+    assert result["error"] == "comparison value is not a valid number"
+
+
+def test_value_trigger_condition_numeric_contains_uses_raw_text():
+    assert _condition(123, "number", "contains", "2")["matched"] is True
+    assert _condition(345, "number", "contains", "2")["matched"] is False
+    result = _condition(5.25, "number", "contains", ".2")
+
+    assert result["matched"] is True
+    assert result["coerced_value"] == ".2"
+    assert result["coerced_value_type"] == "string"
+
+
+def test_value_trigger_condition_string_contains_is_case_sensitive():
+    assert _condition("release/2026-06", "string", "contains", "2026")["matched"] is True
+    assert _condition("release/2026-06", "string", "contains", "Release")["matched"] is False
+
+
+def test_value_trigger_condition_string_relational_ordering_is_lexicographic():
+    assert _condition("10", "string", "<", "2")["matched"] is True
+    assert _condition("Beta", "string", "<", "alpha")["matched"] is True
+    assert _condition("release/2026-06", "string", "==", "release/2026-06")["matched"] is True
+
+
+def test_value_trigger_condition_auto_value_can_change_effective_type():
+    numeric = _condition(5, "number", "==", "5")
+    string = _condition("05", "string", "==", "5")
+
+    assert numeric["matched"] is True
+    assert numeric["coerced_value_type"] == "number"
+    assert string["matched"] is False
+    assert string["coerced_value_type"] == "string"
+
+
 @pytest.fixture
 def client():
     """Create a Flask-SocketIO test client."""

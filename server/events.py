@@ -78,6 +78,7 @@ from server.prompt_hardening import (
     render_chat_trust_instructions,
     render_untrusted_text_block,
 )
+from server.templates import raw_value_text
 from server.validation import (
     ValidationError, validate_task_create, validate_task_update,
     validate_id, validate_slot, validate_coord, validate_worker_configure,
@@ -96,6 +97,102 @@ from server.worker_types import (
     normalize_worker_slot,
     serialize_layout,
 )
+
+
+VALUE_TRIGGER_CONDITION_OPERATORS = {"any", "contains", "<", "<=", "==", ">", ">="}
+VALUE_TRIGGER_RELATIONAL_OPERATORS = {"<", "<=", "==", ">", ">="}
+
+
+def _condition_result(operator, configured_value, *, matched, coerced_value=None, coerced_value_type=None, error=None):
+    return {
+        "matched": bool(matched),
+        "operator": operator,
+        "configured_value": configured_value,
+        "coerced_value": coerced_value,
+        "coerced_value_type": coerced_value_type,
+        "error": error,
+    }
+
+
+def _compare_values(left, operator, right):
+    if operator == "==":
+        return left == right
+    if operator == "<":
+        return left < right
+    if operator == "<=":
+        return left <= right
+    if operator == ">":
+        return left > right
+    if operator == ">=":
+        return left >= right
+    return False
+
+
+def _value_trigger_condition_matches(value_event, worker):
+    """Evaluate a value-change worker's condition against a value event."""
+    operator = str((worker or {}).get("value_trigger_condition_operator") or "any").strip().lower()
+    if operator not in VALUE_TRIGGER_CONDITION_OPERATORS:
+        operator = "any"
+    configured_value = str((worker or {}).get("value_trigger_condition_value") or "").strip()
+    if operator == "any":
+        return _condition_result("any", "", matched=True)
+
+    new_value_type = str((value_event or {}).get("new_value_type") or "").strip().lower()
+    new_value = (value_event or {}).get("new_value")
+    if operator == "contains":
+        if new_value_type not in {"number", "string"}:
+            return _condition_result(
+                operator,
+                configured_value,
+                matched=False,
+                coerced_value=configured_value,
+                coerced_value_type="string",
+                error=f"unsupported value type: {new_value_type or 'unknown'}",
+            )
+        value_text = raw_value_text(new_value)
+        return _condition_result(
+            operator,
+            configured_value,
+            matched=configured_value in value_text,
+            coerced_value=configured_value,
+            coerced_value_type="string",
+        )
+
+    if operator not in VALUE_TRIGGER_RELATIONAL_OPERATORS:
+        return _condition_result(operator, configured_value, matched=False, error="unsupported operator")
+
+    if new_value_type == "number":
+        parsed = value_mod.parse_plain_number(configured_value)
+        if parsed is None:
+            return _condition_result(
+                operator,
+                configured_value,
+                matched=False,
+                error="comparison value is not a valid number",
+            )
+        return _condition_result(
+            operator,
+            configured_value,
+            matched=_compare_values(new_value, operator, parsed),
+            coerced_value=parsed,
+            coerced_value_type="number",
+        )
+
+    if new_value_type == "string":
+        return _condition_result(
+            operator,
+            configured_value,
+            matched=_compare_values(raw_value_text(new_value), operator, configured_value),
+            coerced_value=configured_value,
+            coerced_value_type="string",
+        )
+
+    return _condition_result(
+        operator,
+        configured_value,
+        matched=False,
+        error=f"unsupported value type: {new_value_type or 'unknown'}",
+    )
 
 
 _CLAUDE_MCP_READY_STATES = {"connected", "ready", "ok"}
