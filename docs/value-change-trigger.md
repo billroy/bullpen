@@ -42,7 +42,9 @@ worker that reacts to the value, not to the Value worker itself.
 
 - No formula recalculation graph.
 - No multi-cell range subscriptions in v1.
-- No comparison operators, thresholds, or filtering expressions in v1.
+- Conditional firing is supported through simple `new_value` predicates; see
+  [Conditional Value Triggers](conditional-value-triggers.md). No compound
+  expressions, formulas, or multi-field filters in v1.
 - No trigger on worker movement, rename, formatting-only edits, or history
   pruning.
 - No direct execution by Value workers.
@@ -168,6 +170,11 @@ A value-write event is eligible when all of the following are true:
 No-op writes fire by default. A worker may opt out by setting
 `value_trigger_fire_on_noop: false`.
 
+Workers may also add a condition over the event's `new_value`. Supported v1
+operators are `any`, `contains`, `<`, `<=`, `==`, `>`, and `>=`. Conditions
+filter events after scope/no-op/pause/cooldown checks and before synthetic
+tickets are created, so filtered events do not consume cooldown or enqueue work.
+
 Examples:
 
 - writing `"5"` to a numeric value that is already stored as `5` fires when
@@ -175,7 +182,11 @@ Examples:
 - saving a Value worker's name, icon, color, unit, or formatting without
   writing its value does not fire,
 - failed validation, such as writing `"oops"` to a numeric Value worker, does
-  not fire.
+  not fire,
+- a watcher configured with `>= 5` does not fire for a numeric write of `4.9`
+  and does fire for `5`,
+- a watcher configured with `contains 2026` can fire for string values such as
+  `release/2026-06` and numeric values whose canonical text contains `2026`.
 
 `value:increment` should fire once with the pre-increment and post-increment
 values.
@@ -485,7 +496,8 @@ Safety requirements:
 - The config modal must make the effectful trigger visible.
 - Imported workers with this trigger should be reviewed before activation.
 - MCP docs should warn that `set_value` and `increment_value` can trigger
-  automation.
+  automation, including conditional value-change automation when the predicate
+  matches.
 - Worker prompts should label value-change ticket content as Bullpen-generated
   metadata plus user/agent-controlled values.
 - Shell workers still receive raw text; command authors must quote values when

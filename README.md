@@ -548,6 +548,10 @@ Bullpen ships an MCP (Model Context Protocol) stdio server that lets supported a
 | `decrement_value` | Atomically subtract from a numeric Value worker |
 | `list_values` | List Value workers in grid order |
 
+Value write tools use Bullpen's normal server mutation path. They can trigger
+workers configured with **On Value Change**, including conditional triggers
+whose predicates match the new value.
+
 ### How it works
 
 Claude, Codex, Gemini, and OpenCode adapters spawn `server/mcp_tools.py` as a child process and communicate via stdin/stdout JSON-RPC 2.0 with `Content-Length` framing. The MCP server connects to the running Bullpen instance via Socket.IO to perform ticket operations.

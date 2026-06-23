@@ -613,6 +613,13 @@ Tool behavior:
 - Attempts to write non-numeric data through increment/decrement return a
   validation error and do not mutate state.
 
+Value writes through MCP use the same server-backed mutation path as UI edits.
+If runnable workers are configured with **On Value Change**, `set_value`,
+`increment_value`, and `decrement_value` can trigger automation. Conditional
+Value Triggers apply to MCP writes too: a write only starts subscribed workers
+when the configured scope, no-op setting, cooldown, pause state, and condition
+all allow it.
+
 Creation and deletion are not available through MCP in v1. Workers can mutate
 existing Value workers but cannot allocate or remove grid cells programmatically.
 
