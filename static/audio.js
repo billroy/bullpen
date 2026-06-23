@@ -16,6 +16,7 @@ class AudioEngine {
     this._ambientActive = false;
     this._ambientMuted = false;
     this._ambientIntensity = 10;
+    this._ambientGainTarget = 0;
   }
 
   _init() {
@@ -162,6 +163,7 @@ class AudioEngine {
     const now = ctx.currentTime;
     const targetVol = this._ambientMuted ? 0 : this._ambientVolume(intensity);
     this._ambientIntensity = intensity;
+    this._ambientGainTarget = targetVol;
 
     // Master ambient gain — fade in
     this._ambientGain = ctx.createGain();
@@ -187,6 +189,7 @@ class AudioEngine {
 
   muteAmbient() {
     this._ambientMuted = true;
+    this._ambientGainTarget = 0;
     if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
     const now = this._ctx.currentTime;
     this._ambientGain.gain.cancelScheduledValues(now);
@@ -200,6 +203,7 @@ class AudioEngine {
     if (!this._ambientActive || !this._ambientGain || !this._ctx || !wasMuted) return;
     const now = this._ctx.currentTime;
     const targetVol = this._ambientVolume(this._ambientIntensity || 10);
+    this._ambientGainTarget = targetVol;
     this._ambientGain.gain.cancelScheduledValues(now);
     this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
     this._ambientGain.gain.linearRampToValueAtTime(targetVol, now + 0.5);
@@ -209,6 +213,7 @@ class AudioEngine {
     if (!this._ambientGain || !this._ctx) {
       this._ambientActive = false;
       this._ambientMuted = false;
+      this._ambientGainTarget = 0;
       return;
     }
     const ctx = this._ctx;
@@ -233,14 +238,19 @@ class AudioEngine {
     this._ambientActive = false;
     this._ambientPreset = null;
     this._ambientMuted = false;
+    this._ambientGainTarget = 0;
   }
 
   updateAmbientIntensity(intensity) {
     if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
     this._ambientIntensity = intensity;
-    if (this._ambientMuted) return;
+    if (this._ambientMuted) {
+      this._ambientGainTarget = 0;
+      return;
+    }
     const now = this._ctx.currentTime;
     const vol = this._ambientVolume(intensity);
+    this._ambientGainTarget = vol;
     this._ambientGain.gain.cancelScheduledValues(now);
     this._ambientGain.gain.setValueAtTime(this._ambientGain.gain.value, now);
     this._ambientGain.gain.linearRampToValueAtTime(vol, now + 0.5);
@@ -561,16 +571,18 @@ class AudioEngine {
    * @param {number} durationMs  How long to stay ducked before restoring
    */
   _duckAmbient(dBDepth = 6, durationMs = 300) {
-    if (!this._ambientActive || !this._ambientGain || !this._ctx) return;
+    if (!this._ambientActive || !this._ambientGain || !this._ctx || this._ambientMuted) return;
     const now = this._ctx.currentTime;
     const current = this._ambientGain.gain.value;
+    const target = Math.max(0, Number(this._ambientGainTarget || 0));
+    if (target <= 0) return;
     const factor = Math.pow(10, -Math.abs(dBDepth) / 20);
-    const ducked = current * factor;
+    const ducked = Math.min(current, target * factor);
     this._ambientGain.gain.cancelScheduledValues(now);
     this._ambientGain.gain.setValueAtTime(current, now);
     this._ambientGain.gain.linearRampToValueAtTime(ducked, now + 0.04);
     this._ambientGain.gain.setValueAtTime(ducked, now + durationMs / 1000);
-    this._ambientGain.gain.linearRampToValueAtTime(current, now + durationMs / 1000 + 0.15);
+    this._ambientGain.gain.linearRampToValueAtTime(target, now + durationMs / 1000 + 0.15);
   }
 
   // ── Channel join / leave sounds ────────────────────────────────
