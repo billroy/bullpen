@@ -290,9 +290,9 @@ that require new argument pickers can land disabled or as follow-up work.
 | Open Workers | Existing `setActiveTab('workers')`. |
 | Open Files | Existing `setActiveTab('files')`. |
 | Open Commits | Existing `setActiveTab('commits')`. |
-| Open Live Agent Chat | Existing chat tab selection/creation. |
-| Add Live Agent Tab | Existing `addLiveAgentTab`. |
-| Close Current Live Agent Tab | Available only on closable chat tabs. |
+| Open Agent Chat | Existing chat tab selection/creation. |
+| Add Agent Chat Tab | Existing `addLiveAgentTab`. |
+| Close Current Agent Chat Tab | Available only on closable chat tabs. |
 | Toggle Left Pane | Existing action. |
 | Tickets: Kanban View | Existing `ticketsViewMode = 'kanban'`. |
 | Tickets: List View | Existing `ticketsViewMode = 'list'`. |
@@ -361,8 +361,8 @@ workspace scoping, and return file path results that can open in `FilesTab`.
 
 | Command | Notes |
 |---|---|
-| Open Live Agent Chat | Existing behavior. |
-| New Live Agent Chat | Existing add tab. |
+| Open Agent Chat | Existing behavior. |
+| New Agent Chat | Existing add tab. |
 | Stop Current Chat Response | Existing `chat:stop`; available only in active chat tab with active stream. |
 | Clear Current Chat | Existing `chat:clear`; confirmation recommended. |
 

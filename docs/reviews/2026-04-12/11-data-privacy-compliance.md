@@ -104,7 +104,7 @@ There is no `.gitignore` at the project root. If a developer initializes Bullpen
 
 **File:** `server/events.py` (chat session state management)
 
-Live Agent Chat sessions accumulate message history in `_chat_sessions` (module-level dict). This history persists in memory for the lifetime of the server process. Chat messages that contain sensitive information (API keys, internal data) remain accessible in memory indefinitely.
+Agent Chat sessions accumulate message history in `_chat_sessions` (module-level dict). This history persists in memory for the lifetime of the server process. Chat messages that contain sensitive information (API keys, internal data) remain accessible in memory indefinitely.
 
 **Recommendation:** Implement TTL-based expiry for inactive chat sessions. Document that chat history is in-memory only and is lost on server restart.
 

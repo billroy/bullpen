@@ -3,7 +3,7 @@
 
 **Reviewer role:** Technical due diligence analyst, potential acquirer perspective
 **Prior review:** 2026-04-09 (baseline)
-**Scope:** Updated assessment reflecting ~391 commits of development since the April 9 review, including the Stats tab, token/time tracking, Marker worker type, Export/Import, Docker improvements, MCP auth hardening, and live agent features.
+**Scope:** Updated assessment reflecting ~391 commits of development since the April 9 review, including the Stats tab, token/time tracking, Marker worker type, Export/Import, Docker improvements, MCP auth hardening, and Agent Chat features.
 
 ---
 
@@ -79,7 +79,7 @@ The scaling ceiling is: one user, one machine, tens of projects, tens of workers
 
 1. `workers.py` (2,872 lines) combines the state machine, subprocess management, agent execution, retry logic, token accounting, task-time tracking, and handoff logic. This is the most complex module and the highest bug-risk surface.
 
-2. `events.py` (1,734 lines) has grown as features were added (live agent, chat, worker transfer, group operations). It would benefit from extraction of logical groups into sub-handlers.
+2. `events.py` (1,734 lines) has grown as features were added (Agent Chat, chat, worker transfer, group operations). It would benefit from extraction of logical groups into sub-handlers.
 
 3. No CI/CD pipeline. Despite 465 tests, they are not automatically run. Quality gates exist only when the developer remembers to run `pytest` manually.
 

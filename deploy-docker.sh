@@ -580,7 +580,7 @@ fi
 
 if ! claude_logged_in; then
   warn "Claude CLI is not logged in for Docker home ${DOCKER_HOME}."
-  warn "Complete Claude Code login outside this deploy before using Claude Live Agent workers."
+  warn "Complete Claude Code login outside this deploy before using Claude-backed Agent Chat sessions."
 else
   log "Claude CLI login found in Docker home"
 fi

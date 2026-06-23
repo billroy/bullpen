@@ -138,7 +138,7 @@ def parse_args(argv=None):
         help="Validate provider model candidates through Bullpen adapters",
         description=(
             "Probe model identifiers through the same CLI adapter path Bullpen uses "
-            "for workers and Live Agent chat. This is intended as a host-side "
+            "for workers and Agent Chat. This is intended as a host-side "
             "diagnostic before changing provider dropdown catalogs."
         ),
     )

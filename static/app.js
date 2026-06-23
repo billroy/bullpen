@@ -518,7 +518,7 @@ const app = createApp({
       const sessionId = String(tab?.sessionId || '').trim();
       if (!sessionId) return null;
       const id = String(tab?.id || sessionId).trim() || sessionId;
-      const label = String(tab?.label || 'Live Agent').trim() || 'Live Agent';
+      const label = String(tab?.label || 'Agent Chat').trim() || 'Agent Chat';
       return { id, label, sessionId, workspaceId: wsId };
     }
 
@@ -578,7 +578,7 @@ const app = createApp({
       const suffix = perWsCount === 1 ? '' : ` ${perWsCount}`;
       const tab = _upsertChatTab({
         id: sessionId,
-        label: projectName ? `Live Agent${suffix} (${projectName})` : `Live Agent${suffix}`,
+        label: projectName ? `Agent Chat${suffix} (${projectName})` : `Agent Chat${suffix}`,
         sessionId,
         workspaceId: wsId,
       }, { activate });
@@ -2654,7 +2654,7 @@ const app = createApp({
                 <span v-if="tab.isChat && tab.canClose" class="tab-close" @click.stop="closeLiveAgentTab(tab.id)">&times;</span>
                 <span v-if="tab.isTerminal" class="tab-close" @click.stop="closeTerminalTab(tab.id)">&times;</span>
               </button>
-              <button v-if="activeWorkspaceId" class="tab-btn tab-btn-add" @click="addLiveAgentTab" title="Add Live Agent tab">+</button>
+              <button v-if="activeWorkspaceId" class="tab-btn tab-btn-add" @click="addLiveAgentTab" title="Add Agent Chat tab">+</button>
               <button v-if="activeWorkspaceId" class="tab-btn tab-btn-add tab-btn-terminal-add" @click="addTerminalTab" title="New terminal" aria-label="New terminal">
                 <i data-lucide="terminal" aria-hidden="true"></i>
               </button>

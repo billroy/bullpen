@@ -76,7 +76,7 @@ the adapter interface to accept trust mode. Trusted mode may append
 mode must not append that flag; if OpenCode cannot operate safely without it,
 the run should fail with a clear message.
 
-## Live Agent strategy
+## Agent Chat strategy
 
 Use fresh `opencode run` turns with Bullpen's existing assembled chat prompt for
 the first implementation. Defer OpenCode-native session continuation or

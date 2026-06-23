@@ -21,7 +21,7 @@ The codebase is well-structured in its foundational modules. Persistence, auth, 
 
 **File:** `server/events.py`
 
-`events.py` registers all Socket.IO event handlers in a single function (`register_events`). The live-agent chat implementation (`_run_chat` or equivalent) spans several hundred lines and contains:
+`events.py` registers all Socket.IO event handlers in a single function (`register_events`). The Agent Chat implementation (`_run_chat` or equivalent) spans several hundred lines and contains:
 - Subprocess lifecycle management
 - MCP startup retry logic with 3 nested retry loops
 - Per-provider error classification

@@ -134,7 +134,7 @@ Each workspace gets its own `Scheduler` thread that polls every 30 seconds. With
 
 **File:** `static/index.html`
 
-All 13+ Vue component files are loaded eagerly via `<script src="...">` tags in `index.html`. There is no module bundling, code splitting, or lazy loading. Initial page load fetches all component code even for features the user may not use (e.g., the Commits tab, FilesTab, Live Agent Chat). At current codebase size this is acceptable; at 2× size it will impact initial load performance.
+All 13+ Vue component files are loaded eagerly via `<script src="...">` tags in `index.html`. There is no module bundling, code splitting, or lazy loading. Initial page load fetches all component code even for features the user may not use (e.g., the Commits tab, FilesTab, Agent Chat). At current codebase size this is acceptable; at 2× size it will impact initial load performance.
 
 ---
 

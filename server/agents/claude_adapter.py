@@ -174,7 +174,7 @@ def _claude_credentials_need_refresh(credentials_path, *, now=None):
 def _sync_claude_credentials_back(target_config_dir):
     """Mirror a refreshed access token from the run dir back to source.
 
-    Without this, every Live Agent send copies the same expired-access
+    Without this, every Agent Chat send copies the same expired-access
     token into a fresh isolated dir; claude refreshes against
     console.anthropic.com on every send, and gets rate-limited (429)
     after enough back-to-back sends — which surfaces as a silent hang.

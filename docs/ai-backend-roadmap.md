@@ -20,7 +20,7 @@ Bullpen currently has a process-backed agent abstraction:
 - `server/agents/claude_adapter.py` launches `claude --print --output-format stream-json --verbose --dangerously-skip-permissions --model ...` and optionally writes a temporary MCP config.
 - `server/agents/codex_adapter.py` launches `codex exec --model ... --sandbox workspace-write --json -` and injects Bullpen's MCP server through `-c mcp_servers...` overrides.
 - `server/workers.py` assumes every worker adapter can build an argv, receive a prompt on stdin, stream stdout/stderr, and return a final parse result.
-- `server/events.py` repeats the same subprocess shape for Live Agent Chat.
+- `server/events.py` repeats the same subprocess shape for Agent Chat.
 - Provider choices are hard-coded in `server/validation.py`, `static/utils.js`, `static/components/WorkerConfigModal.js`, and `static/components/LiveAgentChatTab.js`.
 
 That shape is a good fit for CLI coding agents, but it is not enough for pure model APIs. OpenRouter, Gemini API, OpenAI Responses API, Ollama, and similar APIs would require Bullpen to own a tool loop, workspace context selection, patch application, cancellation, and audit semantics. That is doable, but it is a larger product than "add another agent backend."

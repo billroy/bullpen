@@ -56,7 +56,7 @@ headroom because each smoltcp TCP connection allocates substantial buffers.
 
 ### File-descriptor exhaustion masquerading as TLS / DNS errors
 
-**Symptom.** Live Agent chats and worker dispatches occasionally entered a
+**Symptom.** Agent Chats and worker dispatches occasionally entered a
 multi-minute storm of `[claude api_retry attempt=N/10 error=unknown]` events
 before either eventually succeeding or timing out. The pattern was
 process-deterministic — a given claude run either fully worked or
@@ -163,7 +163,7 @@ during early Microsandbox bring-up:
   Codex already had a deploy-time auth preflight; Claude did not. The
   Microsandbox deploy now runs a minimal `claude --print` probe so invalid or
   revoked Claude credentials fail during deploy instead of first surfacing in
-  Live Agent or worker logs.
+  Agent Chat or worker logs.
 - **Provide system CA bundle to Claude** (`61bf4c5`). Sets
   `SSL_CERT_FILE` and `SSL_CERT_DIR` in the claude subprocess env.
   See "Open issues" below — Node ignores these env vars, so this
@@ -216,7 +216,7 @@ wrapper installed by `install_codex_wrapper` that grabs an `mkdir`-based
 lock at `/var/lib/bullpen/codex.lock` and admits one codex invocation at
 a time. Even under heavy load only one codex is alive.
 
-Claude has no equivalent. Live Agent chats and worker dispatches each
+Claude has no equivalent. Agent Chats and worker dispatches each
 spawn their own claude in parallel. Under any kind of resource pressure
 claude trips before codex does, structurally — it has many more
 concurrent FDs, sockets, and subprocesses in flight per equivalent user
@@ -386,7 +386,7 @@ Check presence only; do not print token values. The diagnostic should report:
 On May 7, 2026, the live sandbox had no Claude auth override env vars,
 but did have an expired access token plus refresh token. A direct
 `claude --print` probe inside the sandbox refreshed the persisted
-credential file and succeeded. That means a one-off Live Agent 401 after
+credential file and succeeded. That means a one-off Agent Chat 401 after
 transport retries can be a failed refresh attempt against an expired
 access token, not proof that the persisted refresh token is permanently
 invalid.
@@ -411,11 +411,11 @@ claude --print --output-format stream-json --verbose \
 ```
 
 Bullpen's deploy preflight intentionally uses the `--print` probe
-because Live Agent and workers need that exact noninteractive path.
+because Agent Chat and workers need that exact noninteractive path.
 
 Desktop Claude login state is not a reliable Linux VM setup source. For
 Microsandbox, create Claude state inside the VM and verify it with the same
-headless path used by Live Agent and workers.
+headless path used by Agent Chat and workers.
 
 ### To probe network reliability inside the sandbox
 

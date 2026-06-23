@@ -5656,7 +5656,7 @@ body.worker-singleton-dragging * {
 .priority-medium { background: var(--blue); color: #fff; }
 .priority-low { background: var(--gray); color: #fff; }
 
-/* === Live Agent Chat Tab === */
+/* === Agent Chat Tab === */
 .chat-tab {
   display: flex;
   flex-direction: column;

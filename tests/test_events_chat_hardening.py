@@ -1,4 +1,4 @@
-"""Tests for Live Agent chat hardening in events module."""
+"""Tests for Agent Chat hardening in events module."""
 
 import json
 import os

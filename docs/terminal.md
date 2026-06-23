@@ -45,9 +45,9 @@ This is intentionally a local/developer feature, not a remote multi-user termina
 Add a terminal creation control to the tab bar:
 
 - A small terminal icon button in the tab bar add area.
-- Existing `+` behavior may remain for Live Agent tabs, but terminal creation should be visually distinct, either:
-  - `+` opens a compact menu with "Live Agent" and "Terminal", or
-  - keep `+` for Live Agent and add a terminal icon button beside it.
+- Existing `+` behavior may remain for Agent Chat tabs, but terminal creation should be visually distinct, either:
+  - `+` opens a compact menu with "Agent Chat" and "Terminal", or
+  - keep `+` for Agent Chat and add a terminal icon button beside it.
 
 Recommended first pass: add a terminal icon button with tooltip "New terminal".
 
@@ -56,7 +56,7 @@ Recommended first pass: add a terminal icon button with tooltip "New terminal".
 Terminal tabs appear alongside existing right-pane tabs:
 
 ```text
- Tickets | Workers | Files | Commits | Stats | Live Agent | Terminal | Terminal 2
+ Tickets | Workers | Files | Commits | Stats | Agent Chat | Terminal | Terminal 2
 ```
 
 Each terminal tab:

@@ -301,7 +301,7 @@ def _remember_ai_selection(app, agent, model):
 
 
 def _harden_live_agent_argv(provider, argv):
-    """Apply Live Agent safety hardening for provider-specific runs."""
+    """Apply Agent Chat safety hardening for provider-specific runs."""
     return harden_agent_argv(provider, argv, trust_mode=TRUST_MODE_UNTRUSTED, chat=True)
 
 
@@ -3360,7 +3360,7 @@ def register_events(socketio, app):
         _evict_stale_chat_sessions()
         if not _chat_tabs.get(ws_id):
             default_session = f"chat-default-{ws_id}"
-            _upsert_chat_tab(ws_id, default_session, label="Live Agent", tab_id=default_session)
+            _upsert_chat_tab(ws_id, default_session, label="Agent Chat", tab_id=default_session)
         _emit_chat_tabs(ws_id, sid=request.sid)
 
     @socketio.on("chat:tab:open")
@@ -3376,7 +3376,7 @@ def register_events(socketio, app):
         _upsert_chat_tab(
             ws_id,
             session_id,
-            label=(data or {}).get("label") or "Live Agent",
+            label=(data or {}).get("label") or "Agent Chat",
             tab_id=(data or {}).get("id"),
         )
         _emit_chat_tabs(ws_id)
@@ -3393,7 +3393,7 @@ def register_events(socketio, app):
         _remove_chat_tab(ws_id, session_id)
         if not _chat_tabs.get(ws_id):
             default_session = f"chat-default-{ws_id}"
-            _upsert_chat_tab(ws_id, default_session, label="Live Agent", tab_id=default_session)
+            _upsert_chat_tab(ws_id, default_session, label="Agent Chat", tab_id=default_session)
         _emit_chat_tabs(ws_id)
 
     # --- Chat events ---
@@ -3427,7 +3427,7 @@ def register_events(socketio, app):
         session_id = str(session_id or "").strip()
         if not ws_id or not session_id:
             return False
-        safe_label = str(label or "Live Agent").strip() or "Live Agent"
+        safe_label = str(label or "Agent Chat").strip() or "Agent Chat"
         safe_id = str(tab_id or session_id).strip() or session_id
         now = time.time()
         with _chat_lock:
@@ -3841,7 +3841,7 @@ def register_events(socketio, app):
         added = _upsert_chat_tab(
             ws_id,
             session_id,
-            label=(data or {}).get("label") or "Live Agent",
+            label=(data or {}).get("label") or "Agent Chat",
             tab_id=(data or {}).get("id") or session_id,
         )
         if added:

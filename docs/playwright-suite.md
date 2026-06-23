@@ -300,7 +300,7 @@ Tests:
   present, and Socket.IO connects.
 - Verify the default Tickets tab renders Inbox/Review/Done or configured
   columns.
-- Switch through Tickets, Workers, Files, Stats, Commits, and Live Agent tabs.
+- Switch through Tickets, Workers, Files, Stats, Commits, and Agent Chat tabs.
 - Reload the page and verify state rehydrates.
 - Open the app in a second browser context and verify both clients receive
   `state:init`.
@@ -617,7 +617,7 @@ Tests:
 - Verify terminal tab is scoped to active workspace.
 - Verify unauthenticated users cannot open terminal when auth is enabled.
 
-### 18. Live Agent Chat
+### 18. Agent Chat
 
 Purpose: cover chat UI without real provider services.
 
@@ -625,7 +625,7 @@ Use fake provider backends or mocked Socket.IO responses.
 
 Tests:
 
-- Open Live Agent tab.
+- Open Agent Chat tab.
 - Select provider/model.
 - Send message and stream response.
 - Stop generation.
@@ -763,7 +763,7 @@ Candidate snapshot views:
 - Worker config modal for agent, shell, service, notification, marker.
 - Files tab text editor and markdown preview.
 - Terminal tab.
-- Live Agent tab.
+- Agent Chat tab.
 - Stats tab.
 - Commit diff modal.
 
@@ -869,7 +869,7 @@ Deliverables:
 
 - Files tab suite.
 - Terminal suite.
-- Live Agent suite with fake backend.
+- Agent Chat suite with fake backend.
 - Commits and Stats suite.
 - Teams and Profiles suite.
 - Main-app multi-workspace suite.

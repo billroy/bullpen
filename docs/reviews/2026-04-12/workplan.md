@@ -404,7 +404,7 @@ Source: 11-data-privacy-compliance.md — "LOW — Chat session history not TTL-
 - Files: `server/events.py` (chat session state, `_chat_sessions` dict)
 - Changes: Add a background cleanup that removes entries from `_chat_sessions` that have been idle for more than 1 hour (configurable). Store the last-activity timestamp alongside each session.
 - Done when: A chat session that has had no activity for 1 hour is removed from `_chat_sessions`; the memory it occupied is freed. Verified via a test that advances a mock clock.
-- Commit: `data: add TTL-based expiry for inactive live agent chat sessions`
+- Commit: `data: add TTL-based expiry for inactive agent chat sessions`
 
 ---
 

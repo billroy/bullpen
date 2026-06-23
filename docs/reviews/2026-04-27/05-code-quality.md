@@ -35,7 +35,7 @@ Type annotations are present in 40 locations across only 3 files (`mcp_tools.py`
 
 ### HIGH — `workers.py` and `events.py` have grown past maintainable single-file size
 
-`workers.py` is 2,872 lines with 95 function definitions. It conflates worker state management, subprocess lifecycle, retry scheduling, shell worker execution, auto-commit/PR logic, MCP output streaming, and watch-column management. `events.py` is 1,734 lines with 76 functions covering all SocketIO event handlers, live agent streaming, chat hardening, and worker group operations.
+`workers.py` is 2,872 lines with 95 function definitions. It conflates worker state management, subprocess lifecycle, retry scheduling, shell worker execution, auto-commit/PR logic, MCP output streaming, and watch-column management. `events.py` is 1,734 lines with 76 functions covering all SocketIO event handlers, Agent Chat streaming, chat hardening, and worker group operations.
 
 Both files are readable in isolation — the functions are well-named and documented — but a new contributor trying to understand one subsystem (e.g., retry backoff) must navigate the entire file to find the relevant cluster of functions. There are no clear internal section boundaries beyond comments.
 

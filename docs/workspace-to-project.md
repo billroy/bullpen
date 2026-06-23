@@ -4,7 +4,7 @@
 
 Bullpen has been gradually migrating the internal concept "workspace" to "project". The migration is partial: the codebase already exposes `project:join`, `project_menu`, `test_frontend_project_name_visibility.py`, and `docs/cross-project-fixup.md`, but ~1,400 occurrences of "workspace" (case-insensitive) remain across 114 files. This document is the remediation plan for the cleanup pass.
 
-`docs/cross-project-fixup.md` contains the prior migration context (72 occurrences) — it documents multi-project isolation fixes in the Live Agent subsystem and uses `workspaceId` as the JSON payload key. Any rename of that key is a wire-format change affecting the Vue frontend, the Socket.IO contract, and the MCP stdio server.
+`docs/cross-project-fixup.md` contains the prior migration context (72 occurrences) — it documents multi-project isolation fixes in the Agent Chat subsystem and uses `workspaceId` as the JSON payload key. Any rename of that key is a wire-format change affecting the Vue frontend, the Socket.IO contract, and the MCP stdio server.
 
 ## 1. Code symbols (rename)
 

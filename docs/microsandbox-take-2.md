@@ -21,7 +21,7 @@ This specification covers:
 - install-time TUI-driven selection of provider and git setup
 - authentication during initial sandbox installation
 - verification using the same noninteractive paths that Bullpen later uses for
-  Live Agent and workers
+  Agent Chat and workers
 - persistent sandbox state needed across sandbox replacement
 
 ## Product Invariant
@@ -212,7 +212,7 @@ Required behavior:
 
 If a setup or verification step fails, installation fails with item-specific
 output and a retry command. The sandbox may still exist, but it is not treated
-as ready for Bullpen Live Agent or workers until the full installer is rerun
+as ready for Bullpen Agent Chat or workers until the full installer is rerun
 successfully from the start. This phase does not include installer resume
 logic.
 
@@ -396,15 +396,15 @@ This disables nested Codex sandboxing inside the Microsandbox VM.
 
 Bullpen launches git operations inside Microsandbox as the sandbox user.
 
-## Worker and Live Agent Behavior
+## Worker and Agent Chat Behavior
 
-Workers and Live Agent use the provider runtimes that were selected,
+Workers and Agent Chat use the provider runtimes that were selected,
 authenticated, and verified during installation.
 
 If a provider later becomes unauthenticated or otherwise unusable, Bullpen
 surfaces the provider's output in the existing places users already look:
 
-- Live Agent output
+- Agent Chat output
 - worker output
 - worker log/history output
 
@@ -523,7 +523,7 @@ Codex in Microsandbox mode.
 ### Claude Runtime
 
 1. Complete initial installation.
-2. Send a Claude Live Agent message.
+2. Send a Claude Agent Chat message.
 3. Run a Claude worker.
 4. Replace the sandbox while preserving the durable home.
 5. Confirm that Claude still runs without requiring a new login when persisted
@@ -532,7 +532,7 @@ Codex in Microsandbox mode.
 ### Codex Runtime
 
 1. Complete initial installation.
-2. Run a Codex Live Agent session or Codex worker.
+2. Run a Codex Agent Chat session or Codex worker.
 3. Confirm that Codex runs inside Microsandbox with
    `BULLPEN_CODEX_SANDBOX=none`.
 4. Replace the sandbox while preserving the durable home.

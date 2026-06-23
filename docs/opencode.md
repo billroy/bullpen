@@ -6,7 +6,7 @@ Add OpenCode as a first-class Bullpen AI provider everywhere Claude, Codex, and
 Gemini are currently supported:
 
 - AI workers and queued ticket execution
-- Live Agent Chat
+- Agent Chat
 - worker/provider configuration UI
 - provider colors and usage reporting
 - installation, credential, Docker, and Microsandbox setup
@@ -24,7 +24,7 @@ lifecycle behavior they get from the existing AI providers.
 - Existing adapter contract in `server/agents/base.py`
 - Current provider registry in `server/agents/__init__.py`
 - Current model and color definitions in `static/utils.js`
-- Current worker config and Live Agent provider selectors
+- Current worker config and Agent Chat provider selectors
 - Current provider-color config validation in `server/validation.py`
 - Existing deeper draft in `docs/opencode-proposal.md`
 - OpenCode docs as of June 12, 2026:
@@ -106,7 +106,7 @@ lifecycle behavior they get from the existing AI providers.
   128 characters and cover it with validation tests.
 - Add `opencode` to every server-side and frontend provider enumeration, not
   only the visible worker dropdown. This includes worker field validation,
-  provider color validation, worker normalization/default handling, Live Agent
+  provider color validation, worker normalization/default handling, Agent Chat
   provider lists, and setup/manager allowlists.
 
 ### 4. Model selection
@@ -242,9 +242,9 @@ lifecycle behavior they get from the existing AI providers.
 - If token usage is unavailable, Bullpen must still record provider/model and
   task timing without fabricating token counts.
 
-### 10. Live Agent Chat
+### 10. Agent Chat
 
-- The Live Agent provider list must include OpenCode.
+- The Agent Chat provider list must include OpenCode.
 - A chat tab using OpenCode must support:
   - provider/model selection
   - custom model entry
@@ -252,8 +252,8 @@ lifecycle behavior they get from the existing AI providers.
   - stop/cancel
   - conversation logging to tickets
 - Session semantics need an implementation choice:
-  - MVP can run each Live Agent turn as a fresh `opencode run` with assembled
-    conversation context if that matches current Live Agent architecture.
+  - MVP can run each Agent Chat turn as a fresh `opencode run` with assembled
+    conversation context if that matches current Agent Chat architecture.
   - A later enhancement can use `--continue`, `--session`, or `opencode serve`
     if that materially improves continuity or startup cost.
 - The UI must not imply persistent OpenCode session reuse unless it is actually
@@ -317,7 +317,7 @@ lifecycle behavior they get from the existing AI providers.
 - Validation tests for longer `provider/model` strings.
 - Frontend/static tests for:
   - worker config provider option
-  - Live Agent provider option
+  - Agent Chat provider option
   - model options/custom model behavior
   - provider color defaults/menu rows
 - Worker lifecycle tests with a fake OpenCode executable.
@@ -327,7 +327,7 @@ lifecycle behavior they get from the existing AI providers.
   - assign simple ticket
   - observe focus streaming
   - verify ticket completion/history/usage
-  - run one Live Agent OpenCode chat
+  - run one Agent Chat OpenCode chat
   - run in Docker or Microsandbox if included in the release scope
 
 ## Non-goals for the first cut
@@ -360,7 +360,7 @@ Phase status:
 | 2. Model catalog backend API | Complete | Catalog API tests passed |
 | 3. Worker configuration UI | Complete | Catalog-backed inline picker added; static and syntax checks passed |
 | 4. Worker lifecycle integration and smoke test | Complete | Fake CLI lifecycle smoke passed |
-| 5. Live Agent Chat support | Complete | Fake CLI chat and catalog picker tests passed |
+| 5. Agent Chat support | Complete | Fake CLI chat and catalog picker tests passed |
 | 6. Setup, manager, Docker, and Microsandbox | Complete | Setup/deploy wiring tests passed |
 | 7. Hardening, docs, and release readiness | Complete | Focused release-readiness suite passed |
 
@@ -405,7 +405,7 @@ Work:
     permission flags can be cleanly modified after `build_argv()`
   - fallback: make `OpenCodeAdapter.build_argv()` trust-aware only if the
     shared adapter contract is extended deliberately
-- Decide the first Live Agent session strategy:
+- Decide the first Agent Chat session strategy:
   - default to fresh `opencode run` turns using Bullpen's assembled chat prompt
   - defer `--continue`, `--session`, or `opencode serve` unless the spike shows
     they are necessary
@@ -425,7 +425,7 @@ Phase-end checkpoint:
 - Completed with OpenCode `1.17.3` at `/Users/bill/.opencode/bin/opencode`.
 - Contract notes and sanitized fixtures were added.
 - Prompt transport, text/error JSON shapes, model catalog shape, MCP config
-  injection approach, trust-mode strategy, and Live Agent session strategy are
+  injection approach, trust-mode strategy, and Agent Chat session strategy are
   pinned down.
 - Tool-call event shape remains a manual follow-up because the automated probe
   would require an external model to run local shell commands with
@@ -680,7 +680,7 @@ Phase-end checkpoint:
   - `pytest tests/test_workers.py::TestStartWorker::test_opencode_worker_lifecycle_with_fake_cli -q`
   - `pytest tests/test_workers.py tests/test_agents.py tests/test_usage.py tests/test_validation.py tests/test_prompt_hardening.py tests/test_opencode_models.py -q`
     (`286 passed`)
-- Worker support is ready to proceed to Live Agent planning/implementation
+- Worker support is ready to proceed to Agent Chat planning/implementation
   behind the normal OpenCode UI. A real installed-model Bullpen worker smoke is
   still listed for Phase 7/manual release checks because it depends on live
   OpenCode auth/provider state.
@@ -689,7 +689,7 @@ Commit:
 
 - Suggested message: `test(opencode): verify worker lifecycle`
 
-### Phase 5 - Live Agent Chat support
+### Phase 5 - Agent Chat support
 
 Goal: add OpenCode to direct chat after the worker path is stable.
 
@@ -702,7 +702,7 @@ Files likely touched:
 
 Work:
 
-- Add OpenCode to Live Agent provider options.
+- Add OpenCode to Agent Chat provider options.
 - Reuse the OpenCode catalog picker or a compact variant of it for chat model
   selection.
 - Reuse adapter stream parsing and output parsing in chat.
@@ -717,7 +717,7 @@ Verification:
 - chat provider/model tests
 - fake streamed OpenCode chat output test
 - manual browser check:
-  - open Live Agent
+  - open Agent Chat
   - choose OpenCode
   - send prompt
   - stop a run
@@ -725,7 +725,7 @@ Verification:
 
 Phase-end checkpoint:
 
-- Completed with a compact OpenCode-only catalog picker in Live Agent Chat.
+- Completed with a compact OpenCode-only catalog picker in Agent Chat.
   Claude, Codex, and Gemini remain on the shared static `MODEL_OPTIONS`
   selector.
 - The chat picker includes provider filtering, model search, catalog refresh,
@@ -746,14 +746,14 @@ Phase-end checkpoint:
   - `node --check static/components/LiveAgentChatTab.js`
   - `pytest tests/test_frontend_worker_models.py tests/test_events.py::TestChatEvents tests/test_workers.py::TestStartWorker::test_opencode_worker_lifecycle_with_fake_cli tests/test_agents.py tests/test_usage.py tests/test_opencode_models.py tests/test_prompt_hardening.py -q`
     (`124 passed`)
-- Browser/manual Live Agent smoke still needs a signed-in app session and is
+- Browser/manual Agent Chat smoke still needs a signed-in app session and is
   retained for Phase 7/manual release checks.
 - OpenCode chat should ship in the same release note as worker support; both
   paths now have fake-CLI lifecycle coverage.
 
 Commit:
 
-- Suggested message: `feat(opencode): support live agent chat`
+- Suggested message: `feat(opencode): support agent chat`
 
 ### Phase 6 - Setup, manager, Docker, and Microsandbox
 
@@ -864,7 +864,7 @@ Work:
 Verification:
 
 - `pytest` target set agreed at Phase 7 start
-- browser check for worker config and Live Agent
+- browser check for worker config and Agent Chat
 - manual smoke checklist results recorded
 
 Phase-end checkpoint:
@@ -875,7 +875,7 @@ Phase-end checkpoint:
     adapter tests.
   - Worker execution is covered by a fake OpenCode CLI lifecycle test through
     the normal queue path.
-  - Live Agent Chat is covered by a fake OpenCode CLI socket-event test through
+  - Agent Chat is covered by a fake OpenCode CLI socket-event test through
     the normal chat path.
   - Worker and chat model picker UI are covered by static regression tests and
     syntax checks.

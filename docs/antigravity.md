@@ -8,7 +8,7 @@ cutover, not a compatibility migration:
 
 - The Bullpen UI stops offering `gemini`.
 - Deploy scripts stop installing and authenticating `gemini`.
-- New workers and live-agent chats use `antigravity`.
+- New workers and Agent Chat sessions use `antigravity`.
 - The old Gemini adapter is removed from the active provider registry.
 - Stale `agent: gemini` state is rejected cleanly. It is not translated to
   Antigravity and not kept alive through compatibility code.
@@ -68,7 +68,7 @@ Gemini is currently a first-class AI provider alongside `claude`, `codex`, and
 The current implementation is [server/agents/gemini_adapter.py](../server/agents/gemini_adapter.py).
 It implements the shared `AgentAdapter` interface and is registered in
 [server/agents/__init__.py](../server/agents/__init__.py) under `"gemini"`.
-Workers and live agents both resolve adapters through `get_adapter(name)`.
+Workers and Agent Chat sessions both resolve adapters through `get_adapter(name)`.
 
 The Gemini adapter currently:
 
@@ -108,7 +108,7 @@ Bullpen-side references that must change if Antigravity passes Phase 0:
   [docker-compose.yml](../docker-compose.yml), and
   [deploy-sandbox.py](../deploy-sandbox.py).
 - Tests covering agents, workers, usage, validation, model aliases, model catalog
-  validation, frontend provider/model lists, live-agent tabs, events, manager,
+  validation, frontend provider/model lists, Agent Chat tabs, events, manager,
   deploy scripts, and Dockerfile content.
 
 Existing worker and live-chat paths already avoid process crashes for unknown
@@ -162,7 +162,7 @@ Model alias behavior:
 ### MCP and Ticket Safety
 
 Bullpen ticket writes are live application state. Antigravity is viable only if
-it can call Bullpen's server-backed MCP tools in worker and live-agent runs.
+it can call Bullpen's server-backed MCP tools in worker and Agent Chat runs.
 Agents must not be asked to edit `.bullpen/tasks` files directly.
 
 The current Gemini path uses a temporary settings file and
@@ -253,7 +253,7 @@ Observed:
   smoke. A temporary Antigravity worker completed disposable ticket
   `agy-worker-smoke-20260615-113424-16nS`, and the server-backed Bullpen ticket
   CLI listed that ticket in `done` status.
-- The user then ran the live-agent chat smoke successfully. `chat:send` with
+- The user then ran the Agent Chat smoke successfully. `chat:send` with
   provider `antigravity` returned live chat output and completed with
   `chat:done` while using the Bullpen MCP read path.
 
@@ -287,7 +287,7 @@ Current readiness decision:
 
 - **Local runtime ready.** The minimum viable local contract is proven for
   authenticated `agy --print`, Bullpen MCP read/write access, the Bullpen
-  worker lifecycle, and live-agent chat.
+  worker lifecycle, and Agent Chat.
 - **Config isolation ready for local runtime.** Bullpen now passes
   `--gemini_dir <absolute path>` to every managed `agy` invocation. If
   `BULLPEN_ANTIGRAVITY_GEMINI_DIR` is set, Bullpen uses that path. Otherwise,
@@ -518,7 +518,7 @@ Update user-facing provider metadata:
 - Replace labels with `Antigravity`. Implemented.
 - Replace frontend model options with Phase 0-confirmed Antigravity models.
   Implemented from observed `agy models` output.
-- Replace live-agent provider tests so they assert Antigravity is present and
+- Replace Agent Chat provider tests so they assert Antigravity is present and
   Gemini is absent.
 - Keep custom model entry behavior so users can type a newly released
   Antigravity model before Bullpen's static list is updated.
@@ -647,7 +647,7 @@ Manual checks on an authenticated `agy` install:
 - Live-agent chat with Antigravity returns text and can use Bullpen MCP.
   Verified by user-run live-chat smoke.
 - Stale Gemini worker blocks cleanly without spawning a subprocess.
-- Stale live-agent request with `provider: gemini` returns a clear error.
+- Stale Agent Chat request with `provider: gemini` returns a clear error.
 - Focus view shows useful streaming or buffered output.
 - Auth failure, missing binary, model-not-found, quota/capacity, permission, and
   timeout errors are user-readable.

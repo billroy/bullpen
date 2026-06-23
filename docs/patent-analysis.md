@@ -110,7 +110,7 @@ Bullpen unifies manual, scheduled, and queue-triggered work by converting autono
 
 Useful as dependent claim material. On its own, it may be vulnerable to "workflow job record" prior art.
 
-### 4. Sparse spreadsheet-style worker plane for live agent orchestration
+### 4. Sparse spreadsheet-style worker plane for Agent Chat orchestration
 
 This is real product differentiation, but probably weaker utility-claim territory unless tied to execution semantics.
 

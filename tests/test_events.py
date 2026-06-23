@@ -2591,7 +2591,7 @@ print(json.dumps({"type": "text", "part": {"text": "workspace ok"}}), flush=True
                 "workspaceId": ws_id,
                 "id": session_id,
                 "sessionId": session_id,
-                "label": "Live Agent",
+                "label": "Agent Chat",
             })
 
             deadline = time.time() + 3.0
@@ -2673,7 +2673,7 @@ print(json.dumps({"type": "text", "part": {"text": "workspace ok"}}), flush=True
                     "workspaceId": ws_b,
                     "id": "ws-b-session",
                     "sessionId": "ws-b-session",
-                    "label": "Live Agent",
+                    "label": "Agent Chat",
                 })
                 c1.get_received()
 

@@ -1,20 +1,20 @@
 # Cross-Project Isolation Fixup
 
 **Status:** Specification — ready for implementation planning  
-**Trigger:** Live Agent MCP bug — opening an agent in Project B returns Project A's tickets  
+**Trigger:** Agent Chat MCP bug — opening an agent in Project B returns Project A's tickets  
 **Scope:** All multi-project isolation failures identified in the current codebase
 
 ---
 
 ## Root Cause Summary
 
-The Live Agent chat subsystem was built without workspace context.  Every other
+The Agent Chat subsystem was built without workspace context.  Every other
 Socket.IO event in the app wraps its payload with `_wsData()` (which injects
 `workspaceId: activeWorkspaceId.value`), but the three chat events — `chat:send`,
 `chat:stop`, `chat:clear` — were never wired to that helper.
 
 On the backend, `_resolve(data)` returns the `startup_workspace_id` when
-`workspaceId` is absent.  The result: every Live Agent invocation, regardless of
+`workspaceId` is absent.  The result: every Agent Chat invocation, regardless of
 which project is active in the browser, targets the first project that was open
 when the server started.
 
@@ -110,7 +110,7 @@ above.
 The following design questions from the original draft have been resolved:
 
 **1. Tab lifecycle on project switch**  
-Decision: **Live Agent tabs are bound to the project they were created in.**
+Decision: **Agent Chat tabs are bound to the project they were created in.**
 A tab opened in Project A continues targeting Project A even after the user
 switches to Project B.  The tab label should display the project name to make
 the binding visible.  Switching projects does not close existing agent tabs.
@@ -131,7 +131,7 @@ MCP concurrently; this must continue to work correctly.
 
 ## Prioritized Work Items
 
-### P0 — Blocks all Live Agent multi-project use (fix together, one PR)
+### P0 — Blocks all Agent Chat multi-project use (fix together, one PR)
 
 **P0-A: Add `workspaceId` to all outgoing chat events (frontend)**  
 File: `static/components/LiveAgentChatTab.js`
@@ -176,7 +176,7 @@ of attempting a `to=None` emit.
 
 ### P1 — Correctness issues that break expected behavior
 
-**P1-A: Live Agent tabs not scoped to a project (frontend)**  
+**P1-A: Agent Chat tabs not scoped to a project (frontend)**  
 File: `static/app.js`, `addLiveAgentTab()` / `chatTabs`  
 Currently `chatTabs` entries have `{id, label, sessionId}` — no `workspaceId`.  
 Fix: add `workspaceId` and the project display name as described in P0-A.
@@ -268,7 +268,7 @@ the log warning is a low-risk safety net in the interim.)
 
 ## Testing Requirements
 
-The existing test suite has no coverage of the chat/Live Agent subsystem.  The
+The existing test suite has no coverage of the Agent Chat subsystem.  The
 following tests must land with or before P0:
 
 **Required (block P0 landing):**
@@ -311,7 +311,7 @@ following tests must land with or before P0:
 |-------|----------|-----------------|----------------------------------------------------------|
 | P0-A  | Critical | Frontend        | `chat:send/stop/clear` missing `workspaceId`             |
 | P0-B  | Critical | Backend         | `chat:output/done/error` broadcast globally, not to room |
-| P1-A  | High     | Frontend        | Live Agent tabs not workspace-scoped                     |
+| P1-A  | High     | Frontend        | Agent Chat tabs not workspace-scoped                     |
 | P1-B  | High     | Frontend        | Worker focus tabs not filtered on project switch         |
 | P1-C  | High     | Backend (MCP)   | MCP workspace detection silent fallback                  |
 | P2-A  | Medium   | Backend (MCP)   | No server-side cross-workspace authorization on writes   |

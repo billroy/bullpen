@@ -3,7 +3,7 @@
 
 **Reviewer role:** Principal architect, potential acquirer perspective
 **Prior review:** 2026-04-09 (baseline)
-**Scope:** Updated assessment reflecting ~391 commits of development since the April 9 review. New architectural elements include: MCP auth token system, Stats tab with token/time accounting, worker import/export, cross-workspace worker transfer, Marker worker type, live agent chat, git worktree isolation, and Docker deployment improvements.
+**Scope:** Updated assessment reflecting ~391 commits of development since the April 9 review. New architectural elements include: MCP auth token system, Stats tab with token/time accounting, worker import/export, cross-workspace worker transfer, Marker worker type, agent chat, git worktree isolation, and Docker deployment improvements.
 
 ---
 
@@ -82,9 +82,9 @@ The `create_app` function has grown to handle workspace initialization, MCP toke
 
 All Socket.IO event handlers live here. The pattern is consistent: receive event, validate payload size, validate fields (via `validation.py`), acquire `write_lock`, read layout, mutate, write layout, emit updates to the workspace room. Handlers delegate complex operations to `workers.py`, `tasks.py`, and `transfer.py`.
 
-Notable: the live agent chat handlers (`handle_chat_send`, `handle_chat_stop`) run agent subprocesses with `TRUST_MODE_UNTRUSTED` hardening applied unconditionally — this is the correct security default for a chat-originated execution path.
+Notable: the agent chat handlers (`handle_chat_send`, `handle_chat_stop`) run agent subprocesses with `TRUST_MODE_UNTRUSTED` hardening applied unconditionally — this is the correct security default for a chat-originated execution path.
 
-**Assessment:** The file has grown large as features were added (worker transfer, group paste, live agent, layout import). The structure is consistent and testable. The main risk is edit locality: a change to one event handler risks accidentally breaking adjacent handlers in the same large file.
+**Assessment:** The file has grown large as features were added (worker transfer, group paste, Agent Chat, layout import). The structure is consistent and testable. The main risk is edit locality: a change to one event handler risks accidentally breaking adjacent handlers in the same large file.
 
 ### server/workers.py (2,872 lines) — Worker State Machine
 
@@ -343,7 +343,7 @@ This was ARCH-03 in the April review (elevated to HIGH above for the output log 
 
 **Zip security in import (new since April):** The archive import in `app.py` checks compression ratio (≤100x), file count (≤1000), total size (≤200MB), path traversal (via `ensure_within`), and nested archive presence. This is correct defensive depth for an import feature.
 
-**Prompt injection hardening (improvement since April):** The `prompt_hardening.py` module and its `TRUST_MODE_UNTRUSTED` / `TRUST_MODE_TRUSTED` system correctly separates untrusted workspace content from trusted prompt instructions using marker blocks. The live agent chat path applies untrusted mode unconditionally, which is the correct default.
+**Prompt injection hardening (improvement since April):** The `prompt_hardening.py` module and its `TRUST_MODE_UNTRUSTED` / `TRUST_MODE_TRUSTED` system correctly separates untrusted workspace content from trusted prompt instructions using marker blocks. The agent chat path applies untrusted mode unconditionally, which is the correct default.
 
 **Agent adapter abstraction remains stable:** The `AgentAdapter` ABC is unchanged and continues to provide the correct extensibility boundary. The addition of Gemini support without touching the orchestration layer validates the design.
 

@@ -3,7 +3,7 @@
 Bullpen provider dropdowns are intentionally conservative, but provider model
 slugs and CLI aliases still drift. Before changing a default catalog, run the
 host-side validator through the same adapter path Bullpen uses for workers and
-Live Agent chat.
+Agent Chat.
 
 ## Command
 

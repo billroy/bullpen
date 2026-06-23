@@ -174,7 +174,7 @@ Bullpen now has several terminal-adjacent capabilities even without a true
 interactive PTY:
 
 - Worker Focus Mode streams agent output.
-- Live Agent Chat starts provider CLI sessions.
+- Agent Chat starts provider CLI sessions.
 - AI workers launch Claude, Codex, and Gemini subprocesses.
 - Shell workers run configured commands against tickets.
 - Service workers run long-lived workspace commands and health checks.

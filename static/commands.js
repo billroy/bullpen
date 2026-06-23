@@ -207,8 +207,8 @@
       }),
       command({
         id: 'tab.chat',
-        title: 'Open Live Agent Chat',
-        subtitle: 'Switch to or create a live agent chat tab',
+        title: 'Open Agent Chat',
+        subtitle: 'Switch to or create an agent chat tab',
         group: 'Chat',
         aliases: ['chat', 'live', 'open chat'],
         keywords: ['tab', 'navigation'],
@@ -217,8 +217,8 @@
       }),
       command({
         id: 'chat.new',
-        title: 'New Live Agent Chat',
-        subtitle: 'Create a new live agent chat tab',
+        title: 'New Agent Chat',
+        subtitle: 'Create a new agent chat tab',
         group: 'Chat',
         aliases: ['new chat', 'add chat'],
         available: requireWorkspace,

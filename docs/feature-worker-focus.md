@@ -1,4 +1,4 @@
-# Feature: Live Agent Output & Worker Focus Mode
+# Feature: Agent Chat Output & Worker Focus Mode
 
 Status: **Planning**
 

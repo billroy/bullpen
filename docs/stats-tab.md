@@ -4,7 +4,7 @@
 
 ## Goal
 
-Add a project-level **Stats** tab to Bullpen that helps a user understand the current workspace at a glance: live ticket load, archive flow, token cost, and recent trend. The tab should fit between **Files** and **Live Agent** in the main tab strip.
+Add a project-level **Stats** tab to Bullpen that helps a user understand the current workspace at a glance: live ticket load, archive flow, token cost, and recent trend. The tab should fit between **Files** and **Agent Chat** in the main tab strip.
 
 The first version should be useful without adding a database or analytics subsystem. It can derive almost everything from the existing live and archived ticket objects already available through the Socket.IO task list paths.
 
@@ -16,7 +16,7 @@ Current tab order:
 2. Workers
 3. Files
 4. Commits
-5. Live Agent tabs
+5. Agent Chat tabs
 6. Worker focus tabs
 
 Recommended order:
@@ -26,10 +26,10 @@ Recommended order:
 3. Files
 4. Stats
 5. Commits
-6. Live Agent tabs
+6. Agent Chat tabs
 7. Worker focus tabs
 
-This puts Stats near Files because both are project inspection surfaces. It also keeps Live Agent tabs grouped after the fixed project tabs.
+This puts Stats near Files because both are project inspection surfaces. It also keeps Agent Chat tabs grouped after the fixed project tabs.
 
 Use the Lucide `chart-no-axes-column` icon if available, falling back to `bar-chart-3` or `activity`.
 
@@ -221,7 +221,7 @@ If adding `archived_at`, do it through the existing server-backed archive functi
 
 Recommended tests:
 
-- Frontend regression test that `Stats` appears after `Files` and before `Commits`/Live Agent tabs.
+- Frontend regression test that `Stats` appears after `Files` and before `Commits`/Agent Chat tabs.
 - Frontend text test that `StatsTab.js` accepts live and archived ticket props and emits `select-task`.
 - Unit-style test for grouping logic if helper functions are extracted.
 - Socket/event test is not required for v1 if reusing existing `task:list`.

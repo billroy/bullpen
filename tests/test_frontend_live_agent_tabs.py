@@ -1,4 +1,4 @@
-"""Regression checks for multiple Live Agent tabs."""
+"""Regression checks for multiple Agent Chat tabs."""
 
 from pathlib import Path
 
@@ -17,6 +17,8 @@ def test_live_agent_tabs_are_dynamic_in_app_shell():
     assert "function addLiveAgentTab({ activate = true } = {})" in text
     assert "function closeLiveAgentTab(tabId)" in text
     assert "function setActiveTab(tabId)" in text
+    assert "`Agent Chat${suffix} (${projectName})`" in text
+    assert "`Agent Chat${suffix}`" in text
     assert "class=\"tab-btn tab-btn-add\"" in text
     assert "v-for=\"ct in chatTabs\"" in text
     assert ":session-id=\"ct.sessionId\"" in text

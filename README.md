@@ -19,8 +19,8 @@ An AI agent team manager. Configure workers on a grid, create task tickets, assi
 ### Commits
 ![Commits](./screenshots/commit-tab.png)
 
-### Live Agent
-![Live Agent](./screenshots/live-agent-tab.png)
+### Agent Chat
+![Agent Chat](./screenshots/live-agent-tab.png)
 
 ## Quick Start
 
@@ -84,8 +84,8 @@ For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` s
 - **Shell / Script workers** -- run a configured shell command against a ticket, pass ticket data as JSON/env/argv, capture output, and route or update the ticket from script output
 - **Service workers** -- supervise long-running workspace processes, stream logs, run health checks, and accept ticket-triggered start/restart orders
 - **Marker workers** -- place no-op marker cards on the worker grid for labels, navigation targets, and pass-through routing
-- **Worker Focus Mode** -- click a running worker to see live agent output streamed in real time
-- **Live Agent Chat** -- interactive chat tabs for Claude, Codex, Gemini, and OpenCode with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
+- **Worker Focus Mode** -- click a running worker to see worker output streamed in real time
+- **Agent Chat** -- interactive chat tabs for Claude, Codex, Gemini, and OpenCode with provider/model selectors, streaming responses, add/close chat sessions, stop button, and automatic chat logging to tickets
 - **Web terminal tabs** -- open one or more PTY-backed terminal tabs rooted in the active workspace directory, with xterm.js rendering, resize support, restart/close controls, and cleanup on browser disconnect
 - **File browser & editor** -- browse workspace files (including `.bullpen/`) with syntax highlighting, markdown preview with source-mode syntax highlighting, image/PDF viewing, HTML sandbox preview, file downloads, and an in-browser editor with find/replace; clicking `.html` files opens them in the default browser
 - **Commits tab** -- browse the git commit log for the workspace with full commit descriptions
@@ -170,11 +170,11 @@ tests/                  # 934 collected pytest tests
 2. **Add workers** to the grid by clicking empty slots and selecting a profile
 3. **Assign tickets** by dragging them from the Inbox onto a worker card, or queue multiple tickets
 4. **Start the worker** -- it assembles a prompt (workspace context + expertise + ticket body), invokes the CLI agent, and streams output in real time
-5. **Monitor progress** -- click a running worker to open the Focus View with live agent output
+5. **Monitor progress** -- click a running worker to open the Focus View with worker output
 6. **On completion**, the worker optionally auto-commits, opens a PR, and routes the ticket based on its disposition (Review, Done, or hand off to another worker)
 7. **On failure**, the worker retries with backoff, then moves the ticket to Blocked
 8. **Scheduled workers** can activate on a timer (specific time or interval) to process queued tickets or create their own ephemeral tickets
-9. **Chat directly** with Claude, Codex, or Gemini via the Live Agent Chat tab, with conversations logged to tickets
+9. **Chat directly** with Claude, Codex, or Gemini via the Agent Chat tab, with conversations logged to tickets
 10. **Open additional chat tabs** as needed to run parallel conversations with separate session histories
 11. **Open terminal tabs** when you need direct shell access in the active workspace without leaving Bullpen
 

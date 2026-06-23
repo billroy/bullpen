@@ -63,7 +63,7 @@ Bullpen supports 22 color themes (dark, light, dracula, nord, gruvbox, etc.). Th
 
 **Files:** `static/components/WorkerFocusView.js`, `static/components/LiveAgentChatTab.js`
 
-Worker output streaming and live agent chat responses are appended to the DOM in real time via SocketIO events. Without `aria-live="polite"` (or `assertive`) regions, screen readers will not announce new content as it arrives. A blind user monitoring an agent run will receive no feedback.
+Worker output streaming and agent chat responses are appended to the DOM in real time via SocketIO events. Without `aria-live="polite"` (or `assertive`) regions, screen readers will not announce new content as it arrives. A blind user monitoring an agent run will receive no feedback.
 
 **Recommendation:** Wrap streaming output containers with `<div aria-live="polite" aria-atomic="false">` so screen readers announce updates incrementally.
 
