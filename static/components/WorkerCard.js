@@ -1354,9 +1354,15 @@ const WorkerCard = {
       }
       const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
         || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
-      if (taskId && this.acceptsTaskDrop) {
-        e.stopPropagation();
-        this.$root.assignTask(taskId, this.slotIndex);
+      try {
+        if (taskId && this.acceptsTaskDrop) {
+          e.stopPropagation();
+          this.$root.assignTask(taskId, this.slotIndex);
+        }
+      } finally {
+        if (window.BULLPEN_TASK_DRAG_ACTIVE) {
+          window.dispatchEvent(new CustomEvent('bullpen:task-drag:end', { detail: { taskId } }));
+        }
       }
     },
     toggleMenu() {

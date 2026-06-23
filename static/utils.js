@@ -1,5 +1,6 @@
 window.BULLPEN_TASK_DND_MIME = 'application/x-bullpen-task-id';
 window.BULLPEN_TASK_DRAG_ACTIVE = false;
+window.BULLPEN_TASK_DRAG_TASK_ID = null;
 
 const MODEL_OPTIONS = {
   antigravity: [

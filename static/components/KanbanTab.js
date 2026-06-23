@@ -541,15 +541,21 @@ const KanbanTab = {
     onDrop(e, colKey) {
       e.preventDefault();
       e.currentTarget.classList.remove('drag-over');
-      if (this.isWorkerColumn(colKey)) return;
       const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
         || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
-      if (!taskId) return;
-      const oldStatus = this.taskStatus(taskId);
-      if (oldStatus === 'in_progress') {
-        if (!confirm('This task has a running agent. Stop the agent and move the task?')) return;
+      try {
+        if (this.isWorkerColumn(colKey)) return;
+        if (!taskId) return;
+        const oldStatus = this.taskStatus(taskId);
+        if (oldStatus === 'in_progress') {
+          if (!confirm('This task has a running agent. Stop the agent and move the task?')) return;
+        }
+        this.$emit('move-task', { id: taskId, status: colKey });
+      } finally {
+        if (window.BULLPEN_TASK_DRAG_ACTIVE) {
+          window.dispatchEvent(new CustomEvent('bullpen:task-drag:end', { detail: { taskId } }));
+        }
       }
-      this.$emit('move-task', { id: taskId, status: colKey });
     },
     onListRowClick(task) {
       if (!task?.id) return;

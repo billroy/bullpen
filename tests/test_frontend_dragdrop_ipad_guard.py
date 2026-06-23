@@ -18,14 +18,16 @@ def test_task_drag_uses_custom_mime_and_plaintext_fallback():
     left_pane = _read("static/components/LeftPane.js")
     assert f"window.BULLPEN_TASK_DND_MIME = '{TASK_DND_MIME}';" in utils
     assert "window.BULLPEN_TASK_DRAG_ACTIVE = false;" in utils
+    assert "window.BULLPEN_TASK_DRAG_TASK_ID = null;" in utils
     assert "window.BULLPEN_TASK_DRAG_ACTIVE = true;" in app
     assert "window.BULLPEN_TASK_DRAG_ACTIVE = false;" in app
+    assert "window.BULLPEN_TASK_DRAG_TASK_ID = draggedTaskId;" in app
     assert "setData(window.BULLPEN_TASK_DND_MIME, this.task.id)" in task_card
-    assert "window.dispatchEvent(new Event('bullpen:task-drag:start'))" in task_card
-    assert "window.dispatchEvent(new Event('bullpen:task-drag:end'))" in task_card
+    assert "new CustomEvent('bullpen:task-drag:start', { detail: { taskId: this.task.id } })" in task_card
+    assert "new CustomEvent('bullpen:task-drag:end', { detail: { taskId: this.task.id } })" in task_card
     assert "setData(window.BULLPEN_TASK_DND_MIME, taskId)" in left_pane
-    assert "window.dispatchEvent(new Event('bullpen:task-drag:start'))" in left_pane
-    assert "window.dispatchEvent(new Event('bullpen:task-drag:end'))" in left_pane
+    assert "new CustomEvent('bullpen:task-drag:start', { detail: { taskId } })" in left_pane
+    assert "new CustomEvent('bullpen:task-drag:end', { detail: { taskId } })" in left_pane
 
 
 def test_drop_targets_prevent_default_and_read_custom_mime():
@@ -45,6 +47,28 @@ def test_drop_targets_prevent_default_and_read_custom_mime():
     assert "e.preventDefault();" in left_pane
     assert "window.BULLPEN_TASK_DRAG_ACTIVE && types.includes('text/plain')" in left_pane
     assert "getData(window.BULLPEN_TASK_DND_MIME)\n        || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '')" in left_pane
+
+
+def test_drop_targets_finish_task_drag_session():
+    kanban = _read("static/components/KanbanTab.js")
+    worker = _read("static/components/WorkerCard.js")
+    left_pane = _read("static/components/LeftPane.js")
+
+    for text in [kanban, worker, left_pane]:
+        assert "if (window.BULLPEN_TASK_DRAG_ACTIVE)" in text
+        assert "new CustomEvent('bullpen:task-drag:end', { detail: { taskId } })" in text
+
+
+def test_dragged_task_server_status_update_cancels_stale_drop():
+    app = _read("static/app.js")
+
+    assert "let draggedTaskId = null;" in app
+    assert "((draggedTaskId && task.id === draggedTaskId) || _sameTaskExceptLiveMetrics(current, task))" in app
+    assert "function _taskActionAllowedAfterDeferredUpdate(taskId)" in app
+    assert "const deferred = _deferredTaskUpdateFor(wsId, taskId);" in app
+    assert "_applyDeferredTaskUpdate(wsId, taskId);" in app
+    assert "if (!_taskActionAllowedAfterDeferredUpdate(taskId)) return false;" in app
+    assert "Ticket changed on the server during drag. Move canceled." in app
 
 
 def test_task_dnd_mime_is_not_redeclared_in_global_component_scripts():

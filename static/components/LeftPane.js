@@ -377,13 +377,14 @@ const LeftPane = {
       this.showEmptyProjectHint = false;
     },
     onDragStart(e, taskId) {
-      window.dispatchEvent(new Event('bullpen:task-drag:start'));
+      window.dispatchEvent(new CustomEvent('bullpen:task-drag:start', { detail: { taskId } }));
       e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, taskId);
       e.dataTransfer.setData('text/plain', taskId);
       e.dataTransfer.effectAllowed = 'move';
     },
-    onDragEnd() {
-      window.dispatchEvent(new Event('bullpen:task-drag:end'));
+    onDragEnd(e) {
+      const taskId = e?.dataTransfer?.getData?.(window.BULLPEN_TASK_DND_MIME) || window.BULLPEN_TASK_DRAG_TASK_ID;
+      window.dispatchEvent(new CustomEvent('bullpen:task-drag:end', { detail: { taskId } }));
     },
     agentColor(agent) {
       return agentColor(agent);
@@ -687,11 +688,17 @@ const LeftPane = {
       e.preventDefault();
       this.rosterDragSlot = null;
       const worker = (this.workerList || []).find(w => w.slot === slot);
-      if (!this.rosterWorkerAcceptsTaskDrop(worker)) return;
       const taskId = e.dataTransfer.getData(window.BULLPEN_TASK_DND_MIME)
         || (window.BULLPEN_TASK_DRAG_ACTIVE ? e.dataTransfer.getData('text/plain') : '');
-      if (taskId) {
-        this.$root.assignTask(taskId, slot);
+      try {
+        if (!this.rosterWorkerAcceptsTaskDrop(worker)) return;
+        if (taskId) {
+          this.$root.assignTask(taskId, slot);
+        }
+      } finally {
+        if (window.BULLPEN_TASK_DRAG_ACTIVE) {
+          window.dispatchEvent(new CustomEvent('bullpen:task-drag:end', { detail: { taskId } }));
+        }
       }
     },
     rosterWorkerAcceptsTaskDrop(worker) {

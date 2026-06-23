@@ -428,6 +428,7 @@ const app = createApp({
     const terminalRefs = {};
     const terminalPendingOutput = {};
     let taskDragActive = false;
+    let draggedTaskId = null;
     const deferredTaskUpdates = new Map();
     let toastId = 0;
 
@@ -454,6 +455,31 @@ const app = createApp({
       else ws.tasks.push(task);
     }
 
+    function _deferredTaskUpdateFor(wsId, taskId) {
+      return deferredTaskUpdates.get(_taskUpdateKey(wsId, taskId)) || null;
+    }
+
+    function _applyDeferredTaskUpdate(wsId, taskId) {
+      const key = _taskUpdateKey(wsId, taskId);
+      const task = deferredTaskUpdates.get(key);
+      if (!task) return null;
+      const ws = _getWs(wsId);
+      _applyTaskUpdateToWorkspace(ws, task);
+      deferredTaskUpdates.delete(key);
+      return task;
+    }
+
+    function _taskActionAllowedAfterDeferredUpdate(taskId) {
+      const wsId = activeWorkspaceId.value;
+      const current = state.tasks.find(t => t.id === taskId);
+      const deferred = _deferredTaskUpdateFor(wsId, taskId);
+      if (!deferred) return true;
+      _applyDeferredTaskUpdate(wsId, taskId);
+      if ((deferred.status || '') === (current?.status || '')) return true;
+      addToast('Ticket changed on the server during drag. Move canceled.', 'error');
+      return false;
+    }
+
     function _flushDeferredTaskUpdates() {
       if (!deferredTaskUpdates.size) return;
       for (const task of deferredTaskUpdates.values()) {
@@ -464,13 +490,19 @@ const app = createApp({
       deferredTaskUpdates.clear();
     }
 
-    window.addEventListener('bullpen:task-drag:start', () => {
+    window.addEventListener('bullpen:task-drag:start', (event) => {
+      draggedTaskId = event?.detail?.taskId || null;
       taskDragActive = true;
       window.BULLPEN_TASK_DRAG_ACTIVE = true;
+      window.BULLPEN_TASK_DRAG_TASK_ID = draggedTaskId;
     });
-    window.addEventListener('bullpen:task-drag:end', () => {
+    window.addEventListener('bullpen:task-drag:end', (event) => {
+      const endingTaskId = event?.detail?.taskId || null;
+      if (endingTaskId && draggedTaskId && endingTaskId !== draggedTaskId) return;
       taskDragActive = false;
+      draggedTaskId = null;
       window.BULLPEN_TASK_DRAG_ACTIVE = false;
+      window.BULLPEN_TASK_DRAG_TASK_ID = null;
       _flushDeferredTaskUpdates();
     });
 
@@ -812,7 +844,11 @@ const app = createApp({
       const wsId = task.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
       const current = ws.tasks.find(t => t.id === task.id);
-      if (taskDragActive && current && _sameTaskExceptLiveMetrics(current, task)) {
+      if (
+        taskDragActive &&
+        current &&
+        ((draggedTaskId && task.id === draggedTaskId) || _sameTaskExceptLiveMetrics(current, task))
+      ) {
         deferredTaskUpdates.set(_taskUpdateKey(wsId, task.id), task);
         return;
       }
@@ -1200,6 +1236,7 @@ const app = createApp({
       });
     }
     function moveTask({ id, status }) {
+      if (!_taskActionAllowedAfterDeferredUpdate(id)) return false;
       return emitSocketAction('task:update', { id, status }, {
         offlineMessage: 'Disconnected from Bullpen server. Ticket move was not saved.',
       });
@@ -1604,7 +1641,11 @@ const app = createApp({
     function saveWorkersConfig({ slots, fields }) { socket.emit('worker:configure_many', _wsData({ slots, fields })); }
 
     // Execution actions
-    function assignTask(taskId, slot) { socket.emit('task:assign', _wsData({ task_id: taskId, slot })); }
+    function assignTask(taskId, slot) {
+      if (!_taskActionAllowedAfterDeferredUpdate(taskId)) return false;
+      socket.emit('task:assign', _wsData({ task_id: taskId, slot }));
+      return true;
+    }
     function _workerAt(slot) {
       return state.layout?.slots?.[slot] || null;
     }

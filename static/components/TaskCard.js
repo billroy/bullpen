@@ -137,13 +137,13 @@ const TaskCard = {
     },
     onDragStart(e) {
       this.closePopup();
-      window.dispatchEvent(new Event('bullpen:task-drag:start'));
+      window.dispatchEvent(new CustomEvent('bullpen:task-drag:start', { detail: { taskId: this.task.id } }));
       e.dataTransfer.setData(window.BULLPEN_TASK_DND_MIME, this.task.id);
       e.dataTransfer.setData('text/plain', this.task.id);
       e.dataTransfer.effectAllowed = 'move';
     },
     onDragEnd() {
-      window.dispatchEvent(new Event('bullpen:task-drag:end'));
+      window.dispatchEvent(new CustomEvent('bullpen:task-drag:end', { detail: { taskId: this.task.id } }));
     }
   }
 };
