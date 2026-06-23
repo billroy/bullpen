@@ -63,13 +63,17 @@ const app = createApp({
       return Math.max(0, Math.min(100, Math.round(num)));
     }
 
+    function _normalizeAmbientMuteWhileIdle(value) {
+      return value === true;
+    }
+
     // Per-workspace backing store (not directly rendered)
     const workspaces = reactive({});  // workspaceId -> { workspace, config, layout, tasks, profiles, teams, filesVersion, unseenActivity }
 
     // Active view state — mirrors whichever workspace is active
     const state = reactive({
       workspace: '',
-      config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40, worker_automation_paused: false },
+      config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40, ambient_mute_while_idle: false, worker_automation_paused: false },
       layout: { slots: [] },
       tasks: [],
       profiles: [],
@@ -87,7 +91,7 @@ const app = createApp({
     function _defaultWsData() {
       return {
         workspace: '',
-        config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40, worker_automation_paused: false },
+        config: { name: 'Bullpen', grid: { layout: 'medium', columnWidth: 220, viewportOrigin: { col: 0, row: 0 } }, columns: [], ambient_preset: null, ambient_volume: 40, ambient_mute_while_idle: false, worker_automation_paused: false },
         layout: { slots: [] },
         tasks: [],
         archivedTasks: [],
@@ -149,6 +153,7 @@ const app = createApp({
       safe.theme = _normalizeTheme(safe.theme || 'dark');
       safe.ambient_preset = _normalizeAmbientPreset(safe.ambient_preset);
       safe.ambient_volume = _normalizeAmbientVolume(safe.ambient_volume);
+      safe.ambient_mute_while_idle = _normalizeAmbientMuteWhileIdle(safe.ambient_mute_while_idle);
       safe.provider_colors = _normalizeProviderColors(safe.provider_colors);
       safe.worker_automation_paused = safe.worker_automation_paused === true;
       return safe;
@@ -187,8 +192,10 @@ const app = createApp({
       const volume = _normalizeAmbientVolume(ws.config?.ambient_volume);
       const preset = _normalizeAmbientPreset(ws.config?.ambient_preset);
       const automationPaused = ws.config?.worker_automation_paused === true;
+      const muteWhileIdle = _normalizeAmbientMuteWhileIdle(ws.config?.ambient_mute_while_idle);
+      const shouldMuteAmbient = automationPaused || (muteWhileIdle && !_workspaceHasBusyAgent(ws));
       window.ambientAudio.setVolume(volume / 100);
-      if (automationPaused) {
+      if (shouldMuteAmbient) {
         if (typeof window.ambientAudio.muteAmbient === 'function') {
           window.ambientAudio.muteAmbient();
         } else {
@@ -206,6 +213,11 @@ const app = createApp({
       } else {
         window.ambientAudio.stopAmbient();
       }
+    }
+
+    function _workspaceHasBusyAgent(ws) {
+      const busyStates = new Set(['starting', 'working', 'retrying']);
+      return (ws?.layout?.slots || []).some(slot => slot && busyStates.has(String(slot.state || '')));
     }
 
     function _isActive(wsId) {
@@ -840,8 +852,10 @@ const app = createApp({
       const wsId = layout.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
       ws.layout = layout;
-      if (_isActive(wsId)) state.layout = layout;
-      else ws.unseenActivity++;
+      if (_isActive(wsId)) {
+        state.layout = layout;
+        _applyWorkspaceAmbient(wsId);
+      } else ws.unseenActivity++;
     });
     socket.on('config:updated', (config) => {
       const wsId = config.workspaceId || activeWorkspaceId.value;
@@ -1099,6 +1113,7 @@ const app = createApp({
         target.state = data.state || target.state;
         target.started_at = data.started_at || null;
       }
+      if (_isActive(wsId)) _applyWorkspaceAmbient(wsId);
       if (!_isActive(wsId)) ws.unseenActivity++;
     });
     socket.on('service:log', (data) => {
@@ -2260,6 +2275,17 @@ const app = createApp({
       }
       updateConfig({ ambient_volume: next });
     }
+    function setAmbientMuteWhileIdle(value) {
+      const next = _normalizeAmbientMuteWhileIdle(value);
+      if (!activeWorkspaceId.value) return;
+      const ws = _getWs(activeWorkspaceId.value);
+      ws.config = { ...(ws.config || {}), ambient_mute_while_idle: next };
+      if (_isActive(activeWorkspaceId.value)) {
+        state.config = ws.config;
+        _applyWorkspaceAmbient(activeWorkspaceId.value);
+      }
+      updateConfig({ ambient_mute_while_idle: next });
+    }
 
     function _activateChatTabFromCommand() {
       const wsId = activeWorkspaceId.value;
@@ -2394,6 +2420,7 @@ const app = createApp({
     const ambientPresets = computed(() => AMBIENT_PRESETS);
     const currentAmbientPreset = computed(() => _normalizeAmbientPreset(state.config?.ambient_preset) || '');
     const currentAmbientVolume = computed(() => _normalizeAmbientVolume(state.config?.ambient_volume));
+    const currentAmbientMuteWhileIdle = computed(() => _normalizeAmbientMuteWhileIdle(state.config?.ambient_mute_while_idle));
     const currentProviderColors = computed(() => _normalizeProviderColors(state.config?.provider_colors));
     const defaultProviderColors = computed(() => ({ ...(window.DEFAULT_AGENT_COLORS || {}) }));
     const activeProjectName = computed(() => _workspaceBaseName(state.workspace));
@@ -2452,7 +2479,7 @@ const app = createApp({
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, bentoImportReview, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
-      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
+      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setAmbientMuteWhileIdle, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentAmbientMuteWhileIdle, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
@@ -2496,6 +2523,7 @@ const app = createApp({
         :ambient-presets="ambientPresets"
         :ambient-preset="currentAmbientPreset"
         :ambient-volume="currentAmbientVolume"
+        :ambient-mute-while-idle="currentAmbientMuteWhileIdle"
         :provider-colors="currentProviderColors"
         :default-provider-colors="defaultProviderColors"
         :worker-automation-paused="state.config.worker_automation_paused === true"
@@ -2510,6 +2538,7 @@ const app = createApp({
         @set-theme="setTheme"
         @set-ambient-preset="setAmbientPreset"
         @set-ambient-volume="setAmbientVolume"
+        @set-ambient-mute-while-idle="setAmbientMuteWhileIdle"
         @set-provider-color="(agent, color) => setProviderColor(agent, color)"
         @reset-provider-colors="resetProviderColors"
         @pause-automation="pauseAutomation"

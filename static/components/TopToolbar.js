@@ -1,11 +1,12 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'providerColors', 'defaultProviderColors', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
     'set-theme',
     'set-ambient-preset',
     'set-ambient-volume',
+    'set-ambient-mute-while-idle',
     'set-provider-color',
     'reset-provider-colors',
     'pause-automation',
@@ -311,6 +312,9 @@ const TopToolbar = {
     onAmbientVolumeInput(event) {
       this.$emit('set-ambient-volume', Number(event?.target?.value || 0));
     },
+    onAmbientMuteWhileIdleChange(event) {
+      this.$emit('set-ambient-mute-while-idle', event?.target?.checked === true);
+    },
     onToggleEventSoundFlag(key) {
       if (!window.EventSounds) return;
       const next = !this.eventSoundFlags[key];
@@ -608,6 +612,14 @@ const TopToolbar = {
                     title="Ambient volume"
                   >
                   <span class="toolbar-audio-value">{{ ambientVolume }}%</span>
+                </label>
+                <label class="ambient-idle-row">
+                  <input
+                    type="checkbox"
+                    :checked="ambientMuteWhileIdle"
+                    @change="onAmbientMuteWhileIdleChange"
+                  >
+                  <span class="event-sounds-row-label">Mute ambient sound while idle</span>
                 </label>
               </div>
               <div class="event-sounds-divider"></div>

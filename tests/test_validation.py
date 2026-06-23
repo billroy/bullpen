@@ -224,8 +224,16 @@ class TestConfigUpdate:
             validate_config_update({"theme": "mystery"})
 
     def test_ambient_fields_accepted(self):
-        result = validate_config_update({"ambient_preset": "forest_rain", "ambient_volume": 55})
-        assert result == {"ambient_preset": "forest_rain", "ambient_volume": 55}
+        result = validate_config_update({
+            "ambient_preset": "forest_rain",
+            "ambient_volume": 55,
+            "ambient_mute_while_idle": True,
+        })
+        assert result == {
+            "ambient_preset": "forest_rain",
+            "ambient_volume": 55,
+            "ambient_mute_while_idle": True,
+        }
 
     def test_ambient_preset_can_be_cleared(self):
         result = validate_config_update({"ambient_preset": ""})

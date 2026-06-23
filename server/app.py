@@ -667,6 +667,7 @@ def load_state(bp_dir, workspace, workspace_display=None):
     except (TypeError, ValueError):
         ambient_volume = 40
     config["ambient_volume"] = max(0, min(100, ambient_volume))
+    config["ambient_mute_while_idle"] = config.get("ambient_mute_while_idle") is True
     layout = read_json(os.path.join(bp_dir, "layout.json"))
     layout = serialize_layout(layout, viewer=ViewerContext(can_edit=True), config=config)
 

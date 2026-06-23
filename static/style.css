@@ -810,6 +810,13 @@ body {
   color: var(--text-secondary);
 }
 
+.ambient-idle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 0;
+}
+
 .event-sounds-row {
   display: flex;
   align-items: center;

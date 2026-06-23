@@ -159,11 +159,26 @@ def test_toolbar_audio_controls_are_consolidated_into_menu():
     assert ":title=\"audioButtonTitle\"" in text
     assert "toolbar-audio-panel" in text
     assert "toolbar-audio-panel-title\">Ambient</div>" in text
+    assert "Mute ambient sound while idle" in text
+    assert "onAmbientMuteWhileIdleChange" in text
+    assert text.index("{{ ambientVolume }}%") < text.index("Mute ambient sound while idle")
     assert "toolbar-audio-panel-title\">Event sounds</div>" in text
     assert "toolbar-audio-label" not in text
     assert "event-sounds-btn" not in text
     assert ".toolbar-audio-btn" in css
     assert ".top-toolbar .toolbar-audio-panel" in css
+    assert ".ambient-idle-row" in css
+
+
+def test_app_gates_ambient_idle_mute_without_event_sound_mute():
+    text = _read("static/app.js")
+    assert ":ambient-mute-while-idle=\"currentAmbientMuteWhileIdle\"" in text
+    assert "@set-ambient-mute-while-idle=\"setAmbientMuteWhileIdle\"" in text
+    assert "updateConfig({ ambient_mute_while_idle: next });" in text
+    assert "const shouldMuteAmbient = automationPaused || (muteWhileIdle && !_workspaceHasBusyAgent(ws));" in text
+    assert "window.ambientAudio.muteAmbient();" in text
+    assert "window.ambientAudio.unmuteAmbient();" in text
+    assert "window.ambientAudio.mute();" not in text
 
 
 def test_worker_config_modal_receives_workspace_palette_colors():
