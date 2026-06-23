@@ -66,3 +66,16 @@ def test_worker_config_modal_shows_value_trigger_condition_guidance():
     assert "Text values use alphabetic ordering." in text
     assert "Comparison value is not a valid number yet." in text
     assert "valueTriggerConditionOperator !== 'any'" in text
+
+
+def test_worker_config_modal_groups_value_trigger_controls():
+    text = _read("static/components/WorkerConfigModal.js")
+    css = _read("static/style.css")
+
+    assert 'class="form-row worker-trigger-row"' in text
+    assert 'class="value-trigger-controls"' in text
+    assert ".worker-trigger-row" in css
+    assert "flex-wrap: wrap;" in css
+    assert ".value-trigger-controls" in css
+    assert "grid-template-columns:" in css
+    assert "flex: 1 1 100%;" in css

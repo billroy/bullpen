@@ -4846,6 +4846,39 @@ body.worker-singleton-dragging * {
   flex: 1;
 }
 
+.worker-trigger-row {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.worker-trigger-row > .form-label {
+  flex: 1 1 180px;
+}
+
+.value-trigger-controls {
+  display: grid;
+  flex: 1 1 100%;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(150px, 1fr) minmax(180px, 1fr) minmax(120px, 0.6fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 100%;
+}
+
+.value-trigger-controls .form-label {
+  min-width: 0;
+}
+
+.value-trigger-controls .form-label-inline {
+  align-self: end;
+  min-height: 34px;
+}
+
+@media (max-width: 760px) {
+  .value-trigger-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
 .worker-color-override-controls {
   display: flex;
   align-items: center;

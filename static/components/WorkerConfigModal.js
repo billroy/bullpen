@@ -1079,7 +1079,7 @@ const WorkerConfigModal = {
           </template>
 
           <!-- Shared: activation, disposition, max retries -->
-          <div v-if="!isService && !isValue" class="form-row">
+          <div v-if="!isService && !isValue" class="form-row worker-trigger-row">
             <label class="form-label">
               Input Trigger
               <select class="form-select" v-model="form.activation">
@@ -1110,7 +1110,7 @@ const WorkerConfigModal = {
               Interval (minutes)
               <input class="form-input" type="number" v-model.number="form.trigger_interval_minutes" min="1" max="1440">
             </label>
-            <template v-if="canUseValueChangeTrigger && form.activation === 'on_value_change'">
+            <div v-if="canUseValueChangeTrigger && form.activation === 'on_value_change'" class="value-trigger-controls">
               <label class="form-label">
                 Value
                 <select class="form-select" v-model="valueTriggerSelection">
@@ -1144,7 +1144,7 @@ const WorkerConfigModal = {
                 <input type="checkbox" v-model="form.value_trigger_fire_on_noop">
                 Fire on no-op writes
               </label>
-            </template>
+            </div>
             <label class="form-label form-label-inline" v-if="canPauseWorker">
               <input type="checkbox" v-model="form.paused">
               Paused
