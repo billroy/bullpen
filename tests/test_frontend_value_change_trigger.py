@@ -22,6 +22,13 @@ def test_worker_config_modal_exposes_value_change_trigger_controls():
     assert 'v-model="form.value_trigger_condition_operator"' in text
     assert 'v-model="form.value_trigger_condition_value"' in text
     assert '<option value="contains">Contains</option>' in text
+    assert '<option :value="\'<\'">&lt;</option>' in text
+    assert '<option :value="\'<=\'">&lt;=</option>' in text
+    assert '<option value="==">==</option>' in text
+    assert '<option value=">">&gt;</option>' in text
+    assert '<option value=">=">&gt;=</option>' in text
+    assert "Less than" not in text
+    assert "Greater than" not in text
 
 
 def test_worker_config_modal_saves_named_and_unnamed_value_refs():

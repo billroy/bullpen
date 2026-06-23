@@ -1128,11 +1128,11 @@ const WorkerConfigModal = {
               <select class="form-select" v-model="form.value_trigger_condition_operator">
                 <option value="any">Any change</option>
                 <option value="contains">Contains</option>
-                <option :value="'<'">Less than</option>
-                <option :value="'<='">Less than or equal</option>
-                <option value="==">Equal to</option>
-                <option value=">">Greater than</option>
-                <option value=">=">Greater than or equal</option>
+                <option :value="'<'">&lt;</option>
+                <option :value="'<='">&lt;=</option>
+                <option value="==">==</option>
+                <option value=">">&gt;</option>
+                <option value=">=">&gt;=</option>
               </select>
             </label>
             <label class="form-label value-trigger-comparison" v-if="valueTriggerConditionOperator !== 'any'">
