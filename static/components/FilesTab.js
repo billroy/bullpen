@@ -45,8 +45,8 @@ const FileTreeNode = {
 const FilesTab = {
   props: ['filesVersion', 'workspaceId', 'activeTheme'],
   template: `
-    <div class="files-container">
-      <div class="files-tree-pane">
+    <div class="files-container" :class="{ 'files-tree-resizing': !!treeResizing }">
+      <div class="files-tree-pane" :style="{ width: activeFilesTreeWidth + 'px' }">
         <div class="files-tree-header">
           <span>Workspace Files</span>
           <div class="files-tree-menu-wrap" @click.stop>
@@ -72,6 +72,14 @@ const FilesTab = {
           />
         </div>
         <div v-else class="empty-state">No files found</div>
+        <div
+          class="files-tree-resize"
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize"
+          @pointerdown="onTreeResizeDown"
+          @dblclick="resetTreeWidth"
+        ></div>
       </div>
       <div class="files-viewer-pane">
         <div class="files-tab-bar" v-if="openFiles.length">
@@ -158,10 +166,18 @@ const FilesTab = {
       editContent: '',
       editorError: '',
       showFileMenu: false,
+      filesTreeWidth: FilesTab._loadTreeWidth(),
+      draggingTreeWidth: null,
+      treeResizing: null,
       _ace: null,
+      _treeResizeMoveHandler: null,
+      _treeResizeUpHandler: null,
     };
   },
   computed: {
+    activeFilesTreeWidth() {
+      return this.draggingTreeWidth || this.filesTreeWidth;
+    },
     ext() {
       if (!this.activeFile) return '';
       const name = this.activeFile.name;
@@ -249,6 +265,9 @@ const FilesTab = {
   },
   unmounted() {
     document.removeEventListener('click', this.onGlobalClick);
+    this._teardownTreeResizeListeners();
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
     this._destroyAceEditor();
     this._revokeAllObjectUrls();
   },
@@ -261,6 +280,65 @@ const FilesTab = {
     },
     onGlobalClick() {
       this.showFileMenu = false;
+    },
+    onTreeResizeDown(e) {
+      if (e.button !== 0) return;
+      if (this.treeResizing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.treeResizing = {
+        startX: e.clientX,
+        startWidth: this.filesTreeWidth,
+        pointerId: e.pointerId,
+      };
+      this.draggingTreeWidth = this.filesTreeWidth;
+      this._treeResizeMoveHandler = (ev) => this.onTreeResizeMove(ev);
+      this._treeResizeUpHandler = (ev) => this.onTreeResizeUp(ev);
+      window.addEventListener('pointermove', this._treeResizeMoveHandler);
+      window.addEventListener('pointerup', this._treeResizeUpHandler);
+      window.addEventListener('pointercancel', this._treeResizeUpHandler);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    },
+    onTreeResizeMove(e) {
+      if (!this.treeResizing) return;
+      if (e.pointerId !== this.treeResizing.pointerId) return;
+      const dx = e.clientX - this.treeResizing.startX;
+      const next = this.treeResizing.startWidth + dx;
+      this.draggingTreeWidth = FilesTab._clampTreeWidth(Math.round(next));
+      this.$nextTick(() => this._ace?.resize(true));
+    },
+    onTreeResizeUp(e) {
+      if (!this.treeResizing) return;
+      if (e && e.pointerId !== this.treeResizing.pointerId) return;
+      this._teardownTreeResizeListeners();
+      const dragged = this.draggingTreeWidth;
+      this.treeResizing = null;
+      this.draggingTreeWidth = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      if (dragged != null) {
+        this.filesTreeWidth = FilesTab._clampTreeWidth(dragged);
+        try {
+          localStorage.setItem('bullpen.filesTreeWidth', String(this.filesTreeWidth));
+        } catch (e) { /* ignore */ }
+        this.$nextTick(() => this._ace?.resize(true));
+      }
+    },
+    resetTreeWidth() {
+      this.filesTreeWidth = 260;
+      try {
+        localStorage.setItem('bullpen.filesTreeWidth', '260');
+      } catch (e) { /* ignore */ }
+      this.$nextTick(() => this._ace?.resize(true));
+    },
+    _teardownTreeResizeListeners() {
+      if (!this._treeResizeMoveHandler) return;
+      window.removeEventListener('pointermove', this._treeResizeMoveHandler);
+      window.removeEventListener('pointerup', this._treeResizeUpHandler);
+      window.removeEventListener('pointercancel', this._treeResizeUpHandler);
+      this._treeResizeMoveHandler = null;
+      this._treeResizeUpHandler = null;
     },
     async loadTree() {
       this.loadingTree = true;
@@ -574,5 +652,18 @@ const FilesTab = {
     escapeHtml(str) {
       return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     },
-  }
+  },
+  _clampTreeWidth(w) {
+    return Math.max(180, Math.min(640, w));
+  },
+  _loadTreeWidth() {
+    try {
+      const raw = localStorage.getItem('bullpen.filesTreeWidth');
+      if (raw) {
+        const n = parseInt(raw, 10);
+        if (Number.isFinite(n)) return FilesTab._clampTreeWidth(n);
+      }
+    } catch (e) { /* ignore */ }
+    return 260;
+  },
 };

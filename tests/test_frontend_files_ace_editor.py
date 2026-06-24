@@ -52,6 +52,33 @@ def test_files_tab_has_new_file_draft_flow():
     assert "this.$nextTick(() => this.startEditing());" in text
 
 
+def test_files_tab_has_resizable_tree_pane():
+    text = _read("static/components/FilesTab.js")
+
+    assert ':style="{ width: activeFilesTreeWidth + \'px\' }"' in text
+    assert 'class="files-tree-resize"' in text
+    assert '@pointerdown="onTreeResizeDown"' in text
+    assert '@dblclick="resetTreeWidth"' in text
+    assert "filesTreeWidth: FilesTab._loadTreeWidth()" in text
+    assert "draggingTreeWidth: null" in text
+    assert "treeResizing: null" in text
+    assert "localStorage.setItem('bullpen.filesTreeWidth'" in text
+    assert "localStorage.getItem('bullpen.filesTreeWidth')" in text
+    assert "this.$nextTick(() => this._ace?.resize(true));" in text
+
+
+def test_files_tab_tree_resize_clamps_and_cleans_up():
+    text = _read("static/components/FilesTab.js")
+
+    assert "return Math.max(180, Math.min(640, w));" in text
+    assert "window.addEventListener('pointermove', this._treeResizeMoveHandler);" in text
+    assert "window.removeEventListener('pointermove', this._treeResizeMoveHandler);" in text
+    assert "document.body.style.cursor = 'col-resize';" in text
+    assert "document.body.style.userSelect = 'none';" in text
+    assert "document.body.style.cursor = '';" in text
+    assert "document.body.style.userSelect = '';" in text
+
+
 def test_files_tab_create_flow_verifies_existence_and_create_only_save():
     text = _read("static/components/FilesTab.js")
     assert "_normalizeNewFileName(raw)" in text
@@ -115,6 +142,11 @@ def test_files_styles_replace_textarea_and_hide_bracket_marker():
     assert ".files-tree-menu-wrap" in text
     assert ".files-tree-menu" in text
     assert ".files-tree-action" in text
+    assert ".files-tree-resize" in text
+    assert ".files-tree-resizing .files-tree-resize" in text
+    assert "cursor: col-resize;" in text
+    assert "touch-action: none;" in text
+    assert "right: -3px;" in text
     assert ".file-tab.unsaved .file-tab-name" in text
     assert ".ace-host {" in text
     assert ".ace-host .ace_bracket" in text

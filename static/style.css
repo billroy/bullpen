@@ -3996,11 +3996,30 @@ body.worker-singleton-dragging * {
 
 .files-tree-pane {
   width: 260px;
-  min-width: 200px;
+  min-width: 180px;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.files-tree-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+  touch-action: none;
+}
+
+.files-tree-resize:hover,
+.files-tree-resize:active,
+.files-tree-resizing .files-tree-resize {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .files-tree-header {
