@@ -2631,6 +2631,28 @@ print(json.dumps({"type": "text", "part": {"text": "workspace ok"}}), flush=True
             c1.disconnect()
             c2.disconnect()
 
+    def test_chat_tab_open_normalizes_legacy_live_agent_label(self):
+        with tempfile.TemporaryDirectory(prefix="bullpen_chat_tab_label_") as ws:
+            app = create_app(ws, no_browser=True)
+            c1 = socketio.test_client(app)
+            c1.get_received()
+
+            ws_id = app.config["startup_workspace_id"]
+            session_id = "legacy-live-agent-session"
+            c1.emit("chat:tab:open", {
+                "workspaceId": ws_id,
+                "id": session_id,
+                "sessionId": session_id,
+                "label": "Live " + "Agent 2",
+            })
+
+            tabs_evt = _wait_for_event(c1, "chat:tabs")
+            assert tabs_evt is not None
+            tab = next(t for t in tabs_evt["tabs"] if t.get("sessionId") == session_id)
+            assert tab["label"] == "Agent Chat 2"
+
+            c1.disconnect()
+
     def test_chat_user_message_is_broadcast_to_other_clients(self):
         with tempfile.TemporaryDirectory(prefix="bullpen_chat_user_broadcast_") as ws:
             app = create_app(ws, no_browser=True)

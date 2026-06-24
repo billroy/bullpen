@@ -3423,11 +3423,15 @@ def register_events(socketio, app):
             return
         socketio.emit("chat:tabs", payload, to=ws_id)
 
+    def _normalize_chat_tab_label(label):
+        raw = str(label or "Agent Chat").strip() or "Agent Chat"
+        return re.sub(r"^live\s+agent\b", "Agent Chat", raw, flags=re.IGNORECASE)
+
     def _upsert_chat_tab(ws_id, session_id, label=None, tab_id=None):
         session_id = str(session_id or "").strip()
         if not ws_id or not session_id:
             return False
-        safe_label = str(label or "Agent Chat").strip() or "Agent Chat"
+        safe_label = _normalize_chat_tab_label(label)
         safe_id = str(tab_id or session_id).strip() or session_id
         now = time.time()
         with _chat_lock:

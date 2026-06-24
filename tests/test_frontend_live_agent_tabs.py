@@ -14,6 +14,8 @@ def test_live_agent_tabs_are_dynamic_in_app_shell():
     text = _read("static/app.js")
     assert "const chatTabs = reactive([]);" in text
     assert "const lastLiveAgentTabByWorkspace = reactive({});" in text
+    assert "function _normalizeChatTabLabel(label)" in text
+    assert "raw.replace(/^live\\s+agent\\b/i, 'Agent Chat')" in text
     assert "function addLiveAgentTab({ activate = true } = {})" in text
     assert "function closeLiveAgentTab(tabId)" in text
     assert "function setActiveTab(tabId)" in text

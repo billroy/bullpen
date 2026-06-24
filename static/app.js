@@ -514,11 +514,16 @@ const app = createApp({
       return `chat-default-${wsId}`;
     }
 
+    function _normalizeChatTabLabel(label) {
+      const raw = String(label || 'Agent Chat').trim() || 'Agent Chat';
+      return raw.replace(/^live\s+agent\b/i, 'Agent Chat');
+    }
+
     function _normalizeChatTab(tab, wsId) {
       const sessionId = String(tab?.sessionId || '').trim();
       if (!sessionId) return null;
       const id = String(tab?.id || sessionId).trim() || sessionId;
-      const label = String(tab?.label || 'Agent Chat').trim() || 'Agent Chat';
+      const label = _normalizeChatTabLabel(tab?.label);
       return { id, label, sessionId, workspaceId: wsId };
     }
 
