@@ -85,7 +85,9 @@ const WorkerCard = {
                aria-label="Edit name and value">
         <div v-else class="worker-card-identity">
           <div class="worker-card-title-row" ref="titleRow">
-            <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
+            <span :key="'worker-type-icon-' + workerIcon" class="worker-type-icon-host" aria-hidden="true">
+              <i class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
+            </span>
             <span class="worker-card-name" ref="nameLabel">{{ workerNameWithPort }}</span>
             <span class="worker-card-name worker-card-name--measure" ref="nameMeasure" aria-hidden="true"></span>
           </div>

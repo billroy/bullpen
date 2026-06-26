@@ -1,6 +1,9 @@
 """Regression checks for worker-group drag/drop and clipboard operations."""
 
+import os
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +132,104 @@ def test_worker_card_only_runs_elapsed_timer_when_status_needs_it():
     assert "this.syncElapsedTimer();" in text
     assert "setInterval(() => this.updateElapsed(), 1000)" in text
     assert "this._timer = setInterval(() => this.updateElapsed(), 1000);\n    this.updateElapsed();" not in text
+
+
+def test_worker_card_icon_refreshes_when_reused_slot_changes_type_in_browser():
+    browser_cache = Path("/Users/bill/Library/Caches/ms-playwright")
+    if browser_cache.exists() and not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browser_cache)
+    playwright = pytest.importorskip("playwright.sync_api")
+
+    with playwright.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:
+            message = str(exc)
+            if (
+                "Executable doesn't exist" in message
+                or "MachPortRendezvousServer" in message
+                or "Permission denied" in message
+            ):
+                pytest.skip("Playwright browser launch is unavailable in this environment")
+            raise
+        page = browser.new_page()
+        page.set_content(
+            """<!doctype html>
+            <html>
+              <body>
+                <div id="app"></div>
+                <script src="https://unpkg.com/vue@3.5.33/dist/vue.global.prod.js"></script>
+                <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+              </body>
+            </html>""",
+            wait_until="networkidle",
+            timeout=15000,
+        )
+        page.add_script_tag(path=str(ROOT / "static" / "utils.js"))
+        page.add_script_tag(path=str(ROOT / "static" / "components" / "WorkerCard.js"))
+        page.add_script_tag(content="""
+            const { createApp, reactive } = Vue;
+            const state = reactive({
+              worker: {
+                type: 'shell',
+                name: 'Start',
+                command: 'echo start',
+                state: 'idle',
+                task_queue: [],
+                activation: 'manual',
+                color: 'shell',
+              },
+            });
+            window.__workerState = state;
+            createApp({
+              components: { WorkerCard },
+              data() { return { state }; },
+              methods: {
+                outputLinesForSlot() { return []; },
+                startWorkerSlot() {},
+                stopWorkerSlot() {},
+                restartServiceSlot() {},
+                openFocusTab() {},
+              },
+              template: `<WorkerCard
+                :key="0"
+                :worker="state.worker"
+                :slot-index="0"
+                :tasks="[]"
+                :task-by-id="{}"
+                :output-lines="[]"
+                :multiple-workspaces="false"
+                :neighbor-slots="{}"
+                :all-workers="[state.worker]"
+                :menu-context="{}"
+                layout-mode="medium"
+                :card-height="140"
+                :is-selected="false"
+                :multiple-selection-active="false"
+                :is-vertical-resizing="false"
+                workspace-id="ws-a"
+              />`,
+            }).mount('#app');
+        """)
+        page.wait_for_timeout(300)
+        assert page.locator(".worker-type-icon--card").get_attribute("data-lucide") == "terminal"
+
+        page.evaluate("""
+            window.__workerState.worker = {
+              type: 'value',
+              name: 'Move',
+              value: 'rock',
+              value_type: 'auto',
+              resolved_value_type: 'string',
+              color: 'value',
+              task_queue: [],
+            };
+        """)
+        page.wait_for_timeout(300)
+
+        assert page.locator(".worker-card-name").first.inner_text() == "Move"
+        assert page.locator(".worker-type-icon--card").get_attribute("data-lucide") == "equal"
+        browser.close()
 
 
 def test_server_worker_group_move_uses_coordinate_occupancy_map():
