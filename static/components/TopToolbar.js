@@ -563,18 +563,20 @@ const TopToolbar = {
                 aria-label="Automation safety controls"
                 title="Automation safety controls"
               >
-                <span class="toolbar-stop-sign-icon" aria-hidden="true"></span>
+                <span class="toolbar-stop-sign-icon" aria-hidden="true">
+                  <img src="/assets/mutcd-r1-1-stop-250.png" alt="">
+                </span>
               </button>
               <div v-if="showSafetyMenu" class="project-menu toolbar-safety-menu">
                 <div class="safety-menu-section-label">Current workspace</div>
                 <button v-if="workerAutomationPaused" class="project-menu-item" @click="onResumeCurrentAutomation"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Resume current workspace</span></button>
                 <button v-else class="project-menu-item" @click="onPauseCurrentAutomation"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause current workspace</span></button>
-                <button class="project-menu-item project-menu-item-danger" @click="onStopTheLine"><span class="menu-item-icon menu-stop-sign-icon" aria-hidden="true"></span><span class="menu-item-label">Stop current workspace...</span></button>
+                <button class="project-menu-item project-menu-item-danger" @click="onStopTheLine"><span class="menu-item-icon menu-stop-sign-icon" aria-hidden="true"><img src="/assets/mutcd-r1-1-stop-250.png" alt=""></span><span class="menu-item-label">Stop current workspace...</span></button>
                 <div class="safety-menu-divider"></div>
                 <div class="safety-menu-section-label">All workspaces</div>
                 <button class="project-menu-item" @click="onPauseAllAutomation"><i class="menu-item-icon" data-lucide="pause" aria-hidden="true"></i><span class="menu-item-label">Pause all workspaces...</span></button>
                 <button class="project-menu-item" @click="onResumeAllAutomation"><i class="menu-item-icon" data-lucide="play" aria-hidden="true"></i><span class="menu-item-label">Resume all workspaces...</span></button>
-                <button class="project-menu-item project-menu-item-danger" @click="onStopAllLines"><span class="menu-item-icon menu-stop-sign-icon" aria-hidden="true"></span><span class="menu-item-label">Stop all workspaces...</span></button>
+                <button class="project-menu-item project-menu-item-danger" @click="onStopAllLines"><span class="menu-item-icon menu-stop-sign-icon" aria-hidden="true"><img src="/assets/mutcd-r1-1-stop-250.png" alt=""></span><span class="menu-item-label">Stop all workspaces...</span></button>
               </div>
             </div>
           </div>

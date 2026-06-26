@@ -118,6 +118,14 @@ def test_toolbar_exposes_worker_pause_and_stop_line_controls():
     assert "toggleSafetyMenu" in text
     assert "Automation safety controls" in text
     assert "toolbar-stop-sign-icon" in text
+    assert "/assets/mutcd-r1-1-stop-250.png" in text
+    assert "/static/assets/mutcd-r1-1-stop-250.png" not in text
+    assert "stop-sign-legend" not in text
+    assert "viewBox=\"0 0 100 100\"" not in text
+    assert "content: \"STOP\";" not in css
+    assert "scaleX(0.6)" not in css
+    assert "scaleX(0.58)" not in css
+    assert "font-family: Arial, Helvetica, sans-serif;" not in css
     assert "safety-menu-status" not in text
     assert "Resume current workspace" in text
     assert "Pause current workspace" in text
@@ -127,7 +135,9 @@ def test_toolbar_exposes_worker_pause_and_stop_line_controls():
     assert "AUTOMATION PAUSED" in text
     assert "window.confirm(" in text
     assert ".toolbar-stop-sign-icon" in css
-    assert "font-size: 11.5px;" in css
+    assert ".toolbar-stop-sign-icon img" in css
+    assert "object-fit: contain;" in css
+    assert (ROOT / "static/assets/mutcd-r1-1-stop-250.png").is_file()
 
 
 def test_app_wires_toolbar_worker_pause_events():
