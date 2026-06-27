@@ -161,6 +161,7 @@ const TopToolbar = {
   },
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
+    window.addEventListener('blur', this.onWindowBlur);
     window.addEventListener('keydown', this.onGlobalKeydown);
     window.addEventListener('bullpen:command-palette:open', this.openPaletteOverlay);
     window.addEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
@@ -171,6 +172,7 @@ const TopToolbar = {
   },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
+    window.removeEventListener('blur', this.onWindowBlur);
     window.removeEventListener('keydown', this.onGlobalKeydown);
     window.removeEventListener('bullpen:command-palette:open', this.openPaletteOverlay);
     window.removeEventListener('bullpen:menu:close-main', this.onExternalCloseMainMenu);
@@ -208,6 +210,9 @@ const TopToolbar = {
       this.showSafetyMenu = false;
       this.showAudioMenu = false;
       this.showProviderColorsMenu = false;
+      if (!this.paletteOverlayOpen) this.showPalette = false;
+    },
+    onWindowBlur() {
       if (!this.paletteOverlayOpen) this.showPalette = false;
     },
     toggleProviderColorsMenu() {
@@ -282,6 +287,10 @@ const TopToolbar = {
       this.openPaletteOverlay();
     },
     onPaletteFocus() {
+      if (!this.quickCreateText.trim() && !this.paletteOverlayOpen) return;
+      this.showPalette = true;
+    },
+    onPaletteInput() {
       this.showPalette = true;
     },
     openPaletteOverlay() {
@@ -532,6 +541,7 @@ const TopToolbar = {
               v-model="quickCreateText"
               placeholder="New ticket / description, or > commands"
               @focus="onPaletteFocus"
+              @input="onPaletteInput"
               @keydown="onPaletteKeydown"
             />
             <div v-if="showPalette && !paletteOverlayOpen" class="command-palette-menu">

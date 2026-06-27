@@ -72,3 +72,18 @@ def test_toolbar_teaches_ticket_body_and_gt_command_mode():
     assert "Use Title / description" in text
     assert "Type > to run Bullpen commands" in text
     assert "Create ticket:" in text
+
+
+def test_empty_toolbar_focus_does_not_open_inline_palette_until_input():
+    text = _read("static/components/TopToolbar.js")
+    assert "if (!this.quickCreateText.trim() && !this.paletteOverlayOpen) return;" in text
+    assert "onPaletteInput()" in text
+    assert '@input="onPaletteInput"' in text
+
+
+def test_inline_palette_closes_when_browser_window_loses_focus():
+    text = _read("static/components/TopToolbar.js")
+    assert "window.addEventListener('blur', this.onWindowBlur);" in text
+    assert "window.removeEventListener('blur', this.onWindowBlur);" in text
+    assert "onWindowBlur()" in text
+    assert "if (!this.paletteOverlayOpen) this.showPalette = false;" in text
