@@ -106,6 +106,13 @@ def test_switching_projects_joins_project_socket_room():
     assert "_rememberActiveWorkspace(wsId);" in text
 
 
+def test_reconnect_rejoins_active_project_socket_room():
+    text = _read("static/app.js")
+    assert "if (wasDisconnected) {" in text
+    assert "if (activeWorkspaceId.value) socket.emit('project:join', { workspaceId: activeWorkspaceId.value });" in text
+    assert "addToast('Reconnected to Bullpen server');" in text
+
+
 def test_switch_workspace_does_not_early_return_on_unjoined_workspace():
     """Regression: the server now sends state:init only for joined workspaces,
     so clicking an unjoined project in the LeftPane used to hit an early

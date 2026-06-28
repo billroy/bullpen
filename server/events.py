@@ -2822,6 +2822,8 @@ def register_events(socketio, app):
     @with_lock
     def on_worker_start(data):
         ws_id, bp_dir = _resolve(data)
+        if not _ensure_workspace_membership(ws_id):
+            return
         slot = data.get("slot")
         if slot is None:
             emit("error", {"message": "worker:start requires slot"})
@@ -2948,6 +2950,8 @@ def register_events(socketio, app):
     @socketio.on("service:start")
     def on_service_start(data):
         ws_id, bp_dir = _resolve(data)
+        if not _ensure_workspace_membership(ws_id):
+            return
         slot = _service_slot(data, "service:start")
         if slot is None:
             return

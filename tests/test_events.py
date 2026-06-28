@@ -343,6 +343,56 @@ def test_start_without_project_refresh_requires_join_for_registered_project(tmp_
     assert state_events[-1]["workspaceId"] == ws_id
 
 
+def test_worker_start_joins_workspace_before_start_broadcast(tmp_path, monkeypatch):
+    workspace_root = tmp_path / "workspace"
+    project = workspace_root / "project-a"
+    project.mkdir(parents=True)
+    global_dir = tmp_path / "home" / ".bullpen"
+    monkeypatch.setenv("BULLPEN_PROJECTS_ROOT", str(workspace_root))
+    monkeypatch.setenv("BULLPEN_START_WITHOUT_PROJECT", "1")
+    register_adapter("mock", MockAdapter(output="done"))
+
+    app = create_app(str(workspace_root), no_browser=True, global_dir=str(global_dir))
+    owner = socketio.test_client(app)
+    owner.get_received()
+    owner.emit("project:add", {"path": str(project)})
+    add_events = owner.get_received()
+    owner.disconnect()
+    ws_id = [evt["args"][0] for evt in add_events if evt["name"] == "state:init"][-1]["workspaceId"]
+    bp_dir = app.config["manager"].get_bp_dir(ws_id)
+
+    task = task_mod.create_task(bp_dir, "Room membership start", status="assigned")
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    layout["slots"] = [{
+        "row": 0,
+        "col": 0,
+        "profile": "test",
+        "name": "Room Worker",
+        "agent": "mock",
+        "model": "mock-model",
+        "activation": "manual",
+        "disposition": "review",
+        "watch_column": None,
+        "expertise_prompt": "",
+        "max_retries": 0,
+        "task_queue": [task["id"]],
+        "state": "idle",
+        "paused": False,
+    }]
+    write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+    client = socketio.test_client(app)
+    assert [evt for evt in client.get_received() if evt["name"] == "state:init"] == []
+
+    client.emit("worker:start", {"workspaceId": ws_id, "slot": 0})
+
+    updated_layout = _wait_for_event(client, "layout:updated")
+    client.disconnect()
+    assert updated_layout is not None
+    assert updated_layout["workspaceId"] == ws_id
+    assert updated_layout["slots"][0]["state"] == "working"
+
+
 def test_project_root_guard_rejects_outside_paths(tmp_path, monkeypatch):
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()

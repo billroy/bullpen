@@ -776,7 +776,10 @@ const app = createApp({
         dismissToast(disconnectToastId);
         disconnectToastId = null;
       }
-      if (wasDisconnected) addToast('Reconnected to Bullpen server');
+      if (wasDisconnected) {
+        if (activeWorkspaceId.value) socket.emit('project:join', { workspaceId: activeWorkspaceId.value });
+        addToast('Reconnected to Bullpen server');
+      }
       hasConnectedOnce = true;
     });
     socket.on('disconnect', () => {
