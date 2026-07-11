@@ -1638,6 +1638,15 @@ const app = createApp({
         errorMessage: 'Could not verify whether that file exists.',
       });
     }
+    function requestFileMkdir(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:mkdir',
+        successEvent: 'files:mkdir:result',
+        payload,
+        timeoutMessage: 'Folder creation timed out',
+        errorMessage: 'Could not create folder',
+      });
+    }
     function requestFileWrite(payload = {}) {
       return _requestFileEvent({
         requestEvent: 'files:write',
@@ -2549,7 +2558,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

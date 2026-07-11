@@ -28,6 +28,7 @@ from server import opencode_models
 from server.file_browser import (
     FileBrowserError,
     build_file_tree,
+    create_directory,
     file_exists,
     read_binary_file,
     read_text_file,
@@ -1329,6 +1330,39 @@ def register_events(socketio, app):
             "path": str((data or {}).get("path") or ""),
             "exists": exists,
         })
+
+    @socketio.on("files:mkdir")
+    def on_files_mkdir(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            result = create_directory(ws.path, str((data or {}).get("path") or ""))
+        except FileBrowserError as e:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "status": e.status,
+            })
+            return
+        result.update({
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+        })
+        emit("files:mkdir:result", result)
+        socketio.emit("files:changed", {"workspaceId": ws_id}, to=ws_id)
 
     @socketio.on("files:write")
     def on_files_write(data):

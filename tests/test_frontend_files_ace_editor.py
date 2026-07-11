@@ -37,19 +37,28 @@ def test_files_tab_uses_ace_host_and_removes_custom_find_bar():
 
 def test_files_tab_has_new_file_draft_flow():
     text = _read("static/components/FilesTab.js")
+    app = _read("static/app.js")
     assert 'class="files-tree-menu-wrap"' in text
     assert 'class="files-tree-action"' in text
     assert '@click="toggleFileMenu"' in text
     assert 'v-if="showFileMenu" class="project-menu files-tree-menu"' in text
     assert 'data-lucide="file-plus"' in text
     assert "<span class=\"menu-item-label\">New File</span>" in text
+    assert 'data-lucide="folder-plus"' in text
+    assert "<span class=\"menu-item-label\">New Folder</span>" in text
     assert "toggleFileMenu()" in text
     assert "async createNewFile()" in text
+    assert "async createNewFolder()" in text
     assert "this.showFileMenu = false;" in text
     assert "const raw = prompt('New file name');" in text
+    assert "const raw = prompt('New folder name');" in text
     assert "const exists = await this._fileExists(path);" in text
     assert "isNew: true" in text
     assert "this.$nextTick(() => this.startEditing());" in text
+    assert "this.$root.requestFileMkdir({ workspaceId: this.workspaceId, path })" in text
+    assert "function requestFileMkdir(payload = {})" in app
+    assert "requestEvent: 'files:mkdir'" in app
+    assert "successEvent: 'files:mkdir:result'" in app
 
 
 def test_files_tab_has_resizable_tree_pane():

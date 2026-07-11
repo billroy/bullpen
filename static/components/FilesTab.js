@@ -56,6 +56,10 @@ const FilesTab = {
                 <i class="menu-item-icon" data-lucide="file-plus" aria-hidden="true"></i>
                 <span class="menu-item-label">New File</span>
               </button>
+              <button class="project-menu-item" @click="createNewFolder">
+                <i class="menu-item-icon" data-lucide="folder-plus" aria-hidden="true"></i>
+                <span class="menu-item-label">New Folder</span>
+              </button>
             </div>
           </div>
         </div>
@@ -411,6 +415,18 @@ const FilesTab = {
       this.activeFile = file;
       this.$nextTick(() => this.startEditing());
     },
+    async createNewFolder() {
+      this.showFileMenu = false;
+      const raw = prompt('New folder name');
+      const path = this._normalizeNewFolderName(raw);
+      if (!path) return;
+      try {
+        await this.$root.requestFileMkdir({ workspaceId: this.workspaceId, path });
+        await this.loadTree();
+      } catch (e) {
+        alert('Create folder failed: ' + e.message);
+      }
+    },
     switchToFile(f) {
       if (this.editing) {
         if (!confirm('Discard unsaved changes?')) return;
@@ -540,6 +556,15 @@ const FilesTab = {
       if (!name) return '';
       if (/[\/\\?#\u0000-\u001f]/.test(name) || name === '.' || name === '..') {
         alert('Enter a file name, not a path.');
+        return '';
+      }
+      return name;
+    },
+    _normalizeNewFolderName(raw) {
+      const name = String(raw || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      if (!name) return '';
+      if (/[?#\u0000-\u001f]/.test(name) || name.split('/').some(part => !part || part === '.' || part === '..')) {
+        alert('Enter a folder name inside the workspace.');
         return '';
       }
       return name;

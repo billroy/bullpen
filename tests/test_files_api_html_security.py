@@ -179,6 +179,48 @@ def test_create_only_file_write_creates_missing_file(tmp_workspace):
     client.disconnect()
 
 
+def test_mkdir_creates_folder_and_nested_parents(tmp_workspace):
+    init_workspace(tmp_workspace)
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("files:mkdir", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "mkdir-new",
+        "path": "docs/reports",
+    })
+
+    body = _received(client, "files:mkdir:result")
+    assert body is not None
+    assert body["request_id"] == "mkdir-new"
+    assert body["path"] == "docs/reports"
+    assert os.path.isdir(os.path.join(tmp_workspace, "docs", "reports"))
+    client.disconnect()
+
+
+def test_mkdir_rejects_traversal(tmp_workspace):
+    init_workspace(tmp_workspace)
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("files:mkdir", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "mkdir-traversal",
+        "path": "../outside",
+    })
+
+    body = _received(client, "files:error")
+    assert body is not None
+    assert body["request_id"] == "mkdir-traversal"
+    assert body["status"] == 403
+    assert not os.path.exists(os.path.join(os.path.dirname(tmp_workspace), "outside"))
+    client.disconnect()
+
+
 def test_file_tree_returns_over_socket(tmp_workspace):
     init_workspace(tmp_workspace)
     with open(os.path.join(tmp_workspace, "note.txt"), "w", encoding="utf-8") as handle:

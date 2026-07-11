@@ -135,6 +135,21 @@ def file_exists(workspace, filepath):
     return os.path.exists(full_path)
 
 
+def create_directory(workspace, dirpath):
+    normalized = str(dirpath or "").strip().strip("/\\")
+    if not normalized:
+        raise FileBrowserError("Folder path is required", status=400)
+    full_path = workspace_file_path(workspace, normalized)
+    if os.path.exists(full_path):
+        message = "Folder already exists" if os.path.isdir(full_path) else "Path already exists"
+        raise FileBrowserError(message, status=409)
+    try:
+        os.makedirs(full_path, exist_ok=False)
+    except OSError as e:
+        raise FileBrowserError(f"Failed to create folder: {e}", status=400)
+    return {"ok": True, "path": normalized}
+
+
 def write_text_file(workspace, filepath, content, *, create=False):
     full_path = workspace_file_path(workspace, filepath)
     if len(content) > 1_000_000:
