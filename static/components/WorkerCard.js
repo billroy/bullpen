@@ -24,7 +24,7 @@ const VALUE_UNIT_LABELS = {
 
 const WorkerCard = {
   props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'allWorkers', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
-  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'worker-scope-action', 'menu-opened', 'menu-closed', 'vertical-resize-start'],
+  emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'worker-scope-action', 'menu-opened', 'menu-closed', 'vertical-resize-start', 'value-edit-ended'],
   template: `
     <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
          :style="effectiveLayoutMode === 'small' ? { background: agentColor } : null"
@@ -78,7 +78,7 @@ const WorkerCard = {
                v-model="valueEditText"
                @keydown.stop
                @keydown.enter.prevent.stop="commitValueEdit"
-               @keydown.escape.prevent.stop="cancelValueEdit"
+               @keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"
                @blur="cancelValueEdit"
                @click.stop
                @dblclick.stop
@@ -182,7 +182,7 @@ const WorkerCard = {
                    v-model="valueEditText"
                    @keydown.stop
                    @keydown.enter.prevent.stop="commitValueEdit"
-                   @keydown.escape.prevent.stop="cancelValueEdit"
+                   @keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"
                    @blur="cancelValueEdit"
                    @click.stop
                    aria-label="Edit value">
@@ -939,11 +939,19 @@ const WorkerCard = {
         }
       });
     },
-    cancelValueEdit() {
+    cancelValueEdit(options = {}) {
+      const wasEditing = this.valueEditing;
       this.valueEditing = false;
       this.valueEditText = '';
       this.valueEditError = '';
       this.valueEditIncludesName = false;
+      if (!wasEditing) return;
+      this.$nextTick(() => {
+        renderLucideIcons(this.$el);
+        if (options && options.restoreGridFocus === true) {
+          this.$emit('value-edit-ended');
+        }
+      });
     },
     commitValueEdit() {
       const error = this.validateValueEditText(this.valueEditText);
@@ -960,7 +968,7 @@ const WorkerCard = {
           ? { name: parsed.name, unit: parsed.unit, value: parsed.value }
           : { value: parsed.value },
       });
-      this.cancelValueEdit();
+      this.cancelValueEdit({ restoreGridFocus: true });
     },
     openValueHistory() {
       if (!this.valueHistoryEnabled) return;

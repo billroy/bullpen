@@ -496,7 +496,7 @@ def test_value_card_inline_edit_saves_and_reverts():
     assert "valueEditing: false" in text
     assert "valueEditIncludesName: false" in text
     assert '@keydown.enter.prevent.stop="commitValueEdit"' in text
-    assert '@keydown.escape.prevent.stop="cancelValueEdit"' in text
+    assert '@keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"' in text
     assert text.count('@blur="cancelValueEdit"') >= 2
     assert "this._closeValueEdit = (e) => {" in text
     assert "document.addEventListener('pointerdown', this._closeValueEdit, true);" in text
@@ -508,7 +508,73 @@ def test_value_card_inline_edit_saves_and_reverts():
     assert "fields: this.valueEditIncludesName" in text
     assert "? { name: parsed.name, unit: parsed.unit, value: parsed.value }" in text
     assert ": { value: parsed.value }" in text
-    assert "this.cancelValueEdit();" in text
+    assert "this.cancelValueEdit({ restoreGridFocus: true });" in text
+    assert "'value-edit-ended'" in text
+    assert "renderLucideIcons(this.$el);" in text
+
+
+def test_value_card_keyboard_cancel_restores_grid_focus_and_icons():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "WorkerCard.js"))}, 'utf8');
+const context = {{
+  console,
+  isValueWorker: worker => worker?.type === 'value',
+  __rendered: [],
+}};
+context.renderLucideIcons = el => context.__rendered.push(el);
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = WorkerCard.methods;
+  const emitted = [];
+  const component = {{
+    valueEditing: true,
+    valueEditText: '41',
+    valueEditError: 'old',
+    valueEditIncludesName: true,
+    $el: 'card-el',
+    $emit(name) {{ emitted.push(name); }},
+    $nextTick(fn) {{ fn(); }},
+  }};
+  methods.cancelValueEdit.call(component, {{ restoreGridFocus: true }});
+  globalThis.__result = {{
+    valueEditing: component.valueEditing,
+    valueEditText: component.valueEditText,
+    valueEditError: component.valueEditError,
+    valueEditIncludesName: component.valueEditIncludesName,
+    emitted,
+    rendered: __rendered,
+  }};
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload == {
+        "valueEditing": False,
+        "valueEditText": "",
+        "valueEditError": "",
+        "valueEditIncludesName": False,
+        "emitted": ["value-edit-ended"],
+        "rendered": ["card-el"],
+    }
+
+
+def test_bullpen_grid_focuses_after_value_edit_keyboard_end():
+    text = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
+
+    assert '@value-edit-ended="onValueEditEnded(item)"' in text
+    assert "onValueEditEnded(item) {" in text
+    assert "if (item?.coord) this.selectWorker(item, { preserveMultiple: true });" in text
+    assert "this.focusViewport();" in text
 
 
 def test_value_card_compact_editor_saves_name_and_value_only():

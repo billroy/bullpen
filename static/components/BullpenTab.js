@@ -187,6 +187,7 @@ const BullpenTab = {
             @vertical-resize-start="onCardVerticalResizeStart(item, $event)"
             @menu-opened="selectWorker(item, { preserveMultiple: true })"
             @menu-closed="focusViewport"
+            @value-edit-ended="onValueEditEnded(item)"
           />
 
           <div class="worker-pass-connector-layer" aria-hidden="true">
@@ -1266,6 +1267,10 @@ const BullpenTab = {
       } else {
         this.selectWorker(item);
       }
+      this.focusViewport();
+    },
+    onValueEditEnded(item) {
+      if (item?.coord) this.selectWorker(item, { preserveMultiple: true });
       this.focusViewport();
     },
     clearExpandedWorkerCard() {
