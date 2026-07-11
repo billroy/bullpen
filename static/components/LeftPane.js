@@ -24,11 +24,12 @@ const LeftPane = {
               <button class="project-menu-item" @click="promptAddProject"><i class="menu-item-icon" data-lucide="folder-open" aria-hidden="true"></i><span class="menu-item-label">Add Project</span></button>
               <button class="project-menu-item" @click="promptNewProject"><i class="menu-item-icon" data-lucide="folder-plus" aria-hidden="true"></i><span class="menu-item-label">New Project</span></button>
               <button class="project-menu-item" @click="promptCloneProject"><i class="menu-item-icon" data-lucide="git-branch-plus" aria-hidden="true"></i><span class="menu-item-label">Clone from Git</span></button>
+              <button class="project-menu-item" @click="sortProjectsByName"><i class="menu-item-icon" data-lucide="arrow-down-a-z" aria-hidden="true"></i><span class="menu-item-label">Sort by Name</span></button>
             </div>
           </div>
         </div>
         <div v-if="projects.length > 0" class="project-list">
-          <div v-for="p in projects" :key="p.id"
+          <div v-for="p in sortedProjects" :key="p.id"
                class="project-item"
                :class="{ active: p.id === activeWorkspaceId, unavailable: p.available === false, 'drag-over': projectDragOverId === p.id }"
                @dragover.prevent="onProjectDragOver($event, p)"
@@ -138,6 +139,16 @@ const LeftPane = {
           if (pa !== pb) return pa - pb;
           return (b.created_at || '').localeCompare(a.created_at || '');
         });
+    },
+    sortedProjects() {
+      const list = Array.isArray(this.projects) ? this.projects : [];
+      if (this.projectSortMode !== 'name') return list;
+      return list.slice().sort((a, b) => {
+        const an = String(a?.name || '');
+        const bn = String(b?.name || '');
+        return an.localeCompare(bn, undefined, { sensitivity: 'base', numeric: true })
+          || String(a?.id || '').localeCompare(String(b?.id || ''));
+      });
     },
     workerList() {
       if (!this.layout?.slots) return [];
@@ -343,6 +354,7 @@ const LeftPane = {
       showProjectMenu: false,
       showEmptyProjectHint: false,
       emptyProjectHintInitialized: false,
+      projectSortMode: 'default',
       paneWidth: LeftPane._loadPaneWidth(),
       resizing: null,
       draggingWidth: null,
@@ -378,6 +390,11 @@ const LeftPane = {
       this.showEmptyProjectHint = false;
     },
     dismissEmptyProjectHint() {
+      this.showEmptyProjectHint = false;
+    },
+    sortProjectsByName() {
+      this.projectSortMode = 'name';
+      this.showProjectMenu = false;
       this.showEmptyProjectHint = false;
     },
     onDragStart(e, taskId) {

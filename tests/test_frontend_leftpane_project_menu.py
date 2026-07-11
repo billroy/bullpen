@@ -21,6 +21,16 @@ def test_leftpane_projects_header_uses_menu_button_with_add_and_new_options():
     assert "<span class=\"menu-item-label\">Clone from Git</span></button>" in text
 
 
+def test_leftpane_project_menu_can_sort_projects_by_name():
+    text = _read("static/components/LeftPane.js")
+    assert "class=\"project-menu-item\" @click=\"sortProjectsByName\"><i class=\"menu-item-icon\" data-lucide=\"arrow-down-a-z\"" in text
+    assert "<span class=\"menu-item-label\">Sort by Name</span></button>" in text
+    assert "v-for=\"p in sortedProjects\"" in text
+    assert "sortedProjects()" in text
+    assert "this.projectSortMode = 'name';" in text
+    assert "an.localeCompare(bn, undefined, { sensitivity: 'base', numeric: true })" in text
+
+
 def test_leftpane_empty_project_hint_tooltip_is_wired():
     text = _read("static/components/LeftPane.js")
     assert "v-if=\"showEmptyProjectHint\" class=\"project-menu-tooltip\"" in text
