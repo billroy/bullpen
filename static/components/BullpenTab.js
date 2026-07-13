@@ -60,6 +60,7 @@ const BullpenTab = {
       dropTargetCoords: [],
       emptyMenuCoord: null,
       emptyMenuPos: null,
+      emptyMenuAnchorPos: null,
       clipboardWorker: null,
       viewportOrigin: { col: 0, row: 0 },
       viewportPx: { width: 0, height: 0 },
@@ -830,6 +831,11 @@ const BullpenTab = {
       if (this.cardVerticalResize) return;
       this.clearExpandedWorkerCard();
     },
+    emptyMenuCoord(next) {
+      if (next) return;
+      this.emptyMenuPos = null;
+      this.emptyMenuAnchorPos = null;
+    },
     workspaceId() {
       this.restoreWorkspaceViewportOrigin();
     },
@@ -858,6 +864,8 @@ const BullpenTab = {
     if (this.$refs.viewport) this._resizeObserver.observe(this.$refs.viewport);
     this.selectA1();
     renderLucideIcons(this.$el);
+    window.addEventListener('resize', this.repositionEmptyMenuWithinViewport);
+    window.addEventListener('scroll', this.repositionEmptyMenuWithinViewport, true);
   },
   updated() {
     this.$nextTick(() => renderLucideIcons(this.$el));
@@ -867,6 +875,8 @@ const BullpenTab = {
     this._teardownColumnResizeListeners?.();
     this._teardownRowResizeListeners?.();
     this._teardownCardVerticalResizeListeners?.();
+    window.removeEventListener('resize', this.repositionEmptyMenuWithinViewport);
+    window.removeEventListener('scroll', this.repositionEmptyMenuWithinViewport, true);
     if (this.pendingWorkerAddTimer) clearTimeout(this.pendingWorkerAddTimer);
   },
   methods: {
@@ -1813,6 +1823,7 @@ const BullpenTab = {
       const focusViewport = options && options.focusViewport === true;
       this.emptyMenuCoord = null;
       this.emptyMenuPos = null;
+      this.emptyMenuAnchorPos = null;
       if (focusViewport) {
         this.$nextTick(() => this.$refs.viewport?.focus());
       }
@@ -1822,17 +1833,43 @@ const BullpenTab = {
       this.selectedCell = { ...coord };
       this.emptyMenuCoord = { ...coord };
       if (e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
-        this.emptyMenuPos = { x: e.clientX, y: e.clientY };
+        this.emptyMenuAnchorPos = { x: e.clientX, y: e.clientY };
+        this.emptyMenuPos = { ...this.emptyMenuAnchorPos };
       } else {
+        this.emptyMenuAnchorPos = null;
         this.emptyMenuPos = null;
       }
       this.liveMessage = `Empty cell at column ${coord.col}, row ${coord.row}`;
       this.$nextTick(() => {
+        this.repositionEmptyMenuWithinViewport();
         const menu = this.$refs.emptyMenu;
         if (menu && typeof menu.focus === 'function') menu.focus();
         const [first] = this.emptyMenuItems();
         if (first && typeof first.focus === 'function') first.focus();
       });
+    },
+    repositionEmptyMenuWithinViewport() {
+      if (!this.emptyMenuCoord) return;
+      const menu = this.$refs.emptyMenu;
+      if (!menu || typeof menu.getBoundingClientRect !== 'function') return;
+      let anchor = this.emptyMenuAnchorPos;
+      if (!anchor && this.emptyMenuPos) anchor = this.emptyMenuPos;
+      if (!anchor) {
+        const rect = menu.getBoundingClientRect();
+        anchor = { x: rect.left, y: rect.top };
+        this.emptyMenuAnchorPos = anchor;
+      }
+      const margin = 8;
+      const rect = menu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const maxX = Math.max(margin, viewportWidth - rect.width - margin);
+      const maxY = Math.max(margin, viewportHeight - rect.height - margin);
+      const x = Math.min(Math.max(anchor.x, margin), maxX);
+      const y = Math.min(Math.max(anchor.y, margin), maxY);
+      if (!this.emptyMenuPos || x !== this.emptyMenuPos.x || y !== this.emptyMenuPos.y) {
+        this.emptyMenuPos = { x, y };
+      }
     },
     onEmptyMenuKeydown(e) {
       if (e.key === 'Escape') {

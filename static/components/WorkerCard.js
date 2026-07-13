@@ -290,6 +290,7 @@ const WorkerCard = {
       connectTarget: false,
       showMenu: false,
       menuPos: { top: 0, left: 0 },
+      menuAnchorPos: null,
       elapsed: '0s',
       _timer: null,
       hoveredHandle: null,
@@ -331,12 +332,16 @@ const WorkerCard = {
     };
     document.addEventListener('click', this._closeMenu);
     document.addEventListener('pointerdown', this._closeValueEdit, true);
+    window.addEventListener('resize', this.repositionMenuWithinViewport);
+    window.addEventListener('scroll', this.repositionMenuWithinViewport, true);
   },
   beforeUnmount() {
     if (this._timer) clearInterval(this._timer);
     if (this._titleResizeObserver) this._titleResizeObserver.disconnect();
     document.removeEventListener('click', this._closeMenu);
     document.removeEventListener('pointerdown', this._closeValueEdit, true);
+    window.removeEventListener('resize', this.repositionMenuWithinViewport);
+    window.removeEventListener('scroll', this.repositionMenuWithinViewport, true);
     document.body.classList.remove('worker-singleton-dragging');
     this.removeDragImage();
   },
@@ -540,7 +545,7 @@ const WorkerCard = {
       ].join('|');
     },
     menuStyle() {
-      return { top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
+      return { position: 'fixed', top: this.menuPos.top + 'px', left: this.menuPos.left + 'px' };
     },
     serviceSiteUrl() {
       return window.getServiceSiteUrl ? window.getServiceSiteUrl(this.worker) : '';
@@ -767,7 +772,14 @@ const WorkerCard = {
       this.$nextTick(() => renderLucideIcons(this.$el));
     },
     showMenu(next) {
-      if (next) this.$nextTick(() => renderLucideIcons(this.$refs.menu));
+      if (next) {
+        this.$nextTick(() => {
+          renderLucideIcons(this.$refs.menu);
+          this.repositionMenuWithinViewport();
+        });
+      } else {
+        this.menuAnchorPos = null;
+      }
     },
     menuIconToken() {
       if (this.showMenu) this.$nextTick(() => renderLucideIcons(this.$refs.menu));
@@ -1378,6 +1390,7 @@ const WorkerCard = {
     toggleMenu() {
       if (this.showMenu) {
         this.showMenu = false;
+        this.menuAnchorPos = null;
         return;
       }
       const btn = this.$refs.menuBtn;
@@ -1386,11 +1399,13 @@ const WorkerCard = {
         const menuWidth = 210;
         let left = rect.right - menuWidth;
         if (left < 4) left = rect.left;
-        this.menuPos = { top: rect.bottom + 4, left };
+        this.menuAnchorPos = { top: rect.bottom + 4, left };
+        this.menuPos = { ...this.menuAnchorPos };
       }
       this.showMenu = true;
       this.$emit('menu-opened');
       this.$nextTick(() => {
+        this.repositionMenuWithinViewport();
         const [first] = this.menuItems();
         if (first) first.focus();
       });
@@ -1400,7 +1415,24 @@ const WorkerCard = {
     },
     closeMenuAndRestoreFocus() {
       this.showMenu = false;
+      this.menuAnchorPos = null;
       this.$emit('menu-closed');
+    },
+    repositionMenuWithinViewport() {
+      if (!this.showMenu || !this.menuAnchorPos) return;
+      const menu = this.$refs.menu;
+      if (!menu || typeof menu.getBoundingClientRect !== 'function') return;
+      const margin = 8;
+      const rect = menu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const maxLeft = Math.max(margin, viewportWidth - rect.width - margin);
+      const maxTop = Math.max(margin, viewportHeight - rect.height - margin);
+      const left = Math.min(Math.max(this.menuAnchorPos.left, margin), maxLeft);
+      const top = Math.min(Math.max(this.menuAnchorPos.top, margin), maxTop);
+      if (left !== this.menuPos.left || top !== this.menuPos.top) {
+        this.menuPos = { top, left };
+      }
     },
     onMenuKeydown(e) {
       if (e.key === 'Escape') {

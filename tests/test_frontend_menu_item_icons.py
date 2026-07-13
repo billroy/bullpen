@@ -69,3 +69,25 @@ def test_worker_menu_uses_high_overlay_z_index():
     text = _read("static/style.css")
     assert ".worker-menu {" in text
     assert "z-index: 1000;" in text
+
+
+def test_worker_menus_are_clamped_to_viewport():
+    card = _read("static/components/WorkerCard.js")
+    tab = _read("static/components/BullpenTab.js")
+    css = _read("static/style.css")
+
+    assert "menuAnchorPos: null" in card
+    assert "repositionMenuWithinViewport()" in card
+    assert "viewportWidth - rect.width - margin" in card
+    assert "viewportHeight - rect.height - margin" in card
+    assert "window.addEventListener('resize', this.repositionMenuWithinViewport);" in card
+
+    assert "emptyMenuAnchorPos: null" in tab
+    assert "repositionEmptyMenuWithinViewport()" in tab
+    assert "viewportWidth - rect.width - margin" in tab
+    assert "viewportHeight - rect.height - margin" in tab
+    assert "window.addEventListener('resize', this.repositionEmptyMenuWithinViewport);" in tab
+
+    assert "max-width: calc(100vw - 16px);" in css
+    assert "max-height: calc(100vh - 16px);" in css
+    assert "overflow-y: auto;" in css
