@@ -37,6 +37,7 @@ PROVIDER_MODEL_CANDIDATES = {
         "claude-haiku-4-5-20251001",
     ],
     "codex": [
+        "gpt-5.6",
         "gpt-5.5",
         "gpt-5.4",
         "gpt-5.4-mini",
