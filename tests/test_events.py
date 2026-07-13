@@ -1085,7 +1085,7 @@ class TestWorkerEvents:
         assert worker["name"] == "Build Number"
         assert worker["value"] == "00123"
         assert worker["resolved_value_type"] == "string"
-        assert worker["format"] == {"kind": "number", "places": 10}
+        assert worker["format"] == {"kind": "number", "places": 10, "grouping": True}
         assert worker["save_history"] is True
         assert worker["updated_at"]
         assert [entry["value"] for entry in worker["history"]] == ["00123"]

@@ -200,11 +200,19 @@ def normalize_format(raw: object) -> dict:
         kind = "auto"
     out = {"kind": kind}
     if kind in {"number", "currency"}:
-        try:
-            places = int(raw.get("places", 2))
-        except (TypeError, ValueError):
-            places = 2
-        out["places"] = max(0, min(10, places))
+        raw_places = raw.get("places", 2)
+        if raw_places is None or (isinstance(raw_places, str) and raw_places.strip().lower() in {"", "auto"}):
+            out["places"] = None
+        else:
+            try:
+                places = int(raw_places)
+            except (TypeError, ValueError):
+                places = 2
+            out["places"] = max(0, min(10, places))
+        grouping = raw.get("grouping", True)
+        if isinstance(grouping, str):
+            grouping = grouping.strip().lower() not in {"", "0", "false", "no", "off"}
+        out["grouping"] = bool(grouping)
     if kind == "currency":
         symbol = str(raw.get("symbol") or "$")[:8]
         out["symbol"] = symbol or "$"
@@ -217,10 +225,18 @@ def format_value(value: object, raw_format: object = None) -> str:
     if kind in {"number", "currency"}:
         parsed = _parse_plain_number(value)
         if parsed is not None:
-            places = int(fmt.get("places", 2))
-            rendered = f"{float(parsed):,.{places}f}"
-            if isinstance(parsed, int) and places == 0:
-                rendered = f"{parsed:,}"
+            places = fmt.get("places", 2)
+            grouping = bool(fmt.get("grouping", True))
+            separator = "," if grouping else ""
+            if places is None:
+                if isinstance(parsed, int):
+                    rendered = f"{parsed:{separator}d}"
+                else:
+                    rendered = f"{parsed:{separator}.10f}".rstrip("0").rstrip(".")
+            else:
+                rendered = f"{float(parsed):{separator}.{int(places)}f}"
+                if isinstance(parsed, int) and places == 0:
+                    rendered = f"{parsed:{separator}d}"
             return f"{fmt.get('symbol', '$')}{rendered}" if kind == "currency" else rendered
     return str(value if value is not None else "")
 

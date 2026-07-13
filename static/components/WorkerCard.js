@@ -617,11 +617,18 @@ const WorkerCard = {
       const kind = String(format.kind || 'auto');
       const numeric = typeof value === 'number' ? value : Number(value);
       if ((kind === 'number' || kind === 'currency') && Number.isFinite(numeric)) {
-        const places = Math.max(0, Math.min(10, Number(format.places ?? 2)));
-        const rendered = numeric.toLocaleString(undefined, {
-          minimumFractionDigits: places,
-          maximumFractionDigits: places,
-        });
+        const hasPlaces = Object.prototype.hasOwnProperty.call(format, 'places');
+        const rawPlaces = hasPlaces ? format.places : 2;
+        const automaticPlaces = rawPlaces === null || rawPlaces === '' || rawPlaces === 'auto';
+        const options = { useGrouping: format.grouping !== false };
+        if (automaticPlaces) {
+          options.maximumFractionDigits = 10;
+        } else {
+          const places = Math.max(0, Math.min(10, Number(rawPlaces)));
+          options.minimumFractionDigits = places;
+          options.maximumFractionDigits = places;
+        }
+        const rendered = numeric.toLocaleString(undefined, options);
         return kind === 'currency' ? `${format.symbol || '$'}${rendered}` : rendered;
       }
       return String(value);

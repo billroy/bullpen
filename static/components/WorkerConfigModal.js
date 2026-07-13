@@ -604,9 +604,9 @@ const WorkerConfigModal = {
             <div class="form-row">
               <label class="form-label">
                 Format
-                <select class="form-select" v-model="form.format.kind">
-                  <option value="auto">Auto</option>
-                  <option value="general">General</option>
+                <select class="form-select" v-model="form.format.kind" @change="onValueFormatKindChange">
+                  <option value="auto">Auto (by value type)</option>
+                  <option value="general">General (as entered)</option>
                   <option value="number">Number</option>
                   <option value="currency">Currency</option>
                   <option value="string-left">Text left</option>
@@ -615,7 +615,14 @@ const WorkerConfigModal = {
               </label>
               <label class="form-label" v-if="form.format.kind === 'number' || form.format.kind === 'currency'">
                 Decimal Places
-                <input class="form-input" type="number" v-model.number="form.format.places" min="0" max="10">
+                <select class="form-select" v-model="form.format.places">
+                  <option :value="null">Auto</option>
+                  <option v-for="places in 11" :key="places - 1" :value="places - 1">{{ places - 1 }}</option>
+                </select>
+              </label>
+              <label class="form-label form-label-inline" v-if="form.format.kind === 'number' || form.format.kind === 'currency'">
+                <input type="checkbox" v-model="form.format.grouping">
+                Use thousands separator
               </label>
               <label class="form-label" v-if="form.format.kind === 'currency'">
                 Symbol
@@ -1612,6 +1619,13 @@ const WorkerConfigModal = {
         return;
       }
       this.form.unit = this.valueUnitMode || '';
+    },
+    onValueFormatKindChange() {
+      const format = this.form.format || (this.form.format = { kind: 'auto' });
+      if (format.kind !== 'number' && format.kind !== 'currency') return;
+      if (!Object.prototype.hasOwnProperty.call(format, 'places')) format.places = null;
+      if (!Object.prototype.hasOwnProperty.call(format, 'grouping')) format.grouping = true;
+      if (format.kind === 'currency' && !format.symbol) format.symbol = '$';
     },
     previewNotificationSound() {
       if (!this.canPreviewNotificationSound) return;

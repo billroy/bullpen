@@ -5,6 +5,7 @@ from server.values import (
     col_label,
     coord_to_cell_ref,
     find_value_by_ref,
+    format_value,
     normalize_format,
     normalize_unit,
     normalize_value_history,
@@ -126,9 +127,24 @@ def test_value_format_normalizes_known_kinds_and_bounds():
     assert normalize_format({"kind": "currency", "places": 99, "symbol": "USDollars"}) == {
         "kind": "currency",
         "places": 10,
+        "grouping": True,
         "symbol": "USDollar",
     }
+    assert normalize_format({"kind": "number"}) == {"kind": "number", "places": 2, "grouping": True}
+    assert normalize_format({"kind": "number", "places": "auto", "grouping": "false"}) == {
+        "kind": "number",
+        "places": None,
+        "grouping": False,
+    }
     assert normalize_format({"kind": "mystery"}) == {"kind": "auto"}
+
+
+def test_value_number_format_supports_grouping_and_automatic_decimals():
+    assert format_value(12000.5, {"kind": "number", "places": None}) == "12,000.5"
+    assert format_value(12000.5, {"kind": "number", "places": 2}) == "12,000.50"
+    assert format_value(12000.5, {"kind": "number", "places": None, "grouping": False}) == "12000.5"
+    assert format_value(12000, {"kind": "number", "places": None}) == "12,000"
+    assert format_value(12000.5, {"kind": "currency", "places": None}) == "$12,000.5"
 
 
 def test_value_units_normalize_common_aliases_and_custom_text():

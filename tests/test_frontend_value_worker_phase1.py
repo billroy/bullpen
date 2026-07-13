@@ -58,6 +58,11 @@ def test_value_worker_config_modal_has_value_fields_only():
     assert 'v-model="valueUnitMode"' in text
     assert 'v-model="form.unit"' in text
     assert 'v-model="form.format.kind"' in text
+    assert '@change="onValueFormatKindChange"' in text
+    assert 'v-model="form.format.places"' in text
+    assert 'v-model="form.format.grouping"' in text
+    assert "format.places = null" in text
+    assert "format.grouping = true" in text
     assert 'v-model="form.save_history"' in text
     assert "fields.save_history = !!fields.save_history;" in text
     assert 'v-if="!isService && !isValue"' in text
@@ -135,6 +140,38 @@ def test_value_worker_card_styles_exist():
     assert ".worker-card-value {" in text
     assert ".worker-card-value-meta {" not in text
     assert ".worker-card-value-main {" in text
+
+
+def test_value_worker_card_formats_grouping_and_decimal_modes():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "WorkerCard.js"))}, 'utf8');
+const context = {{ console, WorkerCard: undefined, window: {{}}, document: {{}}, URL: {{}} }};
+vm.createContext(context);
+vm.runInContext(source + `
+  const display = WorkerCard.computed.valueDisplayBase;
+  const render = (format) => display.call({{ worker: {{ value: 12000.5, format }} }});
+  globalThis.__result = {{
+    automatic: render({{ kind: 'number', places: null, grouping: true }}),
+    fixed: render({{ kind: 'number', places: 2, grouping: true }}),
+    ungrouped: render({{ kind: 'number', places: null, grouping: false }}),
+  }};
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "automatic": "12,000.5",
+        "fixed": "12,000.50",
+        "ungrouped": "12000.5",
+    }
 
 
 def test_numeric_value_worker_card_has_sparkline_and_graph_modal():

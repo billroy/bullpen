@@ -367,7 +367,7 @@ def test_value_slot_normalizes_defaults_without_runnable_fields(tmp_workspace):
     assert slot["value"] == "00123"
     assert slot["value_type"] == "auto"
     assert slot["resolved_value_type"] == "string"
-    assert slot["format"] == {"kind": "number", "places": 10}
+    assert slot["format"] == {"kind": "number", "places": 10, "grouping": True}
     assert slot["icon"] == "equal"
     assert slot["color"] == "value"
     assert slot["updated_at"] == ""
