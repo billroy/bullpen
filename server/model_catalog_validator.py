@@ -10,6 +10,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from server.agents import get_adapter
+from server import claude_models
 from server.model_aliases import normalize_model
 
 
@@ -27,17 +28,11 @@ PROVIDER_MODEL_CANDIDATES = {
         "Claude Opus 4.6 (Thinking)",
         "GPT-OSS 120B (Medium)",
     ],
-    "claude": [
-        "claude-opus-4-7",
-        "claude-opus-4-6",
-        "claude-opus-4-5-20250514",
-        "claude-sonnet-5",
-        "claude-sonnet-4-6",
-        "claude-sonnet-4-5-20250514",
-        "claude-haiku-4-5-20251001",
-    ],
+    "claude": list(claude_models.FALLBACK_CLAUDE_MODELS),
     "codex": [
-        "gpt-5.6",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
         "gpt-5.5",
         "gpt-5.4",
         "gpt-5.4-mini",
@@ -54,6 +49,13 @@ def known_providers():
 
 def candidate_models(provider):
     """Return built-in model candidates for a provider."""
+    if provider == "claude":
+        result = claude_models.fetch_claude_models()
+        models = [row.get("id") for row in result.get("models", []) if row.get("id")]
+        if models:
+            # Catalog validation invokes real model calls. Sample current
+            # entries rather than probing the entire public catalog by default.
+            return models[:7]
     return list(PROVIDER_MODEL_CANDIDATES.get(provider, []))
 
 

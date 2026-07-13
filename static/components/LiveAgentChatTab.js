@@ -22,6 +22,16 @@ const LiveAgentChatTab = {
       busy: false,
       activeSessionId: this.sessionId || _generateChatSessionId(),
       _streamingBuf: '',
+      claudeModels: [],
+      claudeModelsStatus: '',
+      claudeModelsError: '',
+      claudeModelsLoading: false,
+      claudeModelsRequestSeq: 0,
+      codexModels: [],
+      codexModelsStatus: '',
+      codexModelsError: '',
+      codexModelsLoading: false,
+      codexModelsRequestSeq: 0,
       opencodeModels: [],
       opencodeModelsStatus: '',
       opencodeModelsError: '',
@@ -40,9 +50,38 @@ const LiveAgentChatTab = {
       return withPreferredOption(AI_PROVIDER_OPTIONS, this.preferredAiSelection?.agent);
     },
     modelOptions() {
-      const options = MODEL_OPTIONS[this.provider] || [];
+      const fallback = MODEL_OPTIONS[this.provider] || [];
+      let options = fallback;
+      if (this.provider === 'codex' && this.codexModels.length) {
+        options = this.codexModels.map(model => model.id);
+      } else if (this.provider === 'claude' && this.claudeModels.length) {
+        options = this.claudeModels.map(model => model.id);
+      }
       const preferred = this.preferredAiSelection;
-      return withPreferredOption(options, preferred?.agent === this.provider ? preferred.model : '');
+      const preferredModel = preferred?.agent === this.provider ? preferred.model : '';
+      const current = String(this.model || '').trim();
+      const hasDynamicCatalog = (this.provider === 'codex' && this.codexModels.length)
+        || (this.provider === 'claude' && this.claudeModels.length);
+      const currentModel = hasDynamicCatalog && !options.includes(current)
+        ? current
+        : '';
+      return withPreferredOption(withPreferredOption(options, currentModel), preferredModel);
+    },
+    isClaudeProvider() {
+      return this.provider === 'claude';
+    },
+    claudeCatalogHint() {
+      if (this.claudeModelsLoading) return 'Loading Claude models...';
+      if (this.claudeModelsError) return this.claudeModelsError;
+      return '';
+    },
+    isCodexProvider() {
+      return this.provider === 'codex';
+    },
+    codexCatalogHint() {
+      if (this.codexModelsLoading) return 'Loading Codex models...';
+      if (this.codexModelsError) return this.codexModelsError;
+      return '';
     },
     isOpenCodeProvider() {
       return this.provider === 'opencode';
@@ -95,6 +134,8 @@ const LiveAgentChatTab = {
         this.ensureOpenCodeModels();
         return;
       }
+      if (newProvider === 'codex') this.ensureCodexModels();
+      if (newProvider === 'claude') this.ensureClaudeModels();
       const opts = this.modelOptions;
       if (!opts.includes(this.model)) this.model = opts[0] || '';
     },
@@ -108,6 +149,9 @@ const LiveAgentChatTab = {
   },
   mounted() {
     this._registerSocketHandlers();
+    if (this.provider === 'claude') this.ensureClaudeModels();
+    if (this.provider === 'codex') this.ensureCodexModels();
+    if (this.provider === 'opencode') this.ensureOpenCodeModels();
     this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
   },
   beforeUnmount() {
@@ -188,6 +232,10 @@ const LiveAgentChatTab = {
       if (this.provider === 'opencode') {
         this.syncOpenCodeModelProvider();
         this.ensureOpenCodeModels();
+      } else if (this.provider === 'codex') {
+        this.ensureCodexModels();
+      } else if (this.provider === 'claude') {
+        this.ensureClaudeModels();
       }
     },
     onProviderChange() {
@@ -225,6 +273,64 @@ const LiveAgentChatTab = {
       const s = window._bullpenSocket;
       if (s) s.emit('chat:clear', { sessionId: this.activeSessionId, workspaceId: this.workspaceId });
       this.$nextTick(() => this.$refs.input && this.$refs.input.focus());
+    },
+    ensureCodexModels() {
+      if (this.codexModels.length || this.codexModelsLoading) return;
+      this.loadCodexModels();
+    },
+    async loadCodexModels({ refresh = false } = {}) {
+      const requestSeq = ++this.codexModelsRequestSeq;
+      this.codexModelsLoading = true;
+      this.codexModelsError = '';
+      try {
+        const data = await this.$root.requestCodexModels({
+          workspaceId: this.workspaceId,
+          refresh: !!refresh,
+        });
+        if (requestSeq !== this.codexModelsRequestSeq) return;
+        this.codexModelsStatus = data.status || 'ok';
+        const nextModels = Array.isArray(data.models) ? data.models.filter(model => model?.id) : [];
+        if (nextModels.length) this.codexModels = nextModels;
+        this.codexModelsError = data.status === 'ok' ? '' : (data.error || 'Using fallback Codex models.');
+      } catch (err) {
+        if (requestSeq !== this.codexModelsRequestSeq) return;
+        this.codexModelsStatus = 'error';
+        this.codexModelsError = err.message || 'Codex model catalog is unavailable; using fallback models.';
+      } finally {
+        if (requestSeq === this.codexModelsRequestSeq) this.codexModelsLoading = false;
+      }
+    },
+    refreshCodexModels() {
+      return this.loadCodexModels({ refresh: true });
+    },
+    ensureClaudeModels() {
+      if (this.claudeModels.length || this.claudeModelsLoading) return;
+      this.loadClaudeModels();
+    },
+    async loadClaudeModels({ refresh = false } = {}) {
+      const requestSeq = ++this.claudeModelsRequestSeq;
+      this.claudeModelsLoading = true;
+      this.claudeModelsError = '';
+      try {
+        const data = await this.$root.requestClaudeModels({
+          workspaceId: this.workspaceId,
+          refresh: !!refresh,
+        });
+        if (requestSeq !== this.claudeModelsRequestSeq) return;
+        this.claudeModelsStatus = data.status || 'ok';
+        const nextModels = Array.isArray(data.models) ? data.models.filter(model => model?.id) : [];
+        if (nextModels.length) this.claudeModels = nextModels;
+        this.claudeModelsError = data.status === 'ok' ? '' : (data.error || 'Using cached or fallback Claude models.');
+      } catch (err) {
+        if (requestSeq !== this.claudeModelsRequestSeq) return;
+        this.claudeModelsStatus = 'error';
+        this.claudeModelsError = err.message || 'Claude model catalog is unavailable; using fallback models.';
+      } finally {
+        if (requestSeq === this.claudeModelsRequestSeq) this.claudeModelsLoading = false;
+      }
+    },
+    refreshClaudeModels() {
+      return this.loadClaudeModels({ refresh: true });
     },
     syncOpenCodeModelProvider() {
       const selectedProvider = String(this.opencodeModelProvider || '').trim();
@@ -302,6 +408,14 @@ const LiveAgentChatTab = {
         <select v-if="!isOpenCodeProvider" class="form-select chat-select" v-model="model" :disabled="busy" @change="onModelChange">
           <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
         </select>
+        <button v-if="isCodexProvider" class="btn btn-sm" @click="refreshCodexModels" :disabled="busy || codexModelsLoading">
+          {{ codexModelsLoading ? 'Refreshing...' : 'Refresh' }}
+        </button>
+        <span v-if="isCodexProvider && codexCatalogHint" class="chat-hint">{{ codexCatalogHint }}</span>
+        <button v-if="isClaudeProvider" class="btn btn-sm" @click="refreshClaudeModels" :disabled="busy || claudeModelsLoading">
+          {{ claudeModelsLoading ? 'Refreshing...' : 'Refresh' }}
+        </button>
+        <span v-if="isClaudeProvider && claudeCatalogHint" class="chat-hint">{{ claudeCatalogHint }}</span>
         <template v-if="isOpenCodeProvider">
           <select class="form-select chat-select" v-model="opencodeModelProvider" :disabled="busy" @change="onOpenCodeProviderChange">
             <option value="">All providers</option>

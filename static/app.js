@@ -1501,6 +1501,74 @@ const app = createApp({
         socket.emit('models:opencode', _wsData({ ...payload, request_id: requestId }));
       });
     }
+    let codexModelsRequestSeq = 0;
+    function requestCodexModels(payload = {}) {
+      return new Promise((resolve, reject) => {
+        const requestId = `codex-models-${Date.now()}-${++codexModelsRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Codex model catalog timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('models:codex:listed', onListed);
+          socket.off('models:codex:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onListed = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Codex model catalog is unavailable'));
+        };
+        socket.on('models:codex:listed', onListed);
+        socket.on('models:codex:error', onError);
+        socket.emit('models:codex', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
+    let claudeModelsRequestSeq = 0;
+    function requestClaudeModels(payload = {}) {
+      return new Promise((resolve, reject) => {
+        const requestId = `claude-models-${Date.now()}-${++claudeModelsRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Claude model catalog timed out'));
+        }, 30000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('models:claude:listed', onListed);
+          socket.off('models:claude:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onListed = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || 'Claude model catalog is unavailable'));
+        };
+        socket.on('models:claude:listed', onListed);
+        socket.on('models:claude:error', onError);
+        socket.emit('models:claude', _wsData({ ...payload, request_id: requestId }));
+      });
+    }
     let commitsRequestSeq = 0;
     function requestCommits(payload = {}) {
       return new Promise((resolve, reject) => {
@@ -2558,7 +2626,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCodexModels, requestClaudeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

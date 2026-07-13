@@ -140,6 +140,16 @@ const WorkerConfigModal = {
       servicePreviewSeq: 0,
       servicePreviewTimer: null,
       workerColorPickerInput: null,
+      claudeModels: [],
+      claudeModelsStatus: '',
+      claudeModelsError: '',
+      claudeModelsLoading: false,
+      claudeModelsRequestSeq: 0,
+      codexModels: [],
+      codexModelsStatus: '',
+      codexModelsError: '',
+      codexModelsLoading: false,
+      codexModelsRequestSeq: 0,
       opencodeModels: [],
       opencodeModelsStatus: '',
       opencodeModelsError: '',
@@ -237,6 +247,8 @@ const WorkerConfigModal = {
           this.servicePortAutoFilled = false;
           this.syncOpenCodeModelProvider();
           if (this.isOpenCodeAgent) this.ensureOpenCodeModels();
+          if (this.isCodexAgent) this.ensureCodexModels();
+          if (this.isClaudeAgent) this.ensureClaudeModels();
           this.scheduleServicePreview();
         }
       }
@@ -289,6 +301,12 @@ const WorkerConfigModal = {
     isOpenCodeAgent() {
       return this.isAI && this.form.agent === 'opencode';
     },
+    isCodexAgent() {
+      return this.isAI && this.form.agent === 'codex';
+    },
+    isClaudeAgent() {
+      return this.isAI && this.form.agent === 'claude';
+    },
     preferredAiSelection() {
       return normalizedLastAiSelection(this.lastAiSelection);
     },
@@ -309,9 +327,25 @@ const WorkerConfigModal = {
         .filter(Boolean);
     },
     modelOptions() {
-      const options = MODEL_OPTIONS[this.form.agent] || ['default'];
+      const fallback = MODEL_OPTIONS[this.form.agent] || ['default'];
+      let options = fallback;
+      if (this.isCodexAgent && this.codexModels.length) {
+        options = this.codexModels.map(model => model.id);
+      } else if (this.isClaudeAgent && this.claudeModels.length) {
+        options = this.claudeModels.map(model => model.id);
+      }
       const preferred = this.preferredAiSelection;
       return withPreferredOption(options, preferred?.agent === this.form.agent ? preferred.model : '');
+    },
+    codexCatalogHint() {
+      if (this.codexModelsLoading) return 'Loading Codex models...';
+      if (this.codexModelsError) return this.codexModelsError;
+      return '';
+    },
+    claudeCatalogHint() {
+      if (this.claudeModelsLoading) return 'Loading Claude models...';
+      if (this.claudeModelsError) return this.claudeModelsError;
+      return '';
     },
     opencodeProviders() {
       const providers = this.opencodeModels
@@ -624,6 +658,14 @@ const WorkerConfigModal = {
                   <option value="__custom__">Custom...</option>
                 </select>
                 <input v-if="showCustomModel" class="form-input" v-model="form.model" placeholder="Enter model slug" style="margin-top: 4px;">
+                <button v-if="isCodexAgent" type="button" class="btn btn-sm" @click="refreshCodexModels" :disabled="codexModelsLoading" style="margin-top: 4px;">
+                  {{ codexModelsLoading ? 'Refreshing...' : 'Refresh catalog' }}
+                </button>
+                <span v-if="isCodexAgent && codexCatalogHint" class="form-hint">{{ codexCatalogHint }}</span>
+                <button v-if="isClaudeAgent" type="button" class="btn btn-sm" @click="refreshClaudeModels" :disabled="claudeModelsLoading" style="margin-top: 4px;">
+                  {{ claudeModelsLoading ? 'Refreshing...' : 'Refresh catalog' }}
+                </button>
+                <span v-if="isClaudeAgent && claudeCatalogHint" class="form-hint">{{ claudeCatalogHint }}</span>
               </label>
             </div>
             <template v-if="isOpenCodeAgent">
@@ -1355,6 +1397,8 @@ const WorkerConfigModal = {
         this.ensureOpenCodeModels();
         return;
       }
+      if (this.form.agent === 'codex') this.ensureCodexModels();
+      if (this.form.agent === 'claude') this.ensureClaudeModels();
       this.form.model = this.modelOptions[0];
     },
     onTrustModeChange() {
@@ -1369,6 +1413,60 @@ const WorkerConfigModal = {
       } else {
         this.form.model = e.target.value;
       }
+    },
+    ensureCodexModels() {
+      if (this.codexModels.length || this.codexModelsLoading) return;
+      this.loadCodexModels();
+    },
+    async loadCodexModels({ refresh = false } = {}) {
+      const requestSeq = ++this.codexModelsRequestSeq;
+      this.codexModelsLoading = true;
+      this.codexModelsError = '';
+      try {
+        const workspaceId = this.activeWorkspaceId || this.$root?.activeWorkspaceId || '';
+        const data = await this.$root.requestCodexModels({ workspaceId, refresh: !!refresh });
+        if (requestSeq !== this.codexModelsRequestSeq) return;
+        this.codexModelsStatus = data.status || 'ok';
+        const nextModels = Array.isArray(data.models) ? data.models.filter(model => model?.id) : [];
+        if (nextModels.length) this.codexModels = nextModels;
+        this.codexModelsError = data.status === 'ok' ? '' : (data.error || 'Using fallback Codex models.');
+      } catch (err) {
+        if (requestSeq !== this.codexModelsRequestSeq) return;
+        this.codexModelsStatus = 'error';
+        this.codexModelsError = err.message || 'Codex model catalog is unavailable; using fallback models.';
+      } finally {
+        if (requestSeq === this.codexModelsRequestSeq) this.codexModelsLoading = false;
+      }
+    },
+    refreshCodexModels() {
+      return this.loadCodexModels({ refresh: true });
+    },
+    ensureClaudeModels() {
+      if (this.claudeModels.length || this.claudeModelsLoading) return;
+      this.loadClaudeModels();
+    },
+    async loadClaudeModels({ refresh = false } = {}) {
+      const requestSeq = ++this.claudeModelsRequestSeq;
+      this.claudeModelsLoading = true;
+      this.claudeModelsError = '';
+      try {
+        const workspaceId = this.activeWorkspaceId || this.$root?.activeWorkspaceId || '';
+        const data = await this.$root.requestClaudeModels({ workspaceId, refresh: !!refresh });
+        if (requestSeq !== this.claudeModelsRequestSeq) return;
+        this.claudeModelsStatus = data.status || 'ok';
+        const nextModels = Array.isArray(data.models) ? data.models.filter(model => model?.id) : [];
+        if (nextModels.length) this.claudeModels = nextModels;
+        this.claudeModelsError = data.status === 'ok' ? '' : (data.error || 'Using cached or fallback Claude models.');
+      } catch (err) {
+        if (requestSeq !== this.claudeModelsRequestSeq) return;
+        this.claudeModelsStatus = 'error';
+        this.claudeModelsError = err.message || 'Claude model catalog is unavailable; using fallback models.';
+      } finally {
+        if (requestSeq === this.claudeModelsRequestSeq) this.claudeModelsLoading = false;
+      }
+    },
+    refreshClaudeModels() {
+      return this.loadClaudeModels({ refresh: true });
     },
     syncOpenCodeModelProvider() {
       const selectedProvider = String(this.opencodeModelProvider || '').trim();

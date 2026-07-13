@@ -8,10 +8,12 @@ import bullpen
 from server.agents import get_adapter, register_adapter
 from server.agents.base import AgentAdapter
 from server.model_catalog_validator import (
+    candidate_models,
     classify_model_error,
     fetch_provider_api_catalog,
     validate_model_catalog,
 )
+from server import claude_models
 
 
 class ProbeAdapter(AgentAdapter):
@@ -106,6 +108,15 @@ def test_fetch_provider_api_catalog_reports_unsupported_for_antigravity():
         "reason": "No API catalog fetcher for antigravity",
         "models": [],
     }
+
+
+def test_claude_validation_candidates_come_from_dynamic_catalog(monkeypatch):
+    monkeypatch.setattr(claude_models, "fetch_claude_models", lambda: {
+        "status": "ok",
+        "models": [{"id": f"claude-current-{index}"} for index in range(10)],
+    })
+
+    assert candidate_models("claude") == [f"claude-current-{index}" for index in range(7)]
 
 
 def test_classify_model_error_common_cases():

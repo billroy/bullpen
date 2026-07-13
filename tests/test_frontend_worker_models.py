@@ -10,23 +10,58 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_codex_model_options_include_current_gpt5_family():
+def test_codex_model_options_use_current_cli_catalog_as_fallback():
     text = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
-    assert "codex: ['gpt-5.6'" in text
+    assert "codex: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'" in text
+    assert "'gpt-5.6'" not in text
     assert "'gpt-5.5'" in text
     assert "'gpt-5.4'" in text
     assert "'gpt-5.4-mini'" in text
-    assert "'gpt-5.3-codex'" in text
     assert "'gpt-5.2'" in text
 
 
-def test_claude_model_options_do_not_include_removed_haiku_slug():
+def test_codex_uses_catalog_backed_model_picker():
+    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    modal = (ROOT / "static" / "components" / "WorkerConfigModal.js").read_text(encoding="utf-8")
+    chat = (ROOT / "static" / "components" / "LiveAgentChatTab.js").read_text(encoding="utf-8")
+
+    assert "function requestCodexModels(payload = {})" in app
+    assert "socket.emit('models:codex', _wsData({ ...payload, request_id: requestId }));" in app
+    assert "this.$root.requestCodexModels({" in modal
+    assert "this.$root.requestCodexModels({" in chat
+    assert "refreshCodexModels" in modal
+    assert "refreshCodexModels" in chat
+    assert "this.codexModels.map(model => model.id)" in modal
+    assert "this.codexModels.map(model => model.id)" in chat
+    assert "Enter model slug" in modal
+
+
+def test_claude_model_options_are_fallback_only_and_exclude_stale_slugs():
     text = (ROOT / "static" / "utils.js").read_text(encoding="utf-8")
+    assert "'claude-opus-4-8'" in text
     assert "'claude-opus-4-7'" in text
     assert "'claude-sonnet-5'" in text
+    assert "'claude-fable-5'" in text
     assert "'claude-haiku-4-6'" not in text
     assert "'claude-haiku-4-5-20250414'" not in text
-    assert "'claude-haiku-4-5-20251001'" in text
+    assert "'claude-opus-4-5-20250514'" not in text
+    assert "'claude-sonnet-4-5-20250514'" not in text
+    assert "'claude-haiku-4-5'" in text
+
+
+def test_claude_uses_models_dev_catalog_backed_picker():
+    app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    modal = (ROOT / "static" / "components" / "WorkerConfigModal.js").read_text(encoding="utf-8")
+    chat = (ROOT / "static" / "components" / "LiveAgentChatTab.js").read_text(encoding="utf-8")
+
+    assert "function requestClaudeModels(payload = {})" in app
+    assert "socket.emit('models:claude', _wsData({ ...payload, request_id: requestId }));" in app
+    assert "this.$root.requestClaudeModels({" in modal
+    assert "this.$root.requestClaudeModels({" in chat
+    assert "refreshClaudeModels" in modal
+    assert "refreshClaudeModels" in chat
+    assert "this.claudeModels.map(model => model.id)" in modal
+    assert "this.claudeModels.map(model => model.id)" in chat
 
 
 def test_antigravity_model_options_present_and_gemini_provider_absent():
@@ -201,6 +236,89 @@ function makeInstance() {
     'anthropic/claude-sonnet-4-6',
   ]);
   assert.match(instance.opencodeModelsError, /timed out/);
+})().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
+"""
+
+    result = subprocess.run([node, "-e", script], cwd=ROOT, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+
+
+def test_dynamic_chat_catalogs_preserve_selection_without_overriding_catalog_order():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+
+    script = r"""
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const source = fs.readFileSync(path.join(process.cwd(), 'static/components/LiveAgentChatTab.js'), 'utf8');
+const context = {
+  console,
+  crypto: { randomUUID: () => 'test' },
+  AI_PROVIDER_OPTIONS: ['claude', 'codex'],
+  MODEL_OPTIONS: { claude: ['claude-sonnet-4-6'], codex: ['gpt-fallback'] },
+  normalizedLastAiSelection: () => null,
+  withPreferredOption: (options, preferred) => preferred
+    ? [preferred, ...options.filter((value) => value !== preferred)]
+    : options.slice(),
+  window: { _bullpenSocket: null },
+};
+
+vm.createContext(context);
+vm.runInContext(`${source}\n;globalThis.__LiveAgentChatTab = LiveAgentChatTab;`, context);
+const component = context.__LiveAgentChatTab;
+const requests = [];
+const instance = {
+  ...component.data.call({ sessionId: null }),
+  provider: 'codex',
+  model: 'gpt-fallback',
+  workspaceId: 'ws-test',
+  lastAiSelection: null,
+  $root: {
+    requestCodexModels: async (payload) => {
+      requests.push(payload);
+      return {
+        status: 'ok',
+        models: [{ id: 'gpt-new' }, { id: 'gpt-fallback' }],
+      };
+    },
+    requestClaudeModels: async (payload) => {
+      requests.push(payload);
+      return {
+        status: 'ok',
+        models: [{ id: 'claude-sonnet-5' }, { id: 'claude-opus-4-8' }],
+      };
+    },
+  },
+  $nextTick() {},
+};
+for (const [name, getter] of Object.entries(component.computed || {})) {
+  Object.defineProperty(instance, name, { get: () => getter.call(instance) });
+}
+for (const [name, method] of Object.entries(component.methods || {})) {
+  instance[name] = method.bind(instance);
+}
+
+(async () => {
+  await instance.refreshCodexModels();
+  assert.strictEqual(JSON.stringify(requests[0]), JSON.stringify({ workspaceId: 'ws-test', refresh: true }));
+  assert.strictEqual(JSON.stringify(instance.modelOptions), JSON.stringify(['gpt-new', 'gpt-fallback']));
+  assert.strictEqual(instance.model, 'gpt-fallback');
+
+  instance.model = 'gpt-private-preview';
+  assert.strictEqual(JSON.stringify(instance.modelOptions), JSON.stringify(['gpt-private-preview', 'gpt-new', 'gpt-fallback']));
+
+  instance.provider = 'claude';
+  instance.model = 'claude-private-preview';
+  await instance.refreshClaudeModels();
+  assert.strictEqual(JSON.stringify(requests[1]), JSON.stringify({ workspaceId: 'ws-test', refresh: true }));
+  assert.strictEqual(JSON.stringify(instance.modelOptions), JSON.stringify(['claude-private-preview', 'claude-sonnet-5', 'claude-opus-4-8']));
 })().catch((err) => {
   console.error(err);
   process.exit(1);

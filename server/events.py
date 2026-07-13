@@ -24,7 +24,7 @@ from server.archive_transport import (
     import_all_archive,
     import_workspace_archive,
 )
-from server import opencode_models
+from server import claude_models, codex_models, opencode_models
 from server.file_browser import (
     FileBrowserError,
     build_file_tree,
@@ -1069,6 +1069,65 @@ def register_events(socketio, app):
         payload["request_id"] = (data or {}).get("request_id")
         payload["ok"] = payload.get("status") != "error"
         emit("models:opencode:listed", payload)
+
+    @socketio.on("models:codex")
+    def on_codex_models(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("models:codex:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "status": "error",
+                "error": "Unknown workspace",
+                "models": [],
+            })
+            return
+        result = codex_models.fetch_codex_models(
+            ws.path,
+            refresh=bool((data or {}).get("refresh")),
+        )
+        if isinstance(result, dict):
+            payload = dict(result)
+        else:
+            payload = {"status": "error", "error": "Invalid Codex model catalog response", "models": []}
+        payload["workspaceId"] = ws_id
+        payload["request_id"] = (data or {}).get("request_id")
+        payload["ok"] = payload.get("status") != "error"
+        emit("models:codex:listed", payload)
+
+    @socketio.on("models:claude")
+    def on_claude_models(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("models:claude:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "status": "error",
+                "error": "Unknown workspace",
+                "models": [],
+            })
+            return
+        result = claude_models.fetch_claude_models(
+            refresh=bool((data or {}).get("refresh")),
+        )
+        if isinstance(result, dict):
+            payload = dict(result)
+        else:
+            payload = {"status": "error", "error": "Invalid Claude model catalog response", "models": []}
+        payload["workspaceId"] = ws_id
+        payload["request_id"] = (data or {}).get("request_id")
+        payload["ok"] = payload.get("status") not in {"error"}
+        emit("models:claude:listed", payload)
 
     @socketio.on("commits:list")
     def on_commits_list(data):

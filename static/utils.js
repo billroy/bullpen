@@ -14,13 +14,14 @@ const MODEL_OPTIONS = {
     'GPT-OSS 120B (Medium)',
   ],
   claude: [
-    'claude-opus-4-7',
-    'claude-opus-4-6', 'claude-opus-4-5-20250514',
     'claude-sonnet-5',
-    'claude-sonnet-4-6', 'claude-sonnet-4-5-20250514',
-    'claude-haiku-4-5-20251001',
+    'claude-fable-5',
+    'claude-opus-4-8',
+    'claude-opus-4-7',
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5',
   ],
-  codex: ['gpt-5.6', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex', 'gpt-5.2'],
+  codex: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.2'],
   opencode: [],
 };
 

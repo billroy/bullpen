@@ -606,6 +606,21 @@ def require_auth_for_network_bind(host):
     )
 
 
+def start_claude_catalog_refresh():
+    """Warm the one-hour Claude catalog cache without delaying server startup."""
+    import threading
+    from server import claude_models
+
+    def refresh():
+        result = claude_models.refresh_claude_models_at_startup()
+        if result.get("status") == "error":
+            print(result.get("error", "Claude model catalog refresh failed"), file=sys.stderr)
+
+    thread = threading.Thread(target=refresh, name="claude-model-catalog-refresh", daemon=True)
+    thread.start()
+    return thread
+
+
 def main():
     args = parse_args()
 
@@ -652,6 +667,8 @@ def main():
         start_without_project=args.start_without_project,
         max_handoff_depth=args.max_handoff_depth,
     )
+
+    start_claude_catalog_refresh()
 
     if not args.no_browser:
         import webbrowser
