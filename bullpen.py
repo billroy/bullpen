@@ -621,6 +621,19 @@ def start_claude_catalog_refresh():
     return thread
 
 
+def restore_server_sigint_handler():
+    """Make Control-C terminate the foreground Bullpen server.
+
+    Bullpen is a long-running CLI process, so it owns SIGINT while serving.
+    Install the standard Python handler at the last possible point before the
+    blocking server loop. This prevents an inherited or startup-installed
+    handler that merely returns from turning Control-C into a no-op.
+    """
+    import signal
+
+    signal.signal(signal.SIGINT, signal.default_int_handler)
+
+
 def main():
     args = parse_args()
 
@@ -676,6 +689,7 @@ def main():
         browse_host = "localhost" if args.host == "0.0.0.0" else args.host
         threading.Timer(1.0, lambda: webbrowser.open(f"http://{browse_host}:{args.port}")).start()
 
+    restore_server_sigint_handler()
     socketio.run(app, host=args.host, port=args.port, debug=False, allow_unsafe_werkzeug=True)
 
 
