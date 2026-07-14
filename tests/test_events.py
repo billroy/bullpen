@@ -2183,6 +2183,41 @@ class TestWorkerEvents:
         assert worker["value"] == 42
         assert worker["resolved_value_type"] == "number"
         assert "_raw_value_input" not in worker
+        assert worker["updated_at"]
+        assert worker["history"] == [{
+            "value": 42,
+            "value_type": "auto",
+            "resolved_value_type": "number",
+            "updated_at": worker["updated_at"],
+        }]
+
+    def test_raw_worksheet_group_is_atomic_when_classification_fails(self, client):
+        c, app = client
+        c.emit("worker:paste_group", {
+            "items": [
+                {
+                    "coord": {"col": 2, "row": 3},
+                    "worker": {
+                        "type": "value",
+                        "value": "42",
+                        "value_type": "auto",
+                        "_raw_value_input": True,
+                    },
+                },
+                {
+                    "coord": {"col": 3, "row": 3},
+                    "worker": {
+                        "type": "value",
+                        "value": "not numeric",
+                        "value_type": "number",
+                        "_raw_value_input": True,
+                    },
+                },
+            ],
+        })
+        assert get_event(c, "error")["message"] == "value must be numeric"
+        layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert not any(slot for slot in layout["slots"] if slot)
 
     def test_duplicate_service_worker_reemits_running_service_state(self, client):
         c, app = client

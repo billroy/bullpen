@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import os
 import shutil
+import json
 
 import pytest
 
@@ -80,6 +81,70 @@ def test_value_number_formatting_and_string_preservation_in_chromium():
 
                 expect(value).to_have_text("12000")
                 browser.close()
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def test_scalar_and_rectangular_system_clipboard_paste_in_chromium():
+    with tempfile.TemporaryDirectory(prefix="bullpen_value_paste_pw_") as workspace:
+        port = _free_port()
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                page = browser.new_page(locale="en-US")
+                page.goto(base_url)
+                page.get_by_role("button", name="Workers").click()
+                viewport = page.locator(".worker-grid-viewport")
+
+                def dispatch_paste(text):
+                    viewport.evaluate(
+                        """(element, value) => {
+                          const clipboard = new DataTransfer();
+                          clipboard.setData('text/plain', value);
+                          element.dispatchEvent(new ClipboardEvent('paste', {
+                            bubbles: true,
+                            cancelable: true,
+                            clipboardData: clipboard,
+                          }));
+                        }""",
+                        text,
+                    )
+
+                page.get_by_role("gridcell", name="Empty cell at column 0, row 0").click()
+                dispatch_paste("42")
+                expect(page.locator(".toast-message", has_text="Pasted 1×1 range: 1 Value created")).to_be_visible()
+                expect(page.locator(".worker-card-value-main")).to_have_count(1)
+                expect(page.locator(".worker-card-value-main").nth(0)).to_have_text("42")
+
+                viewport.focus()
+                viewport.press("ArrowRight")
+                viewport.press("ArrowRight")
+                viewport.press("ArrowDown")
+                viewport.press("ArrowDown")
+                dispatch_paste("1\t\t3\r\n4\t5\t6\r\n")
+                expect(page.locator(
+                    ".toast-message", has_text="Pasted 2×3 range: 5 Values created, 1 blank cell skipped"
+                )).to_be_visible()
+                expect(page.locator(".worker-card-value-main")).to_have_count(6)
+                assert page.locator(".worker-card-value-main").all_text_contents() == ["42", "1", "3", "4", "5", "6"]
+                browser.close()
+
+            with open(os.path.join(workspace, ".bullpen", "layout.json"), encoding="utf-8") as handle:
+                layout = json.load(handle)
+            values = [slot for slot in layout["slots"] if slot and slot.get("type") == "value"]
+            assert [(slot["col"], slot["row"]) for slot in values] == [
+                (0, 0), (2, 2), (4, 2), (2, 3), (3, 3), (4, 3),
+            ]
+            assert all(slot["resolved_value_type"] == "number" for slot in values)
+            assert all(len(slot["history"]) == 1 for slot in values)
         finally:
             proc.terminate()
             try:

@@ -2314,10 +2314,23 @@ def register_events(socketio, app):
         items = validate_worker_paste_group(data)
         layout = _load_layout(bp_dir)
         config = read_json(os.path.join(bp_dir, "config.json"))
-        fragments = [
-            {"coord": item["coord"], "worker": copy_worker_for_fragment(item["worker"])}
-            for item in items
-        ]
+        fragments = []
+        paste_updated_at = _now_iso()
+        try:
+            for item in items:
+                worker = copy_worker_for_fragment(item["worker"])
+                if worker.get("type") == "value" and worker.pop("_raw_value_input", False):
+                    payload = value_mod.classify_value_input(
+                        worker.get("value", ""), worker.get("value_type", "auto"), source="ui"
+                    )
+                    worker.update(payload)
+                    worker["updated_at"] = paste_updated_at
+                    worker["save_history"] = bool(worker["save_history"]) if "save_history" in worker else True
+                    value_mod.append_value_history(worker, paste_updated_at)
+                fragments.append({"coord": item["coord"], "worker": worker})
+        except ValueError as exc:
+            emit("error", {"message": str(exc)})
+            return
         try:
             result = apply_worker_fragments_to_layout(layout, fragments, config=config)
         except BentoCarrierError as e:

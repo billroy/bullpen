@@ -444,6 +444,8 @@ const context = {{
   plainText: {json.dumps("a\tb\r\nc\td\r\n")},
   quotedText: {json.dumps('"a\t1"\t"b ""two"""\n3\t4')},
   singleText: {json.dumps("not worksheet data")},
+  rowText: {json.dumps("1\t2\t3")},
+  columnText: {json.dumps("1\n2\n3")},
   raggedText: {json.dumps("a\tb\nc")},
 }};
 vm.createContext(context);
@@ -453,6 +455,8 @@ vm.runInContext(source + `
     plain: parse(plainText),
     quoted: parse(quotedText),
     singleText: parse(singleText),
+    rowText: parse(rowText),
+    columnText: parse(columnText),
     ragged: parse(raggedText),
   }};
 `, context);
@@ -464,7 +468,9 @@ process.stdout.write(JSON.stringify(context.__parsed));
 
     assert parsed["plain"] == [["a", "b"], ["c", "d"]]
     assert parsed["quoted"] == [["a\t1", 'b "two"'], ["3", "4"]]
-    assert parsed["singleText"] is None
+    assert parsed["singleText"] == [["not worksheet data"]]
+    assert parsed["rowText"] == [["1", "2", "3"]]
+    assert parsed["columnText"] == [["1"], ["2"], ["3"]]
     assert parsed["ragged"] == [["a", "b"], ["c", ""]]
 
 
@@ -484,8 +490,11 @@ const context = {{
   console,
   localStorage: {{ getItem: () => null, setItem: () => {{}} }},
   WorkerCard: {{}},
-  GridGeometry: {{ coordKey: (col, row) => `${{col}},${{row}}` }},
-  pasteText: {json.dumps("1\t2\n3\t4\n")},
+  GridGeometry: {{
+    coordKey: (col, row) => `${{col}},${{row}}`,
+    coordToCellRef: (coord) => `${{String.fromCharCode(65 + coord.col)}}${{coord.row + 1}}`,
+  }},
+  pasteText: {json.dumps("1\t\t3\n4\t5\t6\n")},
   conflictText: {json.dumps("a\tb\n")},
 }};
 vm.createContext(context);
@@ -502,14 +511,16 @@ vm.runInContext(source + `
     worksheetPasteTargetsForCoord: methods.worksheetPasteTargetsForCoord,
     validateWorksheetPasteTargets: methods.validateWorksheetPasteTargets,
     showPasteError: methods.showPasteError,
+    showPasteSuccess: methods.showPasteSuccess,
     itemAtCoord(coord) {{ return coord.col === 3 && coord.row === 2 ? {{ slotIndex: 8 }} : null; }},
     isWritableCoord(coord) {{ return coord && coord.col >= 0 && coord.row >= 0 && coord.col <= 100 && coord.row <= 100; }},
   }};
   globalThis.__calls = [];
   globalThis.__toasts = [];
+  const scalar = methods.pasteWorksheetCells.call(component, {{ col: 0, row: 0 }}, '42');
   const pasted = methods.pasteWorksheetCells.call(component, {{ col: 4, row: 6 }}, pasteText);
   const rejected = methods.pasteWorksheetCells.call(component, {{ col: 2, row: 2 }}, conflictText);
-  globalThis.__result = {{ pasted, rejected, calls: globalThis.__calls, toasts: globalThis.__toasts, liveMessage: component.liveMessage, emptyMenuCoord: component.emptyMenuCoord }};
+  globalThis.__result = {{ scalar, pasted, rejected, calls: globalThis.__calls, toasts: globalThis.__toasts, liveMessage: component.liveMessage, emptyMenuCoord: component.emptyMenuCoord }};
 `, context);
 process.stdout.write(JSON.stringify(context.__result));
 """
@@ -517,31 +528,38 @@ process.stdout.write(JSON.stringify(context.__result));
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
 
+    assert payload["scalar"] is True
     assert payload["pasted"] is True
     assert payload["rejected"] is False
     assert payload["emptyMenuCoord"] is None
-    assert len(payload["calls"]) == 1
-    assert [item["coord"] for item in payload["calls"][0]] == [
+    assert len(payload["calls"]) == 2
+    assert [item["coord"] for item in payload["calls"][0]] == [{"col": 0, "row": 0}]
+    assert payload["calls"][0][0]["worker"]["value"] == "42"
+    assert [item["coord"] for item in payload["calls"][1]] == [
         {"col": 4, "row": 6},
-        {"col": 5, "row": 6},
+        {"col": 6, "row": 6},
         {"col": 4, "row": 7},
         {"col": 5, "row": 7},
+        {"col": 6, "row": 7},
     ]
-    assert all(item["worker"]["type"] == "value" for item in payload["calls"][0])
-    assert all(item["worker"]["name"] == "" for item in payload["calls"][0])
-    assert [item["worker"]["value"] for item in payload["calls"][0]] == ["1", "2", "3", "4"]
-    assert payload["toasts"] == [{"message": "Worksheet paste would overwrite an occupied cell", "type": "error"}]
-    assert payload["liveMessage"] == "Worksheet paste would overwrite an occupied cell"
+    assert all(item["worker"]["type"] == "value" for item in payload["calls"][1])
+    assert all(item["worker"]["name"] == "" for item in payload["calls"][1])
+    assert [item["worker"]["value"] for item in payload["calls"][1]] == ["1", "3", "4", "5", "6"]
+    assert payload["toasts"] == [
+        {"message": "Pasted 1×1 range: 1 Value created", "type": "success"},
+        {"message": "Pasted 2×3 range: 5 Values created, 1 blank cell skipped", "type": "success"},
+        {"message": "Cannot paste: D3 is occupied", "type": "error"},
+    ]
+    assert payload["liveMessage"] == "Cannot paste: D3 is occupied"
 
 
 def test_worker_grid_ctrl_v_uses_system_clipboard_for_worksheet_paste():
     text = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
 
-    assert "this.pasteFromClipboard(this.selectedCell);" in text
-    assert "navigator.clipboard?.readText" in text
-    assert "this.pasteWorksheetCells(coord, clipboardText);" in text
-    assert "this.pasteWorker(coord, { allowReplaceSingle: true });" in text
-    assert "Worksheet paste would overwrite an occupied cell" in text
+    assert '@paste="onPaste"' in text
+    assert "e?.clipboardData?.getData?.('text/plain')" in text
+    assert "this.pasteWorker(coord, { allowReplaceSingle: true });" not in text
+    assert "Cannot paste:" in text
     assert "this.$root.addToast(message, 'error');" in text
 
 

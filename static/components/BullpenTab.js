@@ -105,6 +105,7 @@ const BullpenTab = {
            @pointerup="onViewportPointerUp"
            @pointercancel="onViewportPointerUp"
            @dblclick="onViewportDblClick"
+           @paste="onPaste"
            @keydown="onKeydown">
         <div class="worker-grid-corner" :style="cornerStyle"></div>
         <div class="worker-grid-column-headers" :style="columnHeaderAreaStyle" @pointerdown.stop>
@@ -473,7 +474,7 @@ const BullpenTab = {
         { keys: 'F', desc: 'Fit view to occupied cells' },
         { keys: `${mod}+G`, desc: 'Go to worker or cell (e.g. AA122)' },
         { keys: `${mod}+C`, desc: 'Copy selected worker' },
-        { keys: `${mod}+V`, desc: 'Paste worker into selected cell' },
+        { keys: `${mod}+V`, desc: 'Paste clipboard values into selected cell' },
         { keys: 'Escape', desc: 'Close open menu or modal' },
       ];
     },
@@ -1392,7 +1393,6 @@ const BullpenTab = {
     parseWorksheetClipboardText(text) {
       const raw = String(text ?? '');
       if (!raw) return null;
-      if (!raw.includes('\t') && !raw.includes('\n') && !raw.includes('\r')) return null;
       const rows = [];
       let row = [];
       let cell = '';
@@ -1447,6 +1447,7 @@ const BullpenTab = {
       const targets = [];
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
         for (let colIndex = 0; colIndex < rows[rowIndex].length; colIndex++) {
+          if (!String(rows[rowIndex][colIndex] ?? '').trim()) continue;
           targets.push({
             coord: {
               col: coord.col + colIndex,
@@ -1467,15 +1468,23 @@ const BullpenTab = {
       return targets;
     },
     validateWorksheetPasteTargets(targets) {
-      if (!targets.length) return 'Clipboard does not contain worksheet cells';
+      if (!targets.length) return 'Clipboard does not contain worksheet values';
       const seen = new Set();
+      const outside = [];
+      const occupied = [];
       for (const target of targets) {
-        if (!this.isWritableCoord(target.coord)) return 'Worksheet paste is outside the grid';
+        const label = GridGeometry.coordToCellRef?.(target.coord) || `(${target.coord.col}, ${target.coord.row})`;
+        if (!this.isWritableCoord(target.coord)) {
+          outside.push(label);
+          continue;
+        }
         const key = GridGeometry.coordKey(target.coord.col, target.coord.row);
         if (seen.has(key)) return 'Worksheet paste contains duplicate target cells';
         seen.add(key);
-        if (this.itemAtCoord(target.coord)) return 'Worksheet paste would overwrite an occupied cell';
+        if (this.itemAtCoord(target.coord)) occupied.push(label);
       }
+      if (outside.length) return `Cannot paste: ${outside.join(', ')} ${outside.length === 1 ? 'is' : 'are'} outside the grid`;
+      if (occupied.length) return `Cannot paste: ${occupied.join(', ')} ${occupied.length === 1 ? 'is' : 'are'} occupied`;
       return '';
     },
     showPasteError(message) {
@@ -1484,7 +1493,18 @@ const BullpenTab = {
       }
       this.liveMessage = message;
     },
+    showPasteSuccess(message) {
+      if (typeof this.$root?.addToast === 'function') {
+        this.$root.addToast(message, 'success');
+      }
+      this.liveMessage = message;
+    },
     pasteWorksheetCells(coord, text) {
+      const rows = this.parseWorksheetClipboardText(text);
+      if (!rows) {
+        this.showPasteError('Clipboard does not contain worksheet values');
+        return false;
+      }
       const targets = this.worksheetPasteTargetsForCoord(coord, text);
       const error = this.validateWorksheetPasteTargets(targets);
       if (error) {
@@ -1498,26 +1518,24 @@ const BullpenTab = {
           this.$root.pasteWorkerConfig({ coord: target.coord, worker: target.worker });
         }
       }
+      const rowCount = rows.length;
+      const colCount = Math.max(...rows.map(row => row.length));
+      const blankCount = (rowCount * colCount) - targets.length;
+      const countLabel = `${targets.length} ${targets.length === 1 ? 'Value' : 'Values'} created`;
+      const blankLabel = blankCount ? `, ${blankCount} blank ${blankCount === 1 ? 'cell' : 'cells'} skipped` : '';
+      this.showPasteSuccess(`Pasted ${rowCount}×${colCount} range: ${countLabel}${blankLabel}`);
       this.emptyMenuCoord = null;
       return true;
     },
-    async pasteFromClipboard(coord) {
+    onPaste(e) {
+      const target = e?.target;
+      if (target && (target.isContentEditable || target.matches?.('input, textarea, select'))) return;
+      const coord = this.selectedCell;
       if (!coord || !this.isWritableCoord(coord)) return;
-      let clipboardText = '';
-      try {
-        if (navigator.clipboard?.readText) {
-          clipboardText = await navigator.clipboard.readText();
-        }
-      } catch (_err) {
-        clipboardText = '';
-      }
-      if (this.parseWorksheetClipboardText(clipboardText)) {
-        this.pasteWorksheetCells(coord, clipboardText);
-        return;
-      }
-      if (this.clipboardWorker) {
-        this.pasteWorker(coord, { allowReplaceSingle: true });
-      }
+      const text = e?.clipboardData?.getData?.('text/plain');
+      if (typeof text !== 'string' || !text) return;
+      e.preventDefault?.();
+      this.pasteWorksheetCells(coord, text);
     },
     openValueShortcutEditor(coord, initialText = '') {
       if (!coord || !this.isWritableCoord(coord) || this.itemAtCoord(coord)) return;
@@ -1604,12 +1622,6 @@ const BullpenTab = {
         if (!item) return;
         e.preventDefault();
         this.copyWorker(item.slotIndex, this.isExplicitSelectionActive ? 'selection' : 'item');
-        return;
-      }
-      if (!inTextInput && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'v') {
-        if (!this.selectedCell || !this.isWritableCoord(this.selectedCell)) return;
-        e.preventDefault();
-        this.pasteFromClipboard(this.selectedCell);
         return;
       }
       if (!inTextInput && !e.metaKey && !e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
