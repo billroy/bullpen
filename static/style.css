@@ -3555,8 +3555,9 @@ body.worker-singleton-dragging * {
 }
 
 .worker-card-value-sparkline-button {
+  flex: 1 1 34px;
   width: 100%;
-  height: 34px;
+  height: auto;
   min-height: 34px;
   border: 1px solid var(--border);
   border-radius: 4px;

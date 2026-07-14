@@ -223,6 +223,10 @@ def test_numeric_value_worker_card_has_sparkline_and_graph_modal():
     assert 'a.download = `${this.valueHistoryFilenameBase()}.csv`;' in card
     assert "buildChartPoints(points, width, height, inset)" in card
     assert ".worker-card-value-sparkline-button {" in css
+    sparkline_button_styles = css.split(".worker-card-value-sparkline-button {", 1)[1].split("}", 1)[0]
+    assert "flex: 1 1 34px;" in sparkline_button_styles
+    assert "height: auto;" in sparkline_button_styles
+    assert "min-height: 34px;" in sparkline_button_styles
     assert ".value-graph-modal {" in css
     assert ".value-graph-chart {" in css
     assert ".value-history-pane {" in css
