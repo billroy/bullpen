@@ -38,13 +38,15 @@ def main():
     if not ready.wait(5):
         raise RuntimeError("server did not send state:init")
     workspace_id = state["workspace_id"]
-    client.emit("models:claude", {"workspaceId": workspace_id, "refresh": True})
-    print("MODEL_REQUEST_SENT claude", flush=True)
-    if mode == "both":
+    if mode in {"both", "claude-only"}:
+        client.emit("models:claude", {"workspaceId": workspace_id, "refresh": True})
+        print("MODEL_REQUEST_SENT claude", flush=True)
+    if mode in {"both", "codex-only"}:
         client.emit("models:codex", {"workspaceId": workspace_id, "refresh": True})
-    if not completed["claude"].wait(30):
+        print("MODEL_REQUEST_SENT codex", flush=True)
+    if mode in {"both", "claude-only"} and not completed["claude"].wait(30):
         raise RuntimeError("Claude model enumeration did not complete")
-    if mode == "both" and not completed["codex"].wait(45):
+    if mode in {"both", "codex-only"} and not completed["codex"].wait(45):
         raise RuntimeError("Codex model enumeration did not complete")
     client.disconnect()
 

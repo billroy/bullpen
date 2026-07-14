@@ -621,6 +621,69 @@ def start_claude_catalog_refresh():
     return thread
 
 
+_original_signal_setter = None
+_sigint_wakeup_fds = None
+
+
+def enable_sigint_diagnostics():
+    """Trace Python-level SIGINT handler changes when explicitly requested."""
+    global _original_signal_setter, _sigint_wakeup_fds
+
+    if os.environ.get("BULLPEN_SIGINT_DIAGNOSTICS") != "1" or _original_signal_setter:
+        return
+
+    import signal
+    import threading
+    import traceback
+
+    _original_signal_setter = signal.signal
+
+    def traced_signal(signum, handler):
+        previous = signal.getsignal(signum)
+        result = _original_signal_setter(signum, handler)
+        if signum == signal.SIGINT:
+            print(
+                "Bullpen SIGINT diagnostics: handler replaced\n"
+                f"  previous={previous!r}\n"
+                f"  next={handler!r}\n"
+                + "".join(traceback.format_stack(limit=12)),
+                file=sys.stderr,
+                flush=True,
+            )
+        return result
+
+    signal.signal = traced_signal
+
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(write_fd, False)
+    signal.set_wakeup_fd(write_fd, warn_on_full_buffer=True)
+    _sigint_wakeup_fds = (read_fd, write_fd)
+
+    def watch_signal_delivery():
+        while True:
+            try:
+                delivered = os.read(read_fd, 4096)
+            except OSError:
+                return
+            if not delivered:
+                return
+            if signal.SIGINT in delivered:
+                os.write(2, b"Bullpen SIGINT diagnostics: low-level delivery observed\n")
+
+    threading.Thread(
+        target=watch_signal_delivery,
+        name="sigint-diagnostics",
+        daemon=True,
+    ).start()
+
+
+def _diagnostic_sigint_handler(signum, frame):
+    """Leave an async-safe breadcrumb before applying normal SIGINT behavior."""
+    del signum, frame
+    os.write(2, b"Bullpen SIGINT diagnostics: server handler invoked\n")
+    raise KeyboardInterrupt
+
+
 def restore_server_sigint_handler():
     """Make Control-C terminate the foreground Bullpen server.
 
@@ -631,7 +694,12 @@ def restore_server_sigint_handler():
     """
     import signal
 
-    signal.signal(signal.SIGINT, signal.default_int_handler)
+    handler = (
+        _diagnostic_sigint_handler
+        if os.environ.get("BULLPEN_SIGINT_DIAGNOSTICS") == "1"
+        else signal.default_int_handler
+    )
+    signal.signal(signal.SIGINT, handler)
 
 
 def main():
@@ -668,6 +736,8 @@ def main():
 
     print(pyfiglet.figlet_format("bullpen"), end="")
     print(f"Bullpen starting — workspace: {workspace}, host: {args.host}, port: {args.port}")
+
+    enable_sigint_diagnostics()
 
     from server.app import create_app, socketio
 

@@ -75,6 +75,30 @@ def _wait_for_exit(pid, timeout):
     return None
 
 
+def _wait_for_exit_with_output(pid, fd, timeout):
+    output = bytearray()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        readable, _, _ = select.select([fd], [], [], 0.02)
+        if readable:
+            output.extend(_read_available(fd))
+        waited_pid, status = os.waitpid(pid, os.WNOHANG)
+        if waited_pid == pid:
+            return status, output
+    return None, output
+
+
+def _drain_output(fd, timeout=0.25):
+    output = bytearray()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        readable, _, _ = select.select([fd], [], [], 0.05)
+        if not readable:
+            continue
+        output.extend(_read_available(fd))
+    return output
+
+
 def _run_shutdown_case(
     tmp_path,
     *,
@@ -84,7 +108,10 @@ def _run_shutdown_case(
     skip_sigint_restore=False,
     exercise_models=False,
     block_on_model_request=False,
+    block_on_codex_request=False,
     audit_signals=False,
+    sigint_diagnostics=False,
+    expect_sigint_ignored=False,
     workspace_count=1,
 ):
     workspace = tmp_path / "workspace"
@@ -116,6 +143,8 @@ def _run_shutdown_case(
         "BULLPEN_SHUTDOWN_TEST_SWALLOW_SIGINT": "1" if swallow_sigint else "0",
         "BULLPEN_SHUTDOWN_TEST_SKIP_SIGINT_RESTORE": "1" if skip_sigint_restore else "0",
         "BULLPEN_SHUTDOWN_TEST_AUDIT_SIGNALS": "1" if audit_signals else "0",
+        "BULLPEN_SHUTDOWN_TEST_CODEX": "subprocess-blocked" if block_on_codex_request else "immediate",
+        "BULLPEN_SIGINT_DIAGNOSTICS": "1" if sigint_diagnostics else "0",
     })
 
     pid, master_fd = pty.fork()
@@ -164,9 +193,34 @@ def _run_shutdown_case(
             readable, _, _ = select.select([model_client.stdout], [], [], 10)
             assert readable, "model client did not issue the Claude request"
             assert model_client.stdout.readline().strip() == "MODEL_REQUEST_SENT claude"
+        if block_on_codex_request:
+            model_client = subprocess.Popen(
+                [sys.executable, str(MODEL_CLIENT), str(port), "codex-only"],
+                cwd=ROOT,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            readable, _, _ = select.select([model_client.stdout], [], [], 10)
+            assert readable, "model client did not issue the Codex request"
+            assert model_client.stdout.readline().strip() == "MODEL_REQUEST_SENT codex"
+            output.extend(_wait_for_output(master_fd, b"CODEX_STAGE subprocess"))
         os.write(master_fd, b"\x03")
-        status = _wait_for_exit(pid, 3)
-        output.extend(_read_available(master_fd))
+        if expect_sigint_ignored:
+            output.extend(_wait_for_output(
+                master_fd,
+                b"Bullpen SIGINT diagnostics: low-level delivery observed",
+                timeout=2,
+            ))
+            assert _wait_for_exit(pid, 0.25) is None
+            os.kill(pid, signal.SIGTERM)
+            child_reaped = _wait_for_exit(pid, 3) is not None
+            assert child_reaped
+            return bytes(output)
+        status, exit_output = _wait_for_exit_with_output(pid, master_fd, 3)
+        output.extend(exit_output)
+        output.extend(_drain_output(master_fd))
         if status is None:
             os.kill(pid, signal.SIGTERM)
             child_reaped = _wait_for_exit(pid, 3) is not None
@@ -176,6 +230,7 @@ def _run_shutdown_case(
             )
         child_reaped = True
         assert os.waitstatus_to_exitcode(status) in {0, 130}
+        return bytes(output)
     finally:
         try:
             os.close(master_fd)
@@ -220,6 +275,36 @@ def test_server_reclaims_sigint_before_serving(tmp_path):
         refresh_browser=True,
         swallow_sigint=True,
     )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY Control-C coverage requires POSIX")
+def test_sigint_diagnostics_identify_displaced_handler_and_invocation(tmp_path):
+    output = _run_shutdown_case(
+        tmp_path,
+        catalog_mode="blocked",
+        refresh_browser=True,
+        swallow_sigint=True,
+        sigint_diagnostics=True,
+    )
+    assert b"Bullpen SIGINT diagnostics: handler replaced" in output
+    assert b"previous=<function main.<locals>.<lambda>" in output
+    assert b"next=<function _diagnostic_sigint_handler" in output
+    assert b"Bullpen SIGINT diagnostics: server handler invoked" in output
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY Control-C coverage requires POSIX")
+def test_sigint_diagnostics_distinguish_delivery_from_swallowed_handler(tmp_path):
+    output = _run_shutdown_case(
+        tmp_path,
+        catalog_mode="blocked",
+        refresh_browser=True,
+        swallow_sigint=True,
+        skip_sigint_restore=True,
+        sigint_diagnostics=True,
+        expect_sigint_ignored=True,
+    )
+    assert b"Bullpen SIGINT diagnostics: low-level delivery observed" in output
+    assert b"Bullpen SIGINT diagnostics: server handler invoked" not in output
 
 
 @pytest.mark.skipif(os.name != "posix", reason="PTY Control-C coverage requires POSIX")
@@ -282,6 +367,19 @@ def test_server_control_c_after_uncaught_catalog_thread_failure(tmp_path):
         catalog_mode="thread-crash",
         refresh_browser=True,
         skip_sigint_restore=True,
+        audit_signals=True,
+        workspace_count=24,
+    )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="PTY Control-C coverage requires POSIX")
+def test_server_control_c_during_claude_thread_and_codex_subprocess(tmp_path):
+    _run_shutdown_case(
+        tmp_path,
+        catalog_mode="urlopen-blocked",
+        refresh_browser=True,
+        skip_sigint_restore=True,
+        block_on_codex_request=True,
         audit_signals=True,
         workspace_count=24,
     )

@@ -9,6 +9,7 @@ import time
 import traceback
 
 claude_models = None
+codex_models = None
 bullpen = None
 
 
@@ -69,8 +70,27 @@ def _configure_catalog_refresh():
     claude_models.refresh_claude_models_at_startup = refresh
 
 
+def _configure_codex_catalog():
+    if os.environ.get("BULLPEN_SHUTDOWN_TEST_CODEX") != "subprocess-blocked":
+        return
+
+    def blocked_run(_codex_bin, _workspace, _timeout_seconds, *, bundled=False):
+        del bundled
+        print("CODEX_STAGE subprocess", file=sys.stderr, flush=True)
+        import subprocess
+
+        subprocess.run(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            check=True,
+        )
+        raise RuntimeError("synthetic Codex subprocess stop")
+
+    codex_models._find_codex = lambda: sys.executable
+    codex_models._run_catalog = blocked_run
+
+
 def main():
-    global bullpen, claude_models
+    global bullpen, claude_models, codex_models
 
     if os.environ.get("BULLPEN_SHUTDOWN_TEST_AUDIT_SIGNALS") == "1":
         original_signal = signal.signal
@@ -92,11 +112,18 @@ def main():
         from server import claude_models as claude_models_module
     except ImportError:
         claude_models_module = None
+    try:
+        from server import codex_models as codex_models_module
+    except ImportError:
+        codex_models_module = None
 
     bullpen = bullpen_module
     claude_models = claude_models_module
+    codex_models = codex_models_module
     if claude_models is not None:
         _configure_catalog_refresh()
+    if codex_models is not None:
+        _configure_codex_catalog()
     if os.environ.get("BULLPEN_SHUTDOWN_TEST_SWALLOW_SIGINT") == "1":
         signal.signal(signal.SIGINT, lambda _signum, _frame: None)
     if os.environ.get("BULLPEN_SHUTDOWN_TEST_SKIP_SIGINT_RESTORE") == "1" and hasattr(

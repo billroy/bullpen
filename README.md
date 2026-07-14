@@ -74,6 +74,16 @@ By default the server only accepts connections from localhost. Socket.IO accepts
 If you bind to a non-loopback host (for example `0.0.0.0`), Bullpen requires authentication credentials to be configured first.
 For production/TLS deployments (including Sprites), set `BULLPEN_PRODUCTION=1` so secure cookies and forwarded-proxy headers are handled correctly.
 
+### Control-C diagnostics
+
+If a foreground Bullpen server ever receives Control-C but does not exit, restart it with opt-in SIGINT diagnostics:
+
+```bash
+BULLPEN_SIGINT_DIAGNOSTICS=1 python3 bullpen.py --workspace /path/to/your/project
+```
+
+The diagnostic output records Python-level SIGINT handler replacements, low-level signal delivery, and invocation of Bullpen's server handler. It is intended for troubleshooting and is disabled by default.
+
 ## Features
 
 - **Kanban board** -- drag-and-drop ticket management with user-configurable columns (add, remove, rename, reorder); drag tickets between columns or onto workers
