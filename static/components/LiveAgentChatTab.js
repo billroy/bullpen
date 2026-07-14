@@ -65,7 +65,8 @@ const LiveAgentChatTab = {
       const currentModel = hasDynamicCatalog && !options.includes(current)
         ? current
         : '';
-      return withPreferredOption(withPreferredOption(options, currentModel), preferredModel);
+      const merged = withPreferredOption(withPreferredOption(options, currentModel), preferredModel);
+      return this.provider === 'claude' ? sortedClaudeModelOptions(merged) : merged;
     },
     isClaudeProvider() {
       return this.provider === 'claude';

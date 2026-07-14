@@ -347,7 +347,11 @@ const WorkerConfigModal = {
         options = this.claudeModels.map(model => model.id);
       }
       const preferred = this.preferredAiSelection;
-      return withPreferredOption(options, preferred?.agent === this.form.agent ? preferred.model : '');
+      const merged = withPreferredOption(
+        options,
+        preferred?.agent === this.form.agent ? preferred.model : '',
+      );
+      return this.isClaudeAgent ? sortedClaudeModelOptions(merged) : merged;
     },
     codexCatalogHint() {
       if (this.codexModelsLoading) return 'Loading Codex models...';

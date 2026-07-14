@@ -65,6 +65,8 @@ def test_claude_uses_openrouter_catalog_backed_picker():
     assert "refreshClaudeModels" in chat
     assert "this.claudeModels.map(model => model.id)" in modal
     assert "this.claudeModels.map(model => model.id)" in chat
+    assert "sortedClaudeModelOptions(merged)" in modal
+    assert "sortedClaudeModelOptions(merged)" in chat
 
 
 def test_antigravity_model_options_present_and_gemini_provider_absent():
@@ -133,6 +135,39 @@ def test_model_options_defined_in_shared_constant():
         # Should not have inline model arrays
         assert "codex-mini-latest" not in text, f"{component} has stale inline codex models"
         assert "o4-mini" not in text, f"{component} has stale inline codex models"
+
+
+def test_shared_claude_sort_is_alphabetical_and_numeric():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+
+    script = r"""
+const assert = require('assert');
+const fs = require('fs');
+const vm = require('vm');
+const context = { console, window: {} };
+vm.createContext(context);
+const source = fs.readFileSync('static/utils.js', 'utf8');
+vm.runInContext(`${source}\n;globalThis.__sortClaude = sortedClaudeModelOptions;`, context);
+assert.deepStrictEqual(
+  Array.from(context.__sortClaude([
+    'claude-sonnet-5',
+    'claude-opus-4-10',
+    'claude-haiku-4-5',
+    'claude-opus-4-9',
+  ])),
+  [
+    'claude-haiku-4-5',
+    'claude-opus-4-9',
+    'claude-opus-4-10',
+    'claude-sonnet-5',
+  ],
+);
+"""
+
+    result = subprocess.run([node, "-e", script], cwd=ROOT, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
 
 
 def test_last_ai_selection_promotes_provider_and_model_options():
@@ -249,7 +284,7 @@ function makeInstance() {
     assert result.returncode == 0, result.stderr
 
 
-def test_dynamic_chat_catalogs_preserve_selection_without_overriding_catalog_order():
+def test_dynamic_chat_catalogs_sort_only_claude_and_preserve_selection():
     node = shutil.which("node")
     if not node:
         pytest.skip("node not available")
@@ -270,6 +305,7 @@ const context = {
   withPreferredOption: (options, preferred) => preferred
     ? [preferred, ...options.filter((value) => value !== preferred)]
     : options.slice(),
+  sortedClaudeModelOptions: (options) => options.slice().sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
   window: { _bullpenSocket: null },
 };
 
@@ -321,7 +357,7 @@ for (const [name, method] of Object.entries(component.methods || {})) {
   instance.model = 'claude-private-preview';
   await instance.refreshClaudeModels();
   assert.strictEqual(JSON.stringify(requests[1]), JSON.stringify({ workspaceId: 'ws-test', refresh: true }));
-  assert.strictEqual(JSON.stringify(instance.modelOptions), JSON.stringify(['claude-private-preview', 'claude-sonnet-5', 'claude-opus-4-8']));
+  assert.strictEqual(JSON.stringify(instance.modelOptions), JSON.stringify(['claude-opus-4-8', 'claude-private-preview', 'claude-sonnet-5']));
 })().catch((err) => {
   console.error(err);
   process.exit(1);
