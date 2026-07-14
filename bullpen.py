@@ -174,6 +174,15 @@ def parse_args(argv=None):
         help="Model candidate to validate; repeatable. Applies to each selected provider.",
     )
     model_catalog_validate.add_argument(
+        "--all-catalog-models",
+        action="store_true",
+        dest="model_catalog_all_models",
+        help=(
+            "Probe every discovered catalog model. This is opt-in because it "
+            "makes a real provider call for each model."
+        ),
+    )
+    model_catalog_validate.add_argument(
         "--timeout",
         type=float,
         default=45,
@@ -472,6 +481,7 @@ def run_model_catalog_cli(args):
         timeout_seconds=args.model_catalog_timeout,
         prompt=args.model_catalog_prompt or DEFAULT_PROBE_PROMPT,
         include_api_catalog=args.model_catalog_api_catalog,
+        all_catalog_models=args.model_catalog_all_models,
     )
     if args.model_catalog_output == "text":
         print(text_summary(report))

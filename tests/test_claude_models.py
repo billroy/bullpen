@@ -1,4 +1,4 @@
-"""Tests for models.dev-backed Claude model discovery and socket events."""
+"""Tests for OpenRouter-backed Claude model discovery and socket events."""
 
 import json
 import threading
@@ -8,49 +8,81 @@ from server import claude_models
 from server.app import create_app, socketio
 
 
-def models_dev_catalog(models):
-    return {"anthropic": {"models": models}}
+def openrouter_catalog(models):
+    return {"data": models}
 
 
-def model(name, *, status=None, release_date="2026-01-01", **overrides):
+def model(model_id, name, *, created=1771342990, **overrides):
     value = {
+        "id": model_id,
         "name": name,
-        "release_date": release_date,
-        "last_updated": release_date,
-        "family": "claude",
-        "reasoning": True,
-        "tool_call": True,
-        "attachment": True,
-        "limit": {"context": 200000, "output": 64000},
+        "created": created,
+        "context_length": 200000,
+        "top_provider": {"max_completion_tokens": 64000},
+        "supported_parameters": ["reasoning", "tools"],
+        "architecture": {"input_modalities": ["text", "image", "file"]},
     }
-    if status is not None:
-        value["status"] = status
     value.update(overrides)
     return value
 
 
-def test_parse_models_dev_catalog_filters_deprecated_and_sorts_newest_first():
-    records = claude_models.parse_models_dev_catalog(models_dev_catalog({
-        "claude-sonnet-4-6": model("Claude Sonnet 4.6", release_date="2026-02-17"),
-        "claude-opus-4-8": model("Claude Opus 4.8", release_date="2026-05-28"),
-        "claude-opus-4-1": model("Claude Opus 4.1", status="deprecated", release_date="2025-08-05"),
-        "duplicate-opus": model("Duplicate Opus", id="claude-opus-4-8", release_date="2026-05-28"),
-        "malformed": "not-an-object",
-    }))
+def test_parse_openrouter_catalog_translates_filters_and_sorts_newest_first():
+    records = claude_models.parse_openrouter_catalog(openrouter_catalog([
+        model("anthropic/claude-sonnet-4.6", "Anthropic: Claude Sonnet 4.6", created=1771342990),
+        model("anthropic/claude-opus-4.8", "Anthropic: Claude Opus 4.8", created=1779913703),
+        model("anthropic/claude-opus-4.8-fast", "Anthropic: Claude Opus 4.8 (Fast)"),
+        model("anthropic/claude-opus-4.1", "Anthropic: Claude Opus 4.1"),
+        model("openai/gpt-5.6", "OpenAI: GPT-5.6"),
+        model("anthropic/claude-opus-4.8", "Duplicate Opus", created=1779913703),
+        model(
+            "anthropic/claude-malformed-9.1",
+            "Anthropic: Claude Malformed 9.1",
+            supported_parameters=[{"unexpected": True}],
+            architecture={"input_modalities": "text"},
+        ),
+        "not-an-object",
+    ]))
 
-    assert [record.id for record in records] == ["claude-opus-4-8", "claude-sonnet-4-6"]
+    assert [record.id for record in records] == [
+        "claude-opus-4-8",
+        "claude-malformed-9-1",
+        "claude-sonnet-4-6",
+    ]
     assert records[0].display_name == "Claude Opus 4.8"
+    assert records[0].source_id == "anthropic/claude-opus-4.8"
     assert records[0].context_limit == 200000
+    assert records[0].output_limit == 64000
     assert records[0].reasoning is True
+    assert records[0].tool_call is True
+    assert records[0].attachment is True
 
 
-def test_parse_models_dev_catalog_rejects_missing_anthropic_models():
+def test_parse_openrouter_catalog_rejects_missing_data_array():
     try:
-        claude_models.parse_models_dev_catalog({"anthropic": {}})
+        claude_models.parse_openrouter_catalog({})
     except ValueError as error:
-        assert "anthropic.models" in str(error)
+        assert "data array" in str(error)
     else:
-        raise AssertionError("missing anthropic.models should fail")
+        raise AssertionError("missing data array should fail")
+
+
+def test_openrouter_id_translation_is_narrow_and_excludes_incompatible_models():
+    assert claude_models.openrouter_id_to_claude_slug(
+        "anthropic/claude-sonnet-4.6"
+    ) == "claude-sonnet-4-6"
+    assert claude_models.openrouter_id_to_claude_slug(
+        "anthropic/claude-sonnet-5"
+    ) == "claude-sonnet-5"
+    assert claude_models.openrouter_id_to_claude_slug("openai/gpt-5.6") is None
+    assert claude_models.openrouter_id_to_claude_slug(
+        "anthropic/claude-opus-4.8-fast"
+    ) is None
+    assert claude_models.openrouter_id_to_claude_slug(
+        "anthropic/claude-sonnet-4.6:beta"
+    ) is None
+    assert claude_models.openrouter_id_to_claude_slug(
+        "anthropic/claude-opus-4.1"
+    ) is None
 
 
 def test_fetch_claude_models_uses_one_hour_cache(monkeypatch):
@@ -377,9 +409,9 @@ def test_download_catalog_sends_no_credentials(monkeypatch):
             return False
 
         def read(self, _limit):
-            return json.dumps(models_dev_catalog({
-                "claude-sonnet-5": model("Claude Sonnet 5"),
-            })).encode("utf-8")
+            return json.dumps(openrouter_catalog([
+                model("anthropic/claude-sonnet-5", "Anthropic: Claude Sonnet 5"),
+            ])).encode("utf-8")
 
     def fake_urlopen(request, timeout, context):
         seen["request"] = request
@@ -391,7 +423,7 @@ def test_download_catalog_sends_no_credentials(monkeypatch):
     records = claude_models._download_catalog(3)
 
     headers = {key.lower(): value for key, value in seen["request"].header_items()}
-    assert seen["request"].full_url == "https://models.dev/api.json"
+    assert seen["request"].full_url == "https://openrouter.ai/api/v1/models"
     assert seen["context"] is not None
     assert "authorization" not in headers
     assert "x-api-key" not in headers
@@ -411,9 +443,9 @@ def test_download_catalog_reuses_one_tls_context_per_process(monkeypatch):
             return False
 
         def read(self, _limit):
-            return json.dumps(models_dev_catalog({
-                "claude-sonnet-5": model("Claude Sonnet 5"),
-            })).encode("utf-8")
+            return json.dumps(openrouter_catalog([
+                model("anthropic/claude-sonnet-5", "Anthropic: Claude Sonnet 5"),
+            ])).encode("utf-8")
 
     def create_context(*, cafile):
         created.append(cafile)
@@ -486,7 +518,7 @@ def test_claude_models_event_returns_catalog(monkeypatch, tmp_workspace):
         "status": "ok",
         "models": [{"id": "claude-sonnet-5", "display_name": "Claude Sonnet 5"}],
         "cached": False,
-        "source": "models.dev",
+        "source": "openrouter",
     })
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
@@ -504,6 +536,6 @@ def test_claude_models_event_returns_catalog(monkeypatch, tmp_workspace):
         if event["name"] == "models:claude:listed"
     )
     assert data["request_id"] == "claude-models-one"
-    assert data["source"] == "models.dev"
+    assert data["source"] == "openrouter"
     assert data["models"][0]["id"] == "claude-sonnet-5"
     client.disconnect()

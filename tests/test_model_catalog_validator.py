@@ -113,10 +113,47 @@ def test_fetch_provider_api_catalog_reports_unsupported_for_antigravity():
 def test_claude_validation_candidates_come_from_dynamic_catalog(monkeypatch):
     monkeypatch.setattr(claude_models, "fetch_claude_models", lambda: {
         "status": "ok",
-        "models": [{"id": f"claude-current-{index}"} for index in range(10)],
+        "models": [
+            {"id": f"claude-current-{index}", "source_id": f"anthropic/current-{index}"}
+            for index in range(10)
+        ],
     })
 
     assert candidate_models("claude") == [f"claude-current-{index}" for index in range(7)]
+    assert candidate_models("claude", all_catalog_models=True) == [
+        f"claude-current-{index}" for index in range(10)
+    ]
+
+
+def test_validator_reports_exact_and_routed_claude_selection(tmp_workspace):
+    class SelectionAdapter(ProbeAdapter):
+        def parse_output(self, stdout, stderr, exit_code):
+            model = stdout.strip().split()[-1]
+            served = model if model == "exact-model" else "replacement-model"
+            return {
+                "success": True,
+                "output": "OK",
+                "error": None,
+                "model_usage": {served: {}},
+            }
+
+    previous = _register_temp_adapter("selection-probe", SelectionAdapter())
+    try:
+        report = validate_model_catalog(
+            providers=["selection-probe"],
+            models=["exact-model", "old-model"],
+            workspace=tmp_workspace,
+            timeout_seconds=2,
+        )
+    finally:
+        _restore_adapter("selection-probe", previous)
+
+    exact, routed = report["providers"][0]["models"]
+    assert exact["selection"] == "exact"
+    assert exact["exact_model_match"] is True
+    assert routed["selection"] == "routed"
+    assert routed["exact_model_match"] is False
+    assert routed["served_models"] == ["replacement-model"]
 
 
 def test_classify_model_error_common_cases():
@@ -156,6 +193,21 @@ def test_model_catalog_cli_outputs_json(tmp_workspace, monkeypatch, capsys):
     row = report["providers"][0]["models"][0]
     assert row["provider"] == "probe-cli"
     assert row["success"] is True
+    assert report["all_catalog_models"] is False
+
+
+def test_model_catalog_cli_accepts_explicit_all_catalog_models(tmp_workspace):
+    args = bullpen.parse_args([
+        "model-catalog",
+        "--workspace",
+        tmp_workspace,
+        "validate",
+        "--provider",
+        "claude",
+        "--all-catalog-models",
+    ])
+
+    assert args.model_catalog_all_models is True
 
 
 def test_model_catalog_cli_rejects_missing_workspace(tmp_path, capsys):

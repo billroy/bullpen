@@ -42,6 +42,9 @@ def test_claude_model_options_are_fallback_only_and_exclude_stale_slugs():
     assert "'claude-opus-4-7'" in text
     assert "'claude-sonnet-5'" in text
     assert "'claude-fable-5'" in text
+    assert "'claude-opus-4-6'" in text
+    assert "'claude-opus-4-5'" in text
+    assert "'claude-sonnet-4-5'" in text
     assert "'claude-haiku-4-6'" not in text
     assert "'claude-haiku-4-5-20250414'" not in text
     assert "'claude-opus-4-5-20250514'" not in text
@@ -49,7 +52,7 @@ def test_claude_model_options_are_fallback_only_and_exclude_stale_slugs():
     assert "'claude-haiku-4-5'" in text
 
 
-def test_claude_uses_models_dev_catalog_backed_picker():
+def test_claude_uses_openrouter_catalog_backed_picker():
     app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     modal = (ROOT / "static" / "components" / "WorkerConfigModal.js").read_text(encoding="utf-8")
     chat = (ROOT / "static" / "components" / "LiveAgentChatTab.js").read_text(encoding="utf-8")

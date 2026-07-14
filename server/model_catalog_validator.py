@@ -47,16 +47,24 @@ def known_providers():
     return sorted(PROVIDER_MODEL_CANDIDATES)
 
 
-def candidate_models(provider):
-    """Return built-in model candidates for a provider."""
+def candidate_model_rows(provider, *, all_catalog_models=False):
+    """Return candidate records, including source IDs when discoverable."""
     if provider == "claude":
         result = claude_models.fetch_claude_models()
-        models = [row.get("id") for row in result.get("models", []) if row.get("id")]
-        if models:
+        rows = [row for row in result.get("models", []) if row.get("id")]
+        if rows:
             # Catalog validation invokes real model calls. Sample current
             # entries rather than probing the entire public catalog by default.
-            return models[:7]
-    return list(PROVIDER_MODEL_CANDIDATES.get(provider, []))
+            return rows if all_catalog_models else rows[:7]
+    return [{"id": model, "source_id": None} for model in PROVIDER_MODEL_CANDIDATES.get(provider, [])]
+
+
+def candidate_models(provider, *, all_catalog_models=False):
+    """Return model IDs selected for provider validation."""
+    return [
+        row["id"]
+        for row in candidate_model_rows(provider, all_catalog_models=all_catalog_models)
+    ]
 
 
 def _utc_now():
@@ -188,6 +196,7 @@ def validate_model_catalog(
     timeout_seconds=45,
     prompt=DEFAULT_PROBE_PROMPT,
     include_api_catalog=False,
+    all_catalog_models=False,
 ):
     """Validate provider models through the adapter execution path."""
     providers = [p.lower() for p in (providers or known_providers())]
@@ -198,10 +207,17 @@ def validate_model_catalog(
         "prompt": prompt,
         "timeout_seconds": timeout_seconds,
         "include_api_catalog": bool(include_api_catalog),
+        "all_catalog_models": bool(all_catalog_models),
         "providers": [],
     }
     for provider in providers:
-        provider_models = list(models or candidate_models(provider))
+        if models:
+            provider_models = [{"id": model, "source_id": None} for model in models]
+        else:
+            provider_models = candidate_model_rows(
+                provider,
+                all_catalog_models=all_catalog_models,
+            )
         api_catalog = None
         api_model_set = None
         if include_api_catalog:
@@ -212,7 +228,8 @@ def validate_model_catalog(
             "api_catalog": api_catalog,
             "models": [],
         }
-        for model in provider_models:
+        for model_record in provider_models:
+            model = model_record["id"]
             result = validate_model_candidate(
                 provider,
                 model,
@@ -221,6 +238,7 @@ def validate_model_catalog(
                 timeout_seconds=timeout_seconds,
                 prompt=prompt,
             )
+            result["source_id"] = model_record.get("source_id")
             if api_model_set is not None:
                 result["listed"] = result["model"] in api_model_set or result["normalized_model"] in api_model_set
             else:
@@ -250,6 +268,9 @@ def validate_model_candidate(provider, model, workspace, bp_dir=None, timeout_se
         "output_preview": "",
         "stdout_preview": "",
         "stderr_preview": "",
+        "served_models": [],
+        "exact_model_match": None,
+        "selection": "unknown",
     }
 
     adapter = get_adapter(provider)
@@ -318,6 +339,12 @@ def validate_model_candidate(provider, model, workspace, bp_dir=None, timeout_se
         result["output_preview"] = _preview(output)
         result["responded"] = bool(output)
         result["success"] = bool(parsed.get("success"))
+        model_usage = parsed.get("model_usage") or {}
+        if isinstance(model_usage, dict):
+            result["served_models"] = list(model_usage)
+        if result["success"] and result["served_models"]:
+            result["exact_model_match"] = normalized_model in result["served_models"]
+            result["selection"] = "exact" if result["exact_model_match"] else "routed"
         if not result["success"]:
             combined = "\n".join([error, output, stderr or "", stdout or ""])
             result["error"] = error or f"Exit code {proc.returncode}"
@@ -374,15 +401,17 @@ def text_summary(report):
         if api_catalog:
             lines.append(f"  API catalog: {api_catalog.get('status')} ({api_catalog.get('reason') or 'ok'})")
         for row in provider_report.get("models", []):
-            status = "ok" if row.get("success") else row.get("error_class") or "failed"
+            status = row.get("selection") if row.get("success") else row.get("error_class") or "failed"
             listed = row.get("listed")
             listed_text = "unknown" if listed is None else str(bool(listed)).lower()
             normalized = row.get("normalized_model")
             suffix = ""
             if normalized and normalized != row.get("model"):
                 suffix = f" -> {normalized}"
+            served = row.get("served_models") or []
+            served_suffix = f" served={','.join(served)}" if served else ""
             lines.append(
                 f"  {status:12} listed={listed_text:7} "
-                f"{row.get('model')}{suffix} ({row.get('latency_ms')} ms)"
+                f"{row.get('model')}{suffix}{served_suffix} ({row.get('latency_ms')} ms)"
             )
     return "\n".join(lines)

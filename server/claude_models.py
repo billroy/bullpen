@@ -1,35 +1,53 @@
-"""Claude model catalog helpers backed by the public models.dev catalog."""
+"""Claude model discovery backed by OpenRouter's public model catalog."""
 
 from __future__ import annotations
 
 import json
+import re
 import ssl
 import threading
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import certifi
 
 
-MODELS_DEV_URL = "https://models.dev/api.json"
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+CACHE_KEY = "openrouter"
 DEFAULT_CACHE_TTL_SECONDS = 60 * 60
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_IN_FLIGHT_WAIT_SECONDS = 5
 MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
-# Last-resort choices for offline startup. models.dev remains the normal source
-# of truth; this list only keeps existing workers configurable when it cannot be
-# reached and no last-good response exists in this process.
+# Last-resort choices for offline startup. OpenRouter remains the normal
+# discovery source; this list only keeps existing workers configurable when it
+# cannot be reached and no last-good response exists in this process.
 FALLBACK_CLAUDE_MODELS = [
     "claude-sonnet-5",
     "claude-fable-5",
     "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
     "claude-haiku-4-5",
+    "claude-sonnet-4-5",
 ]
+
+# OpenRouter also retains older or routing-specific entries that are not exact
+# Claude Code selections. Keep exclusions focused on demonstrated
+# incompatibilities; new releases should flow through without additions here.
+INCOMPATIBLE_CLAUDE_MODELS = {
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "claude-3-haiku",
+    # Accepted by Claude Code 2.1.205, but silently routed to claude-opus-4-8.
+    "claude-opus-4-1",
+}
+_VERSION_DOT = re.compile(r"(?<=\d)\.(?=\d)")
 
 _CACHE = {}
 _CACHE_LOCK = threading.Lock()
@@ -54,6 +72,7 @@ class ModelRecord:
     reasoning: bool = False
     tool_call: bool = False
     attachment: bool = False
+    source_id: str = ""
 
     def as_dict(self):
         return {
@@ -68,6 +87,7 @@ class ModelRecord:
             "reasoning": self.reasoning,
             "tool_call": self.tool_call,
             "attachment": self.attachment,
+            "source_id": self.source_id,
         }
 
 
@@ -94,47 +114,83 @@ def _positive_int(value):
     return parsed if parsed > 0 else None
 
 
-def parse_models_dev_catalog(data):
-    """Parse active Claude records from models.dev's Anthropic provider data."""
+def _string_set(value):
+    if not isinstance(value, (list, tuple, set)):
+        return set()
+    return {item for item in value if isinstance(item, str)}
+
+
+def openrouter_id_to_claude_slug(source_id):
+    """Translate one ordinary OpenRouter Anthropic ID to a Claude CLI slug."""
+    source_id = str(source_id or "").strip()
+    if not source_id.startswith("anthropic/claude-"):
+        return None
+    slug = source_id.removeprefix("anthropic/")
+    if ":" in slug or slug.endswith("-fast"):
+        return None
+    slug = _VERSION_DOT.sub("-", slug)
+    if slug in INCOMPATIBLE_CLAUDE_MODELS:
+        return None
+    return slug
+
+
+def _utc_date(timestamp):
+    try:
+        timestamp = int(timestamp)
+    except (TypeError, ValueError):
+        return ""
+    if timestamp <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def parse_openrouter_catalog(data):
+    """Parse and translate OpenRouter's public Anthropic model entries."""
     if not isinstance(data, dict):
-        raise ValueError("models.dev catalog was not an object")
-    anthropic = data.get("anthropic")
-    models = anthropic.get("models") if isinstance(anthropic, dict) else None
-    if not isinstance(models, dict):
-        raise ValueError("models.dev catalog did not contain anthropic.models")
+        raise ValueError("OpenRouter catalog was not an object")
+    models = data.get("data")
+    if not isinstance(models, list):
+        raise ValueError("OpenRouter catalog did not contain a data array")
 
     records = []
     seen = set()
-    for raw_id, model in models.items():
+    for model in models:
         if not isinstance(model, dict):
             continue
-        model_id = str(model.get("id") or raw_id or "").strip()
+        source_id = str(model.get("id") or "").strip()
+        model_id = openrouter_id_to_claude_slug(source_id)
         if not model_id or model_id in seen:
             continue
-        status = str(model.get("status") or "active").strip().lower()
-        if status == "deprecated":
-            continue
-        limits = model.get("limit") if isinstance(model.get("limit"), dict) else {}
+        top_provider = model.get("top_provider") if isinstance(model.get("top_provider"), dict) else {}
+        architecture = model.get("architecture") if isinstance(model.get("architecture"), dict) else {}
+        supported = _string_set(model.get("supported_parameters"))
+        input_modalities = _string_set(architecture.get("input_modalities"))
+        display_name = str(model.get("name") or model_id).strip()
+        if display_name.startswith("Anthropic:"):
+            display_name = display_name.removeprefix("Anthropic:").strip()
         seen.add(model_id)
         records.append(ModelRecord(
             id=model_id,
-            display_name=str(model.get("name") or model_id).strip(),
-            status=status,
-            release_date=str(model.get("release_date") or "").strip(),
-            last_updated=str(model.get("last_updated") or "").strip(),
-            family=str(model.get("family") or "").strip(),
-            context_limit=_positive_int(limits.get("context")),
-            output_limit=_positive_int(limits.get("output")),
-            reasoning=model.get("reasoning") is True,
-            tool_call=model.get("tool_call") is True,
-            attachment=model.get("attachment") is True,
+            display_name=display_name,
+            status="active",
+            release_date=_utc_date(model.get("created")),
+            family="claude",
+            context_limit=_positive_int(model.get("context_length")),
+            output_limit=_positive_int(top_provider.get("max_completion_tokens")),
+            reasoning=bool({"reasoning", "reasoning_effort", "include_reasoning"} & supported),
+            tool_call=bool({"tools", "tool_choice"} & supported),
+            attachment=bool({"image", "file"} & input_modalities),
+            source_id=source_id,
         ))
 
-    # Newest releases lead without encoding provider-specific version rules.
+    # Newest releases lead; IDs provide stable ordering for equal timestamps.
     records.sort(key=lambda record: record.id)
     records.sort(key=lambda record: record.release_date, reverse=True)
     if not records:
-        raise ValueError("models.dev catalog did not contain active Anthropic models")
+        raise ValueError("OpenRouter catalog did not contain compatible Anthropic models")
     return records
 
 
@@ -151,7 +207,7 @@ def _get_tls_context():
 
 def _download_catalog(timeout_seconds):
     request = urllib.request.Request(
-        MODELS_DEV_URL,
+        OPENROUTER_MODELS_URL,
         headers={"Accept": "application/json", "User-Agent": "Bullpen-Claude-Catalog/1"},
     )
     with urllib.request.urlopen(
@@ -161,8 +217,8 @@ def _download_catalog(timeout_seconds):
     ) as response:
         body = response.read(MAX_RESPONSE_BYTES + 1)
     if len(body) > MAX_RESPONSE_BYTES:
-        raise ValueError("models.dev catalog exceeded the response size limit")
-    return parse_models_dev_catalog(json.loads(body.decode("utf-8")))
+        raise ValueError("OpenRouter catalog exceeded the response size limit")
+    return parse_openrouter_catalog(json.loads(body.decode("utf-8")))
 
 
 def _error_message(error):
@@ -206,7 +262,7 @@ def _cached_result(cached):
     return _result(
         cached["records"],
         cached=True,
-        source="models.dev",
+        source="openrouter",
         cached_at=cached["cached_at"],
     )
 
@@ -226,9 +282,9 @@ def _perform_refresh(timeout_seconds):
     try:
         records = _download_catalog(timeout_seconds)
     except Exception as error:
-        message = "models.dev Claude catalog unavailable: " + _error_message(error)
+        message = "OpenRouter Claude catalog unavailable: " + _error_message(error)
         with _REFRESH_CONDITION:
-            cached = _CACHE.get("models.dev")
+            cached = _CACHE.get(CACHE_KEY)
             _LAST_REFRESH_ERROR = message
             _REFRESH_IN_FLIGHT = False
             _REFRESH_CONDITION.notify_all()
@@ -238,11 +294,11 @@ def _perform_refresh(timeout_seconds):
 
     cached_at = time.time()
     with _REFRESH_CONDITION:
-        _CACHE["models.dev"] = {"records": records, "cached_at": cached_at}
+        _CACHE[CACHE_KEY] = {"records": records, "cached_at": cached_at}
         _LAST_REFRESH_ERROR = None
         _REFRESH_IN_FLIGHT = False
         _REFRESH_CONDITION.notify_all()
-    return _result(records, cached=False, source="models.dev", cached_at=cached_at)
+    return _result(records, cached=False, source="openrouter", cached_at=cached_at)
 
 
 def _start_refresh_thread(timeout_seconds, *, on_complete=None):
@@ -289,7 +345,7 @@ def fetch_claude_models(
     cache_ttl_seconds=DEFAULT_CACHE_TTL_SECONDS,
     in_flight_wait_seconds=DEFAULT_IN_FLIGHT_WAIT_SECONDS,
 ):
-    """Return the models.dev Anthropic catalog with single-flight refreshing.
+    """Return OpenRouter-derived Claude models with single-flight refreshing.
 
     Cache state is protected only while it is inspected or published. Network,
     TLS, response parsing, and bounded waits always happen without holding the
@@ -300,7 +356,7 @@ def fetch_claude_models(
     now = time.time()
     background_refresh = False
     with _REFRESH_CONDITION:
-        cached = _CACHE.get("models.dev")
+        cached = _CACHE.get(CACHE_KEY)
         if not refresh and cached and now - cached["cached_at"] <= cache_ttl_seconds:
             return _cached_result(cached)
 
@@ -311,7 +367,7 @@ def fetch_claude_models(
             if cached and not refresh:
                 return _unavailable_result(
                     cached,
-                    "models.dev Claude catalog refresh is already in progress",
+                    "OpenRouter Claude catalog refresh is already in progress",
                 )
             joined_generation = _REFRESH_GENERATION
         else:
@@ -325,7 +381,7 @@ def fetch_claude_models(
         _start_refresh_thread(timeout_seconds)
         return _unavailable_result(
             cached,
-            "models.dev Claude catalog refresh has started",
+            "OpenRouter Claude catalog refresh has started",
         )
 
     if joined_generation is not None:
@@ -338,14 +394,14 @@ def fetch_claude_models(
                 ),
                 timeout=wait_seconds,
             )
-            cached = _CACHE.get("models.dev")
+            cached = _CACHE.get(CACHE_KEY)
             if completed and cached and _LAST_REFRESH_ERROR is None:
                 return _cached_result(cached)
             if completed and _LAST_REFRESH_ERROR:
                 return _unavailable_result(cached, _LAST_REFRESH_ERROR)
             return _unavailable_result(
                 cached,
-                "models.dev Claude catalog refresh is still in progress",
+                "OpenRouter Claude catalog refresh is still in progress",
             )
 
     return _perform_refresh(timeout_seconds)

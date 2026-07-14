@@ -1,6 +1,12 @@
 # Claude Model Catalog Refresh
 
-Bullpen discovers Claude models from the public `models.dev` catalog. The catalog is process-local, resilient to upstream failure, and refreshed without holding application cache locks across network I/O.
+Bullpen discovers Claude models from OpenRouter's public `/api/v1/models` catalog. The request requires no OpenRouter account, credentials, or funding. The catalog is process-local, resilient to upstream failure, and refreshed without holding application cache locks across network I/O.
+
+## OpenRouter-to-Claude compatibility
+
+OpenRouter is the discovery source, not an assertion about a user's Claude entitlement. Bullpen selects `anthropic/claude-*` records, removes the provider prefix, and changes decimal version separators to Claude Code's hyphenated form. For example, `anthropic/claude-sonnet-4.6` becomes `claude-sonnet-4-6`.
+
+OpenRouter routing variants containing `:` or ending in `-fast` are excluded. A small compatibility set also excludes identifiers that Claude Code rejects or silently routes to a different model. This policy requires no manual additions for ordinary new releases. Existing selections and free-form entry remain available when a model is absent from the discovered catalog.
 
 ## Refresh policy
 
@@ -14,7 +20,7 @@ The one-hour policy is TTL-based rather than a periodic timer. If no catalog req
 
 ## Concurrency model
 
-Catalog refresh is single-flight. At most one models.dev download may be active in a Bullpen process.
+Catalog refresh is single-flight. At most one OpenRouter download may be active in a Bullpen process.
 
 `_CACHE_LOCK` and its condition protect only:
 
@@ -27,7 +33,7 @@ Certificate lookup, TLS-context construction, `urlopen`, response reading, JSON 
 
 ## TLS context lifecycle
 
-`certifi.where()` returns the path of the CA bundle installed with Bullpen's Python dependencies; it does not download certificates. Bullpen lazily loads that local bundle into one `SSLContext` and reuses the immutable context for every models.dev request in the process.
+`certifi.where()` returns the path of the CA bundle installed with Bullpen's Python dependencies; it does not download certificates. Bullpen lazily loads that local bundle into one `SSLContext` and reuses the immutable context for every OpenRouter request in the process.
 
 This avoids reopening and reparsing the same CA bundle at startup, after TTL expiration, and on explicit refresh. Updating the certifi package normally accompanies a Bullpen process restart, which creates a new context from the updated bundle.
 
@@ -40,7 +46,7 @@ This avoids reopening and reparsing the same CA bundle at startup, after TTL exp
 | Explicit refresh, no refresh active | Perform the forced refresh as owner, subject to the 20-second upstream timeout. |
 | Explicit refresh, refresh active | Join the existing refresh for at most five seconds rather than starting another download. |
 
-The five-second join ceiling is deliberately shorter than the upstream timeout. A slow models.dev response must not occupy a browser Socket.IO request for the full network timeout when fallback data is available.
+The five-second join ceiling is deliberately shorter than the upstream timeout. A slow OpenRouter response must not occupy a browser Socket.IO request for the full network timeout when fallback data is available.
 
 ## Publication and failures
 
@@ -57,11 +63,11 @@ Unexpected programming errors also clear refresh ownership and wake joiners, the
 
 ## Response interpretation
 
-- `status: ok`, `source: models.dev`: current models.dev data.
+- `status: ok`, `source: openrouter`: current OpenRouter data translated for Claude Code.
 - `status: stale`, `source: stale-cache`: usable last-good data while refresh is active or after refresh failure.
 - `status: error`, `source: fallback`: no last-good response was available, so Bullpen returned its built-in emergency list.
 - `cached: true`: records came from the process cache, including stale results.
-- `cached_at`: time at which models.dev data was last published successfully.
+- `cached_at`: time at which OpenRouter data was last published successfully.
 
 The fallback list is not an alternate source of truth. It exists only to keep existing Claude worker configuration usable while the public catalog is unavailable.
 
@@ -77,6 +83,17 @@ Bullpen restores its foreground SIGINT handler before importing and initializing
 
 This remediation addresses catalog availability, latency, and lock scope. It is not identified as the cause of the separate Control-C incident; extensive PTY testing did not reproduce the SIGINT failure from this lifecycle.
 
+## Opt-in live validation
+
+Enumeration never invokes a model. Maintainers can explicitly road-test every discovered Claude slug through Bullpen's real adapter path:
+
+```bash
+python3 bullpen.py model-catalog --workspace /path/to/project validate \
+  --provider claude --all-catalog-models --output text
+```
+
+This makes one real provider call per model and is therefore never run at startup or in ordinary CI. Reports distinguish exact selection from silent routing when Claude returns `modelUsage`, and retain the existing timeout and error classifications.
+
 ## Test coverage
 
 `tests/test_claude_models.py` verifies:
@@ -90,7 +107,8 @@ This remediation addresses catalog availability, latency, and lock scope. It is 
 - forced-refresh joining without duplicate downloads;
 - atomic publication and last-good preservation;
 - recovery of single-flight state after unexpected errors;
-- certificate-backed unauthenticated models.dev requests;
+- OpenRouter translation, routing-variant filters, compatibility exclusions, metadata, and sorting;
+- certificate-backed unauthenticated OpenRouter requests;
 - startup-thread and Socket.IO event integration.
 
 `tests/test_server_shutdown.py` separately exercises startup download, browser model requests, TLS stages, cache contention, and real terminal Control-C behavior in isolated server processes.

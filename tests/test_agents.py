@@ -219,11 +219,13 @@ class TestClaudeAdapter:
     def test_parse_success(self):
         adapter = ClaudeAdapter()
         stdout = json.dumps({"type": "result", "subtype": "success",
-                             "is_error": False, "result": "Hello world"})
+                             "is_error": False, "result": "Hello world",
+                             "modelUsage": {"claude-sonnet-5": {}}})
         result = adapter.parse_output(stdout, "", 0)
         assert result["success"] is True
         assert result["output"] == "Hello world"
         assert result["error"] is None
+        assert result["model_usage"] == {"claude-sonnet-5": {}}
 
     def test_parse_failure(self):
         adapter = ClaudeAdapter()

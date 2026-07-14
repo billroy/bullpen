@@ -409,6 +409,7 @@ class ClaudeAdapter(AgentAdapter):
         is_error = False
         error_msg = None
         usage = {}
+        model_usage = {}
 
         for line in stdout.strip().splitlines():
             line = line.strip()
@@ -423,6 +424,7 @@ class ClaudeAdapter(AgentAdapter):
                 result_text = obj.get("result", "")
                 is_error = obj.get("is_error", False)
                 usage = obj.get("usage", {})
+                model_usage = obj.get("modelUsage", {})
                 if is_error:
                     error_msg = result_text
                 break
@@ -446,6 +448,7 @@ class ClaudeAdapter(AgentAdapter):
                 "output": result_text,
                 "error": error_msg or stderr.strip() or f"Exit code {exit_code}",
                 "usage": usage,
+                "model_usage": model_usage,
             }
 
         if is_error:
@@ -454,6 +457,7 @@ class ClaudeAdapter(AgentAdapter):
                 "output": "",
                 "error": error_msg or "Unknown error",
                 "usage": usage,
+                "model_usage": model_usage,
             }
 
         return {
@@ -461,4 +465,5 @@ class ClaudeAdapter(AgentAdapter):
             "output": result_text.strip(),
             "error": None,
             "usage": usage,
+            "model_usage": model_usage,
         }
