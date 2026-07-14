@@ -16,6 +16,7 @@ import certifi
 MODELS_DEV_URL = "https://models.dev/api.json"
 DEFAULT_CACHE_TTL_SECONDS = 60 * 60
 DEFAULT_TIMEOUT_SECONDS = 20
+DEFAULT_IN_FLIGHT_WAIT_SECONDS = 5
 MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 # Last-resort choices for offline startup. models.dev remains the normal source
@@ -32,6 +33,10 @@ FALLBACK_CLAUDE_MODELS = [
 
 _CACHE = {}
 _CACHE_LOCK = threading.Lock()
+_REFRESH_CONDITION = threading.Condition(_CACHE_LOCK)
+_REFRESH_IN_FLIGHT = False
+_REFRESH_GENERATION = 0
+_LAST_REFRESH_ERROR = None
 
 
 @dataclass(frozen=True)
@@ -66,8 +71,11 @@ class ModelRecord:
 
 def clear_claude_model_cache():
     """Clear cached catalog results, primarily for tests."""
-    with _CACHE_LOCK:
+    global _LAST_REFRESH_ERROR
+
+    with _REFRESH_CONDITION:
         _CACHE.clear()
+        _LAST_REFRESH_ERROR = None
 
 
 def fallback_model_records():
@@ -159,57 +167,169 @@ def _result(records, *, cached, source, cached_at=None, status="ok", error=None)
     return result
 
 
+def _unavailable_result(cached, message):
+    if cached:
+        return _result(
+            cached["records"],
+            cached=True,
+            source="stale-cache",
+            cached_at=cached["cached_at"],
+            status="stale",
+            error=message,
+        )
+    return _result(
+        fallback_model_records(),
+        cached=False,
+        source="fallback",
+        status="error",
+        error=message + "; using fallback models",
+    )
+
+
+def _cached_result(cached):
+    return _result(
+        cached["records"],
+        cached=True,
+        source="models.dev",
+        cached_at=cached["cached_at"],
+    )
+
+
+def _perform_refresh(timeout_seconds):
+    """Download and atomically publish the active single-flight refresh."""
+    global _REFRESH_IN_FLIGHT, _LAST_REFRESH_ERROR
+
+    expected_errors = (
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+        json.JSONDecodeError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+    )
+    try:
+        records = _download_catalog(timeout_seconds)
+    except Exception as error:
+        message = "models.dev Claude catalog unavailable: " + _error_message(error)
+        with _REFRESH_CONDITION:
+            cached = _CACHE.get("models.dev")
+            _LAST_REFRESH_ERROR = message
+            _REFRESH_IN_FLIGHT = False
+            _REFRESH_CONDITION.notify_all()
+        if not isinstance(error, expected_errors):
+            raise
+        return _unavailable_result(cached, message)
+
+    cached_at = time.time()
+    with _REFRESH_CONDITION:
+        _CACHE["models.dev"] = {"records": records, "cached_at": cached_at}
+        _LAST_REFRESH_ERROR = None
+        _REFRESH_IN_FLIGHT = False
+        _REFRESH_CONDITION.notify_all()
+    return _result(records, cached=False, source="models.dev", cached_at=cached_at)
+
+
+def _start_refresh_thread(timeout_seconds, *, on_complete=None):
+    """Start a previously claimed refresh and release ownership on failure."""
+    global _REFRESH_IN_FLIGHT
+
+    def run():
+        result = _perform_refresh(timeout_seconds)
+        if on_complete:
+            on_complete(result)
+
+    thread = threading.Thread(
+        target=run,
+        name="claude-model-catalog-refresh",
+        daemon=True,
+    )
+    try:
+        thread.start()
+    except Exception:
+        with _REFRESH_CONDITION:
+            _REFRESH_IN_FLIGHT = False
+            _REFRESH_CONDITION.notify_all()
+        raise
+    return thread
+
+
+def start_claude_models_refresh(*, timeout_seconds=DEFAULT_TIMEOUT_SECONDS, on_complete=None):
+    """Claim and launch a background refresh, returning its thread or None."""
+    global _REFRESH_GENERATION, _REFRESH_IN_FLIGHT, _LAST_REFRESH_ERROR
+
+    with _REFRESH_CONDITION:
+        if _REFRESH_IN_FLIGHT:
+            return None
+        _REFRESH_IN_FLIGHT = True
+        _REFRESH_GENERATION += 1
+        _LAST_REFRESH_ERROR = None
+    return _start_refresh_thread(timeout_seconds, on_complete=on_complete)
+
+
 def fetch_claude_models(
     *,
     refresh=False,
     timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
     cache_ttl_seconds=DEFAULT_CACHE_TTL_SECONDS,
+    in_flight_wait_seconds=DEFAULT_IN_FLIGHT_WAIT_SECONDS,
 ):
-    """Return the public models.dev Anthropic catalog with resilient caching."""
+    """Return the models.dev Anthropic catalog with single-flight refreshing.
+
+    Cache state is protected only while it is inspected or published. Network,
+    TLS, response parsing, and bounded waits always happen without holding the
+    cache lock.
+    """
+    global _REFRESH_GENERATION, _REFRESH_IN_FLIGHT, _LAST_REFRESH_ERROR
+
     now = time.time()
-    with _CACHE_LOCK:
+    background_refresh = False
+    with _REFRESH_CONDITION:
         cached = _CACHE.get("models.dev")
         if not refresh and cached and now - cached["cached_at"] <= cache_ttl_seconds:
-            return _result(
-                cached["records"],
-                cached=True,
-                source="models.dev",
-                cached_at=cached["cached_at"],
-            )
+            return _cached_result(cached)
 
-        try:
-            records = _download_catalog(timeout_seconds)
-        except (
-            OSError,
-            UnicodeDecodeError,
-            ValueError,
-            json.JSONDecodeError,
-            urllib.error.HTTPError,
-            urllib.error.URLError,
-        ) as error:
-            message = "models.dev Claude catalog unavailable: " + _error_message(error)
-            if cached:
-                return _result(
-                    cached["records"],
-                    cached=True,
-                    source="stale-cache",
-                    cached_at=cached["cached_at"],
-                    status="stale",
-                    error=message,
+        if _REFRESH_IN_FLIGHT:
+            # Cached callers never queue behind the upstream service. A stale
+            # result remains useful while the active owner refreshes it. An
+            # explicit refresh joins the owner so it can report that outcome.
+            if cached and not refresh:
+                return _unavailable_result(
+                    cached,
+                    "models.dev Claude catalog refresh is already in progress",
                 )
-            return _result(
-                fallback_model_records(),
-                cached=False,
-                source="fallback",
-                status="error",
-                error=message + "; using fallback models",
+            joined_generation = _REFRESH_GENERATION
+        else:
+            _REFRESH_IN_FLIGHT = True
+            _REFRESH_GENERATION += 1
+            _LAST_REFRESH_ERROR = None
+            joined_generation = None
+            background_refresh = cached is not None and not refresh
+
+    if background_refresh:
+        _start_refresh_thread(timeout_seconds)
+        return _unavailable_result(
+            cached,
+            "models.dev Claude catalog refresh has started",
+        )
+
+    if joined_generation is not None:
+        wait_seconds = max(0.0, float(in_flight_wait_seconds))
+        with _REFRESH_CONDITION:
+            completed = _REFRESH_CONDITION.wait_for(
+                lambda: (
+                    not _REFRESH_IN_FLIGHT
+                    or _REFRESH_GENERATION != joined_generation
+                ),
+                timeout=wait_seconds,
+            )
+            cached = _CACHE.get("models.dev")
+            if completed and cached and _LAST_REFRESH_ERROR is None:
+                return _cached_result(cached)
+            if completed and _LAST_REFRESH_ERROR:
+                return _unavailable_result(cached, _LAST_REFRESH_ERROR)
+            return _unavailable_result(
+                cached,
+                "models.dev Claude catalog refresh is still in progress",
             )
 
-        cached_at = time.time()
-        _CACHE["models.dev"] = {"records": records, "cached_at": cached_at}
-        return _result(records, cached=False, source="models.dev", cached_at=cached_at)
-
-
-def refresh_claude_models_at_startup():
-    """Force a best-effort refresh for each newly started Bullpen server."""
-    return fetch_claude_models(refresh=True)
+    return _perform_refresh(timeout_seconds)

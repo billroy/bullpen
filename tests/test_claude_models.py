@@ -1,6 +1,7 @@
 """Tests for models.dev-backed Claude model discovery and socket events."""
 
 import json
+import threading
 
 import bullpen
 from server import claude_models
@@ -68,6 +69,253 @@ def test_fetch_claude_models_uses_one_hour_cache(monkeypatch):
     assert first["cached"] is False
     assert second["cached"] is True
     assert len(calls) == 1
+
+
+def test_fetch_claude_models_does_not_hold_cache_lock_during_download(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    started = threading.Event()
+    release = threading.Event()
+
+    def download(_timeout):
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-opus-4-8", "Opus 4.8")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", download)
+    thread = threading.Thread(target=claude_models.fetch_claude_models)
+    thread.start()
+    assert started.wait(1)
+
+    assert claude_models._CACHE_LOCK.acquire(timeout=0.2)
+    claude_models._CACHE_LOCK.release()
+    release.set()
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+
+
+def test_concurrent_empty_cache_requests_share_one_download(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+    results = []
+
+    def download(_timeout):
+        calls.append(True)
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-opus-4-8", "Opus 4.8")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", download)
+    owner = threading.Thread(target=lambda: results.append(claude_models.fetch_claude_models()))
+    joiner = threading.Thread(target=lambda: results.append(
+        claude_models.fetch_claude_models(in_flight_wait_seconds=2)
+    ))
+    owner.start()
+    assert started.wait(1)
+    joiner.start()
+    release.set()
+    owner.join(timeout=2)
+    joiner.join(timeout=2)
+
+    assert not owner.is_alive()
+    assert not joiner.is_alive()
+    assert len(calls) == 1
+    assert len(results) == 2
+    assert {result["models"][0]["id"] for result in results} == {"claude-opus-4-8"}
+
+
+def test_fresh_cache_remains_readable_during_forced_refresh(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    monkeypatch.setattr(
+        claude_models,
+        "_download_catalog",
+        lambda _timeout: [claude_models.ModelRecord("claude-opus-4-8", "Opus 4.8")],
+    )
+    claude_models.fetch_claude_models()
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def refresh_download(_timeout):
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-sonnet-5", "Sonnet 5")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", refresh_download)
+    refresher = threading.Thread(target=lambda: claude_models.fetch_claude_models(refresh=True))
+    refresher.start()
+    assert started.wait(1)
+
+    result = claude_models.fetch_claude_models()
+    assert result["status"] == "ok"
+    assert result["models"][0]["id"] == "claude-opus-4-8"
+    assert refresher.is_alive()
+    release.set()
+    refresher.join(timeout=2)
+    assert not refresher.is_alive()
+
+
+def test_stale_cache_returns_immediately_during_refresh(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    monkeypatch.setattr(
+        claude_models,
+        "_download_catalog",
+        lambda _timeout: [claude_models.ModelRecord("claude-opus-4-8", "Opus 4.8")],
+    )
+    claude_models.fetch_claude_models()
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def refresh_download(_timeout):
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-sonnet-5", "Sonnet 5")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", refresh_download)
+    refresher = threading.Thread(target=lambda: claude_models.fetch_claude_models(refresh=True))
+    refresher.start()
+    assert started.wait(1)
+
+    result = claude_models.fetch_claude_models(cache_ttl_seconds=0)
+    assert result["status"] == "stale"
+    assert result["source"] == "stale-cache"
+    assert result["models"][0]["id"] == "claude-opus-4-8"
+    assert refresher.is_alive()
+    release.set()
+    refresher.join(timeout=2)
+    assert not refresher.is_alive()
+
+
+def test_expired_cache_starts_background_refresh_and_returns_stale(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    monkeypatch.setattr(
+        claude_models,
+        "_download_catalog",
+        lambda _timeout: [claude_models.ModelRecord("claude-opus-4-8", "Opus 4.8")],
+    )
+    claude_models.fetch_claude_models()
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def refresh_download(_timeout):
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-sonnet-5", "Sonnet 5")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", refresh_download)
+    result = claude_models.fetch_claude_models(cache_ttl_seconds=0)
+
+    assert result["status"] == "stale"
+    assert result["models"][0]["id"] == "claude-opus-4-8"
+    assert "refresh has started" in result["error"]
+    assert started.wait(1)
+    release.set()
+    with claude_models._REFRESH_CONDITION:
+        assert claude_models._REFRESH_CONDITION.wait_for(
+            lambda: not claude_models._REFRESH_IN_FLIGHT,
+            timeout=2,
+        )
+    refreshed = claude_models.fetch_claude_models()
+    assert refreshed["models"][0]["id"] == "claude-sonnet-5"
+
+
+def test_empty_cache_wait_is_bounded_while_refresh_continues(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def download(_timeout):
+        calls.append(True)
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-opus-4-8", "Opus 4.8")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", download)
+    owner = threading.Thread(target=claude_models.fetch_claude_models)
+    owner.start()
+    assert started.wait(1)
+
+    result = claude_models.fetch_claude_models(in_flight_wait_seconds=0.01)
+    assert result["status"] == "error"
+    assert result["source"] == "fallback"
+    assert "still in progress" in result["error"]
+    assert owner.is_alive()
+    assert len(calls) == 1
+    release.set()
+    owner.join(timeout=2)
+    assert not owner.is_alive()
+
+
+def test_concurrent_forced_refresh_joins_active_owner(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+    results = []
+
+    def download(_timeout):
+        calls.append(True)
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-sonnet-5", "Sonnet 5")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", download)
+    join_started = threading.Event()
+    original_wait_for = claude_models._REFRESH_CONDITION.wait_for
+
+    def observed_wait_for(predicate, timeout=None):
+        join_started.set()
+        return original_wait_for(predicate, timeout)
+
+    monkeypatch.setattr(claude_models._REFRESH_CONDITION, "wait_for", observed_wait_for)
+    owner = threading.Thread(target=lambda: results.append(
+        claude_models.fetch_claude_models(refresh=True)
+    ))
+    joiner = threading.Thread(target=lambda: results.append(
+        claude_models.fetch_claude_models(refresh=True, in_flight_wait_seconds=2)
+    ))
+    owner.start()
+    assert started.wait(1)
+    joiner.start()
+    assert join_started.wait(1)
+    release.set()
+    owner.join(timeout=2)
+    joiner.join(timeout=2)
+
+    assert not owner.is_alive()
+    assert not joiner.is_alive()
+    assert len(calls) == 1
+    assert len(results) == 2
+    assert {result["models"][0]["id"] for result in results} == {"claude-sonnet-5"}
+
+
+def test_unexpected_download_error_releases_single_flight_state(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    monkeypatch.setattr(
+        claude_models,
+        "_download_catalog",
+        lambda _timeout: (_ for _ in ()).throw(RuntimeError("programming defect")),
+    )
+
+    try:
+        claude_models.fetch_claude_models()
+    except RuntimeError as error:
+        assert "programming defect" in str(error)
+    else:
+        raise AssertionError("unexpected errors must remain visible")
+
+    monkeypatch.setattr(
+        claude_models,
+        "_download_catalog",
+        lambda _timeout: [claude_models.ModelRecord("claude-sonnet-5", "Sonnet 5")],
+    )
+    result = claude_models.fetch_claude_models()
+    assert result["status"] == "ok"
+    assert result["models"][0]["id"] == "claude-sonnet-5"
 
 
 def test_fetch_claude_models_refresh_bypasses_cache(monkeypatch):
@@ -150,32 +398,49 @@ def test_download_catalog_sends_no_credentials(monkeypatch):
     assert records[0].id == "claude-sonnet-5"
 
 
-def test_startup_refresh_forces_catalog_refresh(monkeypatch):
-    calls = []
-    monkeypatch.setattr(
-        claude_models,
-        "fetch_claude_models",
-        lambda **kwargs: calls.append(kwargs) or {"status": "ok", "models": []},
-    )
-
-    result = claude_models.refresh_claude_models_at_startup()
-
-    assert calls == [{"refresh": True}]
-    assert result["status"] == "ok"
-
-
 def test_server_start_launches_background_catalog_refresh(monkeypatch):
     calls = []
-    monkeypatch.setattr(
-        claude_models,
-        "refresh_claude_models_at_startup",
-        lambda: calls.append(True) or {"status": "ok"},
-    )
+
+    def start_refresh(**kwargs):
+        calls.append(kwargs)
+        thread = threading.Thread(target=lambda: kwargs["on_complete"]({"status": "ok"}))
+        thread.start()
+        return thread
+
+    monkeypatch.setattr(claude_models, "start_claude_models_refresh", start_refresh)
 
     thread = bullpen.start_claude_catalog_refresh()
     thread.join(timeout=2)
 
-    assert calls == [True]
+    assert len(calls) == 1
+    assert callable(calls[0]["on_complete"])
+    assert not thread.is_alive()
+
+
+def test_startup_refresh_claims_single_flight_before_returning(monkeypatch):
+    claude_models.clear_claude_model_cache()
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def download(_timeout):
+        calls.append(True)
+        started.set()
+        assert release.wait(2)
+        return [claude_models.ModelRecord("claude-opus-4-8", "Opus 4.8")]
+
+    monkeypatch.setattr(claude_models, "_download_catalog", download)
+    thread = claude_models.start_claude_models_refresh()
+
+    assert thread is not None
+    with claude_models._REFRESH_CONDITION:
+        assert claude_models._REFRESH_IN_FLIGHT is True
+    assert started.wait(1)
+    joined = claude_models.fetch_claude_models(in_flight_wait_seconds=0.01)
+    assert joined["source"] == "fallback"
+    assert len(calls) == 1
+    release.set()
+    thread.join(timeout=2)
     assert not thread.is_alive()
 
 

@@ -608,17 +608,13 @@ def require_auth_for_network_bind(host):
 
 def start_claude_catalog_refresh():
     """Warm the one-hour Claude catalog cache without delaying server startup."""
-    import threading
     from server import claude_models
 
-    def refresh():
-        result = claude_models.refresh_claude_models_at_startup()
+    def completed(result):
         if result.get("status") == "error":
             print(result.get("error", "Claude model catalog refresh failed"), file=sys.stderr)
 
-    thread = threading.Thread(target=refresh, name="claude-model-catalog-refresh", daemon=True)
-    thread.start()
-    return thread
+    return claude_models.start_claude_models_refresh(on_complete=completed)
 
 
 _original_signal_setter = None

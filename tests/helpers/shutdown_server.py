@@ -11,27 +11,16 @@ import traceback
 claude_models = None
 codex_models = None
 bullpen = None
-
-
-def _catalog_result():
-    return {
-        "status": "ok",
-        "models": [],
-        "cached": False,
-        "source": "shutdown-test",
-    }
-
-
 def _configure_catalog_refresh():
     mode = os.environ.get("BULLPEN_SHUTDOWN_TEST_CATALOG", "immediate")
 
     if mode == "live":
         return
     if mode == "thread-crash":
-        def crash():
+        def crash(_timeout):
             raise RuntimeError("synthetic uncaught catalog thread failure")
 
-        claude_models.refresh_claude_models_at_startup = crash
+        claude_models._download_catalog = crash
         return
     if mode in {"cert-path-blocked", "ssl-context-blocked", "urlopen-blocked"}:
         def blocked_download(_timeout):
@@ -54,20 +43,16 @@ def _configure_catalog_refresh():
         claude_models._download_catalog = blocked_download
         return
     if mode == "blocked":
-        def refresh():
+        def download(_timeout):
             time.sleep(30)
-            return _catalog_result()
+            return []
     elif mode == "error":
-        def refresh():
-            return {
-                **_catalog_result(),
-                "status": "error",
-                "error": "synthetic catalog failure",
-            }
+        def download(_timeout):
+            raise OSError("synthetic catalog failure")
     else:
-        refresh = _catalog_result
+        download = lambda _timeout: []
 
-    claude_models.refresh_claude_models_at_startup = refresh
+    claude_models._download_catalog = download
 
 
 def _configure_codex_catalog():

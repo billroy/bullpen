@@ -84,6 +84,8 @@ BULLPEN_SIGINT_DIAGNOSTICS=1 python3 bullpen.py --workspace /path/to/your/projec
 
 The diagnostic output records Python-level SIGINT handler replacements, low-level signal delivery, and invocation of Bullpen's server handler. It is intended for troubleshooting and is disabled by default.
 
+Claude model discovery uses a startup refresh, a one-hour process cache, and single-flight background refreshes. See [Claude Model Catalog Refresh](docs/claude-model-catalog.md) for cache, concurrency, and fallback behavior.
+
 ## Features
 
 - **Kanban board** -- drag-and-drop ticket management with user-configurable columns (add, remove, rename, reorder); drag tickets between columns or onto workers

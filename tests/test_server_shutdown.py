@@ -324,7 +324,7 @@ def test_server_control_c_without_protection_during_catalog_tls_stages(tmp_path,
 
 
 @pytest.mark.skipif(os.name != "posix", reason="PTY Control-C coverage requires POSIX")
-def test_server_control_c_with_browser_request_waiting_on_startup_catalog_lock(tmp_path):
+def test_server_control_c_with_browser_request_joining_startup_catalog_refresh(tmp_path):
     _run_shutdown_case(
         tmp_path,
         catalog_mode="urlopen-blocked",
