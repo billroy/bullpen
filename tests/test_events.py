@@ -1155,6 +1155,50 @@ class TestWorkerEvents:
         assert [entry["value"] for entry in worker["history"]] == [1, 2]
         assert worker["history"][-1]["updated_at"] == worker["updated_at"]
 
+    def test_configure_value_format_is_presentation_only(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "1234", "value_type": "number", "save_history": True},
+        })
+        initial = get_event(c, "layout:updated")["slots"][0]
+
+        c.emit("worker:configure", {
+            "slot": 0,
+            "fields": {"format": {"kind": "number", "places": 2, "grouping": True}},
+        })
+        worker = get_event(c, "layout:updated")["slots"][0]
+
+        assert worker["value"] == 1234
+        assert worker["resolved_value_type"] == "number"
+        assert worker["updated_at"] == initial["updated_at"]
+        assert worker["history"] == initial["history"]
+
+    def test_disabling_value_history_preserves_existing_entries(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "1", "value_type": "number", "save_history": True},
+        })
+        initial = get_event(c, "layout:updated")["slots"][0]
+        c.emit("worker:configure", {"slot": 0, "fields": {"save_history": False}})
+        worker = get_event(c, "layout:updated")["slots"][0]
+        assert worker["save_history"] is False
+        assert worker["history"] == initial["history"]
+
+    def test_bulk_configuration_rejects_value_data_fields(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "1", "value_type": "number"},
+        })
+        assert get_event(c, "layout:updated") is not None
+        c.emit("worker:configure_many", {"slots": [0], "fields": {"value": "2"}})
+        assert get_event(c, "error")["message"] == "Bulk configuration cannot change Value data or history"
+
     def test_value_set_event_records_history(self, client):
         c, app = client
         c.emit("worker:add", {
@@ -1171,6 +1215,25 @@ class TestWorkerEvents:
         assert worker["value"] == 8
         assert [entry["value"] for entry in worker["history"]] == [5, 8]
         assert worker["history"][-1]["updated_at"] == worker["updated_at"]
+
+    def test_value_set_auto_honors_json_string_and_number_types(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Transport", "value": "", "value_type": "auto"},
+        })
+        assert get_event(c, "layout:updated") is not None
+
+        c.emit("value:set", {"ref": "Transport", "value": "42"})
+        string_worker = get_event(c, "layout:updated")["slots"][0]
+        assert string_worker["value"] == "42"
+        assert string_worker["resolved_value_type"] == "string"
+
+        c.emit("value:set", {"ref": "Transport", "value": 42})
+        number_worker = get_event(c, "layout:updated")["slots"][0]
+        assert number_worker["value"] == 42
+        assert number_worker["resolved_value_type"] == "number"
 
     def test_value_set_event_preserves_name_when_filling_blank_value(self, client):
         c, app = client
@@ -2094,9 +2157,32 @@ class TestWorkerEvents:
         assert [(worker["col"], worker["row"]) for worker in workers] == [(2, 3), (3, 3)]
         assert [worker["type"] for worker in workers] == ["value", "value"]
         assert [worker["name"] for worker in workers] == ["", ""]
-        assert [worker["value"] for worker in workers] == ["A1", 42]
+        assert [worker["value"] for worker in workers] == ["A1", "42"]
         assert all(worker["value_type"] == "auto" for worker in workers)
+        assert all(worker["resolved_value_type"] == "string" for worker in workers)
+        assert all(worker["format"] == {"kind": "general"} for worker in workers)
         assert all("task_queue" not in worker for worker in workers)
+
+    def test_paste_group_classifies_explicit_raw_worksheet_values(self, client):
+        c, _ = client
+        c.emit("worker:paste_group", {
+            "items": [{
+                "coord": {"col": 2, "row": 3},
+                "worker": {
+                    "type": "value",
+                    "name": "",
+                    "value": "42",
+                    "value_type": "auto",
+                    "format": {"kind": "general"},
+                    "_raw_value_input": True,
+                },
+            }],
+        })
+        layout = get_event(c, "layout:updated")
+        worker = next(slot for slot in layout["slots"] if slot)
+        assert worker["value"] == 42
+        assert worker["resolved_value_type"] == "number"
+        assert "_raw_value_input" not in worker
 
     def test_duplicate_service_worker_reemits_running_service_state(self, client):
         c, app = client

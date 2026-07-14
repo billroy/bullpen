@@ -159,6 +159,7 @@ const WorkerConfigModal = {
       opencodeModelSearch: '',
       webSpeechVoices: [],
       valueUnitMode: '',
+      valueInitialForm: null,
     };
   },
   watch: {
@@ -235,10 +236,21 @@ const WorkerConfigModal = {
             value_type: w.value_type || 'auto',
             resolved_value_type: w.resolved_value_type || 'string',
             unit: w.unit || '',
-            format: w.format && typeof w.format === 'object' ? { ...w.format } : { kind: 'auto' },
+            format: w.format && typeof w.format === 'object'
+              ? { ...w.format, kind: w.format.kind === 'auto' ? 'general' : (w.format.kind || 'general') }
+              : { kind: 'general' },
             save_history: w.save_history !== undefined ? !!w.save_history : true,
             notification: cloneNotificationForm(w.notification),
           };
+          this.valueInitialForm = w.type === 'value' ? {
+            name: String(this.form.name || '').trim(),
+            value: String(this.form.value ?? ''),
+            value_type: String(this.form.value_type || 'auto'),
+            unit: String(this.form.unit || '').trim(),
+            format: JSON.stringify(this.form.format || { kind: 'general' }),
+            save_history: !!this.form.save_history,
+            color: String(this.form.color || '').trim(),
+          } : null;
           const hasKnownUnit = VALUE_UNIT_OPTIONS.some(option => option.value === this.form.unit);
           this.valueUnitMode = hasKnownUnit ? this.form.unit : (this.form.unit ? '__other__' : '');
           this.servicePreview = null;
@@ -605,8 +617,7 @@ const WorkerConfigModal = {
               <label class="form-label">
                 Format
                 <select class="form-select" v-model="form.format.kind" @change="onValueFormatKindChange">
-                  <option value="auto">Auto (by value type)</option>
-                  <option value="general">General (as entered)</option>
+                  <option value="general">General</option>
                   <option value="number">Number</option>
                   <option value="currency">Currency</option>
                   <option value="string-left">Text left</option>
@@ -1621,7 +1632,7 @@ const WorkerConfigModal = {
       this.form.unit = this.valueUnitMode || '';
     },
     onValueFormatKindChange() {
-      const format = this.form.format || (this.form.format = { kind: 'auto' });
+      const format = this.form.format || (this.form.format = { kind: 'general' });
       if (format.kind !== 'number' && format.kind !== 'currency') return;
       if (!Object.prototype.hasOwnProperty.call(format, 'places')) format.places = null;
       if (!Object.prototype.hasOwnProperty.call(format, 'grouping')) format.grouping = true;
@@ -1648,7 +1659,7 @@ const WorkerConfigModal = {
         fields.name = String(fields.name || '').trim();
         fields.value_type = String(fields.value_type || 'auto');
         fields.unit = String(fields.unit || '').trim();
-        fields.format = fields.format && typeof fields.format === 'object' ? { ...fields.format } : { kind: 'auto' };
+        fields.format = fields.format && typeof fields.format === 'object' ? { ...fields.format } : { kind: 'general' };
         fields.save_history = !!fields.save_history;
         delete fields.resolved_value_type;
         delete fields.note;
@@ -1690,6 +1701,27 @@ const WorkerConfigModal = {
         delete fields.log_max_bytes;
         delete fields.notification;
         fields.color = String(fields.color || '').trim();
+
+        // Value configuration is patch-based. In particular, opening the
+        // modal and changing Format must not resend a stale Value.
+        const initial = this.valueInitialForm || {};
+        const candidates = {
+          name: fields.name,
+          value: String(fields.value ?? ''),
+          value_type: fields.value_type,
+          unit: fields.unit,
+          format: fields.format,
+          save_history: fields.save_history,
+          color: fields.color,
+        };
+        const initialValues = {
+          ...initial,
+          format: initial.format ? JSON.parse(initial.format) : { kind: 'general' },
+        };
+        for (const key of Object.keys(fields)) delete fields[key];
+        for (const [key, value] of Object.entries(candidates)) {
+          if (JSON.stringify(value) !== JSON.stringify(initialValues[key])) fields[key] = value;
+        }
       } else if (this.isMarker || this.isNotification) {
         delete fields.agent;
         delete fields.model;

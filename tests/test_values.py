@@ -2,6 +2,7 @@
 
 from server.values import (
     append_value_history,
+    classify_value_input,
     col_label,
     coord_to_cell_ref,
     find_value_by_ref,
@@ -14,7 +15,9 @@ from server.values import (
     parse_plain_number,
     row_label,
     unit_labels,
+    validate_value_snapshot,
 )
+import pytest
 from server.templates import render_value_template
 from server.templates import render_context_value_template
 
@@ -52,11 +55,29 @@ def test_value_payload_auto_detects_plain_numbers_without_erasing_strings():
         "value_type": "string",
         "resolved_value_type": "string",
     }
-    assert normalize_value_payload("nope", "number") == {
-        "value": 0,
-        "value_type": "number",
-        "resolved_value_type": "number",
+    with pytest.raises(ValueError, match="value must be numeric"):
+        normalize_value_payload("nope", "number")
+
+
+def test_mcp_auto_honors_json_transport_type_and_precision_boundary():
+    assert classify_value_input(42, "auto", source="mcp")["resolved_value_type"] == "number"
+    assert classify_value_input("42", "auto", source="mcp") == {
+        "value": "42",
+        "value_type": "auto",
+        "resolved_value_type": "string",
     }
+    assert classify_value_input("1234567890123456", "auto", source="ui")["resolved_value_type"] == "string"
+    with pytest.raises(ValueError, match="precision"):
+        classify_value_input(1234567890123456, "auto", source="mcp")
+    with pytest.raises(ValueError, match="precision"):
+        classify_value_input("1234567890123456", "number", source="ui")
+    assert classify_value_input("  identifier  ", "auto", source="ui")["value"] == "identifier"
+    assert classify_value_input("  identifier  ", "auto", source="mcp")["value"] == "  identifier  "
+
+
+def test_snapshot_validation_never_reclassifies_resolved_strings():
+    snapshot = {"value": "42", "value_type": "auto", "resolved_value_type": "string"}
+    assert validate_value_snapshot(snapshot) == snapshot
 
 
 def test_parse_plain_number_matches_value_worker_numeric_grammar():
@@ -72,10 +93,17 @@ def test_parse_plain_number_matches_value_worker_numeric_grammar():
 
 
 def test_value_history_entries_normalize_values_and_timestamps():
-    slot = {"value": "42", "value_type": "auto", "save_history": True, "updated_at": "2026-06-16T12:00:00Z"}
+    slot = {
+        "value": 42,
+        "value_type": "auto",
+        "resolved_value_type": "number",
+        "save_history": True,
+        "updated_at": "2026-06-16T12:00:00Z",
+    }
 
     append_value_history(slot)
     slot["value"] = "007"
+    slot["resolved_value_type"] = "string"
     slot["updated_at"] = "2026-06-16T12:01:00Z"
     append_value_history(slot)
 
@@ -136,7 +164,8 @@ def test_value_format_normalizes_known_kinds_and_bounds():
         "places": None,
         "grouping": False,
     }
-    assert normalize_format({"kind": "mystery"}) == {"kind": "auto"}
+    assert normalize_format({"kind": "auto"}) == {"kind": "general"}
+    assert normalize_format({"kind": "mystery"}) == {"kind": "general"}
 
 
 def test_value_number_format_supports_grouping_and_automatic_decimals():
@@ -145,6 +174,10 @@ def test_value_number_format_supports_grouping_and_automatic_decimals():
     assert format_value(12000.5, {"kind": "number", "places": None, "grouping": False}) == "12000.5"
     assert format_value(12000, {"kind": "number", "places": None}) == "12,000"
     assert format_value(12000.5, {"kind": "currency", "places": None}) == "$12,000.5"
+    assert format_value(1.005, {"kind": "number", "places": 2}) == "1.01"
+    assert format_value(-1.005, {"kind": "number", "places": 2}) == "-1.01"
+    assert format_value(-0.004, {"kind": "number", "places": 2}) == "0.00"
+    assert format_value("12000", {"kind": "number"}, resolved_value_type="string") == "12000"
 
 
 def test_value_units_normalize_common_aliases_and_custom_text():

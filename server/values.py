@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from math import isfinite
 
 
@@ -194,10 +195,12 @@ def unit_labels(unit: object) -> dict:
 
 def normalize_format(raw: object) -> dict:
     raw = raw if isinstance(raw, dict) else {}
-    kind = str(raw.get("kind") or "auto").strip().lower()
-    allowed = {"auto", "general", "number", "currency", "string-left", "string-right"}
+    kind = str(raw.get("kind") or "general").strip().lower()
+    if kind == "auto":
+        kind = "general"
+    allowed = {"general", "number", "currency", "string-left", "string-right"}
     if kind not in allowed:
-        kind = "auto"
+        kind = "general"
     out = {"kind": kind}
     if kind in {"number", "currency"}:
         raw_places = raw.get("places", 2)
@@ -219,24 +222,28 @@ def normalize_format(raw: object) -> dict:
     return out
 
 
-def format_value(value: object, raw_format: object = None) -> str:
+def format_value(value: object, raw_format: object = None, *, resolved_value_type: object = None) -> str:
     fmt = normalize_format(raw_format)
     kind = fmt.get("kind")
-    if kind in {"number", "currency"}:
-        parsed = _parse_plain_number(value)
+    if kind in {"number", "currency"} and resolved_value_type != "string":
+        parsed = _parse_plain_decimal(value)
         if parsed is not None:
             places = fmt.get("places", 2)
             grouping = bool(fmt.get("grouping", True))
-            separator = "," if grouping else ""
             if places is None:
-                if isinstance(parsed, int):
-                    rendered = f"{parsed:{separator}d}"
-                else:
-                    rendered = f"{parsed:{separator}.10f}".rstrip("0").rstrip(".")
+                rendered = format(parsed.normalize(), "f")
             else:
-                rendered = f"{float(parsed):{separator}.{int(places)}f}"
-                if isinstance(parsed, int) and places == 0:
-                    rendered = f"{parsed:{separator}d}"
+                quantum = Decimal(1).scaleb(-int(places))
+                rendered = format(parsed.quantize(quantum, rounding=ROUND_HALF_UP), f".{int(places)}f")
+            if Decimal(rendered or "0") == 0:
+                rendered = rendered.lstrip("-")
+            if grouping:
+                integer, dot, fraction = rendered.partition(".")
+                sign = ""
+                if integer.startswith(("+", "-")):
+                    sign, integer = integer[0], integer[1:]
+                integer = f"{int(integer or '0'):,}"
+                rendered = f"{sign}{integer}{dot}{fraction}"
             return f"{fmt.get('symbol', '$')}{rendered}" if kind == "currency" else rendered
     return str(value if value is not None else "")
 
@@ -267,6 +274,32 @@ def _parse_plain_number(value: object):
         return None
 
 
+def _parse_plain_decimal(value: object) -> Decimal | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and not isfinite(value):
+            return None
+        return Decimal(str(value))
+    text = str(value if value is not None else "").strip()
+    if not _PLAIN_NUMBER_RE.match(text):
+        return None
+    try:
+        parsed = Decimal(text)
+    except InvalidOperation:
+        return None
+    return parsed if parsed.is_finite() else None
+
+
+def _significant_digits(value: object) -> int:
+    try:
+        decimal_value = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        return 0
+    digits = "".join(str(digit) for digit in decimal_value.as_tuple().digits).lstrip("0")
+    return len(digits) if digits else 1
+
+
 def is_plain_number(value: object) -> bool:
     return _parse_plain_number(value) is not None
 
@@ -276,8 +309,11 @@ def parse_plain_number(value: object):
     return _parse_plain_number(value)
 
 
-def normalize_value_payload(value: object, value_type: object = "auto") -> dict:
+def classify_value_input(value: object, value_type: object = "auto", *, source: str = "ui") -> dict:
+    """Classify a genuine value write. Stored snapshots must not call this."""
     declared = normalize_value_type(value_type)
+    if source == "ui" and isinstance(value, str):
+        value = value.strip()
     if declared == "auto" and value is None:
         return {
             "value": None,
@@ -292,17 +328,31 @@ def normalize_value_payload(value: object, value_type: object = "auto") -> dict:
             "resolved_value_type": "string",
         }
 
+    if declared == "auto" and source == "mcp" and isinstance(value, str):
+        return {
+            "value": _normalize_string(value),
+            "value_type": declared,
+            "resolved_value_type": "string",
+        }
+
     parsed = _parse_plain_number(value)
-    if declared == "number":
+    too_precise = parsed is not None and _significant_digits(value) > 15
+    if declared == "auto" and source == "mcp" and isinstance(value, (int, float)) and not isinstance(value, bool):
         if parsed is None:
-            parsed = 0
+            raise ValueError("value must be a finite number")
+        if too_precise:
+            raise ValueError("numeric precision exceeds 15 significant digits")
+    if declared == "number":
+        if parsed is None or too_precise:
+            reason = "numeric precision exceeds 15 significant digits" if too_precise else "value must be numeric"
+            raise ValueError(reason)
         return {
             "value": parsed,
             "value_type": declared,
             "resolved_value_type": "number",
         }
 
-    if parsed is not None:
+    if parsed is not None and not too_precise:
         return {
             "value": parsed,
             "value_type": declared,
@@ -315,10 +365,47 @@ def normalize_value_payload(value: object, value_type: object = "auto") -> dict:
     }
 
 
+def normalize_value_payload(value: object, value_type: object = "auto") -> dict:
+    """Compatibility wrapper for classifying browser-style raw input."""
+    return classify_value_input(value, value_type, source="ui")
+
+
+def validate_value_snapshot(slot: dict | None) -> dict:
+    """Validate stored state without re-running Auto inference."""
+    slot = slot if isinstance(slot, dict) else {}
+    declared = normalize_value_type(slot.get("value_type"))
+    resolved = str(slot.get("resolved_value_type") or "").strip().lower()
+    value = slot.get("value")
+
+    if resolved == "null" and value is None:
+        return {"value": None, "value_type": declared, "resolved_value_type": "null"}
+    if resolved == "number" and not isinstance(value, bool) and isinstance(value, (int, float)) and (
+        not isinstance(value, float) or isfinite(value)
+    ):
+        return {"value": value, "value_type": declared, "resolved_value_type": "number"}
+    if resolved == "string":
+        return {"value": _normalize_string(value), "value_type": declared, "resolved_value_type": "string"}
+
+    # Conservative one-time repair for legacy snapshots without valid metadata.
+    if declared == "number":
+        parsed = _parse_plain_number(value)
+        if parsed is not None and _significant_digits(value) <= 15:
+            return {"value": parsed, "value_type": declared, "resolved_value_type": "number"}
+    if declared == "string" or isinstance(value, str):
+        return {"value": _normalize_string(value), "value_type": declared, "resolved_value_type": "string"}
+    if value is None:
+        return {"value": None, "value_type": declared, "resolved_value_type": "null"}
+    if not isinstance(value, bool) and isinstance(value, (int, float)) and (
+        not isinstance(value, float) or isfinite(value)
+    ):
+        return {"value": value, "value_type": declared, "resolved_value_type": "number"}
+    return {"value": _normalize_string(value), "value_type": declared, "resolved_value_type": "string"}
+
+
 def value_history_entry(slot: dict | None, updated_at: object = None) -> dict | None:
     if not isinstance(slot, dict):
         return None
-    payload = normalize_value_payload(slot.get("value"), slot.get("value_type"))
+    payload = validate_value_snapshot(slot)
     return {
         "value": payload["value"],
         "value_type": payload["value_type"],

@@ -58,6 +58,8 @@ def test_value_worker_config_modal_has_value_fields_only():
     assert 'v-model="valueUnitMode"' in text
     assert 'v-model="form.unit"' in text
     assert 'v-model="form.format.kind"' in text
+    assert '<option value="general">General</option>' in text
+    assert 'Auto (by value type)' not in text
     assert '@change="onValueFormatKindChange"' in text
     assert 'v-model="form.format.places"' in text
     assert 'v-model="form.format.grouping"' in text
@@ -156,11 +158,14 @@ const context = {{ console, WorkerCard: undefined, window: {{}}, document: {{}},
 vm.createContext(context);
 vm.runInContext(source + `
   const display = WorkerCard.computed.valueDisplayBase;
-  const render = (format) => display.call({{ worker: {{ value: 12000.5, format }} }});
+  const render = (format, value = 12000.5, resolved = 'number') =>
+    display.call({{ worker: {{ value, resolved_value_type: resolved, format }} }});
   globalThis.__result = {{
     automatic: render({{ kind: 'number', places: null, grouping: true }}),
     fixed: render({{ kind: 'number', places: 2, grouping: true }}),
     ungrouped: render({{ kind: 'number', places: null, grouping: false }}),
+    stringValue: render({{ kind: 'number', places: 2, grouping: true }}, '12000', 'string'),
+    negativeZero: render({{ kind: 'number', places: 2, grouping: true }}, -0.004, 'number'),
   }};
 `, context);
 process.stdout.write(JSON.stringify(context.__result));
@@ -171,7 +176,20 @@ process.stdout.write(JSON.stringify(context.__result));
         "automatic": "12,000.5",
         "fixed": "12,000.50",
         "ungrouped": "12000.5",
+        "stringValue": "12000",
+        "negativeZero": "0.00",
     }
+
+
+def test_value_worker_alignment_follows_format_and_resolved_type():
+    card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+    css = (ROOT / "static" / "style.css").read_text()
+
+    assert "valueAlignment()" in card
+    assert "kind === 'string-left'" in card
+    assert "kind === 'string-right' || kind === 'number' || kind === 'currency'" in card
+    assert ".worker-card-value-main--left" in css
+    assert ".worker-card-value-main--right" in css
 
 
 def test_numeric_value_worker_card_has_sparkline_and_graph_modal():

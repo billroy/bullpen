@@ -189,6 +189,7 @@ const WorkerCard = {
             <div v-if="valueEditError" class="worker-card-value-error">{{ valueEditError }}</div>
           </template>
           <button v-else class="worker-card-value-main worker-card-value-main--button"
+                  :class="'worker-card-value-main--' + valueAlignment"
                   :title="valueDisplay"
                   @click.stop="startValueEdit">
             {{ valueDisplay || 'Empty' }}
@@ -614,24 +615,32 @@ const WorkerCard = {
       const value = this.worker?.value;
       if (value === null || value === undefined) return '';
       const format = this.worker?.format || {};
-      const kind = String(format.kind || 'auto');
+      const kind = String(format.kind || 'general');
       const numeric = typeof value === 'number' ? value : Number(value);
-      if ((kind === 'number' || kind === 'currency') && Number.isFinite(numeric)) {
+      const resolvedNumeric = String(this.worker?.resolved_value_type || '') === 'number';
+      if ((kind === 'number' || kind === 'currency') && resolvedNumeric && Number.isFinite(numeric)) {
         const hasPlaces = Object.prototype.hasOwnProperty.call(format, 'places');
         const rawPlaces = hasPlaces ? format.places : 2;
         const automaticPlaces = rawPlaces === null || rawPlaces === '' || rawPlaces === 'auto';
+        const fixedPlaces = automaticPlaces ? null : Math.max(0, Math.min(10, Number(rawPlaces)));
         const options = { useGrouping: format.grouping !== false };
         if (automaticPlaces) {
-          options.maximumFractionDigits = 10;
+          options.maximumFractionDigits = 20;
         } else {
-          const places = Math.max(0, Math.min(10, Number(rawPlaces)));
-          options.minimumFractionDigits = places;
-          options.maximumFractionDigits = places;
+          options.minimumFractionDigits = fixedPlaces;
+          options.maximumFractionDigits = fixedPlaces;
         }
-        const rendered = numeric.toLocaleString(undefined, options);
+        const displayNumeric = !automaticPlaces && Math.abs(numeric) < (0.5 * (10 ** -fixedPlaces)) ? 0 : numeric;
+        const rendered = displayNumeric.toLocaleString(undefined, options);
         return kind === 'currency' ? `${format.symbol || '$'}${rendered}` : rendered;
       }
       return String(value);
+    },
+    valueAlignment() {
+      const kind = String(this.worker?.format?.kind || 'general');
+      if (kind === 'string-left') return 'left';
+      if (kind === 'string-right' || kind === 'number' || kind === 'currency') return 'right';
+      return String(this.worker?.resolved_value_type || '') === 'number' ? 'right' : 'left';
     },
     valueDisplay() {
       const base = this.valueDisplayBase;

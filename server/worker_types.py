@@ -8,11 +8,12 @@ from dataclasses import dataclass
 from server.model_aliases import normalize_model
 from server.prompt_hardening import normalize_trust_mode, TRUST_MODE_TRUSTED, TRUST_MODE_UNTRUSTED
 from server.values import (
+    classify_value_input,
     coord_to_cell_ref as value_coord_to_cell_ref,
     normalize_format as normalize_value_format,
     normalize_unit as normalize_value_unit,
     normalize_value_history,
-    normalize_value_payload,
+    validate_value_snapshot,
     parse_cell_ref as parse_value_cell_ref,
 )
 
@@ -572,7 +573,10 @@ def normalize_worker_slot(raw, *, index, config):
         slot["color"] = str(slot.get("color") or "notification")
         slot["max_retries"] = 0
     elif type_id == "value":
-        payload = normalize_value_payload(slot.get("value"), slot.get("value_type"))
+        if slot.pop("_raw_value_input", False):
+            payload = classify_value_input(slot.get("value"), slot.get("value_type"), source="ui")
+        else:
+            payload = validate_value_snapshot(slot)
         history = normalize_value_history(slot.get("history"))
         save_history = bool(slot["save_history"]) if "save_history" in slot else True
         slot["name"] = str(raw.get("name") or "").strip()
@@ -585,7 +589,7 @@ def normalize_worker_slot(raw, *, index, config):
         slot["icon"] = str(slot.get("icon") or "equal")
         slot["color"] = str(slot.get("color") or "value")
         slot["updated_at"] = str(slot.get("updated_at") or "")
-        slot["history"] = history if save_history else []
+        slot["history"] = history
         for key in (
             "activation",
             "disposition",

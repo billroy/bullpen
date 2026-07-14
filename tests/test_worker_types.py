@@ -393,6 +393,42 @@ def test_value_slot_normalizes_defaults_without_runnable_fields(tmp_workspace):
     assert "state" not in clone
 
 
+def test_value_slot_normalization_preserves_classified_snapshot_and_disabled_history(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = {
+        "type": "value",
+        "row": 0,
+        "col": 0,
+        "name": "Identifier",
+        "value": "42",
+        "value_type": "auto",
+        "resolved_value_type": "string",
+        "format": {"kind": "auto"},
+        "save_history": False,
+        "history": [{
+            "value": "41",
+            "value_type": "auto",
+            "resolved_value_type": "string",
+            "updated_at": "t1",
+        }],
+    }
+
+    for _ in range(100):
+        slot = normalize_worker_slot(slot, index=0, config=config)
+
+    assert slot["value"] == "42"
+    assert slot["resolved_value_type"] == "string"
+    assert slot["format"] == {"kind": "general"}
+    assert slot["save_history"] is False
+    assert slot["history"] == [{
+        "value": "41",
+        "value_type": "auto",
+        "resolved_value_type": "string",
+        "updated_at": "t1",
+    }]
+
+
 def test_value_slot_round_trips_through_team_without_runtime_fields(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     value = {

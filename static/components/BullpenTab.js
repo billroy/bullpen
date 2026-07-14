@@ -1385,7 +1385,7 @@ const BullpenTab = {
           unit,
           value,
           value_type: 'auto',
-          format: { kind: 'auto' },
+          format: { kind: 'general' },
         },
       };
     },
@@ -1458,7 +1458,8 @@ const BullpenTab = {
               unit: '',
               value: rows[rowIndex][colIndex],
               value_type: 'auto',
-              format: { kind: 'auto' },
+              format: { kind: 'general' },
+              _raw_value_input: true,
             },
           });
         }
@@ -2029,7 +2030,7 @@ const BullpenTab = {
           unit: '',
           value: '',
           value_type: 'auto',
-          format: { kind: 'auto' },
+          format: { kind: 'general' },
           save_history: true,
         },
       });

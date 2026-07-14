@@ -1882,14 +1882,22 @@ def register_events(socketio, app):
             }
         elif worker_type == "value":
             updated_at = _now_iso()
+            try:
+                payload = value_mod.classify_value_input(
+                    fields.get("value", ""), fields.get("value_type", "auto"), source="ui"
+                )
+            except ValueError as exc:
+                emit("error", {"message": str(exc)})
+                return
             worker = {
                 "type": "value",
                 "row": row,
                 "col": col,
                 "name": str(fields.get("name", "") or "").strip(),
-                "value": fields.get("value", ""),
-                "value_type": fields.get("value_type", "auto"),
-                "format": fields.get("format") if isinstance(fields.get("format"), dict) else {"kind": "auto"},
+                "value": payload["value"],
+                "value_type": payload["value_type"],
+                "resolved_value_type": payload["resolved_value_type"],
+                "format": fields.get("format") if isinstance(fields.get("format"), dict) else {"kind": "general"},
                 "save_history": bool(fields["save_history"]) if "save_history" in fields else True,
                 "icon": "equal",
                 "color": "value",
@@ -2337,12 +2345,23 @@ def register_events(socketio, app):
             return
 
         value_write_old_slot = None
+        value_payload = None
         if worker.get("type") == "value" and any(k in fields for k in ("value", "value_type")):
             value_write_old_slot = copy.deepcopy(worker)
+            try:
+                value_payload = value_mod.classify_value_input(
+                    fields.get("value", worker.get("value")),
+                    fields.get("value_type", worker.get("value_type", "auto")),
+                    source="ui",
+                )
+            except ValueError as exc:
+                emit("error", {"message": str(exc)})
+                return
         for k, v in fields.items():
-            if k not in ("task_queue", "state"):
+            if k not in ("task_queue", "state", "resolved_value_type"):
                 worker[k] = v
-        if worker.get("type") == "value" and any(k in fields for k in ("value", "value_type", "format")):
+        if value_payload is not None:
+            worker.update(value_payload)
             updated_at = _now_iso()
             worker["updated_at"] = updated_at
             value_mod.append_value_history(worker, updated_at)
@@ -2384,6 +2403,12 @@ def register_events(socketio, app):
             if slot >= len(layout["slots"]) or not layout["slots"][slot]:
                 emit("error", {"message": "worker:configure_many requires occupied slots"})
                 return
+        protected_value_fields = {"value", "value_type", "resolved_value_type", "history"}
+        if protected_value_fields.intersection(fields) and any(
+            layout["slots"][slot].get("type") == "value" for slot in slots
+        ):
+            emit("error", {"message": "Bulk configuration cannot change Value data or history"})
+            return
 
         config = read_json(os.path.join(bp_dir, "config.json"))
         changed_watch_columns = []
@@ -2417,11 +2442,13 @@ def register_events(socketio, app):
         return match
 
     def _value_slot_event_payload(slot, index, coord, old_slot, *, updated_at, changed_by):
-        old_slot = old_slot if isinstance(old_slot, dict) else {}
-        old_payload = value_mod.normalize_value_payload(
-            old_slot.get("value", ""), old_slot.get("value_type", slot.get("value_type", "auto"))
-        )
-        new_payload = value_mod.normalize_value_payload(slot.get("value", ""), slot.get("value_type", "auto"))
+        old_slot = old_slot if isinstance(old_slot, dict) and old_slot else {
+            "value": "",
+            "value_type": "auto",
+            "resolved_value_type": "string",
+        }
+        old_payload = value_mod.validate_value_snapshot(old_slot)
+        new_payload = value_mod.validate_value_snapshot(slot)
         changed = (
             old_payload.get("value") != new_payload.get("value")
             or old_payload.get("resolved_value_type") != new_payload.get("resolved_value_type")
@@ -2619,10 +2646,11 @@ def register_events(socketio, app):
         slot = match["slot"]
         old_slot = copy.deepcopy(slot)
         value_type = data.get("value_type", slot.get("value_type", "auto"))
-        if value_mod.normalize_value_type(value_type) == "number" and not value_mod.is_plain_number(data.get("value")):
-            emit("error", {"message": "value must be numeric"})
+        try:
+            payload = value_mod.classify_value_input(data.get("value", ""), value_type, source="mcp")
+        except ValueError as exc:
+            emit("error", {"message": str(exc)})
             return
-        payload = value_mod.normalize_value_payload(data.get("value", ""), value_type)
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
@@ -2673,7 +2701,11 @@ def register_events(socketio, app):
         next_value = current + amount
         if isinstance(current, int) and float(next_value).is_integer():
             next_value = int(next_value)
-        payload = value_mod.normalize_value_payload(next_value, slot.get("value_type", "auto"))
+        try:
+            payload = value_mod.classify_value_input(next_value, slot.get("value_type", "auto"), source="mcp")
+        except ValueError as exc:
+            emit("error", {"message": str(exc)})
+            return
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
