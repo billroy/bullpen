@@ -398,6 +398,43 @@ def test_download_catalog_sends_no_credentials(monkeypatch):
     assert records[0].id == "claude-sonnet-5"
 
 
+def test_download_catalog_reuses_one_tls_context_per_process(monkeypatch):
+    created = []
+    contexts = []
+    shared_context = object()
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limit):
+            return json.dumps(models_dev_catalog({
+                "claude-sonnet-5": model("Claude Sonnet 5"),
+            })).encode("utf-8")
+
+    def create_context(*, cafile):
+        created.append(cafile)
+        return shared_context
+
+    def fake_urlopen(_request, timeout, context):
+        assert timeout == 3
+        contexts.append(context)
+        return Response()
+
+    monkeypatch.setattr(claude_models, "_TLS_CONTEXT", None)
+    monkeypatch.setattr(claude_models.ssl, "create_default_context", create_context)
+    monkeypatch.setattr(claude_models.urllib.request, "urlopen", fake_urlopen)
+
+    claude_models._download_catalog(3)
+    claude_models._download_catalog(3)
+
+    assert created == [claude_models.certifi.where()]
+    assert contexts == [shared_context, shared_context]
+
+
 def test_server_start_launches_background_catalog_refresh(monkeypatch):
     calls = []
 

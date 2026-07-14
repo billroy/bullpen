@@ -84,6 +84,8 @@ BULLPEN_SIGINT_DIAGNOSTICS=1 python3 bullpen.py --workspace /path/to/your/projec
 
 The diagnostic output records Python-level SIGINT handler replacements, low-level signal delivery, and invocation of Bullpen's server handler. It is intended for troubleshooting and is disabled by default.
 
+Bullpen establishes its foreground Control-C handler before application initialization or background catalog work begins.
+
 Claude model discovery uses a startup refresh, a one-hour process cache, and single-flight background refreshes. See [Claude Model Catalog Refresh](docs/claude-model-catalog.md) for cache, concurrency, and fallback behavior.
 
 ## Features

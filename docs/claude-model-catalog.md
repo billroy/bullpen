@@ -25,6 +25,12 @@ Catalog refresh is single-flight. At most one models.dev download may be active 
 
 Certificate lookup, TLS-context construction, `urlopen`, response reading, JSON parsing, and model parsing all execute without `_CACHE_LOCK`. Waiting for an active refresh also releases the lock through `Condition.wait_for()`.
 
+## TLS context lifecycle
+
+`certifi.where()` returns the path of the CA bundle installed with Bullpen's Python dependencies; it does not download certificates. Bullpen lazily loads that local bundle into one `SSLContext` and reuses the immutable context for every models.dev request in the process.
+
+This avoids reopening and reparsing the same CA bundle at startup, after TTL expiration, and on explicit refresh. Updating the certifi package normally accompanies a Bullpen process restart, which creates a new context from the updated bundle.
+
 | Request state | Result |
 | --- | --- |
 | Fresh cache, ordinary request | Return the fresh cache immediately. |
@@ -66,6 +72,8 @@ Browser refresh mounts the Claude model picker and requests the catalog, but it 
 The startup daemon and browser Socket.IO handlers share only the single-flight cache state. Neither holds the cache lock while performing network or TLS work.
 
 Startup claims the single-flight state in the main thread before launching the downloader. A fast browser connection therefore cannot become a competing refresh owner while the startup thread is waiting to be scheduled.
+
+Bullpen restores its foreground SIGINT handler before importing and initializing the Flask application or launching catalog work. Control-C therefore does not depend on any application import or background thread completing first. The catalog downloader is a daemon thread and is not joined during interpreter shutdown.
 
 This remediation addresses catalog availability, latency, and lock scope. It is not identified as the cause of the separate Control-C incident; extensive PTY testing did not reproduce the SIGINT failure from this lifecycle.
 

@@ -734,6 +734,7 @@ def main():
     print(f"Bullpen starting — workspace: {workspace}, host: {args.host}, port: {args.port}")
 
     enable_sigint_diagnostics()
+    restore_server_sigint_handler()
 
     from server.app import create_app, socketio
 
@@ -755,7 +756,6 @@ def main():
         browse_host = "localhost" if args.host == "0.0.0.0" else args.host
         threading.Timer(1.0, lambda: webbrowser.open(f"http://{browse_host}:{args.port}")).start()
 
-    restore_server_sigint_handler()
     socketio.run(app, host=args.host, port=args.port, debug=False, allow_unsafe_werkzeug=True)
 
 

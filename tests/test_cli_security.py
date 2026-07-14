@@ -2,11 +2,52 @@
 
 import builtins
 import json
+from types import SimpleNamespace
 
 import pytest
 
 import bullpen
 from server import auth
+
+
+def test_server_restores_sigint_before_app_initialization_and_background_work(tmp_path, monkeypatch):
+    from server import app as server_app
+
+    events = []
+    args = SimpleNamespace(
+        command=None,
+        bootstrap_credentials=False,
+        set_password=None,
+        delete_user=[],
+        workspace=str(tmp_path),
+        host="127.0.0.1",
+        port=5050,
+        no_browser=True,
+        websocket_debug=False,
+        start_without_project=False,
+        max_handoff_depth=0,
+    )
+
+    monkeypatch.setattr(bullpen, "parse_args", lambda: args)
+    monkeypatch.setattr(bullpen, "require_auth_for_network_bind", lambda _host: None)
+    monkeypatch.setattr(bullpen, "enable_sigint_diagnostics", lambda: events.append("diagnostics"))
+    monkeypatch.setattr(bullpen, "restore_server_sigint_handler", lambda: events.append("sigint"))
+    monkeypatch.setattr(bullpen, "start_claude_catalog_refresh", lambda: events.append("background"))
+    monkeypatch.setattr("pyfiglet.figlet_format", lambda _text: "")
+    monkeypatch.setattr(
+        server_app,
+        "create_app",
+        lambda *_args, **_kwargs: events.append("app") or object(),
+    )
+    monkeypatch.setattr(
+        server_app.socketio,
+        "run",
+        lambda *_args, **_kwargs: events.append("serve"),
+    )
+
+    bullpen.main()
+
+    assert events == ["diagnostics", "sigint", "app", "background", "serve"]
 
 
 def test_require_auth_for_network_bind_rejects_wildcard_without_password(tmp_path, monkeypatch):

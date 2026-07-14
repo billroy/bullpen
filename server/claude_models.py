@@ -37,6 +37,8 @@ _REFRESH_CONDITION = threading.Condition(_CACHE_LOCK)
 _REFRESH_IN_FLIGHT = False
 _REFRESH_GENERATION = 0
 _LAST_REFRESH_ERROR = None
+_TLS_CONTEXT = None
+_TLS_CONTEXT_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -136,13 +138,27 @@ def parse_models_dev_catalog(data):
     return records
 
 
+def _get_tls_context():
+    """Return the immutable CA-backed SSL context shared by this process."""
+    global _TLS_CONTEXT
+
+    if _TLS_CONTEXT is None:
+        with _TLS_CONTEXT_LOCK:
+            if _TLS_CONTEXT is None:
+                _TLS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+    return _TLS_CONTEXT
+
+
 def _download_catalog(timeout_seconds):
     request = urllib.request.Request(
         MODELS_DEV_URL,
         headers={"Accept": "application/json", "User-Agent": "Bullpen-Claude-Catalog/1"},
     )
-    tls_context = ssl.create_default_context(cafile=certifi.where())
-    with urllib.request.urlopen(request, timeout=timeout_seconds, context=tls_context) as response:
+    with urllib.request.urlopen(
+        request,
+        timeout=timeout_seconds,
+        context=_get_tls_context(),
+    ) as response:
         body = response.read(MAX_RESPONSE_BYTES + 1)
     if len(body) > MAX_RESPONSE_BYTES:
         raise ValueError("models.dev catalog exceeded the response size limit")
