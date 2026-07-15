@@ -80,6 +80,13 @@ def test_git_tab_exposes_status_branch_diff_and_command_menu():
     assert "requestGitAction" in app
     assert "class=\"git-status-panel\"" in text
     assert "@click=\"openBranchDiff\"" in text
-    assert "@change=\"runGitAction\"" in text
-    assert "<option value=\"init\">git init</option>" in text
+    assert "aria-label=\"Git commands\"" in text
+    assert "data-lucide=\"menu\"" in text
+    assert "v-for=\"action in gitActions\"" in text
+    assert "{ id: 'init', label: 'git init', icon: 'folder-git-2' }" in text
+    assert "{ id: 'fetch', label: 'git fetch --prune', icon: 'download' }" in text
+    assert "{ id: 'pull', label: 'git pull', icon: 'arrow-down-to-line' }" in text
+    assert "{ id: 'push', label: 'git push', icon: 'arrow-up-from-line' }" in text
+    assert "{ id: 'branch', label: 'git branch --all --verbose', icon: 'git-branch' }" in text
+    assert "{ id: 'remote', label: 'git remote --verbose', icon: 'radio-tower' }" in text
     assert "title: 'Open Git'" in commands

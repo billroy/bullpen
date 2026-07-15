@@ -5949,13 +5949,17 @@ body.worker-singleton-dragging * {
   white-space: pre;
 }
 
-.git-action-menu {
+.git-action-menu-wrap {
+  position: relative;
+}
+
+.git-action-menu-button {
+  width: 30px;
   height: 30px;
-  max-width: 220px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-primary);
-  color: var(--text-primary);
+}
+
+.git-action-menu {
+  min-width: 220px;
   font-size: 0.85em;
 }
 

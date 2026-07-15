@@ -22,12 +22,29 @@ const CommitsTab = {
       statusError: null,
       selectedGitAction: '',
       gitActionLoading: false,
+      showGitActionMenu: false,
+      gitActions: [
+        { id: 'init', label: 'git init', icon: 'folder-git-2' },
+        { id: 'fetch', label: 'git fetch --prune', icon: 'download' },
+        { id: 'pull', label: 'git pull', icon: 'arrow-down-to-line' },
+        { id: 'push', label: 'git push', icon: 'arrow-up-from-line' },
+        { id: 'branch', label: 'git branch --all --verbose', icon: 'git-branch' },
+        { id: 'remote', label: 'git remote --verbose', icon: 'radio-tower' },
+      ],
       actionResult: null,
       actionError: null,
     };
   },
   mounted() {
+    document.addEventListener('click', this.closeGitActionMenu);
+    renderLucideIcons(this.$el);
     this.refresh();
+  },
+  updated() {
+    this.$nextTick(() => renderLucideIcons(this.$el));
+  },
+  beforeUnmount() {
+    document.removeEventListener('click', this.closeGitActionMenu);
   },
   watch: {
     workspaceId(newId, oldId) {
@@ -216,9 +233,17 @@ const CommitsTab = {
         this.diffLoading = false;
       }
     },
-    async runGitAction() {
-      const action = this.selectedGitAction;
+    toggleGitActionMenu() {
+      if (this.gitActionLoading) return;
+      this.showGitActionMenu = !this.showGitActionMenu;
+    },
+    closeGitActionMenu() {
+      this.showGitActionMenu = false;
+    },
+    async runGitAction(action) {
+      action = action || this.selectedGitAction;
       this.selectedGitAction = '';
+      this.showGitActionMenu = false;
       if (!action || this.gitActionLoading) return;
       this.gitActionLoading = true;
       this.actionError = null;
@@ -298,15 +323,32 @@ const CommitsTab = {
             <i data-lucide="file-diff" aria-hidden="true"></i>
             Branch Diff
           </button>
-          <select class="git-action-menu" v-model="selectedGitAction" @change="runGitAction" :disabled="gitActionLoading">
-            <option value="">{{ gitActionLoading ? 'Running...' : 'Git command...' }}</option>
-            <option value="init">git init</option>
-            <option value="fetch">git fetch --prune</option>
-            <option value="pull">git pull</option>
-            <option value="push">git push</option>
-            <option value="branch">git branch --all --verbose</option>
-            <option value="remote">git remote --verbose</option>
-          </select>
+          <div class="git-action-menu-wrap" @click.stop>
+            <button
+              class="btn btn-sm btn-icon git-action-menu-button"
+              @click="toggleGitActionMenu"
+              :disabled="gitActionLoading"
+              :aria-expanded="showGitActionMenu ? 'true' : 'false'"
+              aria-haspopup="menu"
+              :title="gitActionLoading ? 'Running git command' : 'Git commands'"
+              aria-label="Git commands"
+            >
+              <i data-lucide="menu" aria-hidden="true"></i>
+            </button>
+            <div v-if="showGitActionMenu" class="project-menu git-action-menu" role="menu">
+              <button
+                v-for="action in gitActions"
+                :key="action.id"
+                class="project-menu-item"
+                type="button"
+                role="menuitem"
+                @click="runGitAction(action.id)"
+              >
+                <i class="menu-item-icon" :data-lucide="action.icon" aria-hidden="true"></i>
+                <span class="menu-item-label">{{ action.label }}</span>
+              </button>
+            </div>
+          </div>
         </div>
         <pre v-if="gitStatus?.changes?.length" class="git-status-changes">{{ gitStatus.changes.join('\\n') }}</pre>
       </div>
