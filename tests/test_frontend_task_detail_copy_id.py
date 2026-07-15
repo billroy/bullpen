@@ -25,3 +25,23 @@ def test_task_detail_copy_id_toast_is_wired_to_app():
 
     assert "'toast'" in detail
     assert "@toast=\"addToast\"" in app
+
+
+def test_task_detail_assign_ticket_dropdown_reuses_assign_task():
+    detail = _read("static/components/TaskDetailPanel.js")
+    app = _read("static/app.js")
+    css = _read("static/style.css")
+
+    assert "'workers'" in detail
+    assert "'assign'" in detail
+    assert "assignableWorkers()" in detail
+    assert "Assign Ticket" in detail
+    assert "@change=\"assignTicket\"" in detail
+    assert "this.$emit('assign', { taskId: this.task.id, slot });" in detail
+    assert "workerAcceptsTaskDrop(worker)" in detail
+    assert "isValueWorker(worker)" in detail
+    assert "isEvalWorker(worker)" in detail
+    assert "isUnknownWorkerType(worker)" in detail
+    assert ":workers=\"state.layout?.slots || []\"" in app
+    assert "@assign=\"assignTask($event.taskId, $event.slot)\"" in app
+    assert ".detail-assign-ticket" in css

@@ -2905,10 +2905,12 @@ const app = createApp({
         <TaskDetailPanel
           :task="selectedTask"
           :columns="state.config.columns"
+          :workers="state.layout?.slots || []"
           :read-only="selectedTaskReadOnly"
           @close="selectTask(null)"
           @update="updateTask"
           @delete="deleteTask"
+          @assign="assignTask($event.taskId, $event.slot)"
           @archive="archiveTask"
           @clear-output="clearTaskOutput"
           @toast="addToast"

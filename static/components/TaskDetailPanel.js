@@ -1,6 +1,6 @@
 const TaskDetailPanel = {
-  props: ['task', 'columns', 'readOnly'],
-  emits: ['close', 'update', 'delete', 'archive', 'clear-output', 'toast', 'open-commit-diff'],
+  props: ['task', 'columns', 'readOnly', 'workers'],
+  emits: ['close', 'update', 'delete', 'archive', 'clear-output', 'toast', 'open-commit-diff', 'assign'],
   data() {
     return {
       editing: false,
@@ -123,6 +123,22 @@ const TaskDetailPanel = {
     },
     hasUsageReport() {
       return this.displayedTaskTimeMs > 0 || this.tokenValue(this.task?.tokens) > 0 || this.usageEntries.length > 0;
+    },
+    assignableWorkers() {
+      return (this.workers || [])
+        .map((worker, slotIndex) => {
+          if (!this.workerAcceptsTaskDrop(worker)) return null;
+          return {
+            slotIndex,
+            label: this.workerOptionLabel(worker, slotIndex),
+          };
+        })
+        .filter(Boolean);
+    },
+    selectedAssignedSlot() {
+      const assigned = String(this.task?.assigned_to || '').trim();
+      if (!assigned) return '';
+      return /^\d+$/.test(assigned) ? assigned : '';
     }
   },
   watch: {
@@ -356,6 +372,20 @@ const TaskDetailPanel = {
 
         <div v-if="!readOnly" class="detail-footer">
           <button class="btn btn-danger btn-sm" @click="confirmDelete">Delete Ticket</button>
+          <label class="detail-assign-ticket">
+            <span class="detail-footer-label">Assign Ticket</span>
+            <select
+              class="form-select form-select-sm"
+              :value="selectedAssignedSlot"
+              :disabled="assignableWorkers.length === 0"
+              @change="assignTicket"
+            >
+              <option value="">{{ assignableWorkers.length ? 'Choose worker...' : 'No workers available' }}</option>
+              <option v-for="worker in assignableWorkers" :key="worker.slotIndex" :value="String(worker.slotIndex)">
+                {{ worker.label }}
+              </option>
+            </select>
+          </label>
           <button v-if="task.status === 'done'" class="btn btn-sm" @click="$emit('archive', task.id); $emit('close')">Archive</button>
         </div>
       </div>
@@ -423,6 +453,23 @@ const TaskDetailPanel = {
         this.$emit('delete', this.task.id);
         this.$emit('close');
       }
+    },
+    assignTicket(e) {
+      const slot = Number(e?.target?.value);
+      if (!Number.isInteger(slot)) return;
+      this.$emit('assign', { taskId: this.task.id, slot });
+    },
+    workerAcceptsTaskDrop(worker) {
+      if (!worker) return false;
+      if (typeof isValueWorker === 'function' && isValueWorker(worker)) return false;
+      if (typeof isEvalWorker === 'function' && isEvalWorker(worker)) return false;
+      if (typeof isUnknownWorkerType === 'function' && isUnknownWorkerType(worker)) return false;
+      return true;
+    },
+    workerOptionLabel(worker, slotIndex) {
+      const name = String(worker?.name || '').trim() || `Worker ${slotIndex + 1}`;
+      const coord = window.GridGeometry?.coordToCellRef?.(worker) || '';
+      return coord ? `${name} (${coord})` : name;
     },
     async copyId() {
       const id = this.task?.id || '';

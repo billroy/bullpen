@@ -4997,6 +4997,11 @@ body.worker-singleton-dragging * {
   border-color: var(--accent);
 }
 
+.form-select-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .form-textarea {
   resize: vertical;
   min-height: 60px;
@@ -5402,6 +5407,22 @@ body.worker-singleton-dragging * {
 
 .detail-footer {
   padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-assign-ticket {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-footer-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* === Toast === */
