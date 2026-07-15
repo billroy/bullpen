@@ -154,7 +154,7 @@
       command({
         id: 'tab.open',
         title: 'Open Tab',
-        subtitle: 'Use tickets, workers, files, commits, or chat',
+        subtitle: 'Use tickets, workers, files, git, or chat',
         group: 'Views',
         aliases: ['tab', 'open tab'],
         keywords: ['navigation'],
@@ -197,10 +197,10 @@
       }),
       command({
         id: 'tab.commits',
-        title: 'Open Commits',
-        subtitle: 'Switch to the Commits tab',
+        title: 'Open Git',
+        subtitle: 'Switch to the Git tab',
         group: 'Views',
-        aliases: ['commits', 'git', 'open commits'],
+        aliases: ['git', 'commits', 'open git', 'open commits'],
         keywords: ['tab', 'navigation'],
         available: requireWorkspace,
         run: runCtx => runCtx.actions.setActiveTab('commits'),

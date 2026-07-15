@@ -5848,6 +5848,123 @@ body.worker-singleton-dragging * {
   flex-shrink: 0;
 }
 
+.git-status-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.git-status-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+
+.git-status-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.git-status-title i {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.git-status-title span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-status-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.git-status-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.git-status-actions .btn i {
+  width: 14px;
+  height: 14px;
+}
+
+.git-status-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.git-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.82em;
+  border: 1px solid var(--border);
+}
+
+.git-status-clean {
+  color: var(--green);
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.git-status-dirty {
+  color: var(--yellow);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.git-status-changes {
+  grid-column: 1 / -1;
+  max-height: 120px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-family: monospace;
+  font-size: 0.82em;
+  line-height: 1.35;
+  white-space: pre;
+}
+
+.git-action-menu {
+  height: 30px;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.85em;
+}
+
+.commits-section-title {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
 .commits-list {
   flex: 1;
   overflow-y: auto;

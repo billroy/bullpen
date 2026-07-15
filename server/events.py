@@ -1268,6 +1268,132 @@ def register_events(socketio, app):
             "diff": result.stdout,
         })
 
+    def _emit_git_error(event_name, data, ws_id, error):
+        emit(event_name, {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": False,
+            "error": error,
+        })
+
+    def _resolve_git_workspace(data, error_event):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return None, None
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            _emit_git_error(error_event, data, ws_id, "Unknown workspace")
+            return ws_id, None
+        return ws_id, ws
+
+    def _git_run(ws, args, timeout=10):
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            text=True,
+            cwd=ws.path,
+            timeout=timeout,
+        )
+
+    def _git_output(result):
+        return "\n".join(part for part in [result.stdout.strip(), result.stderr.strip()] if part)
+
+    @socketio.on("git:status")
+    def on_git_status(data):
+        ws_id, ws = _resolve_git_workspace(data or {}, "git:error")
+        if not ws:
+            return
+        try:
+            result = _git_run(ws, ["status", "--short", "--branch"])
+        except Exception as e:
+            _emit_git_error("git:error", data, ws_id, str(e))
+            return
+        if result.returncode != 0:
+            _emit_git_error("git:error", data, ws_id, "Not a git repository")
+            return
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        branch = lines[0].removeprefix("## ").strip() if lines else ""
+        changes = [line for line in lines[1:] if line.strip()]
+        emit("git:statused", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+            "branch": branch,
+            "changes": changes,
+            "clean": len(changes) == 0,
+            "raw": result.stdout,
+        })
+
+    def _branch_diff_base(ws):
+        upstream = _git_run(ws, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])
+        if upstream.returncode == 0 and upstream.stdout.strip():
+            return upstream.stdout.strip()
+        for candidate in ("origin/HEAD", "origin/main", "origin/master", "main", "master"):
+            found = _git_run(ws, ["rev-parse", "--verify", "--quiet", candidate])
+            if found.returncode == 0:
+                return candidate
+        return "HEAD"
+
+    @socketio.on("git:branch-diff")
+    def on_git_branch_diff(data):
+        ws_id, ws = _resolve_git_workspace(data or {}, "git:error")
+        if not ws:
+            return
+        try:
+            branch_result = _git_run(ws, ["branch", "--show-current"])
+            base = _branch_diff_base(ws)
+            diff_args = ["diff", "--no-color", f"{base}...HEAD"] if base != "HEAD" else ["diff", "--no-color", "HEAD"]
+            result = _git_run(ws, diff_args, timeout=15)
+        except Exception as e:
+            _emit_git_error("git:error", data, ws_id, str(e))
+            return
+        if result.returncode != 0:
+            _emit_git_error("git:error", data, ws_id, _git_output(result) or "Failed to load branch diff")
+            return
+        emit("git:branch-diffed", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+            "branch": branch_result.stdout.strip() if branch_result.returncode == 0 else "",
+            "base": base,
+            "diff": result.stdout,
+        })
+
+    @socketio.on("git:action")
+    def on_git_action(data):
+        ws_id, ws = _resolve_git_workspace(data or {}, "git:error")
+        if not ws:
+            return
+        action = str((data or {}).get("action") or "").strip()
+        commands = {
+            "init": (["init"], 15),
+            "fetch": (["fetch", "--prune"], 60),
+            "pull": (["pull"], 60),
+            "push": (["push"], 60),
+            "branch": (["branch", "--all", "--verbose"], 10),
+            "remote": (["remote", "--verbose"], 10),
+        }
+        if action not in commands:
+            _emit_git_error("git:error", data, ws_id, "Unsupported git command")
+            return
+        args, timeout = commands[action]
+        try:
+            result = _git_run(ws, args, timeout=timeout)
+        except Exception as e:
+            _emit_git_error("git:error", data, ws_id, str(e))
+            return
+        emit("git:actioned", {
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": result.returncode == 0,
+            "action": action,
+            "command": "git " + " ".join(args),
+            "output": _git_output(result),
+            "returncode": result.returncode,
+            "error": None if result.returncode == 0 else (_git_output(result) or "Git command failed"),
+        })
+
     @socketio.on("files:list")
     def on_files_list(data):
         ws_id, _bp_dir = _resolve(data or {})

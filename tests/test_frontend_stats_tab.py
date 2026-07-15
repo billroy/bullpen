@@ -20,7 +20,7 @@ def test_commits_tab_is_before_stats():
     text = _read("static/app.js")
     files = "{ id: 'files', label: 'Files', icon: 'folder' }"
     stats = "{ id: 'stats', label: 'Stats', icon: 'chart-no-axes-column' }"
-    commits = "{ id: 'commits', label: 'Commits', icon: 'git-commit' }"
+    commits = "{ id: 'commits', label: 'Git', icon: 'git-branch' }"
     assert files in text
     assert stats in text
     assert commits in text

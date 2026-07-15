@@ -17,6 +17,13 @@ const CommitsTab = {
       commitDiff: '',
       diffLoading: false,
       diffError: null,
+      gitStatus: null,
+      statusLoading: false,
+      statusError: null,
+      selectedGitAction: '',
+      gitActionLoading: false,
+      actionResult: null,
+      actionError: null,
     };
   },
   mounted() {
@@ -64,12 +71,28 @@ const CommitsTab = {
         .join('');
     },
     async refresh() {
+      this.refreshGitStatus();
       this.commits = [];
       this.offset = 0;
       this.hasMore = false;
       this.error = null;
       await this.loadMore();
       await this.loadUntilOlderThanToday();
+    },
+    async refreshGitStatus() {
+      this.statusLoading = true;
+      this.statusError = null;
+      try {
+        const data = await this.$root.requestGitStatus({
+          workspaceId: this.workspaceId,
+        });
+        this.gitStatus = data;
+      } catch (e) {
+        this.gitStatus = null;
+        this.statusError = e.message;
+      } finally {
+        this.statusLoading = false;
+      }
     },
     _coerceCommitDate(dateStr) {
       if (!dateStr) return null;
@@ -159,6 +182,64 @@ const CommitsTab = {
         this.diffLoading = false;
       }
     },
+    async openBranchDiff() {
+      this.selectedCommit = {
+        short_hash: 'Branch',
+        subject: 'Current branch diff',
+        author: '',
+        date: '',
+      };
+      this.commitDiff = '';
+      this.diffError = null;
+      this.diffLoading = true;
+      this.$nextTick(() => this.$refs.diffOverlay?.focus());
+      try {
+        const data = await this.$root.requestGitBranchDiff({
+          workspaceId: this.workspaceId,
+        });
+        if (data.error) {
+          this.diffError = data.error;
+          return;
+        }
+        const branch = data.branch || 'current branch';
+        const base = data.base || 'base';
+        this.selectedCommit = {
+          short_hash: branch,
+          subject: `diff against ${base}`,
+          author: '',
+          date: '',
+        };
+        this.commitDiff = data.diff || 'No branch diff.';
+      } catch (e) {
+        this.diffError = e.message;
+      } finally {
+        this.diffLoading = false;
+      }
+    },
+    async runGitAction() {
+      const action = this.selectedGitAction;
+      this.selectedGitAction = '';
+      if (!action || this.gitActionLoading) return;
+      this.gitActionLoading = true;
+      this.actionError = null;
+      this.actionResult = null;
+      try {
+        const data = await this.$root.requestGitAction({
+          workspaceId: this.workspaceId,
+          action,
+        });
+        this.actionResult = data;
+        if (data.error) this.actionError = data.error;
+        await this.refreshGitStatus();
+        if (['init', 'fetch', 'pull'].includes(action)) {
+          await this.refresh();
+        }
+      } catch (e) {
+        this.actionError = e.message;
+      } finally {
+        this.gitActionLoading = false;
+      }
+    },
     async openDiffByHash(hash) {
       const normalized = String(hash || '').trim();
       if (!normalized) return;
@@ -187,11 +268,50 @@ const CommitsTab = {
       this.diffError = null;
       this.diffLoading = false;
     },
+    closeActionResult() {
+      this.actionResult = null;
+      this.actionError = null;
+    },
   },
   template: `
     <div class="commits-container">
+      <div class="git-status-panel">
+        <div class="git-status-main">
+          <div class="git-status-title">
+            <i data-lucide="git-branch" aria-hidden="true"></i>
+            <span>{{ gitStatus?.branch || 'Git status' }}</span>
+          </div>
+          <div v-if="statusLoading" class="commits-loading">Loading status...</div>
+          <div v-else-if="statusError" class="commits-error">{{ statusError }}</div>
+          <div v-else-if="gitStatus" class="git-status-summary">
+            <span :class="['git-status-pill', gitStatus.clean ? 'git-status-clean' : 'git-status-dirty']">
+              {{ gitStatus.clean ? 'Clean working tree' : gitStatus.changes.length + ' changed file' + (gitStatus.changes.length === 1 ? '' : 's') }}
+            </span>
+          </div>
+        </div>
+        <div class="git-status-actions">
+          <button class="btn btn-sm" @click="refresh" :disabled="loading || statusLoading">
+            <i data-lucide="refresh-cw" aria-hidden="true"></i>
+            Refresh
+          </button>
+          <button class="btn btn-sm" @click="openBranchDiff" :disabled="diffLoading">
+            <i data-lucide="file-diff" aria-hidden="true"></i>
+            Branch Diff
+          </button>
+          <select class="git-action-menu" v-model="selectedGitAction" @change="runGitAction" :disabled="gitActionLoading">
+            <option value="">{{ gitActionLoading ? 'Running...' : 'Git command...' }}</option>
+            <option value="init">git init</option>
+            <option value="fetch">git fetch --prune</option>
+            <option value="pull">git pull</option>
+            <option value="push">git push</option>
+            <option value="branch">git branch --all --verbose</option>
+            <option value="remote">git remote --verbose</option>
+          </select>
+        </div>
+        <pre v-if="gitStatus?.changes?.length" class="git-status-changes">{{ gitStatus.changes.join('\\n') }}</pre>
+      </div>
       <div class="commits-toolbar">
-        <button class="btn btn-sm" @click="refresh" :disabled="loading">Refresh</button>
+        <span class="commits-section-title">Recent commits</span>
       </div>
       <div class="commits-list">
         <div v-if="error" class="commits-error">{{ error }}</div>
@@ -234,7 +354,7 @@ const CommitsTab = {
             <button class="btn btn-icon" @click="closeDiff">&times;</button>
           </div>
           <div class="modal-body commits-diff-body">
-            <div class="commit-meta">{{ selectedCommit.author }} &middot; {{ formatDate(selectedCommit.date) }}</div>
+            <div v-if="selectedCommit.author || selectedCommit.date" class="commit-meta">{{ selectedCommit.author }} &middot; {{ formatDate(selectedCommit.date) }}</div>
             <div v-if="diffLoading" class="commits-loading">Loading diff...</div>
             <div v-else-if="diffError" class="commits-error">{{ diffError }}</div>
             <pre v-else class="commit-diff" v-html="highlightedDiffHtml"></pre>
@@ -242,6 +362,28 @@ const CommitsTab = {
           <div class="modal-footer">
             <div></div>
             <button class="btn btn-primary" @click="closeDiff">Close</button>
+          </div>
+        </div>
+      </div>
+      <div
+        v-if="actionResult || actionError"
+        class="modal-overlay commits-diff-overlay"
+        @click.self="closeActionResult"
+        @keydown.escape="closeActionResult"
+        tabindex="0"
+      >
+        <div class="modal commits-diff-modal">
+          <div class="modal-header">
+            <h2>{{ actionResult?.command || 'Git command' }}</h2>
+            <button class="btn btn-icon" @click="closeActionResult">&times;</button>
+          </div>
+          <div class="modal-body commits-diff-body">
+            <div v-if="actionError" class="commits-error">{{ actionError }}</div>
+            <pre class="commit-diff">{{ actionResult?.output || 'No output.' }}</pre>
+          </div>
+          <div class="modal-footer">
+            <div></div>
+            <button class="btn btn-primary" @click="closeActionResult">Close</button>
           </div>
         </div>
       </div>

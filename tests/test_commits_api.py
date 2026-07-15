@@ -99,6 +99,72 @@ def test_commit_list_returns_page(tmp_workspace):
     client.disconnect()
 
 
+def test_git_status_returns_branch_and_changes(tmp_workspace):
+    _init_repo(tmp_workspace)
+    with open(f"{tmp_workspace}/sample.txt", "a", encoding="utf-8") as f:
+        f.write("dirty\n")
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("git:status", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "status-one",
+    })
+
+    body = _received(client, "git:statused")
+    assert body is not None
+    assert body["request_id"] == "status-one"
+    assert body["clean"] is False
+    assert body["changes"]
+    assert "sample.txt" in "\n".join(body["changes"])
+    client.disconnect()
+
+
+def test_git_branch_diff_returns_current_branch_diff(tmp_workspace):
+    _init_repo(tmp_workspace)
+    _git(tmp_workspace, "checkout", "-b", "feature")
+    with open(f"{tmp_workspace}/feature.txt", "w", encoding="utf-8") as f:
+        f.write("feature\n")
+    _git(tmp_workspace, "add", "feature.txt")
+    _git(tmp_workspace, "commit", "-m", "feature")
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("git:branch-diff", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "branch-diff-one",
+    })
+
+    body = _received(client, "git:branch-diffed")
+    assert body is not None
+    assert body["request_id"] == "branch-diff-one"
+    assert body["branch"] == "feature"
+    assert "diff --git" in body["diff"]
+    assert "feature.txt" in body["diff"]
+    client.disconnect()
+
+
+def test_git_action_rejects_unsupported_command(tmp_workspace):
+    _init_repo(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("git:action", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "action-bad",
+        "action": "reset-hard",
+    })
+
+    body = _received(client, "git:error")
+    assert body is not None
+    assert body["request_id"] == "action-bad"
+    assert body["error"] == "Unsupported git command"
+    client.disconnect()
+
+
 def test_commit_rest_routes_are_removed(tmp_workspace):
     _init_repo(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)

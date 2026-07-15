@@ -1636,6 +1636,66 @@ const app = createApp({
         socket.emit('commits:diff', _wsData({ ...payload, request_id: requestId }));
       });
     }
+    function requestGitEvent({ requestEvent, successEvent, payload = {}, timeoutMessage, errorMessage }) {
+      return new Promise((resolve, reject) => {
+        const requestId = `git-${Date.now()}-${++commitsRequestSeq}`;
+        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error(timeoutMessage));
+        }, 60000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off(successEvent, onSuccess);
+          socket.off('git:error', onError);
+        };
+        const matches = (eventPayload) => {
+          if (!eventPayload || eventPayload.request_id !== requestId) return false;
+          if (expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
+          return true;
+        };
+        const onSuccess = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          resolve(eventPayload);
+        };
+        const onError = (eventPayload) => {
+          if (!matches(eventPayload)) return;
+          cleanup();
+          reject(new Error(eventPayload.error || errorMessage));
+        };
+        socket.on(successEvent, onSuccess);
+        socket.on('git:error', onError);
+        socket.emit(requestEvent, _wsData({ ...payload, request_id: requestId }));
+      });
+    }
+    function requestGitStatus(payload = {}) {
+      return requestGitEvent({
+        requestEvent: 'git:status',
+        successEvent: 'git:statused',
+        payload,
+        timeoutMessage: 'Git status timed out',
+        errorMessage: 'Failed to load git status',
+      });
+    }
+    function requestGitBranchDiff(payload = {}) {
+      return requestGitEvent({
+        requestEvent: 'git:branch-diff',
+        successEvent: 'git:branch-diffed',
+        payload,
+        timeoutMessage: 'Git diff timed out',
+        errorMessage: 'Failed to load git diff',
+      });
+    }
+    function requestGitAction(payload = {}) {
+      return requestGitEvent({
+        requestEvent: 'git:action',
+        successEvent: 'git:actioned',
+        payload,
+        timeoutMessage: 'Git command timed out',
+        errorMessage: 'Failed to run git command',
+      });
+    }
     let filesRequestSeq = 0;
     function _requestFileEvent({ requestEvent, successEvent, payload = {}, timeoutMessage, errorMessage }) {
       return new Promise((resolve, reject) => {
@@ -1834,7 +1894,7 @@ const app = createApp({
         workers: 'bot',
         files: 'folder',
         stats: 'chart-no-axes-column',
-        commits: 'git-commit',
+        commits: 'git-branch',
       })[tab.id] || 'circle';
     }
 
@@ -1848,7 +1908,7 @@ const app = createApp({
         { id: 'tasks', label: ticketsLabel, icon: 'tag' },
         { id: 'workers', label: workersLabel, icon: 'bot' },
         { id: 'files', label: 'Files', icon: 'folder' },
-        { id: 'commits', label: 'Commits', icon: 'git-commit' },
+        { id: 'commits', label: 'Git', icon: 'git-branch' },
         { id: 'stats', label: 'Stats', icon: 'chart-no-axes-column' },
       ];
       const wsId = activeWorkspaceId.value;
@@ -2626,7 +2686,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCodexModels, requestClaudeModels, requestCommits, requestCommitDiff, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCodexModels, requestClaudeModels, requestCommits, requestCommitDiff, requestGitStatus, requestGitBranchDiff, requestGitAction, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

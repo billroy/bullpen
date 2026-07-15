@@ -69,3 +69,17 @@ def test_commits_tab_refresh_auto_loads_all_todays_commits():
     assert "while (this.hasMore && this._lastLoadedCommitIsToday())" in text
     assert "if (!loaded) break;" in text
     assert "_isTodayCommit(commit)" in text
+
+
+def test_git_tab_exposes_status_branch_diff_and_command_menu():
+    text = _read("static/components/CommitsTab.js")
+    app = _read("static/app.js")
+    commands = _read("static/commands.js")
+    assert "requestGitStatus" in app
+    assert "requestGitBranchDiff" in app
+    assert "requestGitAction" in app
+    assert "class=\"git-status-panel\"" in text
+    assert "@click=\"openBranchDiff\"" in text
+    assert "@change=\"runGitAction\"" in text
+    assert "<option value=\"init\">git init</option>" in text
+    assert "title: 'Open Git'" in commands
