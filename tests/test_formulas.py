@@ -10,6 +10,7 @@ from server.formulas import (
     normalize_formula_state,
     parse_formula,
     recalculate_layout,
+    is_formula_stale,
 )
 
 
@@ -82,7 +83,6 @@ def test_duplicate_names_resolve_row_major_with_warning():
         ("=1/0", "#DIV/0!"),
         ('=1+"x"', "#VALUE!"),
         ("=UNKNOWN(1)", "#NAME?"),
-        ("=SUM(A1:A2)", "#PARSE!"),
     ],
 )
 def test_safe_errors(source, code):
@@ -109,6 +109,33 @@ def test_core_scalar_functions():
     assert evaluate_formula("=ISNUMBER(2)", []).value is True
 
 
+def test_ranges_and_aggregate_functions_include_values_and_ignore_blanks():
+    slots = _slots()
+    result = evaluate_formula("=SUM(A1:B2)", slots, current_index=2)
+    assert result.value == 5
+    assert result.dependencies == ["A1", "B1", "A2"]
+    assert evaluate_formula("=AVERAGE(A1:A2)", slots).value == 2.5
+    assert evaluate_formula("=MIN(A1:A2)", slots).value == 2
+    assert evaluate_formula("=MAX(A1:A2)", slots).value == 3
+    assert evaluate_formula("=COUNT(A1:B2)", slots).value == 3
+
+
+def test_first_cut_string_date_finance_and_engineering_functions():
+    assert evaluate_formula('=CONCAT("a","b")', []).value == "ab"
+    assert evaluate_formula('=TEXTJOIN("-",TRUE,"a","","b")', []).value == "a-b"
+    assert evaluate_formula('=LEFT("abcd",2)&RIGHT("abcd",1)', []).value == "abd"
+    assert evaluate_formula('=MID("abcd",2,2)', []).value == "bc"
+    assert evaluate_formula('=LEN(TRIM(" a  b "))', []).value == 3
+    assert evaluate_formula('=UPPER("a")&LOWER("B")', []).value == "Ab"
+    assert evaluate_formula('=SUBSTITUTE("a-b-a","a","x")', []).value == "x-b-x"
+    assert evaluate_formula("=YEAR(DATE(2026,7,16))", []).value == 2026
+    assert evaluate_formula('=DAYS("2026-07-16","2026-07-01")', []).value == 15
+    assert evaluate_formula("=DELTA(2,2)+GESTEP(3,2)", []).value == 2
+    assert evaluate_formula('=CONVERT(1,"km","m")', []).value == 1000
+    assert round(evaluate_formula("=NPV(0.1,100,100)", []).value, 6) == round(100 / 1.1 + 100 / 1.21, 6)
+    assert evaluate_formula("=FV(0,2,10,100)", []).value == -120
+
+
 def test_volatile_functions_use_injected_server_clock():
     now = datetime(2026, 7, 16, 15, 30, tzinfo=timezone.utc)
     today = evaluate_formula("=TODAY()", [], now=now)
@@ -118,6 +145,16 @@ def test_volatile_functions_use_injected_server_clock():
     assert current.value == "2026-07-16T15:30:00Z"
     assert today.volatile is True
     assert current.volatile is True
+
+
+def test_volatile_staleness_is_derived_without_mutating_formula_state():
+    now = datetime(2026, 7, 16, 15, 30, tzinfo=timezone.utc)
+    recent = {"formula": {"source": "=NOW()"}, "formula_state": {"volatile": True, "calculated_at": "2026-07-16T15:29:30Z"}}
+    old = {"formula": {"source": "=NOW()"}, "formula_state": {"volatile": True, "calculated_at": "2026-07-16T15:28:00Z"}}
+    yesterday = {"formula": {"source": "=TODAY()"}, "formula_state": {"volatile": True, "calculated_at": "2026-07-15T23:59:00Z"}}
+    assert is_formula_stale(recent, now=now) is False
+    assert is_formula_stale(old, now=now) is True
+    assert is_formula_stale(yesterday, now=now) is True
 
 
 def test_formula_normalization_and_state_are_bounded_and_stable():

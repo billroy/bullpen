@@ -7,11 +7,11 @@ import re
 import copy
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable
 
-from server.values import append_value_history, coord_to_cell_ref, find_value_by_ref, value_ref_warning
+from server.values import append_value_history, coord_to_cell_ref, find_value_by_ref, parse_cell_ref, value_ref_warning
 
 
 FORMULA_VERSION = 1
@@ -51,6 +51,11 @@ class EvaluationResult:
     dependencies: list[str]
     warnings: list[str]
     volatile: bool = False
+
+
+@dataclass
+class RangeValue:
+    values: list[Any]
 
 
 _NUMBER_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
@@ -133,6 +138,24 @@ def formula_ok_state(result: EvaluationResult, *, calculated_at: str) -> dict[st
         "warnings": result.warnings,
         "volatile": result.volatile,
     }
+
+
+def is_formula_stale(slot: object, *, now: datetime | None = None) -> bool:
+    if not isinstance(slot, dict) or not slot.get("formula"):
+        return False
+    state = slot.get("formula_state") if isinstance(slot.get("formula_state"), dict) else {}
+    if not state.get("volatile"):
+        return state.get("status") == "stale"
+    calculated_at = str(state.get("calculated_at") or "")
+    try:
+        calculated = datetime.fromisoformat(calculated_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    source = str((slot.get("formula") or {}).get("source") or "").upper()
+    if "TODAY(" in source and calculated.date() != current.date():
+        return True
+    return "NOW(" in source and (current - calculated).total_seconds() >= 60
 
 
 def tokenize(source: str) -> list[Token]:
@@ -291,7 +314,9 @@ class Parser:
         if token.kind == "COORD":
             self.take()
             if self.current.kind == ":":
-                raise FormulaError("#PARSE!", "Ranges are introduced in formula tranche 3", token.position)
+                self.take(":")
+                end = self.take("COORD")
+                return ("range", token.value, end.value, token.position)
             return ("reference", token.value, True, token.position)
         if token.kind == "NAME":
             self.take()
@@ -397,6 +422,8 @@ class Evaluator:
             return node[1]
         if kind == "reference":
             return self.reference(node[1], node[2], node[3])
+        if kind == "range":
+            return self.range_value(node[1], node[2], node[3])
         if kind == "unary":
             value = _number(self.evaluate(node[2]))
             return value if node[1] == "+" else -value
@@ -425,6 +452,33 @@ class Evaluator:
         if warning and warning not in self.warnings:
             self.warnings.append(warning)
         return slot.get("value", "")
+
+    def range_value(self, start_ref: str, end_ref: str, position: int) -> RangeValue:
+        start = parse_cell_ref(start_ref.replace("$", ""))
+        end = parse_cell_ref(end_ref.replace("$", ""))
+        if not start or not end:
+            raise FormulaError("#REF!", "Invalid range reference", position)
+        min_col, max_col = sorted((start["col"], end["col"]))
+        min_row, max_row = sorted((start["row"], end["row"]))
+        count = (max_col - min_col + 1) * (max_row - min_row + 1)
+        if count > 10000:
+            raise FormulaError("#LIMIT!", "Range exceeds 10000 positions", position)
+        values: list[Any] = []
+        for row in range(min_row, max_row + 1):
+            for col in range(min_col, max_col + 1):
+                ref = coord_to_cell_ref({"col": col, "row": row})
+                match = find_value_by_ref(self.slots, ref, cols=self.cols)
+                if not match:
+                    values.append(None)
+                    continue
+                slot = match.get("slot") or {}
+                state = slot.get("formula_state") if isinstance(slot.get("formula_state"), dict) else {}
+                if slot.get("formula") and state.get("status") == "error":
+                    raise FormulaError(str(state.get("error_code") or "#VALUE!"), f"Referenced formula {ref} is in error", position)
+                if ref not in self.dependencies:
+                    self.dependencies.append(ref)
+                values.append(slot.get("value", ""))
+        return RangeValue(values)
 
     def binary(self, op: str, left_node, right_node):
         left = self.evaluate(left_node)
@@ -468,6 +522,13 @@ class Evaluator:
     def _args(self, args):
         return [self.evaluate(arg) for arg in args]
 
+    @staticmethod
+    def _flatten(values: list[Any]) -> list[Any]:
+        flattened: list[Any] = []
+        for value in values:
+            flattened.extend(value.values if isinstance(value, RangeValue) else [value])
+        return flattened
+
     def call(self, name: str, args, position: int):
         if name == "IF":
             if len(args) not in {2, 3}:
@@ -502,6 +563,20 @@ class Evaluator:
                     return True
             return False
         values = self._args(args)
+        if name in {"SUM", "AVERAGE", "MIN", "MAX", "COUNT"}:
+            flat = self._flatten(values)
+            numbers = [value for value in flat if isinstance(value, (int, float)) and not isinstance(value, bool)]
+            if name == "COUNT":
+                return len(numbers)
+            if not numbers:
+                if name == "SUM":
+                    return 0
+                raise FormulaError("#DIV/0!" if name == "AVERAGE" else "#VALUE!", f"{name} has no numeric values", position)
+            if name == "SUM":
+                return sum(numbers)
+            if name == "AVERAGE":
+                return sum(numbers) / len(numbers)
+            return min(numbers) if name == "MIN" else max(numbers)
         if name == "NOT":
             self._arity(name, values, 1, position)
             return not bool(values[0])
@@ -539,6 +614,103 @@ class Evaluator:
             if right == 0:
                 raise FormulaError("#DIV/0!", "Division by zero", position)
             return left % right
+        if name in {"CONCAT", "TEXTJOIN"}:
+            if name == "CONCAT":
+                return "".join(_canonical_text(value) for value in self._flatten(values) if value is not None)
+            if len(values) < 3:
+                raise FormulaError("#VALUE!", "TEXTJOIN expects at least 3 arguments", position)
+            delimiter = _canonical_text(values[0])
+            ignore_empty = bool(values[1])
+            items = self._flatten(values[2:])
+            return delimiter.join(_canonical_text(value) for value in items if not (ignore_empty and (value is None or value == "")))
+        if name in {"LEFT", "RIGHT"}:
+            if len(values) not in {1, 2}:
+                raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
+            text = _canonical_text(values[0])
+            count = int(_number(values[1], position)) if len(values) == 2 else 1
+            if count < 0:
+                raise FormulaError("#VALUE!", "Character count cannot be negative", position)
+            return text[:count] if name == "LEFT" else text[-count:] if count else ""
+        if name == "MID":
+            self._arity(name, values, 3, position)
+            text, start, count = _canonical_text(values[0]), int(_number(values[1], position)), int(_number(values[2], position))
+            if start < 1 or count < 0:
+                raise FormulaError("#VALUE!", "MID indices are invalid", position)
+            return text[start - 1:start - 1 + count]
+        if name in {"LEN", "TRIM", "UPPER", "LOWER"}:
+            self._arity(name, values, 1, position)
+            text = _canonical_text(values[0])
+            return {"LEN": len(text), "TRIM": " ".join(text.split()), "UPPER": text.upper(), "LOWER": text.lower()}[name]
+        if name == "SUBSTITUTE":
+            if len(values) not in {3, 4}:
+                raise FormulaError("#VALUE!", "SUBSTITUTE expects 3 or 4 arguments", position)
+            text, old, new = map(_canonical_text, values[:3])
+            if len(values) == 3:
+                return text.replace(old, new)
+            occurrence = int(_number(values[3], position))
+            if occurrence < 1:
+                raise FormulaError("#VALUE!", "SUBSTITUTE occurrence must be positive", position)
+            parts = text.split(old)
+            return old.join(parts[:occurrence]) + (new + old.join(parts[occurrence:]) if len(parts) > occurrence else "")
+        if name == "DATE":
+            self._arity(name, values, 3, position)
+            try:
+                return date(int(values[0]), int(values[1]), int(values[2])).isoformat()
+            except (TypeError, ValueError):
+                raise FormulaError("#NUM!", "Invalid date", position)
+        if name in {"YEAR", "MONTH", "DAY"}:
+            self._arity(name, values, 1, position)
+            try:
+                parsed = date.fromisoformat(_canonical_text(values[0])[:10])
+            except ValueError:
+                raise FormulaError("#VALUE!", "Strict ISO date required", position)
+            return {"YEAR": parsed.year, "MONTH": parsed.month, "DAY": parsed.day}[name]
+        if name == "DAYS":
+            self._arity(name, values, 2, position)
+            try:
+                end = date.fromisoformat(_canonical_text(values[0])[:10])
+                start = date.fromisoformat(_canonical_text(values[1])[:10])
+            except ValueError:
+                raise FormulaError("#VALUE!", "Strict ISO dates required", position)
+            return (end - start).days
+        if name in {"DELTA", "GESTEP"}:
+            if len(values) not in {1, 2}:
+                raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
+            left = _number(values[0], position)
+            right = _number(values[1], position) if len(values) == 2 else 0
+            return 1 if (left == right if name == "DELTA" else left >= right) else 0
+        if name == "CONVERT":
+            self._arity(name, values, 3, position)
+            value = _number(values[0], position)
+            source, target = _canonical_text(values[1]).lower(), _canonical_text(values[2]).lower()
+            factors = {"m": 1.0, "km": 1000.0, "cm": 0.01, "mm": 0.001, "in": 0.0254, "ft": 0.3048, "yd": 0.9144, "mi": 1609.344, "g": 1.0, "kg": 1000.0, "lb": 453.59237, "oz": 28.349523125}
+            if source not in factors or target not in factors:
+                raise FormulaError("#VALUE!", "Unsupported or incompatible conversion units", position)
+            length = {"m", "km", "cm", "mm", "in", "ft", "yd", "mi"}
+            if (source in length) != (target in length):
+                raise FormulaError("#VALUE!", "Incompatible conversion units", position)
+            return value * factors[source] / factors[target]
+        if name in {"PV", "FV", "PMT"}:
+            if len(values) not in {3, 4, 5}:
+                raise FormulaError("#VALUE!", f"{name} expects 3 to 5 arguments", position)
+            rate, nper = _number(values[0], position), _number(values[1], position)
+            third = _number(values[2], position)
+            fourth = _number(values[3], position) if len(values) > 3 else 0
+            due = _number(values[4], position) if len(values) > 4 else 0
+            factor = (1 + rate) ** nper
+            if name == "FV":
+                return -(fourth * factor + third * (1 + rate * due) * (factor - 1) / rate) if rate else -(fourth + third * nper)
+            if name == "PV":
+                return -(fourth + third * (1 + rate * due) * (factor - 1) / rate) / factor if rate else -(fourth + third * nper)
+            if factor == 1:
+                return -(third + fourth) / nper
+            return -(third * factor + fourth) * rate / ((1 + rate * due) * (factor - 1))
+        if name == "NPV":
+            if len(values) < 2:
+                raise FormulaError("#VALUE!", "NPV expects a rate and cash flows", position)
+            rate = _number(values[0], position)
+            flows = [_number(value, position) for value in self._flatten(values[1:]) if value is not None and value != ""]
+            return sum(flow / ((1 + rate) ** (index + 1)) for index, flow in enumerate(flows))
         if name in {"NOW", "TODAY"}:
             self._arity(name, values, 0, position)
             self.volatile = True
@@ -558,6 +730,8 @@ def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None
     ast = parse_formula(source)
     evaluator = Evaluator(slots, current_index=current_index, cols=cols, now=now)
     value = evaluator.evaluate(ast)
+    if isinstance(value, RangeValue):
+        raise FormulaError("#VALUE!", "A range cannot be a top-level formula result")
     if isinstance(value, float) and not math.isfinite(value):
         raise FormulaError("#NUM!", "Formula result is not finite")
     return EvaluationResult(
@@ -569,10 +743,23 @@ def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None
     )
 
 
-def _walk_references(node, refs: list[tuple[str, bool, int]], calls: set[str]) -> None:
+def _walk_references(node, refs: list[tuple[str, bool, int, bool]], calls: set[str]) -> None:
     kind = node[0]
     if kind == "reference":
-        refs.append((node[1], node[2], node[3]))
+        refs.append((node[1], node[2], node[3], False))
+        return
+    if kind == "range":
+        start = parse_cell_ref(node[1].replace("$", ""))
+        end = parse_cell_ref(node[2].replace("$", ""))
+        if not start or not end:
+            raise FormulaError("#REF!", "Invalid range reference", node[3])
+        min_col, max_col = sorted((start["col"], end["col"]))
+        min_row, max_row = sorted((start["row"], end["row"]))
+        if (max_col - min_col + 1) * (max_row - min_row + 1) > 10000:
+            raise FormulaError("#LIMIT!", "Range exceeds 10000 positions", node[3])
+        for row in range(min_row, max_row + 1):
+            for col in range(min_col, max_col + 1):
+                refs.append((coord_to_cell_ref({"col": col, "row": row}), True, node[3], True))
         return
     if kind == "call":
         calls.add(node[1])
@@ -590,16 +777,18 @@ def _walk_references(node, refs: list[tuple[str, bool, int]], calls: set[str]) -
 def analyze_formula(source: str, slots: list[Any], *, current_index: int | None = None, cols: int = 4) -> dict[str, Any]:
     """Parse formula source and resolve direct scalar dependencies without evaluating."""
     ast = parse_formula(source)
-    refs: list[tuple[str, bool, int]] = []
+    refs: list[tuple[str, bool, int, bool]] = []
     calls: set[str] = set()
     _walk_references(ast, refs, calls)
     dependency_indices: list[int] = []
     dependencies: list[str] = []
     warnings: list[str] = []
-    for ref, coordinate, position in refs:
+    for ref, coordinate, position, allow_missing in refs:
         clean_ref = ref.replace("$", "") if coordinate else ref
         match = find_value_by_ref(slots, clean_ref, cols=cols)
         if not match:
+            if allow_missing:
+                continue
             code = "#REF!" if coordinate else "#NAME?"
             raise FormulaError(code, f"Value reference not found: {clean_ref}", position)
         index = int(match["index"])
@@ -679,6 +868,7 @@ def recalculate_layout(
     calculated_at: str,
     now: datetime | None = None,
     calculation_id: str | None = None,
+    record_history: bool = True,
 ) -> dict[str, Any]:
     """Recalculate one affected formula generation in place without persistence or events."""
     slots = layout.get("slots", []) if isinstance(layout, dict) else []
@@ -769,7 +959,8 @@ def recalculate_layout(
             )
             if value_changed:
                 slot["updated_at"] = calculated_at
-                append_value_history(slot, calculated_at)
+                if record_history:
+                    append_value_history(slot, calculated_at)
                 changed.append({"index": index, "old_slot": old_slot, "new_slot": copy.deepcopy(slot)})
         except FormulaError as exc:
             slot["formula_state"] = formula_error_state(

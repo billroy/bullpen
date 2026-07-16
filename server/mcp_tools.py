@@ -38,6 +38,7 @@ from server.values import (
     unit_labels,
     value_ref_warning,
 )
+from server.formulas import is_formula_stale
 from server.worker_types import NOTIFICATION_SPEECH_ENGINES, normalize_layout
 
 VALID_TYPES = ("task", "bug", "feature", "chore")
@@ -726,6 +727,7 @@ def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
         payload["formula"] = slot.get("formula")
         payload["formula_state"] = slot.get("formula_state", {})
         payload["formula_updated_at"] = slot.get("formula_updated_at", "")
+        payload["formula_stale"] = is_formula_stale(slot)
     warning = value_ref_warning(match)
     if warning:
         payload["warnings"] = [warning]

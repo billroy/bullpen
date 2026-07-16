@@ -2784,6 +2784,8 @@ def register_events(socketio, app):
         ws_id,
         changed_by,
         root_events=None,
+        record_history=True,
+        deliver_triggers=True,
     ):
         """Calculate, persist, and broadcast one server-owned formula generation."""
         config = read_json(os.path.join(bp_dir, "config.json"))
@@ -2792,6 +2794,7 @@ def register_events(socketio, app):
             root_indices=set(root_indices),
             cols=_safe_legacy_cols(config),
             calculated_at=updated_at,
+            record_history=record_history,
         )
         try:
             revision = int(layout.get("workspace_revision") or 0) + 1
@@ -2810,11 +2813,12 @@ def register_events(socketio, app):
         }
         _emit("layout:updated", event_layout, ws_id)
 
-        trigger_events = list(root_events or [])
-        trigger_events.extend(
-            (item["index"], item["old_slot"], "formula")
-            for item in generation["changed"]
-        )
+        trigger_events = list(root_events or []) if deliver_triggers else []
+        if deliver_triggers:
+            trigger_events.extend(
+                (item["index"], item["old_slot"], "formula")
+                for item in generation["changed"]
+            )
         for index, old_slot, event_changed_by in trigger_events:
             current_layout = _load_layout(bp_dir)
             if index >= len(current_layout.get("slots", [])) or not current_layout["slots"][index]:
@@ -2959,6 +2963,34 @@ def register_events(socketio, app):
             updated_at=_now_iso(),
             ws_id=ws_id,
             changed_by="formula:recalculate_all",
+        )
+
+    @socketio.on("formula:activate")
+    @with_lock
+    def on_formula_activate(data):
+        data = data or {}
+        ws_id, bp_dir = _resolve(data)
+        now = time.monotonic()
+        activations = app.config.setdefault("formula_activation_times", {})
+        if now - float(activations.get(ws_id, 0)) < 2.0:
+            return
+        activations[ws_id] = now
+        layout = _load_layout(bp_dir)
+        stale = {
+            index for index, slot in enumerate(layout.get("slots", []))
+            if formula_mod.is_formula_stale(slot)
+        }
+        if not stale:
+            return
+        _commit_formula_generation(
+            bp_dir,
+            layout,
+            root_indices=stale,
+            updated_at=_now_iso(),
+            ws_id=ws_id,
+            changed_by="formula:activate",
+            record_history=False,
+            deliver_triggers=False,
         )
 
     @socketio.on("value:increment")
