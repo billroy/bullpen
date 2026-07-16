@@ -144,6 +144,11 @@ def test_value_worker_card_displays_value_without_run_controls():
     assert "if (this.isValue) return false;" in text
     assert "return !this.isMarker && !this.isValue && !this.isEval && !this.isUnknownType;" in text
     assert "window.GridGeometry?.coordToCellRef?.(this.worker)" in text
+    assert "this.worker?.name || (this.isValue && this.shouldShowValueCellRef ? this.valueCellRef : '')" in text
+    assert "shouldShowValueCellRef()" in text
+    assert "this.isCardHovered || this.isSelected" in text
+    assert "@mouseenter=\"onCardMouseEnter\"" in text
+    assert "this.isCardHovered = false;" in text
     assert "if (this.isValue) return false;" in text
 
 

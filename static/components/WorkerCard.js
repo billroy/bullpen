@@ -40,6 +40,7 @@ const WorkerCard = {
          @dragover="onDragOver"
          @dragleave="onDragLeave"
          @drop.prevent="onDrop"
+         @mouseenter="onCardMouseEnter"
          @mousemove="onCardMouseMove"
          @mouseleave="onCardMouseLeave"
 >
@@ -304,6 +305,7 @@ const WorkerCard = {
       shiftDragIntent: false,
       isDragging: false,
       pointerWorkerDrag: null,
+      isCardHovered: false,
       showTitlePort: false,
       hoveredVerticalResize: false,
       verticalResizeX: 0,
@@ -412,7 +414,7 @@ const WorkerCard = {
       return Array.isArray(this.worker?.task_queue) ? this.worker.task_queue.length : 0;
     },
     workerNameLabel() {
-      const name = this.worker?.name || (this.isValue ? this.valueCellRef || 'Value' : '');
+      const name = this.worker?.name || (this.isValue && this.shouldShowValueCellRef ? this.valueCellRef : '');
       return this.taskQueueCount > 0 ? `${name} (${this.taskQueueCount})` : name;
     },
     titlePortCandidate() {
@@ -607,6 +609,9 @@ const WorkerCard = {
     valueCellRef() {
       return window.GridGeometry?.coordToCellRef?.(this.worker) || '';
     },
+    shouldShowValueCellRef() {
+      return this.isValue && !String(this.worker?.name || '').trim() && !!this.valueCellRef && (this.isCardHovered || this.isSelected);
+    },
     valueTypeLabel() {
       const declared = String(this.worker?.value_type || 'auto');
       const resolved = String(this.worker?.resolved_value_type || '');
@@ -788,6 +793,10 @@ const WorkerCard = {
   watch: {
     isSelected(next) {
       if (!next) this.hoveredVerticalResize = false;
+      this.$nextTick(() => this.recalculateTitlePortVisibility());
+    },
+    isCardHovered() {
+      this.$nextTick(() => this.recalculateTitlePortVisibility());
     },
     workerNameLabel() {
       this.$nextTick(() => this.recalculateTitlePortVisibility());
@@ -1210,10 +1219,15 @@ const WorkerCard = {
       }
       if (this.hoveredHandle !== nearest) this.hoveredHandle = nearest;
     },
+    onCardMouseEnter() {
+      this.isCardHovered = true;
+    },
     onCardMouseMove(e) {
+      this.isCardHovered = true;
       this.updateCardHoverState(e);
     },
     onCardMouseLeave() {
+      this.isCardHovered = false;
       this.hoveredHandle = null;
       this.hoveredVerticalResize = false;
     },
