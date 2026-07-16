@@ -1558,7 +1558,7 @@ class TestPromptAssembly:
         assert "Do not edit `.bullpen/layout.json`" in prompt
         assert "`list_values` and `get_value` return both constants and formula cells" in prompt
         assert "use `get_formula` for formula source and calculation state" in prompt
-        assert "Use `set_formula` to create or replace a formula" in prompt
+        assert "Use `set_formula` to create a formula Value cell at an empty coordinate" in prompt
         assert "use `list_formula_functions` to discover supported syntax and examples" in prompt
         assert "`set_value` deliberately converts a formula cell to a constant" in prompt
         assert "Use `recalculate_value` or `recalculate_all_values`" in prompt

@@ -168,6 +168,74 @@ def test_formula_set_calculates_on_server_and_constant_write_clears_formula(clie
     assert "formula_state" not in output
 
 
+def test_mcp_formula_set_creates_empty_coordinate_and_repeat_call_updates_it(client):
+    browser, app = client
+    for row, value in enumerate(range(1, 6), start=31):
+        browser.emit("worker:add", {
+            "coord": {"col": 3, "row": row}, "type": "value",
+            "fields": {"value": value, "value_type": "number"},
+        })
+        assert get_event(browser, "layout:updated") is not None
+
+    token = mcp_auth.read_workspace_mcp_token(app.config["bp_dir"])
+    mcp_client = socketio.test_client(app, auth={"mcp_token": token})
+    try:
+        mcp_client.get_received()
+        browser.get_received()
+
+        mcp_client.emit("formula:set", {"ref": "D37", "formula": "=SUM(D32:D36)"})
+        layout = get_event(mcp_client, "layout:updated")
+        broadcast = get_event(browser, "layout:updated")
+        formulas = [
+            slot for slot in layout["slots"]
+            if slot and slot.get("type") == "value" and slot.get("formula")
+        ]
+
+        assert broadcast["workspace_revision"] == layout["workspace_revision"]
+        assert len(formulas) == 1
+        assert formulas[0]["row"] == 36
+        assert formulas[0]["col"] == 3
+        assert formulas[0]["name"] == ""
+        assert formulas[0]["value"] == 15
+        assert formulas[0]["formula"]["source"] == "=SUM(D32:D36)"
+        assert formulas[0]["formula_state"]["status"] == "ok"
+
+        mcp_client.emit("formula:set", {"ref": "D37", "formula": "=SUM(D32:D35)"})
+        updated = get_event(mcp_client, "layout:updated")
+        formula_cells = [
+            slot for slot in updated["slots"]
+            if slot and slot.get("row") == 36 and slot.get("col") == 3
+        ]
+        assert len(formula_cells) == 1
+        assert formula_cells[0]["value"] == 10
+        assert formula_cells[0]["formula"]["source"] == "=SUM(D32:D35)"
+    finally:
+        mcp_client.disconnect()
+
+
+def test_formula_set_empty_coordinate_rejects_name_collision_and_invalid_ref(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 4, "row": 36}, "type": "marker",
+        "fields": {"name": "Occupied"},
+    })
+    assert get_event(c, "layout:updated") is not None
+
+    c.emit("formula:set", {"ref": "E37", "formula": "=2+2"})
+    collision = get_event(c, "error")
+    assert collision["code"] == "coordinate_collision"
+    assert "non-Value worker" in collision["message"]
+
+    c.emit("formula:set", {"ref": "Missing Name", "formula": "=2+2"})
+    missing = get_event(c, "error")
+    assert missing["message"] == "Value not found: Missing Name"
+
+    c.emit("formula:set", {"ref": "F37", "formula": "=" + ("1" * 10001)})
+    invalid = get_event(c, "error")
+    assert invalid["code"] == "#PARSE!"
+    assert get_event(c, "layout:updated") is None
+
+
 def test_ui_worker_configure_leading_equals_is_calculated_not_stored_as_text(client):
     c, _app = client
     c.emit("worker:add", {

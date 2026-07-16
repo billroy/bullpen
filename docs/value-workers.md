@@ -622,6 +622,9 @@ all allow it.
 
 Creation and deletion are not available through MCP in v1. Workers can mutate
 existing Value workers but cannot allocate or remove grid cells programmatically.
+Formula support subsequently adds one narrow exception: `set_formula` creates
+an unnamed Value cell when given an unoccupied coordinate. It does not create
+from a name, and the MCP still exposes no general worker create/delete tools.
 
 Atomicity requirements:
 

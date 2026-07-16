@@ -504,6 +504,13 @@ def test_formula_mutation_tools_validate_and_dispatch(tmp_workspace, monkeypatch
     assert json.loads(captured[3]["text"])["evaluated_count"] == 2
 
 
+def test_set_formula_tool_documents_coordinate_creation():
+    tool = next(item for item in mcp_tools.TOOLS if item["name"] == "set_formula")
+    assert "empty coordinate creates a Value cell" in tool["description"]
+    assert "ref" in tool["inputSchema"]["required"]
+    assert "formula" in tool["inputSchema"]["required"]
+
+
 def test_set_and_increment_value_dispatch_through_client(tmp_workspace, monkeypatch):
     bp_dir = init_workspace(tmp_workspace)
     client = _ValueClient(payload={"ref": "A1", "value": 3})

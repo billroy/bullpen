@@ -3241,12 +3241,6 @@ def register_events(socketio, app):
         if not ref:
             emit("error", {"message": "formula:set requires ref"})
             return
-        match = _resolve_value_slot(layout, ref, cols)
-        if not match:
-            return
-        slot = match["slot"]
-        old_slot = copy.deepcopy(slot)
-        updated_at = _now_iso()
         try:
             formula = formula_mod.normalize_formula(data.get("formula"))
         except formula_mod.FormulaError as exc:
@@ -3255,6 +3249,47 @@ def register_events(socketio, app):
         if formula is None:
             emit("error", {"message": "Formula is required", "code": "#PARSE!"})
             return
+
+        match = value_mod.find_value_by_ref(layout.get("slots", []), ref, cols=cols)
+        updated_at = _now_iso()
+        if match:
+            slot = match["slot"]
+            old_slot = copy.deepcopy(slot)
+        else:
+            coord = value_mod.parse_cell_ref(ref)
+            if coord is None:
+                emit("error", {"message": f"Value not found: {ref}"})
+                return
+            try:
+                coord = validate_coord({"coord": coord}, "coord")
+            except ValidationError as exc:
+                emit("error", {"message": str(exc)})
+                return
+            occupied_slot = _coord_occupied(layout, coord, cols=cols)
+            if occupied_slot is not None:
+                emit("error", {
+                    "message": f"Coordinate occupied by a non-Value worker: {ref}",
+                    "code": "coordinate_collision",
+                })
+                return
+            slot_index = _first_empty_slot(layout)
+            slot = {
+                "type": "value",
+                "row": coord["row"],
+                "col": coord["col"],
+                "name": "",
+                "value": "",
+                "value_type": value_mod.normalize_value_type(data.get("value_type", "auto")),
+                "resolved_value_type": "string",
+                "format": {"kind": "general"},
+                "save_history": True,
+                "icon": "equal",
+                "color": "value",
+                "updated_at": updated_at,
+            }
+            old_slot = {}
+            match = {"index": slot_index, "slot": slot, "coord": coord, "ambiguous": False}
+
         slot["formula"] = formula
         if "value_type" in data:
             slot["value_type"] = value_mod.normalize_value_type(data.get("value_type"))

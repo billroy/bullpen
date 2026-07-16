@@ -730,7 +730,12 @@ Rules:
 
 - `set_value` with a normal string writes a constant, even if the JSON string
   begins with `=`. This preserves API clarity and prevents formula injection.
-- `set_formula` requires a leading `=` and follows the formula transaction.
+- `set_formula` requires a leading `=` and follows the formula transaction. A
+  coordinate ref that has no worker creates an unnamed Value cell at that
+  coordinate using the normal Value defaults, then calculates it in the same
+  locked transaction. A name ref remains update-only and must resolve to an
+  existing Value cell. A coordinate occupied by another worker type fails with
+  a collision error.
 - `get_value` returns the last successful raw and formatted value plus formula
   status/error metadata. It must not return a stale value without indicating
   the error or stale state.

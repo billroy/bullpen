@@ -186,7 +186,7 @@ TOOLS = [
     },
     {
         "name": "set_formula",
-        "description": "Set and calculate a server-authoritative formula on an existing Value worker.",
+        "description": "Set and calculate a server-authoritative formula. An empty coordinate creates a Value cell; names must already exist.",
         "inputSchema": {
             "type": "object",
             "properties": {
