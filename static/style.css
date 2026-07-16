@@ -6033,8 +6033,34 @@ body.worker-singleton-dragging * {
 .commit-hash {
   font-family: monospace;
   color: var(--accent);
-  flex-shrink: 0;
   font-size: 0.9em;
+}
+
+.commit-ref-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 0 0 8.5rem;
+  min-width: 0;
+}
+
+.commit-origin-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 20px;
+  padding: 1px 7px;
+  border: 1px solid rgba(59, 130, 246, 0.42);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent);
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .commit-subject {

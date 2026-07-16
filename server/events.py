@@ -1236,7 +1236,25 @@ def register_events(socketio, app):
                 "author": parts[3].strip(),
                 "date": parts[4].strip(),
                 "body": parts[5].strip() if len(parts) > 5 else "",
+                "refs": [],
             })
+
+        for commit in commits:
+            try:
+                refs_result = subprocess.run(
+                    ["git", "for-each-ref", "--points-at", commit["hash"], "--format=%(refname:short)"],
+                    capture_output=True, text=True, cwd=ws.path, timeout=5,
+                )
+            except Exception:
+                continue
+            if refs_result.returncode != 0:
+                continue
+            refs = []
+            for ref in refs_result.stdout.splitlines():
+                ref = ref.strip()
+                if ref and ref not in refs:
+                    refs.append(ref)
+            commit["refs"] = refs
 
         try:
             count_result = subprocess.run(

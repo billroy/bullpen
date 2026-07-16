@@ -177,6 +177,13 @@ const CommitsTab = {
         return dateStr;
       }
     },
+    commitOriginRefs(commit) {
+      const refs = Array.isArray(commit?.refs) ? commit.refs : [];
+      return refs.filter((ref) => {
+        const text = String(ref || '').trim();
+        return text.startsWith('origin/');
+      });
+    },
     async openDiff(commit) {
       this.selectedCommit = commit;
       this.commitDiff = '';
@@ -368,7 +375,15 @@ const CommitsTab = {
           role="button"
           :title="'View diff for ' + commit.short_hash"
         >
-          <span class="commit-hash">{{ commit.short_hash }}</span>
+          <span class="commit-ref-column">
+            <span class="commit-hash">{{ commit.short_hash }}</span>
+            <span
+              v-for="ref in commitOriginRefs(commit)"
+              :key="commit.hash + '-' + ref"
+              class="commit-origin-pill"
+              :title="'Remote ref ' + ref"
+            >{{ ref }}</span>
+          </span>
           <span class="commit-multiline">
             <span class="commit-subject">{{ commit.subject }}</span>
             <span class="commit-meta">{{ commit.author }} &middot; {{ formatDate(commit.date) }}</span>

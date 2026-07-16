@@ -99,6 +99,28 @@ def test_commit_list_returns_page(tmp_workspace):
     client.disconnect()
 
 
+def test_commit_list_marks_origin_refs(tmp_workspace):
+    _init_repo(tmp_workspace)
+    head = _git(tmp_workspace, "rev-parse", "HEAD").stdout.strip()
+    _git(tmp_workspace, "update-ref", "refs/remotes/origin/main", head)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("commits:list", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "list-origin",
+        "offset": 0,
+        "count": 10,
+    })
+
+    body = _received(client, "commits:listed")
+    assert body is not None
+    marked = next(commit for commit in body["commits"] if commit["hash"] == head)
+    assert "origin/main" in marked["refs"]
+    client.disconnect()
+
+
 def test_git_status_returns_branch_and_changes(tmp_workspace):
     _init_repo(tmp_workspace)
     with open(f"{tmp_workspace}/sample.txt", "a", encoding="utf-8") as f:

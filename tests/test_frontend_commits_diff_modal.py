@@ -71,6 +71,17 @@ def test_commits_tab_refresh_auto_loads_all_todays_commits():
     assert "_isTodayCommit(commit)" in text
 
 
+def test_commits_tab_renders_origin_ref_pills():
+    text = _read("static/components/CommitsTab.js")
+    css = _read("static/style.css")
+    assert "commitOriginRefs(commit)" in text
+    assert "text.startsWith('origin/')" in text
+    assert "class=\"commit-ref-column\"" in text
+    assert "class=\"commit-origin-pill\"" in text
+    assert ".commit-origin-pill" in css
+    assert ".commit-ref-column" in css
+
+
 def test_git_tab_exposes_status_branch_diff_and_command_menu():
     text = _read("static/components/CommitsTab.js")
     app = _read("static/app.js")
