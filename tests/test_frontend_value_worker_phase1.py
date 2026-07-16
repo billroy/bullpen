@@ -108,7 +108,8 @@ def test_value_worker_small_card_shows_value_in_header():
     assert "{{ workerNameWithPort }}" in card
     assert "{{ valueDisplay || 'Empty' }}" in card
     assert "const unit = String(this.worker?.unit || '').trim();" in card
-    assert "return `${unit ? `${name}/${unit}` : name}:${this.storedValueText}`;" in card
+    assert "const source = this.worker?.formula?.source || this.storedValueText;" in card
+    assert "return `${unit ? `${name}/${unit}` : name}:${source}`;" in card
     assert ".worker-card-compact-value {" in css
     assert ".worker-card-compact-value-button {" in css
     assert ".worker-card-compact-value-editor {" in css
@@ -338,10 +339,16 @@ vm.runInContext(source + `
   globalThis.__parsed = {{
     labelLessNumber: BullpenTab.methods.parseValueShortcutText(':40'),
     labelLessText: BullpenTab.methods.parseValueShortcutText(':foo'),
+    labelLessTime: BullpenTab.methods.parseValueShortcutText(':12:30'),
+    labelLessUrl: BullpenTab.methods.parseValueShortcutText(':https://example.test/a:b'),
     named: BullpenTab.methods.parseValueShortcutText('tax rate: 5.5'),
     unit: BullpenTab.methods.parseValueShortcutText('temp/f:32'),
     plain: BullpenTab.methods.parseValueShortcutText('foo'),
     emptyAfterColon: BullpenTab.methods.parseValueShortcutText('name:'),
+    rangeFormula: BullpenTab.methods.parseValueShortcutText('=SUM(C36:C37)'),
+    stringColonFormula: BullpenTab.methods.parseValueShortcutText('="left:right"'),
+    escapedFormula: BullpenTab.methods.parseValueShortcutText("'=SUM(C36:C37)"),
+    namedFormula: BullpenTab.methods.parseValueShortcutText('total:=SUM(C36:C37)'),
   }};
 `, context);
 process.stdout.write(JSON.stringify(context.__parsed));
@@ -354,6 +361,8 @@ process.stdout.write(JSON.stringify(context.__parsed));
     assert parsed["labelLessNumber"]["fields"]["value"] == "40"
     assert parsed["labelLessText"]["fields"]["name"] == ""
     assert parsed["labelLessText"]["fields"]["value"] == "foo"
+    assert parsed["labelLessTime"]["fields"]["value"] == "12:30"
+    assert parsed["labelLessUrl"]["fields"]["value"] == "https://example.test/a:b"
     assert parsed["named"]["fields"]["name"] == "tax rate"
     assert parsed["named"]["fields"]["value"] == "5.5"
     assert parsed["unit"]["fields"]["name"] == "temp"
@@ -363,6 +372,14 @@ process.stdout.write(JSON.stringify(context.__parsed));
     assert parsed["plain"]["fields"]["value"] == "foo"
     assert parsed["emptyAfterColon"]["fields"]["name"] == "name"
     assert parsed["emptyAfterColon"]["fields"]["value"] is None
+    assert parsed["rangeFormula"]["fields"] == {
+        "name": "", "unit": "", "value": "=SUM(C36:C37)",
+        "value_type": "auto", "format": {"kind": "general"},
+    }
+    assert parsed["stringColonFormula"]["fields"]["value"] == '="left:right"'
+    assert parsed["escapedFormula"]["fields"]["value"] == "'=SUM(C36:C37)"
+    assert parsed["namedFormula"]["fields"]["name"] == "total"
+    assert parsed["namedFormula"]["fields"]["value"] == "=SUM(C36:C37)"
 
 
 def test_all_letters_start_value_shortcut_editor_in_blank_cell():
@@ -697,3 +714,58 @@ process.stdout.write(JSON.stringify(context.__result));
         "fields": {"name": "tax rate", "unit": "percent", "value": "6.4"},
     }]
     assert payload["cancelled"] is True
+
+
+def test_value_card_compact_formula_parser_preserves_colons_and_source():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "WorkerCard.js"))}, 'utf8');
+const context = {{
+  console,
+  isValueWorker: worker => worker?.type === 'value',
+  renderLucideIcons: () => {{}},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = WorkerCard.methods;
+  const calls = [];
+  const component = {{
+    worker: {{ type: 'value', name: 'total', unit: 'usd', value_type: 'auto', formula: {{ source: '=SUM(C36:C37)' }} }},
+    storedValueText: '7',
+    valueEditIncludesName: true,
+    valueEditText: 'net total/eur:=SUM(C36:C37)',
+    slotIndex: 8,
+    parseValueEditText: methods.parseValueEditText,
+    validateValueEditText: methods.validateValueEditText,
+    cancelValueEdit() {{ this.cancelled = true; }},
+    $root: {{ saveWorkerConfig(payload) {{ calls.push(payload); }} }},
+  }};
+  globalThis.__result = {{
+    parsed: methods.parseValueEditText.call(component, '=SUM(C36:C37)'),
+    namedParsed: methods.parseValueEditText.call(component, 'net total/eur:=SUM(C36:C37)'),
+    escaped: methods.parseValueEditText.call(component, "'=SUM(C36:C37)"),
+    sourceText: WorkerCard.computed.valueEditSourceText.call(component),
+  }};
+  methods.commitValueEdit.call(component);
+  globalThis.__result.calls = calls;
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["parsed"] == {"name": "total", "unit": "usd", "value": "=SUM(C36:C37)"}
+    assert payload["namedParsed"] == {"name": "net total", "unit": "eur", "value": "=SUM(C36:C37)"}
+    assert payload["escaped"] == {"name": "total", "unit": "usd", "value": "'=SUM(C36:C37)"}
+    assert payload["sourceText"] == "total/usd:=SUM(C36:C37)"
+    assert payload["calls"] == [{
+        "slot": 8,
+        "fields": {"formula_source": "=SUM(C36:C37)", "name": "net total", "unit": "eur"},
+    }]

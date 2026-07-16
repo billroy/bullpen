@@ -114,13 +114,26 @@ def test_typing_formula_into_empty_cell_calculates_in_chromium():
                 card = page.locator(".worker-card", has=page.locator(".worker-card-formula-badge"))
                 expect(card.locator(".worker-card-value-main")).to_have_text("4")
                 expect(card.locator(".worker-card-formula-badge")).to_have_text("fx")
+
+                page.get_by_role("button", name="Small Rows", exact=True).click()
+                compact_value = page.get_by_role("button", name="Edit name and value", exact=True)
+                compact_value.click()
+                compact_editor = page.get_by_role("textbox", name="Edit name and value", exact=True)
+                expect(compact_editor).to_have_value(":=2+2")
+                compact_editor.fill("=SUM(C36:C37)")
+                compact_editor.press("Enter")
+                expect(compact_value).to_have_text("0")
+
+                compact_value.click()
+                expect(compact_editor).to_have_value(":=SUM(C36:C37)")
+                compact_editor.press("Escape")
                 browser.close()
 
             with open(os.path.join(workspace, ".bullpen", "layout.json"), encoding="utf-8") as handle:
                 layout = json.load(handle)
             worker = next(slot for slot in layout["slots"] if slot and slot.get("type") == "value")
-            assert worker["value"] == 4
-            assert worker["formula"] == {"source": "=2+2", "version": 1}
+            assert worker["value"] == 0
+            assert worker["formula"] == {"source": "=SUM(C36:C37)", "version": 1}
             assert worker["formula_state"]["status"] == "ok"
         finally:
             proc.terminate()

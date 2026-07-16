@@ -207,13 +207,88 @@ def test_ui_worker_add_formula_field_is_calculated(client):
     c, _app = client
     c.emit("worker:add", {
         "coord": {"col": 1, "row": 28}, "type": "value",
-        "fields": {"name": "", "value": "", "formula_source": "=3*3", "value_type": "auto"},
+        "fields": {"name": "", "value": "", "formula_source": "=3*3", "value_type": "string"},
     })
     layout = get_event(c, "layout:updated")
     worker = next(slot for slot in layout["slots"] if slot and slot.get("col") == 1)
 
-    assert worker["value"] == 9
+    assert worker["value"] == "9"
+    assert worker["value_type"] == "string"
+    assert worker["resolved_value_type"] == "string"
     assert worker["formula"] == {"source": "=3*3", "version": 1}
+
+
+def test_ui_formula_input_matrix_preserves_ranges_colons_and_literal_escape(client):
+    c, _app = client
+    for col, value in ((2, "10"), (2, "20")):
+        row = 35 if value == "10" else 36
+        c.emit("worker:add", {
+            "coord": {"col": col, "row": row}, "type": "value",
+            "fields": {"name": "", "value": value, "value_type": "auto"},
+        })
+        get_event(c, "layout:updated")
+
+    c.emit("worker:add", {
+        "coord": {"col": 2, "row": 37}, "type": "value",
+        "fields": {"name": "", "value": "=SUM(C36:C37)", "value_type": "auto"},
+    })
+    layout = get_event(c, "layout:updated")
+    range_worker = next(slot for slot in layout["slots"] if slot and slot.get("row") == 37)
+    assert range_worker["value"] == 30
+    assert range_worker["formula"]["source"] == "=SUM(C36:C37)"
+
+    c.emit("worker:add", {
+        "coord": {"col": 3, "row": 37}, "type": "value",
+        "fields": {"name": "", "value": '=IF(TRUE,"left:right","no")', "value_type": "auto"},
+    })
+    layout = get_event(c, "layout:updated")
+    colon_worker = next(slot for slot in layout["slots"] if slot and slot.get("col") == 3)
+    assert colon_worker["value"] == "left:right"
+    assert colon_worker["formula"]["source"] == '=IF(TRUE,"left:right","no")'
+
+    c.emit("worker:add", {
+        "coord": {"col": 4, "row": 37}, "type": "value",
+        "fields": {"name": "", "value": "'=SUM(C36:C37)", "value_type": "auto"},
+    })
+    layout = get_event(c, "layout:updated")
+    literal_worker = next(slot for slot in layout["slots"] if slot and slot.get("col") == 4)
+    assert literal_worker["value"] == "=SUM(C36:C37)"
+    assert literal_worker["resolved_value_type"] == "string"
+    assert "formula" not in literal_worker
+
+
+def test_ui_worker_configure_apostrophe_stores_literal_formula_text(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 0}, "type": "value",
+        "fields": {"value": "=2+2", "value_type": "auto"},
+    })
+    get_event(c, "layout:updated")
+
+    c.emit("worker:configure", {"slot": 0, "fields": {"value": "'=3+3"}})
+    layout = get_event(c, "layout:updated")
+    worker = layout["slots"][0]
+    assert worker["value"] == "=3+3"
+    assert worker["resolved_value_type"] == "string"
+    assert "formula" not in worker
+
+
+def test_ui_formula_result_type_change_preserves_and_recalculates_formula(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 0}, "type": "value",
+        "fields": {"value": "=2+2", "value_type": "auto"},
+    })
+    get_event(c, "layout:updated")
+
+    c.emit("worker:configure", {"slot": 0, "fields": {"value_type": "string"}})
+    layout = get_event(c, "layout:updated")
+    worker = layout["slots"][0]
+    assert worker["value"] == "4"
+    assert worker["value_type"] == "string"
+    assert worker["resolved_value_type"] == "string"
+    assert worker["formula"] == {"source": "=2+2", "version": 1}
+    assert worker["formula_state"]["status"] == "ok"
 
 
 def test_formula_error_persists_source_and_preserves_last_successful_value(client):
@@ -2369,6 +2444,45 @@ class TestWorkerEvents:
             "resolved_value_type": "number",
             "updated_at": worker["updated_at"],
         }]
+
+    def test_raw_worksheet_paste_calculates_formulas_and_honors_literal_escape(self, client):
+        c, _ = client
+        c.emit("worker:paste_group", {
+            "items": [
+                {
+                    "coord": {"col": 2, "row": 35},
+                    "worker": {"type": "value", "value": "10", "value_type": "auto", "_raw_value_input": True},
+                },
+                {
+                    "coord": {"col": 2, "row": 36},
+                    "worker": {"type": "value", "value": "20", "value_type": "auto", "_raw_value_input": True},
+                },
+                {
+                    "coord": {"col": 2, "row": 37},
+                    "worker": {
+                        "type": "value", "value": "=SUM(C36:C37)",
+                        "value_type": "auto", "_raw_value_input": True,
+                    },
+                },
+                {
+                    "coord": {"col": 3, "row": 37},
+                    "worker": {
+                        "type": "value", "value": "'=SUM(C36:C37)",
+                        "value_type": "auto", "_raw_value_input": True,
+                    },
+                },
+            ],
+        })
+        layout = get_event(c, "layout:updated")
+        by_coord = {(slot["col"], slot["row"]): slot for slot in layout["slots"] if slot}
+
+        formula = by_coord[(2, 37)]
+        assert formula["value"] == 30
+        assert formula["formula"]["source"] == "=SUM(C36:C37)"
+        assert formula["formula_state"]["status"] == "ok"
+        literal = by_coord[(3, 37)]
+        assert literal["value"] == "=SUM(C36:C37)"
+        assert "formula" not in literal
 
     def test_raw_worksheet_group_is_atomic_when_classification_fails(self, client):
         c, app = client

@@ -745,7 +745,8 @@ const WorkerCard = {
     valueEditSourceText() {
       const name = String(this.worker?.name || '').trim();
       const unit = String(this.worker?.unit || '').trim();
-      return `${unit ? `${name}/${unit}` : name}:${this.storedValueText}`;
+      const source = this.worker?.formula?.source || this.storedValueText;
+      return `${unit ? `${name}/${unit}` : name}:${source}`;
     },
     showCompactValue() {
       return this.isValue && this.effectiveLayoutMode === 'small';
@@ -928,6 +929,13 @@ const WorkerCard = {
     },
     parseValueEditText(text) {
       const raw = String(text || '').trim();
+      if (raw.startsWith('=') || raw.startsWith("'=")) {
+        return {
+          name: String(this.worker?.name || '').trim(),
+          unit: String(this.worker?.unit || '').trim(),
+          value: raw,
+        };
+      }
       const colon = raw.indexOf(':');
       if (colon < 0) {
         return { name: String(this.worker?.name || '').trim(), unit: String(this.worker?.unit || '').trim(), value: raw };
@@ -1003,9 +1011,14 @@ const WorkerCard = {
         : { value: String(this.valueEditText) };
       const isFormula = String(parsed.value || '').trim().startsWith('=');
       if (isFormula) {
+        const fields = { formula_source: String(parsed.value).trim() };
+        if (this.valueEditIncludesName) {
+          fields.name = parsed.name;
+          fields.unit = parsed.unit;
+        }
         this.$root.saveWorkerConfig({
           slot: this.slotIndex,
-          fields: { formula_source: String(parsed.value).trim() },
+          fields,
         });
         this.cancelValueEdit({ restoreGridFocus: true });
         return;

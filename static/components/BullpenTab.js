@@ -1371,6 +1371,20 @@ const BullpenTab = {
       let name = '';
       let unit = '';
       let value = raw.trim();
+      // Formula source owns every character after the leading =, including
+      // range and string-literal colons.  The apostrophe form is the matching
+      // literal escape and must follow the same no-splitting rule.
+      if (value.startsWith('=') || value.startsWith("'=")) {
+        return {
+          fields: {
+            name,
+            unit,
+            value,
+            value_type: 'auto',
+            format: { kind: 'general' },
+          },
+        };
+      }
       const colon = raw.indexOf(':');
       if (colon >= 0) {
         const label = raw.slice(0, colon).trim();

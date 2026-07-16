@@ -105,6 +105,18 @@ VALUE_TRIGGER_CONDITION_OPERATORS = {"any", "contains", "<", "<=", "==", ">", ">
 VALUE_TRIGGER_RELATIONAL_OPERATORS = {"<", "<=", "==", ">", ">="}
 
 
+def _formula_aware_ui_input(value):
+    """Classify live UI text without confusing formula syntax with Value labels."""
+    if not isinstance(value, str):
+        return "value", value
+    trimmed = value.strip()
+    if trimmed.startswith("'="):
+        return "literal", trimmed[1:]
+    if trimmed.startswith("="):
+        return "formula", trimmed
+    return "value", value
+
+
 def _condition_result(operator, configured_value, *, matched, coerced_value=None, coerced_value_type=None, error=None):
     return {
         "matched": bool(matched),
@@ -2011,12 +2023,11 @@ def register_events(socketio, app):
             updated_at = _now_iso()
             raw_value = fields.get("value", "")
             raw_formula = fields.get("formula_source")
-            formula_input = (
-                raw_formula
-                if isinstance(raw_formula, str) and raw_formula.strip()
-                else raw_value
-            )
-            formula_ui_add = isinstance(formula_input, str) and formula_input.strip().startswith("=")
+            if isinstance(raw_formula, str) and raw_formula.strip():
+                formula_input_kind, formula_input = "formula", raw_formula
+            else:
+                formula_input_kind, formula_input = _formula_aware_ui_input(raw_value)
+            formula_ui_add = formula_input_kind == "formula"
             if formula_ui_add:
                 try:
                     formula = formula_mod.normalize_formula(formula_input)
@@ -2025,10 +2036,12 @@ def register_events(socketio, app):
                     return
                 payload = {
                     "value": "",
-                    "value_type": "auto",
+                    "value_type": value_mod.normalize_value_type(fields.get("value_type", "auto")),
                     "resolved_value_type": "string",
                 }
             else:
+                if formula_input_kind == "literal":
+                    raw_value = formula_input
                 try:
                     payload = value_mod.classify_value_input(
                         raw_value, fields.get("value_type", "auto"), source="ui"
@@ -2482,15 +2495,27 @@ def register_events(socketio, app):
             for item in items:
                 worker = copy_worker_for_fragment(item["worker"])
                 if worker.get("type") == "value" and worker.pop("_raw_value_input", False):
-                    payload = value_mod.classify_value_input(
-                        worker.get("value", ""), worker.get("value_type", "auto"), source="ui"
-                    )
-                    worker.update(payload)
                     worker["updated_at"] = paste_updated_at
                     worker["save_history"] = bool(worker["save_history"]) if "save_history" in worker else True
-                    value_mod.append_value_history(worker, paste_updated_at)
+                    input_kind, input_value = _formula_aware_ui_input(worker.get("value", ""))
+                    if input_kind == "formula":
+                        worker.update({
+                            "value": "",
+                            "value_type": value_mod.normalize_value_type(worker.get("value_type", "auto")),
+                            "resolved_value_type": "string",
+                            "formula": formula_mod.normalize_formula(input_value),
+                            "formula_state": formula_mod.normalize_formula_state({"status": "pending"}),
+                            "formula_updated_at": paste_updated_at,
+                            "history": [],
+                        })
+                    else:
+                        payload = value_mod.classify_value_input(
+                            input_value, worker.get("value_type", "auto"), source="ui"
+                        )
+                        worker.update(payload)
+                        value_mod.append_value_history(worker, paste_updated_at)
                 fragments.append({"coord": item["coord"], "worker": worker})
-        except ValueError as exc:
+        except (ValueError, formula_mod.FormulaError) as exc:
             emit("error", {"message": str(exc)})
             return
         try:
@@ -2499,9 +2524,23 @@ def register_events(socketio, app):
             emit("error", {"message": e.message, "code": e.code})
             return
         layout = result["layout"]
-
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_roots = {
+            index for index in result["slots"]
+            if index < len(layout["slots"]) and layout["slots"][index].get("formula")
+        }
+        if formula_roots:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_roots,
+                updated_at=paste_updated_at,
+                changed_by="worker:paste_group",
+                ws_id=ws_id,
+                deliver_triggers=False,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:configure")
     @with_lock
@@ -2522,23 +2561,31 @@ def register_events(socketio, app):
         value_write_old_slot = None
         value_payload = None
         formula_ui_write = False
+        formula_policy_write = False
         if worker.get("type") == "value" and any(k in fields for k in ("value", "value_type")):
             value_write_old_slot = copy.deepcopy(worker)
             raw_ui_value = fields.get("value")
-            formula_ui_write = isinstance(raw_ui_value, str) and raw_ui_value.strip().startswith("=")
+            input_kind, input_value = _formula_aware_ui_input(raw_ui_value)
+            formula_ui_write = input_kind == "formula"
+            formula_policy_write = (
+                not formula_ui_write
+                and "value" not in fields
+                and "value_type" in fields
+                and bool(worker.get("formula"))
+            )
             if formula_ui_write:
                 try:
-                    worker["formula"] = formula_mod.normalize_formula(raw_ui_value)
+                    worker["formula"] = formula_mod.normalize_formula(input_value)
                 except formula_mod.FormulaError as exc:
                     emit("error", {"message": exc.message, "code": exc.code})
                     return
                 worker["formula_state"] = formula_mod.normalize_formula_state({"status": "pending"})
                 worker["formula_updated_at"] = _now_iso()
                 fields = {key: value for key, value in fields.items() if key != "value"}
-            else:
+            elif not formula_policy_write:
                 try:
                     value_payload = value_mod.classify_value_input(
-                        fields.get("value", worker.get("value")),
+                        input_value if "value" in fields else worker.get("value"),
                         fields.get("value_type", worker.get("value_type", "auto")),
                         source="ui",
                     )
@@ -2563,7 +2610,11 @@ def register_events(socketio, app):
             _remember_ai_selection(app, worker.get("agent"), worker.get("model"))
 
         if value_write_old_slot is not None:
-            generation_time = worker.get("formula_updated_at") if formula_ui_write else worker.get("updated_at")
+            generation_time = (
+                worker.get("formula_updated_at")
+                if formula_ui_write
+                else (_now_iso() if formula_policy_write else worker.get("updated_at"))
+            )
             _commit_formula_generation(
                 bp_dir,
                 layout,
@@ -2571,7 +2622,10 @@ def register_events(socketio, app):
                 updated_at=generation_time or _now_iso(),
                 changed_by="worker_configure",
                 ws_id=ws_id,
-                root_events=[] if formula_ui_write else [(slot_index, value_write_old_slot, "worker_configure")],
+                root_events=(
+                    [] if formula_ui_write or formula_policy_write
+                    else [(slot_index, value_write_old_slot, "worker_configure")]
+                ),
             )
         else:
             _save_layout(bp_dir, layout)
