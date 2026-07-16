@@ -32,6 +32,25 @@ The stdio server therefore needs:
 - a Python import path that can import the `server` package
 - a running Bullpen server for write tools
 
+### Value History Reads
+
+`get_value_history(ref)` is a read-only local-state tool for both constant and
+formula Value cells. It resolves coordinates and names with the same precedence
+and duplicate-name warning behavior as `get_value`.
+
+The response contains the complete retained history, currently bounded by the
+Value history limit of 1,000 entries, in oldest-first order. Each history entry
+preserves `value`, `value_type`, `resolved_value_type`, and `updated_at`. An
+empty history is a successful response with `history: []`; clients do not need
+pagination or time-window arguments for this bounded first version.
+
+Current cell metadata accompanies the array: coordinate, name, current value
+and type, update timestamp, Save History state, and normalized unit labels.
+`unit_scope: "current_cell_metadata"` tells agents that the unit is a feature
+hint from the cell's current metadata, not historical provenance attached to
+each sample. The tool does not change history storage, infer past units, or add
+unit-aware formula semantics.
+
 Inside Bullpen, Claude and Codex adapters generate these settings per run. They
 pass the correct `--bp-dir`, host, port, working directory, and `PYTHONPATH`.
 

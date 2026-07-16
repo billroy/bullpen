@@ -1557,6 +1557,7 @@ class TestPromptAssembly:
 
         assert "Do not edit `.bullpen/layout.json`" in prompt
         assert "`list_values` and `get_value` return both constants and formula cells" in prompt
+        assert "`get_value_history` for the complete retained Value history and current unit hint" in prompt
         assert "use `get_formula` for formula source and calculation state" in prompt
         assert "Use `set_formula` to create a formula Value cell at an empty coordinate" in prompt
         assert "use `list_formula_functions` to discover supported syntax and examples" in prompt

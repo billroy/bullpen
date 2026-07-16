@@ -277,6 +277,36 @@ strings are safe arithmetic values.
 
 ---
 
+## Unit Metadata
+
+A Value cell's `unit` is durable descriptive metadata and a feature hint for
+people, workers, and agents. It is not part of the stored scalar's type or
+arithmetic semantics.
+
+- Bullpen normalizes its recognized unit aliases for consistent display and
+  MCP output. Unrecognized text remains a bounded custom unit label.
+- `get_value` and `list_values` expose the normalized unit, abbreviation, and
+  human-readable name so an agent can interpret the scalar, decide whether a
+  conversion is needed, or perform richer unit analysis externally.
+- `get_value_history`, tracked by ticket `mcp-getvaluehistory-EWs7`, returns
+  those current cell-level unit fields alongside the complete retained history
+  array. The unit is a current feature hint, not per-entry provenance.
+- History records remain value/type/time records. Their values are interpreted
+  in the cell's unit context; Bullpen does not currently snapshot or normalize
+  units per history entry.
+- Changing a unit changes metadata only. It does not rewrite the raw value,
+  convert history, fire a value-change trigger, or imply a new numeric value.
+- Custom labels such as `widgets`, `points`, or `builds/hour` are valid hints
+  even when Bullpen has no conversion rule for them.
+
+This boundary is intentional. Unit-aware quantities, automatic dimensional
+arithmetic, derived units, unit-bearing history entries, temperature
+point/delta rules, and currency conversion are deferred. They require a
+separate reviewed value and formula model rather than incremental expansion of
+the current label field.
+
+---
+
 ## Display Formats
 
 Formatting affects display only. It must not change the stored raw value.
@@ -583,6 +613,7 @@ Required v1 tools:
 
 ```text
 get_value(ref)
+get_value_history(ref)
 set_value(ref, value, value_type?)
 increment_value(ref, amount?)
 decrement_value(ref, amount?)
@@ -603,6 +634,10 @@ Tool behavior:
 
 - `get_value` returns raw value, declared value type, resolved value type,
   formatted value, coordinate, name, and updated timestamp.
+- `get_value_history` returns the complete retained history in oldest-first
+  order, plus current value/type/unit metadata. It returns an empty array when
+  no history exists. `unit_scope: "current_cell_metadata"` explicitly means the
+  unit was not recorded independently on every history entry.
 - `set_value` validates and stores a new value.
 - `increment_value` and `decrement_value` require the current value to be
   numeric and are atomic.

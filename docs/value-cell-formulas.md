@@ -534,7 +534,11 @@ A formula becomes dirty when:
 - the user requests recalculation.
 
 Formatting, units, icon, color, Save History, and unrelated worker metadata do
-not dirty formulas.
+not dirty formulas. Units are descriptive feature hints exposed to agents, not
+formula operands or inferred quantity types. The bounded three-argument
+`CONVERT(number, from_unit, to_unit)` function is the only unit conversion in
+the current evaluator; see `formula-function-library.md` for the explicit
+boundary.
 
 ### Calculation Generation
 
@@ -720,6 +724,7 @@ Extend existing Value tools rather than exposing evaluator internals.
 set_value(ref, value, value_type?)
 set_formula(ref, formula, value_type?)
 get_value(ref)
+get_value_history(ref)
 get_formula(ref)
 list_formula_functions(query?)
 recalculate_value(ref)
@@ -739,6 +744,9 @@ Rules:
 - `get_value` returns the last successful raw and formatted value plus formula
   status/error metadata. It must not return a stale value without indicating
   the error or stale state.
+- `get_value_history` returns the same bounded oldest-first history contract for
+  constants and formulas, together with the cell's current value/type/unit
+  metadata. Current unit labels are agent hints, not per-entry provenance.
 - `get_formula` returns source, status, safe error, last successful value,
   timestamps, resolved direct dependencies, and duplicate-name warnings.
 - `list_formula_functions` returns the supported public function names,

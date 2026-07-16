@@ -31,6 +31,7 @@ from server import mcp_auth
 from server import tasks as task_store
 from server.persistence import read_json
 from server.values import (
+    VALUE_HISTORY_LIMIT,
     coord_to_cell_ref,
     find_value_by_ref,
     format_value,
@@ -138,6 +139,17 @@ TOOLS = [
     {
         "name": "get_value",
         "description": "Get a Value worker by coordinate alias (A1) or name.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Value coordinate alias or name"},
+            },
+            "required": ["ref"],
+        },
+    },
+    {
+        "name": "get_value_history",
+        "description": "Get the complete retained history for a Value worker, with current cell and unit metadata.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -769,6 +781,34 @@ def _get_value_summary(bp_dir: str, ref: object) -> tuple[dict[str, Any] | None,
     return _value_summary(match), None
 
 
+def _get_value_history_summary(bp_dir: str, ref: object) -> tuple[dict[str, Any] | None, str | None]:
+    value, err = _get_value_summary(bp_dir, ref)
+    if err:
+        return None, err
+    history = list(value.get("history") or [])
+    payload = {
+        "ref": value["ref"],
+        "coordinate": value["coordinate"],
+        "name": value["name"],
+        "value": value["value"],
+        "value_type": value["value_type"],
+        "resolved_value_type": value["resolved_value_type"],
+        "updated_at": value["updated_at"],
+        "unit": value["unit"],
+        "unit_abbreviation": value["unit_abbreviation"],
+        "unit_name": value["unit_name"],
+        "unit_scope": "current_cell_metadata",
+        "save_history": value["save_history"],
+        "history_order": "oldest_first",
+        "history_limit": VALUE_HISTORY_LIMIT,
+        "history_count": len(history),
+        "history": history,
+    }
+    if value.get("warnings"):
+        payload["warnings"] = value["warnings"]
+    return payload, None
+
+
 def _normalize_query_text(value: str) -> str:
     return " ".join(str(value or "").lower().split())
 
@@ -863,6 +903,14 @@ def handle_call(
 
     if name == "get_value":
         payload, err = _get_value_summary(bp_dir, args.get("ref"))
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "not_found", "message": err}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name == "get_value_history":
+        payload, err = _get_value_history_summary(bp_dir, args.get("ref"))
         if err:
             _tool_result(msg_id, json.dumps({"error": "not_found", "message": err}), is_error=True, mode=io_mode)
             return

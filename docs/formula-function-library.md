@@ -114,6 +114,40 @@ approved Excel-shaped P0/P1 catalog and are not silently included here.
   The only volatile functions remain `NOW`, `TODAY`, `RAND`, and
   `RANDBETWEEN`; the latter two are not part of this approved catalog.
 
+## Units and `CONVERT`
+
+Formula evaluation remains scalar and unit-agnostic. A referenced Value cell
+contributes its raw value, not a quantity object; its `unit` remains descriptive
+metadata intended for display, MCP clients, workers, and agent reasoning.
+
+`CONVERT(number, from_unit, to_unit)` is the one explicit numeric conversion
+operation. It retains its current bounded table:
+
+- length: `m`, `km`, `cm`, `mm`, `in`, `ft`, `yd`, `mi`;
+- mass: `g`, `kg`, `lb`, `oz`.
+
+The source and target must be in the same family. Unit names are
+case-insensitive, and no implicit source-unit inference occurs. `CONVERT(A1,
+"m")`, automatic conversion during arithmetic, derived units, compound-unit
+parsing, and calls to the host's Unix `units` executable are not part of this
+implementation.
+
+The formula cell's own `unit` labels its computed scalar but does not validate,
+convert, or infer the result. Unit metadata changes therefore do not dirty
+formulas. Agents receive the unit metadata through MCP and may use it as a hint
+when selecting tools, checking compatibility, or performing conversions that
+are outside the bounded `CONVERT` table.
+
+`get_value_history`, tracked by ticket `mcp-getvaluehistory-EWs7`, pairs the
+complete retained history array with the cell's current normalized unit labels
+at the response level. It does not manufacture per-entry unit provenance that
+the current history store does not contain.
+
+Deeper unit semantics are deliberately deferred until the existing formula,
+point-mode, and worker-trigger specifications have settled. Any future quantity
+model requires its own reviewed proposal and migration contract; it must not
+arrive through ad hoc additions to `CONVERT`.
+
 ## Criteria and Lookup Semantics
 
 Criteria functions accept a literal value or a string beginning with one of

@@ -386,6 +386,100 @@ def test_get_value_returns_structured_not_found(tmp_workspace, monkeypatch):
     assert json.loads(captured["text"])["error"] == "not_found"
 
 
+def test_get_value_history_returns_complete_oldest_first_history_and_current_unit_hint(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    write_json(os.path.join(bp_dir, "layout.json"), {
+        "slots": [{
+            "type": "value", "row": 0, "col": 0, "name": "Temperature",
+            "value": 22, "value_type": "number", "resolved_value_type": "number",
+            "unit": "c", "updated_at": "2026-07-16T12:02:00Z", "save_history": True,
+            "history": [
+                {"value": 20, "value_type": "number", "resolved_value_type": "number", "updated_at": "2026-07-16T12:00:00Z", "unit": "fahrenheit"},
+                {"value": 21, "value_type": "number", "resolved_value_type": "number", "updated_at": "2026-07-16T12:01:00Z"},
+                {"value": 22, "value_type": "number", "resolved_value_type": "number", "updated_at": "2026-07-16T12:02:00Z"},
+            ],
+        }],
+    })
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.update({"text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=15, name="get_value_history", args={"ref": "Temperature"})
+
+    payload = json.loads(captured["text"])
+    assert captured["is_error"] is False
+    assert payload["ref"] == "A1"
+    assert payload["value"] == 22
+    assert payload["unit"] == "celsius"
+    assert payload["unit_abbreviation"] == "°C"
+    assert payload["unit_name"] == "degree Celsius"
+    assert payload["unit_scope"] == "current_cell_metadata"
+    assert payload["history_order"] == "oldest_first"
+    assert payload["history_limit"] == 1000
+    assert payload["history_count"] == 3
+    assert [entry["updated_at"] for entry in payload["history"]] == [
+        "2026-07-16T12:00:00Z", "2026-07-16T12:01:00Z", "2026-07-16T12:02:00Z",
+    ]
+    assert all("unit" not in entry for entry in payload["history"])
+
+
+def test_get_value_history_supports_formula_cells_and_empty_history(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    write_json(os.path.join(bp_dir, "layout.json"), {
+        "slots": [{
+            "type": "value", "row": 0, "col": 0, "name": "Derived",
+            "value": 4, "value_type": "auto", "resolved_value_type": "number",
+            "formula": {"source": "=2+2", "version": 1},
+            "formula_state": {"status": "ok"}, "save_history": False,
+        }],
+    })
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.update({"text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=16, name="get_value_history", args={"ref": "A1"})
+
+    payload = json.loads(captured["text"])
+    assert captured["is_error"] is False
+    assert payload["value"] == 4
+    assert payload["save_history"] is False
+    assert payload["history_count"] == 0
+    assert payload["history"] == []
+
+
+def test_get_value_history_applies_retention_bound_and_structured_not_found(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    write_json(os.path.join(bp_dir, "layout.json"), {
+        "slots": [{
+            "type": "value", "row": 0, "col": 0, "name": "Counter",
+            "value": 1004, "value_type": "number", "resolved_value_type": "number",
+            "history": [
+                {"value": index, "value_type": "number", "resolved_value_type": "number", "updated_at": f"t{index:04d}"}
+                for index in range(1005)
+            ],
+        }],
+    })
+    captured = []
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.append({"text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=17, name="get_value_history", args={"ref": "A1"})
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=18, name="get_value_history", args={"ref": "missing"})
+
+    payload = json.loads(captured[0]["text"])
+    assert payload["history_count"] == 1000
+    assert payload["history"][0]["value"] == 5
+    assert payload["history"][-1]["value"] == 1004
+    assert captured[1]["is_error"] is True
+    assert json.loads(captured[1]["text"])["error"] == "not_found"
+
+
 def test_get_formula_returns_source_last_good_result_error_and_dependencies(tmp_workspace, monkeypatch):
     bp_dir = init_workspace(tmp_workspace)
     write_json(os.path.join(bp_dir, "layout.json"), {
@@ -884,6 +978,7 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
     assert "get_value" in tool_names
+    assert "get_value_history" in tool_names
     assert "get_formula" in tool_names
     assert "set_formula" in tool_names
     assert "list_formula_functions" in tool_names
@@ -953,6 +1048,7 @@ def test_main_processes_line_json_initialize_tools_and_list_tasks(tmp_workspace,
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
     assert "get_value" in tool_names
+    assert "get_value_history" in tool_names
     assert "get_formula" in tool_names
     assert "set_formula" in tool_names
     assert "list_formula_functions" in tool_names

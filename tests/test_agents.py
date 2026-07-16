@@ -18,10 +18,17 @@ import server.agents.claude_adapter as claude_mod
 import server.agents.codex_adapter as codex_mod
 import server.agents.opencode_adapter as opencode_mod
 from server import mcp_tools
+from server.agents.mcp_config import tool_names
 from tests.conftest import MockAdapter
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def test_value_history_is_available_to_read_and_interactive_mcp_profiles():
+    assert "get_value_history" in tool_names("read")
+    assert "get_value_history" in tool_names("interactive")
+    assert "get_value_history" not in tool_names("ticket-write")
 
 
 class TestClaudeAdapter:
@@ -691,6 +698,7 @@ class TestAntigravityAdapter:
         assert "update_ticket" in server["enabledTools"]
         assert "list_values" in server["enabledTools"]
         assert "get_value" in server["enabledTools"]
+        assert "get_value_history" in server["enabledTools"]
         assert "set_value" in server["enabledTools"]
         assert "get_formula" in server["enabledTools"]
         assert "set_formula" in server["enabledTools"]

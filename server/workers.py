@@ -1817,6 +1817,7 @@ def _assemble_prompt(bp_dir, worker, task):
         "Bullpen workspace state files are server-owned. Do not edit `.bullpen/layout.json` "
         "or `.bullpen/tasks` directly. For Value worker reads or writes, use the Bullpen MCP "
         "tools. `list_values` and `get_value` return both constants and formula cells; use "
+        "`get_value_history` for the complete retained Value history and current unit hint, and use "
         "`get_formula` for formula source and calculation state. Use `set_formula` to create a "
         "formula Value cell at an empty coordinate or replace a formula on an existing Value cell, "
         "and use `list_formula_functions` to "
