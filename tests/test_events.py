@@ -2226,6 +2226,34 @@ class TestWorkerEvents:
         assert [entry["value"] for entry in moved["history"]] == [30, 0]
         assert layout["calculation"]["evaluated_count"] == 1
 
+    def test_swap_translates_each_formula_from_its_own_origin_atomically(self, client):
+        c, _ = client
+        for col, value in ((2, "10"), (3, "20")):
+            c.emit("worker:add", {
+                "coord": {"col": col, "row": 1}, "type": "value",
+                "fields": {"value": value, "value_type": "auto"},
+            })
+            get_event(c, "layout:updated")
+        for col, formula in ((2, "=C2"), (3, "=D2")):
+            c.emit("worker:add", {
+                "coord": {"col": col, "row": 0}, "type": "value",
+                "fields": {"value": formula, "value_type": "auto"},
+            })
+            get_event(c, "layout:updated")
+
+        c.emit("worker:move", {"from": 2, "to": 3})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        by_coord = {
+            (slot["col"], slot["row"]): slot
+            for slot in updates[0]["slots"] if slot and slot.get("formula")
+        }
+
+        assert by_coord[(2, 0)]["formula"]["source"] == "=C2"
+        assert by_coord[(2, 0)]["value"] == 10
+        assert by_coord[(3, 0)]["formula"]["source"] == "=D2"
+        assert by_coord[(3, 0)]["value"] == 20
+
     def test_duplicate_formula_translates_and_builds_baseline_history(self, client):
         c, _ = client
         c.emit("worker:add", {
@@ -2281,6 +2309,34 @@ class TestWorkerEvents:
         assert layout["slots"][0]["row"] == 2
         assert layout["slots"][1]["col"] == 5
         assert layout["slots"][1]["row"] == 2
+
+    def test_move_formula_group_translates_after_final_layout_atomically(self, client):
+        c, _ = client
+        for row, value in ((35, "10"), (36, "20")):
+            c.emit("worker:add", {
+                "coord": {"col": 2, "row": row}, "type": "value",
+                "fields": {"value": value, "value_type": "auto"},
+            })
+            get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": 37}, "type": "value",
+            "fields": {"value": "=SUM(C36:C37)", "value_type": "auto"},
+        })
+        get_event(c, "layout:updated")
+
+        c.emit("worker:move_group", {"moves": [
+            {"slot": 2, "to_coord": {"col": 3, "row": 37}},
+            {"slot": 0, "to_coord": {"col": 3, "row": 35}},
+            {"slot": 1, "to_coord": {"col": 3, "row": 36}},
+        ]})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        by_coord = {(slot["col"], slot["row"]): slot for slot in updates[0]["slots"] if slot}
+
+        formula = by_coord[(3, 37)]
+        assert formula["formula"]["source"] == "=SUM(D36:D37)"
+        assert formula["value"] == 30
+        assert formula["formula_state"]["status"] == "ok"
 
     def test_move_worker_group_rejects_external_coordinate_collision(self, client):
         c, _ = client
@@ -2339,6 +2395,31 @@ class TestWorkerEvents:
         coords = sorted((clone["col"], clone["row"]) for clone in clones)
         assert coords[1][0] - coords[0][0] == 1
         assert coords[1][1] - coords[0][1] == 1
+
+    def test_duplicate_formula_group_translates_internal_references(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": 35}, "type": "value",
+            "fields": {"value": "10", "value_type": "auto"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": 36}, "type": "value",
+            "fields": {"value": "=C36+1", "value_type": "auto"},
+        })
+        get_event(c, "layout:updated")
+
+        c.emit("worker:duplicate_group", {"slots": [0, 1]})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        clones = [slot for slot in updates[0]["slots"] if slot and slot.get("col") == 3]
+        by_coord = {(slot["col"], slot["row"]): slot for slot in clones}
+
+        assert by_coord[(3, 35)]["value"] == 10
+        formula = by_coord[(3, 36)]
+        assert formula["formula"]["source"] == "=D36+1"
+        assert formula["value"] == 11
+        assert [entry["value"] for entry in formula["history"]] == [11]
 
     def test_paste_worker_rejects_occupied_coord_without_replace(self, client):
         c, _ = client
@@ -2583,6 +2664,34 @@ class TestWorkerEvents:
         literal = by_coord[(3, 37)]
         assert literal["value"] == "=SUM(C36:C37)"
         assert "formula" not in literal
+
+    def test_paste_group_translates_copied_formula_but_not_raw_formula(self, client):
+        c, _ = client
+        copied_formula = {
+            "type": "value", "name": "Copied formula", "col": 2, "row": 37,
+            "value": 30, "value_type": "auto", "resolved_value_type": "number",
+            "formula": {"source": "=SUM(C36:C37)"},
+            "formula_state": {"status": "ok"},
+        }
+        c.emit("worker:paste_group", {"items": [
+            {
+                "coord": {"col": 3, "row": 37},
+                "worker": copied_formula,
+            },
+            {
+                "coord": {"col": 4, "row": 37},
+                "worker": {
+                    "type": "value", "value": "=SUM(C36:C37)",
+                    "value_type": "auto", "_raw_value_input": True,
+                },
+            },
+        ]})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        by_coord = {(slot["col"], slot["row"]): slot for slot in updates[0]["slots"] if slot}
+
+        assert by_coord[(3, 37)]["formula"]["source"] == "=SUM(D36:D37)"
+        assert by_coord[(4, 37)]["formula"]["source"] == "=SUM(C36:C37)"
 
     def test_raw_worksheet_group_is_atomic_when_classification_fails(self, client):
         c, app = client

@@ -2336,6 +2336,21 @@ def register_events(socketio, app):
         else:
             dst_col, dst_row = to_slot % cols, to_slot // cols
 
+        updated_at = _now_iso()
+        _translate_structural_formula(
+            src,
+            {"col": src_col, "row": src_row},
+            {"col": dst_col, "row": dst_row},
+            updated_at=updated_at,
+        )
+        if dst:
+            _translate_structural_formula(
+                dst,
+                {"col": dst_col, "row": dst_row},
+                {"col": src_col, "row": src_row},
+                updated_at=updated_at,
+            )
+
         layout["slots"][from_slot], layout["slots"][to_slot] = dst, src
 
         if layout["slots"][to_slot]:
@@ -2345,8 +2360,19 @@ def register_events(socketio, app):
             layout["slots"][from_slot]["col"] = src_col
             layout["slots"][from_slot]["row"] = src_row
 
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_indices = _layout_formula_indices(layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_indices,
+                updated_at=updated_at,
+                changed_by="worker:move",
+                ws_id=ws_id,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:move_group")
     @with_lock
@@ -2371,14 +2397,39 @@ def register_events(socketio, app):
                 emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
                 return
 
+        updated_at = _now_iso()
+        source_coords = {}
+        for move in moves:
+            slot = move["slot"]
+            worker = layout["slots"][slot]
+            col, row = _slot_coord(worker, slot, cols)
+            source_coords[slot] = {"col": col, "row": row}
+
         for move in moves:
             slot = move["slot"]
             coord = move["to_coord"]
+            _translate_structural_formula(
+                layout["slots"][slot],
+                source_coords[slot],
+                coord,
+                updated_at=updated_at,
+            )
             layout["slots"][slot]["col"] = coord["col"]
             layout["slots"][slot]["row"] = coord["row"]
 
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_indices = _layout_formula_indices(layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_indices,
+                updated_at=updated_at,
+                changed_by="worker:move_group",
+                ws_id=ws_id,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:duplicate")
     @with_lock
@@ -2503,6 +2554,7 @@ def register_events(socketio, app):
             existing_names.add(candidate)
             return candidate
 
+        duplicate_time = _now_iso()
         for member, coord in zip(members, candidate_coords):
             source = member["worker"]
             if str(source.get("type") or "ai") == "ai":
@@ -2513,11 +2565,31 @@ def register_events(socketio, app):
             clone["row"] = coord["row"]
             clone["col"] = coord["col"]
             clone["name"] = unique_copy_name(source.get("name"))
+            source_col, source_row = _slot_coord(source, member["slot"], cols)
+            _translate_structural_formula(
+                clone,
+                {"col": source_col, "row": source_row},
+                coord,
+                updated_at=duplicate_time,
+                reset_result=True,
+            )
             target = _first_empty_slot(layout)
             layout["slots"][target] = clone
 
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_indices = _layout_formula_indices(layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_indices,
+                updated_at=duplicate_time,
+                changed_by="worker:duplicate_group",
+                ws_id=ws_id,
+                deliver_triggers=False,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:paste")
     @with_lock
@@ -2581,8 +2653,10 @@ def register_events(socketio, app):
         paste_updated_at = _now_iso()
         try:
             for item in items:
-                worker = copy_worker_for_fragment(item["worker"])
-                if worker.get("type") == "value" and worker.pop("_raw_value_input", False):
+                source = item["worker"]
+                worker = copy_worker_for_fragment(source)
+                raw_value_input = worker.get("type") == "value" and worker.pop("_raw_value_input", False)
+                if raw_value_input:
                     worker["updated_at"] = paste_updated_at
                     worker["save_history"] = bool(worker["save_history"]) if "save_history" in worker else True
                     input_kind, input_value = _formula_aware_ui_input(worker.get("value", ""))
@@ -2602,6 +2676,18 @@ def register_events(socketio, app):
                         )
                         worker.update(payload)
                         value_mod.append_value_history(worker, paste_updated_at)
+                else:
+                    try:
+                        source_coord = {"col": int(source.get("col")), "row": int(source.get("row"))}
+                    except (TypeError, ValueError):
+                        source_coord = dict(item["coord"])
+                    _translate_structural_formula(
+                        worker,
+                        source_coord,
+                        item["coord"],
+                        updated_at=paste_updated_at,
+                        reset_result=True,
+                    )
                 fragments.append({"coord": item["coord"], "worker": worker})
         except (ValueError, formula_mod.FormulaError) as exc:
             emit("error", {"message": str(exc)})
@@ -2612,10 +2698,7 @@ def register_events(socketio, app):
             emit("error", {"message": e.message, "code": e.code})
             return
         layout = result["layout"]
-        formula_roots = {
-            index for index in result["slots"]
-            if index < len(layout["slots"]) and layout["slots"][index].get("formula")
-        }
+        formula_roots = _layout_formula_indices(layout)
         if formula_roots:
             _commit_formula_generation(
                 bp_dir,
