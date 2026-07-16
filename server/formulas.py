@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import math
 import re
+import copy
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable
 
-from server.values import coord_to_cell_ref, find_value_by_ref, value_ref_warning
+from server.values import append_value_history, coord_to_cell_ref, find_value_by_ref, value_ref_warning
 
 
 FORMULA_VERSION = 1
@@ -100,16 +102,23 @@ def normalize_formula_state(raw: object) -> dict[str, Any]:
     }
 
 
-def formula_error_state(error: FormulaError, *, calculated_at: str = "") -> dict[str, Any]:
+def formula_error_state(
+    error: FormulaError,
+    *,
+    calculated_at: str = "",
+    dependencies: list[str] | None = None,
+    warnings: list[str] | None = None,
+    volatile: bool = False,
+) -> dict[str, Any]:
     return {
         "status": "error",
         "error_code": error.code,
         "error_message": error.message[:512],
         "error_position": error.position,
         "calculated_at": calculated_at,
-        "dependencies": [],
-        "warnings": [],
-        "volatile": False,
+        "dependencies": list(dependencies or []),
+        "warnings": list(warnings or []),
+        "volatile": bool(volatile),
     }
 
 
@@ -558,3 +567,228 @@ def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None
         warnings=evaluator.warnings,
         volatile=evaluator.volatile,
     )
+
+
+def _walk_references(node, refs: list[tuple[str, bool, int]], calls: set[str]) -> None:
+    kind = node[0]
+    if kind == "reference":
+        refs.append((node[1], node[2], node[3]))
+        return
+    if kind == "call":
+        calls.add(node[1])
+        for arg in node[2]:
+            _walk_references(arg, refs, calls)
+        return
+    if kind == "unary":
+        _walk_references(node[2], refs, calls)
+        return
+    if kind == "binary":
+        _walk_references(node[2], refs, calls)
+        _walk_references(node[3], refs, calls)
+
+
+def analyze_formula(source: str, slots: list[Any], *, current_index: int | None = None, cols: int = 4) -> dict[str, Any]:
+    """Parse formula source and resolve direct scalar dependencies without evaluating."""
+    ast = parse_formula(source)
+    refs: list[tuple[str, bool, int]] = []
+    calls: set[str] = set()
+    _walk_references(ast, refs, calls)
+    dependency_indices: list[int] = []
+    dependencies: list[str] = []
+    warnings: list[str] = []
+    for ref, coordinate, position in refs:
+        clean_ref = ref.replace("$", "") if coordinate else ref
+        match = find_value_by_ref(slots, clean_ref, cols=cols)
+        if not match:
+            code = "#REF!" if coordinate else "#NAME?"
+            raise FormulaError(code, f"Value reference not found: {clean_ref}", position)
+        index = int(match["index"])
+        dependency = coord_to_cell_ref(match.get("coord"))
+        if index not in dependency_indices:
+            dependency_indices.append(index)
+        if dependency and dependency not in dependencies:
+            dependencies.append(dependency)
+        warning = value_ref_warning(match)
+        if warning and warning not in warnings:
+            warnings.append(warning)
+    return {
+        "ast": ast,
+        "dependency_indices": dependency_indices,
+        "dependencies": dependencies,
+        "warnings": warnings,
+        "volatile": bool(calls & {"NOW", "TODAY"}),
+    }
+
+
+def _slot_sort_key(slots: list[Any], index: int) -> tuple[int, int, int]:
+    slot = slots[index] if 0 <= index < len(slots) and isinstance(slots[index], dict) else {}
+    try:
+        row = int(slot.get("row", 0))
+        col = int(slot.get("col", 0))
+    except (TypeError, ValueError):
+        row, col = 0, 0
+    return row, col, index
+
+
+def _cycle_nodes(nodes: set[int], edges: dict[int, set[int]]) -> set[int]:
+    """Return nodes in strongly connected components that are actual cycles."""
+    index_counter = [0]
+    indices: dict[int, int] = {}
+    lowlinks: dict[int, int] = {}
+    stack: list[int] = []
+    on_stack: set[int] = set()
+    cycles: set[int] = set()
+
+    def strong_connect(node: int) -> None:
+        indices[node] = index_counter[0]
+        lowlinks[node] = index_counter[0]
+        index_counter[0] += 1
+        stack.append(node)
+        on_stack.add(node)
+        for dependency in edges.get(node, set()):
+            if dependency not in nodes:
+                continue
+            if dependency not in indices:
+                strong_connect(dependency)
+                lowlinks[node] = min(lowlinks[node], lowlinks[dependency])
+            elif dependency in on_stack:
+                lowlinks[node] = min(lowlinks[node], indices[dependency])
+        if lowlinks[node] != indices[node]:
+            return
+        component: list[int] = []
+        while stack:
+            member = stack.pop()
+            on_stack.remove(member)
+            component.append(member)
+            if member == node:
+                break
+        if len(component) > 1 or (len(component) == 1 and component[0] in edges.get(component[0], set())):
+            cycles.update(component)
+
+    for node in sorted(nodes):
+        if node not in indices:
+            strong_connect(node)
+    return cycles
+
+
+def recalculate_layout(
+    layout: dict[str, Any],
+    *,
+    root_indices: set[int] | None = None,
+    cols: int = 4,
+    calculated_at: str,
+    now: datetime | None = None,
+    calculation_id: str | None = None,
+) -> dict[str, Any]:
+    """Recalculate one affected formula generation in place without persistence or events."""
+    slots = layout.get("slots", []) if isinstance(layout, dict) else []
+    formula_indices = {
+        index for index, slot in enumerate(slots)
+        if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
+    }
+    analyses: dict[int, dict[str, Any]] = {}
+    analysis_errors: dict[int, FormulaError] = {}
+    edges: dict[int, set[int]] = {index: set() for index in formula_indices}
+    reverse: dict[int, set[int]] = {}
+    for index in formula_indices:
+        source = slots[index]["formula"]["source"]
+        try:
+            analysis = analyze_formula(source, slots, current_index=index, cols=cols)
+            analyses[index] = analysis
+            for dependency_index in analysis["dependency_indices"]:
+                reverse.setdefault(dependency_index, set()).add(index)
+                if dependency_index in formula_indices:
+                    edges[index].add(dependency_index)
+        except FormulaError as exc:
+            analysis_errors[index] = exc
+
+    if root_indices is None:
+        affected = set(formula_indices)
+    else:
+        affected = {index for index in root_indices if index in formula_indices}
+        pending = list(root_indices)
+        while pending:
+            root = pending.pop(0)
+            for dependent in reverse.get(root, set()):
+                if dependent not in affected:
+                    affected.add(dependent)
+                    pending.append(dependent)
+
+    old_slots = {index: copy.deepcopy(slots[index]) for index in affected}
+    cycles = _cycle_nodes(affected, edges)
+    changed: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+
+    for index in sorted(cycles, key=lambda item: _slot_sort_key(slots, item)):
+        error = FormulaError("#CYCLE!", "Circular formula dependency detected")
+        analysis = analyses.get(index, {})
+        slots[index]["formula_state"] = formula_error_state(
+            error,
+            calculated_at=calculated_at,
+            dependencies=analysis.get("dependencies"),
+            warnings=analysis.get("warnings"),
+            volatile=analysis.get("volatile", False),
+        )
+        errors.append({"index": index, **error.payload()})
+
+    remaining = affected - cycles
+    indegree = {
+        index: len({dep for dep in edges.get(index, set()) if dep in remaining})
+        for index in remaining
+    }
+    ready = sorted((index for index, degree in indegree.items() if degree == 0), key=lambda item: _slot_sort_key(slots, item))
+    order: list[int] = []
+    while ready:
+        index = ready.pop(0)
+        order.append(index)
+        for dependent in reverse.get(index, set()):
+            if dependent not in indegree:
+                continue
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                ready.append(dependent)
+                ready.sort(key=lambda item: _slot_sort_key(slots, item))
+
+    for index in order:
+        slot = slots[index]
+        old_slot = old_slots[index]
+        analysis = analyses.get(index, {})
+        try:
+            if index in analysis_errors:
+                raise analysis_errors[index]
+            source = slot["formula"]["source"]
+            result = evaluate_formula(source, slots, current_index=None, cols=cols, now=now)
+            value, resolved_type = coerce_formula_result(result.value, slot.get("value_type", "auto"))
+            slot["value"] = value
+            slot["resolved_value_type"] = resolved_type
+            slot["formula_state"] = formula_ok_state(result, calculated_at=calculated_at)
+            slot["formula_updated_at"] = calculated_at
+            value_changed = (
+                old_slot.get("value") != value
+                or old_slot.get("resolved_value_type") != resolved_type
+            )
+            if value_changed:
+                slot["updated_at"] = calculated_at
+                append_value_history(slot, calculated_at)
+                changed.append({"index": index, "old_slot": old_slot, "new_slot": copy.deepcopy(slot)})
+        except FormulaError as exc:
+            slot["formula_state"] = formula_error_state(
+                exc,
+                calculated_at=calculated_at,
+                dependencies=analysis.get("dependencies"),
+                warnings=analysis.get("warnings"),
+                volatile=analysis.get("volatile", False),
+            )
+            slot["formula_updated_at"] = calculated_at
+            errors.append({"index": index, **exc.payload()})
+
+    calculation_id = calculation_id or str(uuid.uuid4())
+    return {
+        "calculation_id": calculation_id,
+        "evaluated_count": len(affected),
+        "changed_count": len(changed),
+        "error_count": len(errors),
+        "changed": changed,
+        "errors": errors,
+        "affected_indices": sorted(affected, key=lambda item: _slot_sort_key(slots, item)),
+    }

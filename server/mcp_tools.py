@@ -183,6 +183,20 @@ TOOLS = [
         },
     },
     {
+        "name": "recalculate_value",
+        "description": "Recalculate a formula Value worker and its downstream dependents.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"ref": {"type": "string", "description": "Formula Value coordinate or name"}},
+            "required": ["ref"],
+        },
+    },
+    {
+        "name": "recalculate_all_values",
+        "description": "Recalculate every formula Value worker in the workspace.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "increment_value",
         "description": "Increment a numeric Value worker.",
         "inputSchema": {
@@ -597,6 +611,18 @@ class BullpenClient:
             return None, "Formula was updated but could not be read back"
         return _value_summary(match), None
 
+    def recalculate_formula(self, args: dict[str, Any] | None = None, *, all_values: bool = False) -> tuple[dict[str, Any] | None, str | None]:
+        event_name = "formula:recalculate_all" if all_values else "formula:recalculate"
+        payload = {} if all_values else {"ref": (args or {}).get("ref")}
+        layout, err = self._emit_value_mutation(event_name, payload)
+        if err:
+            return None, err
+        calculation = (layout or {}).get("calculation") or {}
+        return {
+            "workspace_revision": (layout or {}).get("workspace_revision"),
+            **calculation,
+        }, None
+
     def increment_value(self, args: dict[str, Any], *, sign: int = 1) -> tuple[dict[str, Any] | None, str | None]:
         amount = args.get("amount", 1)
         try:
@@ -868,6 +894,20 @@ def handle_call(
         payload, err = client.set_formula(args)
         if err:
             _tool_result(msg_id, json.dumps({"error": "validation", "message": err}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name in {"recalculate_value", "recalculate_all_values"}:
+        if name == "recalculate_value" and not str(args.get("ref", "")).strip():
+            _tool_result(msg_id, "Error: ref is required", is_error=True, mode=io_mode)
+            return
+        if client is None:
+            _tool_result(msg_id, f"Error: {name} unavailable", is_error=True, mode=io_mode)
+            return
+        payload, err = client.recalculate_formula(args, all_values=name == "recalculate_all_values")
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "calculation", "message": err}), is_error=True, mode=io_mode)
             return
         _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
         return

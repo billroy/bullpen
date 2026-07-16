@@ -36,6 +36,8 @@ TOOL_PROFILES = {
         "get_formula",
         "set_value",
         "set_formula",
+        "recalculate_value",
+        "recalculate_all_values",
         "increment_value",
         "decrement_value",
         "speak_text",

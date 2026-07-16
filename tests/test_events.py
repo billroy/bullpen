@@ -204,6 +204,70 @@ def test_worker_configure_cannot_write_formula_result_fields(client):
     assert "formula_state" not in output
 
 
+def test_value_write_recalculates_chain_once_and_two_windows_do_not_duplicate_trigger(client):
+    c1, app = client
+    c2 = socketio.test_client(app)
+    c2.get_received()
+    try:
+        c1.emit("worker:add", {
+            "coord": {"col": 0, "row": 0}, "type": "value",
+            "fields": {"name": "Input", "value": "2", "value_type": "number"},
+        })
+        get_event(c1, "layout:updated")
+        c2.get_received()
+        c1.emit("worker:add", {
+            "coord": {"col": 1, "row": 0}, "type": "value",
+            "fields": {"name": "Calculated", "value": "0", "value_type": "number"},
+        })
+        get_event(c1, "layout:updated")
+        c2.get_received()
+        c1.emit("formula:set", {"ref": "B1", "formula": "=A1*3"})
+        get_event(c1, "layout:updated")
+        c2.get_received()
+        c1.emit("worker:add", {
+            "coord": {"col": 2, "row": 0}, "type": "notification",
+            "fields": {"name": "Formula Watcher"},
+        })
+        watcher_layout = get_event(c1, "layout:updated")
+        c2.get_received()
+        watcher_index = next(
+            index for index, slot in enumerate(watcher_layout["slots"])
+            if slot and slot.get("name") == "Formula Watcher"
+        )
+        c1.emit("worker:configure", {
+            "slot": watcher_index,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "coord",
+                "value_trigger_ref": "B1",
+            },
+        })
+        get_event(c1, "layout:updated")
+        c2.get_received()
+        c1.get_received()
+
+        c1.emit("value:set", {"ref": "A1", "value": 4, "value_type": "number"})
+        events1 = c1.get_received()
+        events2 = c2.get_received()
+        layouts1 = [event["args"][0] for event in events1 if event["name"] == "layout:updated"]
+        initial_generation = next(payload for payload in layouts1 if payload.get("calculation"))
+
+        assert initial_generation["slots"][1]["value"] == 12
+        assert initial_generation["calculation"]["changed_count"] == 1
+        created_events = [event["args"][0] for event in events1 if event["name"] == "task:created"]
+        assert len(created_events) == 1
+        assert sum(event["name"] == "task:created" for event in events2) == 1
+        assert created_events[0]["value_trigger"]["value_coord"] == "B1"
+        workspace = app.config["manager"].all_workspaces()[0]
+        synthetic = [
+            task for task in task_mod.list_tasks(workspace.bp_dir)
+            if task.get("trigger_kind") == "on_value_change"
+        ]
+        assert len(synthetic) == 1
+    finally:
+        c2.disconnect()
+
+
 def test_direct_speech_payload_normalizes_defaults_and_voice():
     payload = events_mod._normalize_direct_speech_payload({"text": "  Hello Bullpen  "})
 

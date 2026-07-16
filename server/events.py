@@ -2514,15 +2514,19 @@ def register_events(socketio, app):
         if worker.get("type") == "ai" and any(k in fields for k in ("agent", "model")):
             _remember_ai_selection(app, worker.get("agent"), worker.get("model"))
 
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
         if value_write_old_slot is not None:
-            _fire_value_change_triggers(
-                bp_dir, layout, slot_index, value_write_old_slot,
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices={slot_index},
                 updated_at=worker.get("updated_at") or _now_iso(),
                 changed_by="worker_configure",
                 ws_id=ws_id,
+                root_events=[(slot_index, value_write_old_slot, "worker_configure")],
             )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
         # If activation or watch_column changed, check for unclaimed tasks
         if ("activation" in fields or "watch_column" in fields):
@@ -2771,6 +2775,61 @@ def register_events(socketio, app):
             except Exception:
                 logging.exception("Failed to schedule value-change worker start")
 
+    def _commit_formula_generation(
+        bp_dir,
+        layout,
+        *,
+        root_indices,
+        updated_at,
+        ws_id,
+        changed_by,
+        root_events=None,
+    ):
+        """Calculate, persist, and broadcast one server-owned formula generation."""
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        generation = formula_mod.recalculate_layout(
+            layout,
+            root_indices=set(root_indices),
+            cols=_safe_legacy_cols(config),
+            calculated_at=updated_at,
+        )
+        try:
+            revision = int(layout.get("workspace_revision") or 0) + 1
+        except (TypeError, ValueError):
+            revision = 1
+        layout["workspace_revision"] = revision
+        _save_layout(bp_dir, layout)
+        event_layout = copy.deepcopy(layout)
+        event_layout["calculation"] = {
+            "workspace_revision": revision,
+            "calculation_id": generation["calculation_id"],
+            "evaluated_count": generation["evaluated_count"],
+            "changed_count": generation["changed_count"],
+            "error_count": generation["error_count"],
+            "errors": generation["errors"][:100],
+        }
+        _emit("layout:updated", event_layout, ws_id)
+
+        trigger_events = list(root_events or [])
+        trigger_events.extend(
+            (item["index"], item["old_slot"], "formula")
+            for item in generation["changed"]
+        )
+        for index, old_slot, event_changed_by in trigger_events:
+            current_layout = _load_layout(bp_dir)
+            if index >= len(current_layout.get("slots", [])) or not current_layout["slots"][index]:
+                continue
+            _fire_value_change_triggers(
+                bp_dir,
+                current_layout,
+                index,
+                old_slot,
+                updated_at=updated_at,
+                changed_by=event_changed_by or changed_by,
+                ws_id=ws_id,
+            )
+        return generation
+
     @socketio.on("value:set")
     @with_lock
     def on_value_set(data):
@@ -2806,13 +2865,14 @@ def register_events(socketio, app):
         slot["updated_at"] = updated_at
         value_mod.append_value_history(slot, updated_at)
         layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
-        _fire_value_change_triggers(
-            bp_dir, layout, match["index"], old_slot,
+        _commit_formula_generation(
+            bp_dir,
+            layout,
+            root_indices={match["index"]},
             updated_at=updated_at,
-            changed_by="value:set",
             ws_id=ws_id,
+            changed_by="value:set",
+            root_events=[(match["index"], old_slot, "value:set")],
         )
 
     @socketio.on("formula:set")
@@ -2842,43 +2902,64 @@ def register_events(socketio, app):
             emit("error", {"message": "Formula is required", "code": "#PARSE!"})
             return
         slot["formula"] = formula
-        try:
-            # Evaluate against a snapshot containing the accepted source while
-            # retaining the previous successful result until evaluation succeeds.
-            result = formula_mod.evaluate_formula(
-                formula["source"], layout.get("slots", []), current_index=match["index"], cols=cols
-            )
-            value_type = data.get("value_type", slot.get("value_type", "auto"))
-            value, resolved_type = formula_mod.coerce_formula_result(result.value, value_type)
-            slot["value"] = value
-            slot["value_type"] = value_mod.normalize_value_type(value_type)
-            slot["resolved_value_type"] = resolved_type
-            slot["formula_state"] = formula_mod.formula_ok_state(result, calculated_at=updated_at)
-            slot["updated_at"] = updated_at
-            if (
-                old_slot.get("value") != value
-                or old_slot.get("resolved_value_type") != resolved_type
-            ):
-                value_mod.append_value_history(slot, updated_at)
-        except formula_mod.FormulaError as exc:
-            # Formula source is authoritative even when it cannot calculate;
-            # preserve the last successful value and expose safe error state.
-            slot["formula_state"] = formula_mod.formula_error_state(exc, calculated_at=updated_at)
+        if "value_type" in data:
+            slot["value_type"] = value_mod.normalize_value_type(data.get("value_type"))
+        slot["formula_state"] = formula_mod.normalize_formula_state({"status": "pending"})
         slot["formula_updated_at"] = updated_at
         layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
-        current = layout["slots"][match["index"]]
-        if current.get("formula_state", {}).get("status") == "ok" and (
-            old_slot.get("value") != current.get("value")
-            or old_slot.get("resolved_value_type") != current.get("resolved_value_type")
-        ):
-            _fire_value_change_triggers(
-                bp_dir, layout, match["index"], old_slot,
-                updated_at=updated_at,
-                changed_by="formula:set",
-                ws_id=ws_id,
-            )
+        _commit_formula_generation(
+            bp_dir,
+            layout,
+            root_indices={match["index"]},
+            updated_at=updated_at,
+            ws_id=ws_id,
+            changed_by="formula:set",
+        )
+
+    @socketio.on("formula:recalculate")
+    @with_lock
+    def on_formula_recalculate(data):
+        data = data or {}
+        ws_id, bp_dir = _resolve(data)
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        ref = str(data.get("ref") or "").strip()
+        if not ref:
+            emit("error", {"message": "formula:recalculate requires ref"})
+            return
+        match = _resolve_value_slot(layout, ref, _safe_legacy_cols(config))
+        if not match:
+            return
+        if not match["slot"].get("formula"):
+            emit("error", {"message": f"Value cell has no formula: {ref}"})
+            return
+        _commit_formula_generation(
+            bp_dir,
+            layout,
+            root_indices={match["index"]},
+            updated_at=_now_iso(),
+            ws_id=ws_id,
+            changed_by="formula:recalculate",
+        )
+
+    @socketio.on("formula:recalculate_all")
+    @with_lock
+    def on_formula_recalculate_all(data):
+        data = data or {}
+        ws_id, bp_dir = _resolve(data)
+        layout = _load_layout(bp_dir)
+        formula_indices = {
+            index for index, slot in enumerate(layout.get("slots", []))
+            if isinstance(slot, dict) and slot.get("formula")
+        }
+        _commit_formula_generation(
+            bp_dir,
+            layout,
+            root_indices=formula_indices,
+            updated_at=_now_iso(),
+            ws_id=ws_id,
+            changed_by="formula:recalculate_all",
+        )
 
     @socketio.on("value:increment")
     @with_lock
@@ -2924,13 +3005,14 @@ def register_events(socketio, app):
         slot["updated_at"] = updated_at
         value_mod.append_value_history(slot, updated_at)
         layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
-        _fire_value_change_triggers(
-            bp_dir, layout, match["index"], old_slot,
+        _commit_formula_generation(
+            bp_dir,
+            layout,
+            root_indices={match["index"]},
             updated_at=updated_at,
-            changed_by="value:increment",
             ws_id=ws_id,
+            changed_by="value:increment",
+            root_events=[(match["index"], old_slot, "value:increment")],
         )
 
     @socketio.on("layout:update")

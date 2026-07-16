@@ -9,6 +9,7 @@ from server.formulas import (
     normalize_formula,
     normalize_formula_state,
     parse_formula,
+    recalculate_layout,
 )
 
 
@@ -134,3 +135,55 @@ def test_result_policy_rejects_wrong_number_and_canonicalizes_boolean():
     with pytest.raises(FormulaError) as caught:
         coerce_formula_result("three", "number")
     assert caught.value.code == "#VALUE!"
+
+
+def test_recalculation_generation_updates_dependency_chain_once_in_order():
+    layout = {"slots": [
+        {"type": "value", "name": "Input", "value": 3, "value_type": "number", "resolved_value_type": "number", "row": 0, "col": 0},
+        {"type": "value", "name": "Double", "value": 0, "value_type": "auto", "resolved_value_type": "number", "row": 0, "col": 1, "formula": {"source": "=A1*2", "version": 1}, "save_history": True},
+        {"type": "value", "name": "PlusOne", "value": 0, "value_type": "auto", "resolved_value_type": "number", "row": 0, "col": 2, "formula": {"source": "=B1+1", "version": 1}, "save_history": True},
+    ]}
+
+    result = recalculate_layout(layout, root_indices={0}, calculated_at="2026-07-16T12:00:00Z")
+
+    assert result["evaluated_count"] == 2
+    assert result["changed_count"] == 2
+    assert result["error_count"] == 0
+    assert [item["index"] for item in result["changed"]] == [1, 2]
+    assert layout["slots"][1]["value"] == 6
+    assert layout["slots"][2]["value"] == 7
+    assert layout["slots"][1]["history"][-1]["value"] == 6
+
+
+def test_recalculation_marks_cycle_and_downstream_error_without_losing_values():
+    layout = {"slots": [
+        {"type": "value", "name": "A", "value": 10, "value_type": "auto", "resolved_value_type": "number", "row": 0, "col": 0, "formula": {"source": "=B1", "version": 1}},
+        {"type": "value", "name": "B", "value": 20, "value_type": "auto", "resolved_value_type": "number", "row": 0, "col": 1, "formula": {"source": "=A1", "version": 1}},
+        {"type": "value", "name": "C", "value": 30, "value_type": "auto", "resolved_value_type": "number", "row": 0, "col": 2, "formula": {"source": "=A1+1", "version": 1}},
+    ]}
+
+    result = recalculate_layout(layout, root_indices=None, calculated_at="2026-07-16T12:00:00Z")
+
+    assert result["changed_count"] == 0
+    assert result["error_count"] == 3
+    assert layout["slots"][0]["value"] == 10
+    assert layout["slots"][1]["value"] == 20
+    assert layout["slots"][2]["value"] == 30
+    assert layout["slots"][0]["formula_state"]["error_code"] == "#CYCLE!"
+    assert layout["slots"][1]["formula_state"]["error_code"] == "#CYCLE!"
+    assert layout["slots"][2]["formula_state"]["error_code"] == "#CYCLE!"
+
+
+def test_recalculation_only_touches_transitive_dependents_of_root():
+    layout = {"slots": [
+        {"type": "value", "value": 2, "value_type": "number", "resolved_value_type": "number", "row": 0, "col": 0},
+        {"type": "value", "value": 5, "value_type": "number", "resolved_value_type": "number", "row": 1, "col": 0},
+        {"type": "value", "value": 0, "value_type": "auto", "resolved_value_type": "number", "row": 0, "col": 1, "formula": {"source": "=A1*2", "version": 1}},
+        {"type": "value", "value": 99, "value_type": "auto", "resolved_value_type": "number", "row": 1, "col": 1, "formula": {"source": "=A2*2", "version": 1}},
+    ]}
+
+    result = recalculate_layout(layout, root_indices={0}, calculated_at="2026-07-16T12:00:00Z")
+
+    assert result["affected_indices"] == [2]
+    assert layout["slots"][2]["value"] == 4
+    assert layout["slots"][3]["value"] == 99
