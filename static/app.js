@@ -1334,8 +1334,9 @@ const app = createApp({
     function removeWorker(slot) {
       const worker = state.layout?.slots?.[slot];
       const confirmMessage = workerDeleteMessage([{ slot, worker }]);
-      if (!confirm(confirmMessage)) return;
+      if (!confirm(confirmMessage)) return false;
       socket.emit('worker:remove', _wsData({ slot }));
+      return true;
     }
     function removeWorkers(slots) {
       const seen = new Set();
@@ -1348,11 +1349,12 @@ const app = createApp({
         if (worker) workers.push({ slot, worker });
       }
       if (workers.length <= 1) {
-        if (workers.length === 1) removeWorker(workers[0].slot);
-        return;
+        if (workers.length === 1) return removeWorker(workers[0].slot);
+        return false;
       }
-      if (!confirm(workerDeleteMessage(workers))) return;
+      if (!confirm(workerDeleteMessage(workers))) return false;
       socket.emit('worker:remove_many', _wsData({ slots: workers.map(({ slot }) => slot) }));
+      return true;
     }
     function moveWorker(from, to) {
       const payload = { from };

@@ -369,9 +369,22 @@ def test_worker_transfer_modal_supports_group_payloads():
 def test_keyboard_worker_commands_use_explicit_selection_scope_only():
     text = _read("static/components/BullpenTab.js")
     assert "this.copyWorker(item.slotIndex, this.isExplicitSelectionActive ? 'selection' : 'item');" in text
-    assert "this.$root.removeWorkers(this.selectedWorkerSlots);" in text
+    assert "const slots = this.selectedWorkerSlots.slice();" in text
+    assert "if (this.$root.removeWorkers(slots) === true) this.moveCursorToDeletedWorkerRegion(slots);" in text
     assert "if (this.isExplicitSelectionActive) {" in text
     assert "this.copyWorker(item.slotIndex, 'connected-group');" not in text
+
+
+def test_worker_group_delete_moves_cursor_to_deleted_region_top_left():
+    text = _read("static/components/BullpenTab.js")
+    assert "topLeftCoordForSlots(slots)" in text
+    assert "moveCursorToDeletedWorkerRegion(slots)" in text
+    assert "col: Math.min(coord.col, item.coord.col)" in text
+    assert "row: Math.min(coord.row, item.coord.row)" in text
+    assert "this.selectedCell = { ...coord };" in text
+    assert "this.selectedWorkerSlots = [];" in text
+    assert "this.selectedWorkerScope = 'none';" in text
+    assert "if (deleted) this.moveCursorToDeletedWorkerRegion(slots.length ? slots : [source]);" in text
 
 
 def test_bullpen_tab_builds_composite_drag_image_for_worker_groups():

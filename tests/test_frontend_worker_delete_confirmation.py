@@ -17,8 +17,9 @@ def test_root_remove_worker_always_confirms_before_delete():
     assert "const confirmMessage = workerDeleteMessage([{ slot, worker }]);" in text
     assert 'Delete worker "${name}"?' in text
     assert 'This worker has ${queued} queued task(s).' in text
-    assert "if (!confirm(confirmMessage)) return;" in text
+    assert "if (!confirm(confirmMessage)) return false;" in text
     assert "socket.emit('worker:remove', _wsData({ slot }));" in text
+    assert "return true;" in text
 
 
 def test_root_remove_workers_confirms_once_for_multiple_delete():
@@ -26,7 +27,8 @@ def test_root_remove_workers_confirms_once_for_multiple_delete():
     assert "function removeWorkers(slots) {" in text
     assert "Delete ${workers.length} workers?" in text
     assert "These workers have ${queued} queued task(s)." in text
-    assert "if (!confirm(workerDeleteMessage(workers))) return;" in text
+    assert "if (!confirm(workerDeleteMessage(workers))) return false;" in text
+    assert "if (workers.length === 1) return removeWorker(workers[0].slot);" in text
     assert "socket.emit('worker:remove_many', _wsData({ slots: workers.map(({ slot }) => slot) }));" in text
     assert "removeWorkers," in text
 

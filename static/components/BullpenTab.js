@@ -1354,6 +1354,34 @@ const BullpenTab = {
         ? `Selected ${this.selectedWorkerSlots.length} workers`
         : `Selected worker ${item.worker.name} at column ${item.coord.col}, row ${item.coord.row}`;
     },
+    topLeftCoordForSlots(slots) {
+      let coord = null;
+      for (const rawSlot of slots || []) {
+        const slot = Number(rawSlot);
+        const item = Number.isInteger(slot) ? this.workerItemBySlot[slot] : null;
+        if (!item?.coord) continue;
+        coord = coord
+          ? {
+              col: Math.min(coord.col, item.coord.col),
+              row: Math.min(coord.row, item.coord.row),
+            }
+          : { ...item.coord };
+      }
+      return coord;
+    },
+    moveCursorToDeletedWorkerRegion(slots) {
+      const coord = this.topLeftCoordForSlots(slots);
+      if (!coord || !this.isWritableCoord(coord)) return;
+      this.selectedCell = { ...coord };
+      this.selectionAnchor = { ...coord };
+      this.selectedWorkerSlots = [];
+      this.selectedWorkerScope = 'none';
+      this.emptyMenuCoord = null;
+      this.emptyMenuPos = null;
+      this.liveMessage = `Empty cell at column ${coord.col}, row ${coord.row}`;
+      this.ensureCoordVisible(coord);
+      this.focusViewport();
+    },
     isDragOverGhost(coord) {
       return !!(this.dragOverCoord && coord &&
         this.dragOverCoord.col === coord.col &&
@@ -1645,14 +1673,15 @@ const BullpenTab = {
       if (!inTextInput && !e.metaKey && !e.ctrlKey && (e.key === 'Delete' || e.key === 'Backspace')) {
         if (this.isExplicitSelectionActive) {
           e.preventDefault();
-          this.$root.removeWorkers(this.selectedWorkerSlots);
+          const slots = this.selectedWorkerSlots.slice();
+          if (this.$root.removeWorkers(slots) === true) this.moveCursorToDeletedWorkerRegion(slots);
           return;
         }
         if (!this.selectedCell) return;
         const item = this.itemAtCoord(this.selectedCell);
         if (!item) return;
         e.preventDefault();
-        this.$root.removeWorker(item.slotIndex);
+        if (this.$root.removeWorker(item.slotIndex) === true) this.moveCursorToDeletedWorkerRegion([item.slotIndex]);
         return;
       }
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
@@ -2460,11 +2489,13 @@ const BullpenTab = {
       const source = Number(slot);
       if (!Number.isInteger(source) || !this.workerItemBySlot[source]) return;
       const slots = this.slotsForMenuScope(source, scope);
+      let deleted = false;
       if (slots.length > 1 && typeof this.$root.removeWorkers === 'function') {
-        this.$root.removeWorkers(slots);
+        deleted = this.$root.removeWorkers(slots) === true;
       } else {
-        this.$root.removeWorker(source);
+        deleted = this.$root.removeWorker(source) === true;
       }
+      if (deleted) this.moveCursorToDeletedWorkerRegion(slots.length ? slots : [source]);
     },
     clipboardTargetsForCoord(coord) {
       if (!this.clipboardWorker || !Array.isArray(this.clipboardWorker.workers)) return [];
