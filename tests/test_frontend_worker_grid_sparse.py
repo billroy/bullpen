@@ -146,6 +146,91 @@ process.stdout.write(JSON.stringify(context.__results));
         assert payload["emptyMenuCoord"] is None, key
 
 
+def test_quick_value_entry_advances_selection_down_after_commit():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "BullpenTab.js"))}, 'utf8');
+const context = {{
+  console,
+  localStorage: {{ getItem: () => null, setItem: () => {{}} }},
+  WorkerCard: {{}},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = BullpenTab.methods;
+  const emitted = [];
+  const visible = [];
+  const component = {{
+    valueShortcutEditor: {{
+      coord: {{ col: 2, row: 3 }},
+      text: '1',
+      error: '',
+    }},
+    selectedCell: {{ col: 2, row: 3 }},
+    selectionAnchor: {{ col: 2, row: 3 }},
+    selectedWorkerSlots: [],
+    selectedWorkerScope: 'none',
+    emptyMenuCoord: null,
+    emptyMenuPos: null,
+    liveMessage: '',
+    $refs: {{ viewport: {{ focus() {{}} }} }},
+    $nextTick(fn) {{ fn(); }},
+    $emit(name, payload) {{ emitted.push({{ name, payload }}); }},
+    isWritableCoord(coord) {{ return coord.col >= 0 && coord.row >= 0; }},
+    itemAtCoord() {{ return null; }},
+    selectCell: methods.selectCell,
+    ensureCoordVisible(coord) {{ visible.push({{ ...coord }}); }},
+    parseValueShortcutText: methods.parseValueShortcutText,
+    closeValueShortcutEditor: methods.closeValueShortcutEditor,
+    advanceValueShortcutSelection: methods.advanceValueShortcutSelection,
+  }};
+  methods.commitValueShortcutEditor.call(component);
+  globalThis.__result = {{
+    emitted,
+    visible,
+    selectedCell: component.selectedCell,
+    selectionAnchor: component.selectionAnchor,
+    selectedWorkerSlots: component.selectedWorkerSlots,
+    selectedWorkerScope: component.selectedWorkerScope,
+    valueShortcutEditor: component.valueShortcutEditor,
+  }};
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["emitted"] == [
+        {
+            "name": "add-worker",
+            "payload": {
+                "coord": {"col": 2, "row": 3},
+                "type": "value",
+                "fields": {
+                    "name": "",
+                    "unit": "",
+                    "value": "1",
+                    "value_type": "auto",
+                    "format": {"kind": "general"},
+                },
+            },
+        }
+    ]
+    assert payload["selectedCell"] == {"col": 2, "row": 4}
+    assert payload["selectionAnchor"] == {"col": 2, "row": 4}
+    assert payload["selectedWorkerSlots"] == []
+    assert payload["selectedWorkerScope"] == "none"
+    assert payload["visible"] == [{"col": 2, "row": 4}]
+    assert payload["valueShortcutEditor"] is None
+
+
 def test_worker_drag_over_empty_cell_tracks_valid_drop_target_for_ghost_highlight():
     text = _read("static/components/BullpenTab.js")
     assert "dragOverCoord: null" in text

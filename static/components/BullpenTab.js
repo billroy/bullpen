@@ -1605,6 +1605,13 @@ const BullpenTab = {
       this.valueShortcutEditor = null;
       if (focusViewport) this.$nextTick(() => this.$refs.viewport?.focus());
     },
+    advanceValueShortcutSelection(coord) {
+      if (!coord) return;
+      const next = { col: coord.col, row: coord.row + 1 };
+      if (!this.isWritableCoord(next)) return;
+      this.selectCell(next);
+      this.ensureCoordVisible(next);
+    },
     commitValueShortcutEditor({ openModal = false } = {}) {
       const editor = this.valueShortcutEditor;
       if (!editor?.coord) return;
@@ -1619,11 +1626,13 @@ const BullpenTab = {
         this.createWorkerAndOpenConfig({ type: 'value', fields: parsed.fields });
         return;
       }
+      const coord = { ...editor.coord };
       this.$emit('add-worker', {
-        coord: { ...editor.coord },
+        coord,
         type: 'value',
         fields: parsed.fields,
       });
+      this.advanceValueShortcutSelection(coord);
       this.closeValueShortcutEditor();
     },
     onValueShortcutKeydown(e) {
