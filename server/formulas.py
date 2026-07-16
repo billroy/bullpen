@@ -6,12 +6,20 @@ import math
 import re
 import copy
 import uuid
+import heapq
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable
 
-from server.values import append_value_history, coord_to_cell_ref, find_value_by_ref, parse_cell_ref, value_ref_warning
+from server.values import (
+    append_value_history,
+    coord_to_cell_ref,
+    iter_value_slots,
+    parse_cell_ref,
+    value_name_key,
+    value_ref_warning,
+)
 
 
 FORMULA_VERSION = 1
@@ -56,6 +64,38 @@ class EvaluationResult:
 @dataclass
 class RangeValue:
     values: list[Any]
+
+
+class FormulaResolver:
+    """Rebuildable in-memory index for one consistent layout snapshot."""
+
+    def __init__(self, slots: list[Any], *, cols: int = 4):
+        self.by_coord: dict[tuple[int, int], dict[str, Any]] = {}
+        names: dict[str, list[dict[str, Any]]] = {}
+        for index, slot, coord in iter_value_slots(slots, cols=cols):
+            item = {"index": index, "slot": slot, "coord": coord}
+            self.by_coord.setdefault((coord["col"], coord["row"]), item)
+            names.setdefault(value_name_key(slot.get("name")), []).append(item)
+        self.by_name: dict[str, dict[str, Any]] = {}
+        for key, matches in names.items():
+            if not key:
+                continue
+            matches.sort(key=lambda item: (item["coord"]["row"], item["coord"]["col"], item["index"]))
+            result = dict(matches[0])
+            result["ambiguous"] = len(matches) > 1
+            result["matches"] = matches
+            self.by_name[key] = result
+
+    def find(self, ref: object) -> dict[str, Any] | None:
+        ref_text = str(ref if ref is not None else "").strip()
+        if not ref_text:
+            return None
+        coord = parse_cell_ref(ref_text)
+        if coord is not None:
+            match = self.by_coord.get((coord["col"], coord["row"]))
+            if match is not None:
+                return {**match, "ambiguous": False}
+        return self.by_name.get(value_name_key(ref_text))
 
 
 _NUMBER_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
@@ -481,7 +521,8 @@ def coerce_formula_result(value: Any, value_type: object = "auto") -> tuple[Any,
 
 
 class Evaluator:
-    def __init__(self, slots: list[Any], *, current_index: int | None = None, cols: int = 4, now: datetime | None = None):
+    def __init__(self, slots: list[Any], *, current_index: int | None = None, cols: int = 4,
+                 now: datetime | None = None, resolver: FormulaResolver | None = None):
         self.slots = slots
         self.current_index = current_index
         self.cols = cols
@@ -489,6 +530,7 @@ class Evaluator:
         self.warnings: list[str] = []
         self.volatile = False
         self.now = now or datetime.now(timezone.utc)
+        self.resolver = resolver or FormulaResolver(slots, cols=cols)
 
     def evaluate(self, node):
         kind = node[0]
@@ -511,7 +553,7 @@ class Evaluator:
 
     def reference(self, ref: str, coordinate: bool, position: int):
         clean_ref = ref.replace("$", "") if coordinate else ref
-        match = find_value_by_ref(self.slots, clean_ref, cols=self.cols)
+        match = self.resolver.find(clean_ref)
         if not match:
             code = "#REF!" if coordinate else "#NAME?"
             raise FormulaError(code, f"Value reference not found: {clean_ref}", position)
@@ -543,7 +585,7 @@ class Evaluator:
         for row in range(min_row, max_row + 1):
             for col in range(min_col, max_col + 1):
                 ref = coord_to_cell_ref({"col": col, "row": row})
-                match = find_value_by_ref(self.slots, ref, cols=self.cols)
+                match = self.resolver.find(ref)
                 if not match:
                     values.append(None)
                     continue
@@ -802,9 +844,10 @@ class Evaluator:
             raise FormulaError("#VALUE!", f"{name} expects {expected} arguments", position)
 
 
-def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None = None, cols: int = 4, now: datetime | None = None) -> EvaluationResult:
+def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None = None, cols: int = 4,
+                     now: datetime | None = None, resolver: FormulaResolver | None = None) -> EvaluationResult:
     ast = parse_formula(source)
-    evaluator = Evaluator(slots, current_index=current_index, cols=cols, now=now)
+    evaluator = Evaluator(slots, current_index=current_index, cols=cols, now=now, resolver=resolver)
     value = evaluator.evaluate(ast)
     if isinstance(value, RangeValue):
         raise FormulaError("#VALUE!", "A range cannot be a top-level formula result")
@@ -852,7 +895,8 @@ def _walk_references(node, refs: list[tuple[str, bool, int, bool]], calls: set[s
         _walk_references(node[3], refs, calls)
 
 
-def analyze_formula(source: str, slots: list[Any], *, current_index: int | None = None, cols: int = 4) -> dict[str, Any]:
+def analyze_formula(source: str, slots: list[Any], *, current_index: int | None = None, cols: int = 4,
+                    resolver: FormulaResolver | None = None) -> dict[str, Any]:
     """Parse formula source and resolve direct scalar dependencies without evaluating."""
     ast = parse_formula(source)
     refs: list[tuple[str, bool, int, bool]] = []
@@ -861,9 +905,10 @@ def analyze_formula(source: str, slots: list[Any], *, current_index: int | None 
     dependency_indices: list[int] = []
     dependencies: list[str] = []
     warnings: list[str] = []
+    resolver = resolver or FormulaResolver(slots, cols=cols)
     for ref, coordinate, position, allow_missing in refs:
         clean_ref = ref.replace("$", "") if coordinate else ref
-        match = find_value_by_ref(slots, clean_ref, cols=cols)
+        match = resolver.find(clean_ref)
         if not match:
             if allow_missing:
                 continue
@@ -958,10 +1003,11 @@ def recalculate_layout(
     analysis_errors: dict[int, FormulaError] = {}
     edges: dict[int, set[int]] = {index: set() for index in formula_indices}
     reverse: dict[int, set[int]] = {}
+    resolver = FormulaResolver(slots, cols=cols)
     for index in formula_indices:
         source = slots[index]["formula"]["source"]
         try:
-            analysis = analyze_formula(source, slots, current_index=index, cols=cols)
+            analysis = analyze_formula(source, slots, current_index=index, cols=cols, resolver=resolver)
             analyses[index] = analysis
             for dependency_index in analysis["dependency_indices"]:
                 reverse.setdefault(dependency_index, set()).add(index)
@@ -1004,18 +1050,18 @@ def recalculate_layout(
         index: len({dep for dep in edges.get(index, set()) if dep in remaining})
         for index in remaining
     }
-    ready = sorted((index for index, degree in indegree.items() if degree == 0), key=lambda item: _slot_sort_key(slots, item))
+    ready = [(_slot_sort_key(slots, index), index) for index, degree in indegree.items() if degree == 0]
+    heapq.heapify(ready)
     order: list[int] = []
     while ready:
-        index = ready.pop(0)
+        _key, index = heapq.heappop(ready)
         order.append(index)
         for dependent in reverse.get(index, set()):
             if dependent not in indegree:
                 continue
             indegree[dependent] -= 1
             if indegree[dependent] == 0:
-                ready.append(dependent)
-                ready.sort(key=lambda item: _slot_sort_key(slots, item))
+                heapq.heappush(ready, (_slot_sort_key(slots, dependent), dependent))
 
     for index in order:
         slot = slots[index]
@@ -1025,7 +1071,7 @@ def recalculate_layout(
             if index in analysis_errors:
                 raise analysis_errors[index]
             source = slot["formula"]["source"]
-            result = evaluate_formula(source, slots, current_index=None, cols=cols, now=now)
+            result = evaluate_formula(source, slots, current_index=None, cols=cols, now=now, resolver=resolver)
             value, resolved_type = coerce_formula_result(result.value, slot.get("value_type", "auto"))
             slot["value"] = value
             slot["resolved_value_type"] = resolved_type

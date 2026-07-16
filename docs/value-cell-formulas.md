@@ -1016,6 +1016,26 @@ within the configured 2-second budget, keep the server responsive, persist once,
 and emit a bounded event payload. Record actual benchmarks rather than making a
 cross-machine millisecond guarantee.
 
+#### Recorded Structural Baseline
+
+The Phase 5E acceptance fixture contains 5,000 Value cells, 1,000 formulas, a
+500-deep dependency chain, and a sparse 100-by-100 range. The measured root
+generation affects 999 formulas, which is deliberately more demanding than the
+500-formula minimum above.
+
+- The initial whole-layout resolver took 19.03 seconds because every scalar and
+  range position performed another linear scan of all Value cells.
+- A generation-scoped, rebuildable coordinate/name resolver plus a heap-based
+  deterministic ready queue reduced the same fixture to approximately 0.04
+  seconds on the development machine.
+- The resolver is derived from the locked final layout snapshot, is never
+  persisted, and is discarded after the generation. No long-lived reverse
+  dependency index is justified by the measured baseline.
+
+The committed performance test enforces the configured two-second ceiling;
+timings remain hardware-dependent, while the evaluator's functional limits and
+deterministic results remain normative.
+
 ### Functional Acceptance
 
 Formula support is ready when:
