@@ -1,7 +1,9 @@
 """Cross-workspace worker transfer (copy/move)."""
 
 import os
+from datetime import datetime, timezone
 
+from server import formulas as formula_mod
 from server.locks import write_lock
 from server.persistence import read_json, write_json
 from server.profiles import get_profile, create_profile
@@ -174,6 +176,25 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
         clone["col"] = target_coord["col"]
         clone["name"] = candidate
 
+        source_col, source_row = _slot_coord(source_worker, source_slot, src_cols)
+        formula = clone.get("formula") if isinstance(clone, dict) else None
+        transfer_time = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        if isinstance(formula, dict) and formula.get("source"):
+            translated = formula_mod.translate_formula_source(
+                formula["source"],
+                source_coord={"col": source_col, "row": source_row},
+                destination_coord=target_coord,
+            )
+            clone["formula"] = formula_mod.normalize_formula(translated)
+            clone["formula_state"] = formula_mod.normalize_formula_state({"status": "pending"})
+            clone["formula_updated_at"] = transfer_time
+            clone["value"] = ""
+            clone["resolved_value_type"] = "string"
+            clone["history"] = []
+            warnings.append(
+                "formula references are workspace-local and were recalculated in the destination"
+            )
+
         # --- Warnings for workspace-local references ---
 
         # disposition: worker:<name> may not resolve in destination
@@ -235,11 +256,33 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
 
         # --- Write destination first (atomic move safety) ---
         dst_slots[target_slot] = clone
+        dst_formula_indices = {
+            index for index, slot in enumerate(dst_slots)
+            if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
+        }
+        if dst_formula_indices:
+            formula_mod.recalculate_layout(
+                dst_layout,
+                root_indices=dst_formula_indices,
+                cols=dst_cols,
+                calculated_at=transfer_time,
+            )
         write_json(os.path.join(dst_ws.bp_dir, "layout.json"), normalize_layout(dst_layout, config=dst_config))
 
         # --- Clear source on move ---
         if mode == "move":
             src_slots[source_slot] = None
+            src_formula_indices = {
+                index for index, slot in enumerate(src_slots)
+                if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
+            }
+            if src_formula_indices:
+                formula_mod.recalculate_layout(
+                    src_layout,
+                    root_indices=src_formula_indices,
+                    cols=src_cols,
+                    calculated_at=transfer_time,
+                )
             write_json(os.path.join(src_ws.bp_dir, "layout.json"), normalize_layout(src_layout, config=src_config))
 
     return {

@@ -403,6 +403,34 @@ class TestAssignTask:
 
 
 class TestWorkerReconcile:
+    def test_reconcile_recalculates_restored_formula_without_extending_history(self, bp_dir):
+        layout = _load_layout(bp_dir)
+        layout["slots"] = [
+            {
+                "type": "value", "name": "Input", "col": 0, "row": 0,
+                "value": 5, "value_type": "auto", "resolved_value_type": "number",
+                "save_history": True, "history": [],
+            },
+            {
+                "type": "value", "name": "Result", "col": 1, "row": 0,
+                "value": 999, "value_type": "auto", "resolved_value_type": "number",
+                "save_history": True,
+                "history": [{"value": 999, "updated_at": "2026-01-01T00:00:00Z"}],
+                "formula": {"source": "=A1*2", "version": 1},
+                "formula_state": {"status": "ok"},
+            },
+        ]
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        reconcile(bp_dir)
+
+        formula = _load_layout(bp_dir)["slots"][1]
+        assert formula["value"] == 10
+        assert formula["formula_state"]["status"] == "ok"
+        assert len(formula["history"]) == 1
+        assert formula["history"][0]["value"] == 999
+        assert formula["history"][0]["updated_at"] == "2026-01-01T00:00:00Z"
+
     def test_reconcile_removes_stale_idle_queue_entries(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Stale queue task")
         update_task(bp_dir, task["id"], {"status": "review", "assigned_to": ""})

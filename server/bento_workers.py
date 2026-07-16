@@ -11,6 +11,7 @@ import re
 import zipfile
 
 from server.bento_carrier import BentoCarrierError, inspect_bento
+from server import formulas as formula_mod
 from server.persistence import read_json, write_json
 from server.profiles import create_profile, get_profile
 from server.worker_types import copy_worker_slot, normalize_layout
@@ -714,6 +715,27 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
             raise BentoCarrierError("Import preview is stale; preview the package again", "stale-preview")
     positions, placement_result = _resolve_import_positions(workers, slots, cols=cols, placement=placement)
 
+    import_time = _created_at()
+    for worker, col, row in positions:
+        formula = worker.get("formula") if isinstance(worker, dict) else None
+        if not isinstance(formula, dict) or not formula.get("source"):
+            continue
+        source_coord = {
+            "col": _safe_int(worker.get("col"), col),
+            "row": _safe_int(worker.get("row"), row),
+        }
+        translated = formula_mod.translate_formula_source(
+            formula["source"],
+            source_coord=source_coord,
+            destination_coord={"col": col, "row": row},
+        )
+        worker["formula"] = formula_mod.normalize_formula(translated)
+        worker["formula_state"] = formula_mod.normalize_formula_state({"status": "pending"})
+        worker["formula_updated_at"] = import_time
+        worker["value"] = ""
+        worker["resolved_value_type"] = "string"
+        worker["history"] = []
+
     imported_profiles = []
     skipped_profiles = []
     for item, profile in profile_payloads:
@@ -745,6 +767,21 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
         config=config,
     )
     layout = fragment_result["layout"]
+    formula_indices = {
+        index for index, slot in enumerate(layout.get("slots", []))
+        if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
+    }
+    if formula_indices:
+        formula_mod.recalculate_layout(
+            layout,
+            root_indices=formula_indices,
+            cols=cols,
+            calculated_at=import_time,
+        )
+        try:
+            layout["workspace_revision"] = int(layout.get("workspace_revision") or 0) + 1
+        except (TypeError, ValueError):
+            layout["workspace_revision"] = 1
     write_json(os.path.join(bp_dir, "layout.json"), layout)
     for profile_id in skipped_profiles:
         warnings.append(f"profile '{profile_id}' already exists and was kept")

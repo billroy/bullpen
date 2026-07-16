@@ -2147,19 +2147,24 @@ def register_events(socketio, app):
             layout["slots"].append(None)
 
         layout["slots"][slot_index] = worker
-        if worker_type == "value" and formula_ui_add:
+        formula_indices = _layout_formula_indices(layout) if worker_type == "value" else set()
+        if formula_indices:
             _commit_formula_generation(
                 bp_dir,
                 layout,
-                root_indices={slot_index},
+                root_indices=formula_indices,
                 updated_at=updated_at,
                 changed_by="worker:add",
                 ws_id=ws_id,
+                root_events=(
+                    [] if formula_ui_add
+                    else [(slot_index, {}, "worker:add")]
+                ),
             )
         else:
             _save_layout(bp_dir, layout)
             _emit("layout:updated", layout, ws_id)
-        if worker_type == "value" and not formula_ui_add:
+        if worker_type == "value" and not formula_ui_add and not formula_indices:
             _fire_value_change_triggers(
                 bp_dir, layout, slot_index, {},
                 updated_at=worker.get("updated_at") or _now_iso(),
@@ -2179,8 +2184,19 @@ def register_events(socketio, app):
             return
 
         layout["slots"][slot_index] = None
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_indices = _layout_formula_indices(layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_indices,
+                updated_at=_now_iso(),
+                changed_by="worker:remove",
+                ws_id=ws_id,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:remove_many")
     @with_lock
@@ -2196,8 +2212,19 @@ def register_events(socketio, app):
 
         for slot in slots:
             layout["slots"][slot] = None
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_indices = _layout_formula_indices(layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_indices,
+                updated_at=_now_iso(),
+                changed_by="worker:remove_many",
+                ws_id=ws_id,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:transfer")
     def on_worker_transfer(data):
@@ -2729,6 +2756,7 @@ def register_events(socketio, app):
             emit("error", {"message": "No worker in slot"})
             return
 
+        original_value_name = str(worker.get("name") or "") if worker.get("type") == "value" else None
         value_write_old_slot = None
         value_payload = None
         formula_ui_write = False
@@ -2780,6 +2808,11 @@ def register_events(socketio, app):
         if worker.get("type") == "ai" and any(k in fields for k in ("agent", "model")):
             _remember_ai_selection(app, worker.get("agent"), worker.get("model"))
 
+        value_name_changed = (
+            worker.get("type") == "value"
+            and "name" in fields
+            and original_value_name != str(worker.get("name") or "")
+        )
         if value_write_old_slot is not None:
             generation_time = (
                 worker.get("formula_updated_at")
@@ -2789,7 +2822,10 @@ def register_events(socketio, app):
             _commit_formula_generation(
                 bp_dir,
                 layout,
-                root_indices={slot_index},
+                root_indices=(
+                    _layout_formula_indices(layout)
+                    if value_name_changed else {slot_index}
+                ),
                 updated_at=generation_time or _now_iso(),
                 changed_by="worker_configure",
                 ws_id=ws_id,
@@ -2797,6 +2833,15 @@ def register_events(socketio, app):
                     [] if formula_ui_write or formula_policy_write
                     else [(slot_index, value_write_old_slot, "worker_configure")]
                 ),
+            )
+        elif value_name_changed:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=_layout_formula_indices(layout),
+                updated_at=_now_iso(),
+                changed_by="worker_configure",
+                ws_id=ws_id,
             )
         else:
             _save_layout(bp_dir, layout)
@@ -2849,8 +2894,21 @@ def register_events(socketio, app):
                         and not worker.get("paused")):
                     changed_watch_columns.append(worker["watch_column"])
 
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        value_name_changed = "name" in fields and any(
+            layout["slots"][slot].get("type") == "value" for slot in slots
+        )
+        if value_name_changed and _layout_formula_indices(layout):
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=_layout_formula_indices(layout),
+                updated_at=_now_iso(),
+                changed_by="worker:configure_many",
+                ws_id=ws_id,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
         for watch_column in changed_watch_columns:
             worker_mod.check_watch_columns(bp_dir, watch_column, socketio, ws_id)
@@ -3523,8 +3581,21 @@ def register_events(socketio, app):
         if not team_layout:
             emit("error", {"message": f"Team not found: {name}"})
             return
-        _save_layout(bp_dir, team_layout)
-        _emit("layout:updated", team_layout, ws_id)
+        formula_indices = _layout_formula_indices(team_layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                team_layout,
+                root_indices=formula_indices,
+                updated_at=_now_iso(),
+                changed_by="team:load",
+                ws_id=ws_id,
+                record_history=False,
+                deliver_triggers=False,
+            )
+        else:
+            _save_layout(bp_dir, team_layout)
+            _emit("layout:updated", team_layout, ws_id)
 
     # --- Execution events ---
 

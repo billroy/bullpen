@@ -2166,6 +2166,36 @@ class TestWorkerEvents:
         layout = get_event(c, "layout:updated")
         assert layout["slots"] == []
 
+    def test_value_create_and_delete_recalculate_coordinate_dependents(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "coord": {"col": 3, "row": 0}, "type": "value",
+            "fields": {"value": "=C1+1", "value_type": "auto"},
+        })
+        layout = get_event(c, "layout:updated")
+        formula_slot = next(i for i, slot in enumerate(layout["slots"]) if slot)
+        assert layout["slots"][formula_slot]["formula_state"]["error_code"] == "#REF!"
+
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": 0}, "type": "value",
+            "fields": {"value": "10", "value_type": "auto"},
+        })
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        formula = updates[0]["slots"][formula_slot]
+        assert formula["value"] == 11
+        value_slot = next(
+            i for i, slot in enumerate(updates[0]["slots"])
+            if slot and (slot.get("col"), slot.get("row")) == (2, 0)
+        )
+
+        c.emit("worker:remove", {"slot": value_slot})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        formula = updates[0]["slots"][formula_slot]
+        assert formula["formula_state"]["error_code"] == "#REF!"
+        assert formula["value"] == 11
+
     def test_move_worker(self, client):
         c, _ = client
         c.emit("worker:add", {"slot": 0, "profile": "feature-architect"})
@@ -2367,6 +2397,56 @@ class TestWorkerEvents:
         assert layout is not None
         assert layout["slots"][0]["paused"] is True
         assert layout["slots"][1]["paused"] is True
+
+    def test_value_rename_recalculates_named_dependents(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "coord": {"col": 0, "row": 0}, "type": "value",
+            "fields": {"name": "Rate", "value": "5", "value_type": "auto"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "coord": {"col": 1, "row": 0}, "type": "value",
+            "fields": {"value": "=[Rate]*2", "value_type": "auto"},
+        })
+        layout = get_event(c, "layout:updated")
+        assert layout["slots"][1]["value"] == 10
+
+        c.emit("worker:configure", {"slot": 0, "fields": {"name": "Hourly Rate"}})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        formula = updates[0]["slots"][1]
+        assert formula["formula_state"]["error_code"] == "#NAME?"
+        assert formula["value"] == 10
+
+    def test_team_load_recalculates_formula_without_bootstrap_history(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "coord": {"col": 0, "row": 0}, "type": "value",
+            "fields": {"value": "5", "value_type": "auto"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "coord": {"col": 1, "row": 0}, "type": "value",
+            "fields": {"value": "=A1*2", "value_type": "auto"},
+        })
+        layout = get_event(c, "layout:updated")
+        original_history = list(layout["slots"][1]["history"])
+        c.emit("team:save", {"name": "formula-team"})
+        get_event(c, "teams:updated")
+
+        team_path = os.path.join(app.config["bp_dir"], "teams", "formula-team.json")
+        team = read_json(team_path)
+        team["slots"][0]["value"] = 7
+        team["slots"][1]["value"] = 999
+        write_json(team_path, team)
+
+        c.emit("team:load", {"name": "formula-team"})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        formula = updates[0]["slots"][1]
+        assert formula["value"] == 14
+        assert formula["history"] == original_history
 
     def test_remove_many_removes_all_requested_workers(self, client):
         c, _ = client

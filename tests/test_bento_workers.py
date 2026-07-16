@@ -372,6 +372,44 @@ def test_bento_import_renames_conflicts_and_rewrites_package_local_bindings(tmp_
     assert imported_right["col"] == 2
 
 
+def test_bento_import_translates_and_recalculates_formula_group(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {"slots": [
+            {
+                "type": "value", "name": "Input", "col": 2, "row": 35,
+                "value": 10, "value_type": "auto", "resolved_value_type": "number",
+                "save_history": True, "history": [],
+            },
+            {
+                "type": "value", "name": "Formula", "col": 2, "row": 36,
+                "value": 11, "value_type": "auto", "resolved_value_type": "number",
+                "save_history": True, "history": [],
+                "formula": {"source": "=C36+1", "version": 1},
+                "formula_state": {"status": "ok"},
+            },
+        ]},
+    )
+    exported = _export_worker(client, kind="worker-group", slots=[0, 1])
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+
+    _import_bento(
+        client,
+        exported["data"],
+        placement={"strategy": "choose-anchor", "anchor": {"col": 3, "row": 35}},
+    )
+
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    by_name = {slot["name"]: slot for slot in layout["slots"] if slot}
+    assert (by_name["Input"]["col"], by_name["Input"]["row"]) == (3, 35)
+    assert by_name["Formula"]["formula"]["source"] == "=D36+1"
+    assert by_name["Formula"]["value"] == 11
+    assert [entry["value"] for entry in by_name["Formula"]["history"]] == [11]
+
+
 def test_bento_import_preserve_reports_placement_conflict(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)

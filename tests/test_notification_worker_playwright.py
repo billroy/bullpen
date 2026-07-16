@@ -15,12 +15,15 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 
 def _free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        try:
-            sock.bind(("127.0.0.1", 0))
-        except PermissionError:
-            pytest.skip("local port binding is not permitted in this sandbox")
-        return sock.getsockname()[1]
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("127.0.0.1", 0))
+            except PermissionError:
+                pytest.skip("local port binding is not permitted in this sandbox")
+            port = sock.getsockname()[1]
+        if port != 5050:
+            return port
 
 
 def _wait_for_server(url, timeout=10.0):

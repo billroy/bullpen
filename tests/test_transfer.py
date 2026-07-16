@@ -92,6 +92,28 @@ class TestTransferCopyBasic:
         assert clone["paused"] is False
         assert clone["expertise_prompt"] == "You are a test worker."
 
+    def test_copy_formula_translates_and_recalculates_at_destination(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+        bp_b = manager.get_bp_dir(id_b)
+        _set_worker(bp_a, 0, _make_worker(
+            "Formula",
+            type="value", col=2, row=37, value=30, value_type="auto",
+            resolved_value_type="number", save_history=True,
+            formula={"source": "=C36+1", "version": 1},
+            formula_state={"status": "ok"}, history=[],
+        ))
+        _set_worker(bp_b, 0, _make_worker("Occupied", col=2, row=37))
+
+        result = transfer_worker(manager, id_a, 0, id_b, None, "copy")
+
+        clone = read_json(os.path.join(bp_b, "layout.json"))["slots"][result["dest_slot"]]
+        assert (clone["col"], clone["row"]) == (3, 37)
+        assert clone["formula"]["source"] == "=D36+1"
+        assert clone["formula_state"]["error_code"] == "#REF!"
+        assert clone["history"] == []
+        assert any("workspace-local" in warning for warning in result["warnings"])
+
 
 class TestTransferMoveBasic:
     def test_move_basic(self, two_workspaces):

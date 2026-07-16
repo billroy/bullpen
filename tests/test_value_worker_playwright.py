@@ -149,6 +149,59 @@ def test_formula_entry_is_reeditable_without_change_in_chromium(formula, expecte
                 proc.kill()
 
 
+def test_drag_formula_translates_source_and_recalculates_in_chromium():
+    with tempfile.TemporaryDirectory(prefix="bullpen_formula_drag_pw_") as workspace:
+        port = _free_port()
+        assert port != 5050
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                page = browser.new_page(locale="en-US")
+                page.goto(base_url)
+                page.get_by_role("button", name="Workers").click()
+                viewport = page.locator(".worker-grid-viewport")
+
+                page.get_by_role("gridcell", name="Empty cell at column 0, row 0").click()
+                viewport.evaluate(
+                    """(element) => {
+                      const clipboard = new DataTransfer();
+                      clipboard.setData('text/plain', '10\\r\\n20\\r\\n=SUM(A1:A2)');
+                      element.dispatchEvent(new ClipboardEvent('paste', {
+                        bubbles: true,
+                        cancelable: true,
+                        clipboardData: clipboard,
+                      }));
+                    }"""
+                )
+                formula_card = page.locator(".worker-card", has=page.locator(".worker-card-formula-badge"))
+                expect(formula_card.locator(".worker-card-value-main")).to_have_text("30")
+
+                destination = page.get_by_role("gridcell", name="Empty cell at column 1, row 2")
+                formula_card.drag_to(destination)
+
+                expect(formula_card.locator(".worker-card-value-main")).to_have_text("0")
+                expect(formula_card.locator(".worker-card-formula-badge")).to_have_text("fx")
+                browser.close()
+
+            with open(os.path.join(workspace, ".bullpen", "layout.json"), encoding="utf-8") as handle:
+                layout = json.load(handle)
+            formula = next(slot for slot in layout["slots"] if slot and slot.get("formula"))
+            assert (formula["col"], formula["row"]) == (1, 2)
+            assert formula["formula"]["source"] == "=SUM(B1:B2)"
+            assert formula["value"] == 0
+            assert [entry["value"] for entry in formula["history"]] == [30, 0]
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def test_scalar_and_rectangular_system_clipboard_paste_in_chromium():
     with tempfile.TemporaryDirectory(prefix="bullpen_value_paste_pw_") as workspace:
         port = _free_port()

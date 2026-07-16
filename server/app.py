@@ -4,7 +4,7 @@ import os
 import re
 import sys
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import atexit
 from time import monotonic
 from urllib.parse import urlparse
@@ -22,6 +22,7 @@ from flask import (
 from flask_socketio import SocketIO, join_room
 
 from server import auth
+from server import formulas as formula_mod
 from server.archive_transport import (
     MAX_IMPORT_ARCHIVE_FILES as _MAX_IMPORT_ARCHIVE_FILES,
     MAX_IMPORT_COMPRESSION_RATIO as _MAX_IMPORT_COMPRESSION_RATIO,
@@ -630,6 +631,22 @@ def reconcile(bp_dir):
     for slot_index, *_sort_fields, task_id in queued:
         slots[slot_index].setdefault("task_queue", []).append(task_id)
 
+    formula_indices = {
+        index for index, slot in enumerate(layout.get("slots", []))
+        if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
+    }
+    if formula_indices:
+        try:
+            formula_cols = int((config.get("grid") or {}).get("cols") or 4)
+        except (TypeError, ValueError):
+            formula_cols = 4
+        formula_mod.recalculate_layout(
+            layout,
+            root_indices=formula_indices,
+            cols=formula_cols if formula_cols > 0 else 4,
+            calculated_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            record_history=False,
+        )
     write_json(layout_path, normalize_layout(layout, config=config))
 
     # Check watched columns for idle on_queue workers with unclaimed tasks
