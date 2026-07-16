@@ -38,6 +38,7 @@ from server.values import (
     unit_labels,
     value_ref_warning,
 )
+from server.formula_functions import list_formula_functions
 from server.formulas import is_formula_stale
 from server.worker_types import NOTIFICATION_SPEECH_ENGINES, normalize_layout
 
@@ -168,6 +169,19 @@ TOOLS = [
                 "ref": {"type": "string", "description": "Value coordinate alias or name"},
             },
             "required": ["ref"],
+        },
+    },
+    {
+        "name": "list_formula_functions",
+        "description": "List supported formula functions, signatures, range support, and examples.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional name, category, signature, or summary filter",
+                },
+            },
         },
     },
     {
@@ -884,11 +898,22 @@ def handle_call(
         _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
         return
 
+    if name == "list_formula_functions":
+        payload = {
+            "functions": list_formula_functions(args.get("query")),
+        }
+        payload["count"] = len(payload["functions"])
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
     if name == "set_formula":
         ref = str(args.get("ref", "")).strip()
         formula = str(args.get("formula", "")).strip()
         if not ref or not formula:
             _tool_result(msg_id, "Error: ref and formula are required", is_error=True, mode=io_mode)
+            return
+        if not formula.startswith("="):
+            _tool_result(msg_id, "Error: formula must begin with =", is_error=True, mode=io_mode)
             return
         if client is None:
             _tool_result(msg_id, "Error: set_formula unavailable", is_error=True, mode=io_mode)

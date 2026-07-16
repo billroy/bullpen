@@ -1815,9 +1815,14 @@ def _assemble_prompt(bp_dir, worker, task):
         )
     parts.append(
         "Bullpen workspace state files are server-owned. Do not edit `.bullpen/layout.json` "
-        "or `.bullpen/tasks` directly. For Value worker reads or writes, use the Bullpen "
-        "`list_values`, `get_value`, and `set_value` MCP tools. Updating a Value worker "
-        "must preserve its existing `name` label unless the task explicitly asks to rename it."
+        "or `.bullpen/tasks` directly. For Value worker reads or writes, use the Bullpen MCP "
+        "tools. `list_values` and `get_value` return both constants and formula cells; use "
+        "`get_formula` for formula source and calculation state. Use `set_formula` to create or "
+        "replace a formula on an existing Value cell, and use `list_formula_functions` to "
+        "discover supported syntax and examples. `set_value` deliberately converts a formula "
+        "cell to a constant, so do not use it to update formula source. Use `recalculate_value` "
+        "or `recalculate_all_values` when explicit recalculation is required. Updating a Value "
+        "worker must preserve its existing `name` label unless the task explicitly asks to rename it."
     )
     prompt_body = _ticket_body_for_prompt(task.get("body", ""))
     if prompt_body:

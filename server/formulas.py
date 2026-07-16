@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable
 
+from server.formula_functions import FORMULA_FUNCTION_NAMES
 from server.values import (
     append_value_history,
     coord_to_cell_ref,
@@ -648,6 +649,8 @@ class Evaluator:
         return flattened
 
     def call(self, name: str, args, position: int):
+        if name not in FORMULA_FUNCTION_NAMES:
+            raise FormulaError("#NAME?", f"Unknown function: {name}", position)
         if name == "IF":
             if len(args) not in {2, 3}:
                 raise FormulaError("#VALUE!", "IF expects 2 or 3 arguments", position)

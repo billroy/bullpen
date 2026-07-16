@@ -1556,7 +1556,12 @@ class TestPromptAssembly:
         prompt = _assemble_prompt(bp_dir, worker, task_data)
 
         assert "Do not edit `.bullpen/layout.json`" in prompt
-        assert "`list_values`, `get_value`, and `set_value` MCP tools" in prompt
+        assert "`list_values` and `get_value` return both constants and formula cells" in prompt
+        assert "use `get_formula` for formula source and calculation state" in prompt
+        assert "Use `set_formula` to create or replace a formula" in prompt
+        assert "use `list_formula_functions` to discover supported syntax and examples" in prompt
+        assert "`set_value` deliberately converts a formula cell to a constant" in prompt
+        assert "Use `recalculate_value` or `recalculate_all_values`" in prompt
         assert "preserve its existing `name` label" in prompt
 
     def test_task_metadata_is_delimited_as_untrusted(self, bp_dir, worker_slot):

@@ -721,6 +721,7 @@ set_value(ref, value, value_type?)
 set_formula(ref, formula, value_type?)
 get_value(ref)
 get_formula(ref)
+list_formula_functions(query?)
 recalculate_value(ref)
 recalculate_all_values()
 ```
@@ -735,6 +736,9 @@ Rules:
   the error or stale state.
 - `get_formula` returns source, status, safe error, last successful value,
   timestamps, resolved direct dependencies, and duplicate-name warnings.
+- `list_formula_functions` returns the supported public function names,
+  signatures, categories, range support, summaries, and examples. An optional
+  query filters those fields for agent and UI discovery.
 - Recalculation responses include `calculation_id`, evaluated/changed/error
   counts, duration, and per-cell errors capped to a reasonable response size.
 - MCP formula writes and recalculation use the same workspace lock, evaluator,

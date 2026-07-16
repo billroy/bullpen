@@ -19,6 +19,7 @@ TOOL_PROFILES = {
         "list_values",
         "get_value",
         "get_formula",
+        "list_formula_functions",
     },
     "ticket-write": {
         "list_tickets",
@@ -34,6 +35,7 @@ TOOL_PROFILES = {
         "list_values",
         "get_value",
         "get_formula",
+        "list_formula_functions",
         "set_value",
         "set_formula",
         "recalculate_value",

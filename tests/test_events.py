@@ -159,10 +159,11 @@ def test_formula_set_calculates_on_server_and_constant_write_clears_formula(clie
     assert output["formula_state"]["status"] == "ok"
     assert output["formula_state"]["dependencies"] == ["A1"]
 
-    c.emit("value:set", {"ref": "B1", "value": "literal", "value_type": "string"})
+    c.emit("value:set", {"ref": "B1", "value": "=2+2", "value_type": "auto"})
     layout = get_event(c, "layout:updated")
     output = layout["slots"][1]
-    assert output["value"] == "literal"
+    assert output["value"] == "=2+2"
+    assert output["resolved_value_type"] == "string"
     assert "formula" not in output
     assert "formula_state" not in output
 

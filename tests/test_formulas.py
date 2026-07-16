@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from server.formula_functions import FORMULA_FUNCTIONS, FORMULA_FUNCTION_NAMES
 from server.formulas import (
     FormulaError,
     coerce_formula_result,
@@ -186,6 +187,13 @@ def test_volatile_functions_use_injected_server_clock():
     assert current.value == "2026-07-16T15:30:00Z"
     assert today.volatile is True
     assert current.volatile is True
+
+
+def test_public_function_catalog_examples_are_supported_by_evaluator():
+    assert len(FORMULA_FUNCTION_NAMES) == len(FORMULA_FUNCTIONS)
+    for entry in FORMULA_FUNCTIONS:
+        result = evaluate_formula(entry["examples"][0], [])
+        assert result is not None, entry["name"]
 
 
 def test_volatile_staleness_is_derived_without_mutating_formula_state():

@@ -94,6 +94,32 @@ class _ValueClient:
         return self.payload, self.err
 
 
+class _FormulaClient:
+    def __init__(self, payload=None, err=None):
+        self.payload = payload or {
+            "ref": "B1",
+            "value": 4,
+            "formula": {"source": "=A1*2", "version": 1},
+            "formula_state": {"status": "ok", "dependencies": ["A1"]},
+        }
+        self.err = err
+        self.calls = []
+
+    def set_formula(self, args):
+        self.calls.append(("set_formula", args))
+        return self.payload, self.err
+
+    def recalculate_formula(self, args, *, all_values=False):
+        self.calls.append(("recalculate", args, all_values))
+        return {
+            "workspace_revision": 9,
+            "calculation_id": "calc-1",
+            "evaluated_count": 2,
+            "changed_count": 1,
+            "error_count": 0,
+        }, self.err
+
+
 class _SpeakClient:
     def __init__(self, payload=None, err=None):
         self.payload = payload or {"ok": True, "id": "mcp_speech_1", "engine": "kokoro", "voice": "", "text": "Hello"}
@@ -358,6 +384,124 @@ def test_get_value_returns_structured_not_found(tmp_workspace, monkeypatch):
 
     assert captured["is_error"] is True
     assert json.loads(captured["text"])["error"] == "not_found"
+
+
+def test_get_formula_returns_source_last_good_result_error_and_dependencies(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    write_json(os.path.join(bp_dir, "layout.json"), {
+        "slots": [{
+            "type": "value",
+            "row": 0,
+            "col": 0,
+            "name": "Broken total",
+            "value": 12,
+            "value_type": "auto",
+            "resolved_value_type": "number",
+            "formula": {"source": "=B1+1", "version": 1},
+            "formula_state": {
+                "status": "error",
+                "error_code": "#REF!",
+                "error_message": "Value reference not found: B1",
+                "dependencies": ["B1"],
+            },
+            "formula_updated_at": "2026-07-16T13:00:00Z",
+        }],
+    })
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.update({"id": msg_id, "text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=140, name="get_formula", args={"ref": "A1"})
+
+    payload = json.loads(captured["text"])
+    assert captured["is_error"] is False
+    assert payload["value"] == 12
+    assert payload["formula"] == {"source": "=B1+1", "version": 1}
+    assert payload["formula_state"]["status"] == "error"
+    assert payload["formula_state"]["error_code"] == "#REF!"
+    assert payload["formula_state"]["dependencies"] == ["B1"]
+
+
+def test_get_formula_rejects_constant_value(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    write_json(os.path.join(bp_dir, "layout.json"), {
+        "slots": [{
+            "type": "value", "row": 0, "col": 0, "name": "Constant",
+            "value": 3, "value_type": "number", "resolved_value_type": "number",
+        }],
+    })
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.update({"text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+    mcp_tools.handle_call(bp_dir, client=None, msg_id=141, name="get_formula", args={"ref": "A1"})
+
+    assert captured["is_error"] is True
+    assert json.loads(captured["text"])["error"] == "not_formula"
+
+
+def test_list_formula_functions_is_searchable_and_machine_readable(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    captured = {}
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.update({"text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+    mcp_tools.handle_call(
+        bp_dir,
+        client=None,
+        msg_id=142,
+        name="list_formula_functions",
+        args={"query": "financial"},
+    )
+
+    payload = json.loads(captured["text"])
+    assert captured["is_error"] is False
+    assert payload["count"] == 4
+    assert {item["name"] for item in payload["functions"]} == {"PV", "FV", "PMT", "NPV"}
+    assert all(item["signature"] and item["summary"] and item["examples"] for item in payload["functions"])
+
+
+def test_formula_mutation_tools_validate_and_dispatch(tmp_workspace, monkeypatch):
+    bp_dir = init_workspace(tmp_workspace)
+    client = _FormulaClient()
+    captured = []
+
+    def fake_tool_result(msg_id, text, is_error=False, mode="framed"):
+        captured.append({"id": msg_id, "text": text, "is_error": is_error})
+
+    monkeypatch.setattr(mcp_tools, "_tool_result", fake_tool_result)
+    mcp_tools.handle_call(
+        bp_dir, client=client, msg_id=143, name="set_formula",
+        args={"ref": "B1", "formula": "A1*2"},
+    )
+    mcp_tools.handle_call(
+        bp_dir, client=client, msg_id=144, name="set_formula",
+        args={"ref": "B1", "formula": "=A1*2", "value_type": "number"},
+    )
+    mcp_tools.handle_call(
+        bp_dir, client=client, msg_id=145, name="recalculate_value", args={"ref": "B1"},
+    )
+    mcp_tools.handle_call(
+        bp_dir, client=client, msg_id=146, name="recalculate_all_values", args={},
+    )
+
+    assert captured[0] == {"id": 143, "text": "Error: formula must begin with =", "is_error": True}
+    assert client.calls == [
+        ("set_formula", {"ref": "B1", "formula": "=A1*2", "value_type": "number"}),
+        ("recalculate", {"ref": "B1"}, False),
+        ("recalculate", {}, True),
+    ]
+    formula_payload = json.loads(captured[1]["text"])
+    assert formula_payload["formula"]["source"] == "=A1*2"
+    assert formula_payload["formula_state"]["dependencies"] == ["A1"]
+    assert json.loads(captured[2]["text"])["calculation_id"] == "calc-1"
+    assert json.loads(captured[3]["text"])["evaluated_count"] == 2
 
 
 def test_set_and_increment_value_dispatch_through_client(tmp_workspace, monkeypatch):
@@ -731,6 +875,11 @@ def test_main_processes_framed_initialize_tools_and_list_tasks(tmp_workspace, mo
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
     assert "get_value" in tool_names
+    assert "get_formula" in tool_names
+    assert "set_formula" in tool_names
+    assert "list_formula_functions" in tool_names
+    assert "recalculate_value" in tool_names
+    assert "recalculate_all_values" in tool_names
     assert "speak_text" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
@@ -795,6 +944,11 @@ def test_main_processes_line_json_initialize_tools_and_list_tasks(tmp_workspace,
     assert "list_tasks" in tool_names
     assert "list_tickets_by_title" in tool_names
     assert "get_value" in tool_names
+    assert "get_formula" in tool_names
+    assert "set_formula" in tool_names
+    assert "list_formula_functions" in tool_names
+    assert "recalculate_value" in tool_names
+    assert "recalculate_all_values" in tool_names
     assert "speak_text" in tool_names
     summary = json.loads(responses[2]["result"]["content"][0]["text"])
     ids = {item["id"] for item in summary}
