@@ -109,7 +109,8 @@ def test_value_worker_small_card_shows_value_in_header():
     assert "{{ valueDisplay || 'Empty' }}" in card
     assert "const unit = String(this.worker?.unit || '').trim();" in card
     assert "const source = this.worker?.formula?.source || this.storedValueText;" in card
-    assert "return `${unit ? `${name}/${unit}` : name}:${source}`;" in card
+    assert "const label = unit ? `${name}/${unit}` : name;" in card
+    assert "return label ? `${label}:${source}` : source;" in card
     assert ".worker-card-compact-value {" in css
     assert ".worker-card-compact-value-button {" in css
     assert ".worker-card-compact-value-editor {" in css
@@ -751,6 +752,26 @@ vm.runInContext(source + `
     namedParsed: methods.parseValueEditText.call(component, 'net total/eur:=SUM(C36:C37)'),
     escaped: methods.parseValueEditText.call(component, "'=SUM(C36:C37)"),
     sourceText: WorkerCard.computed.valueEditSourceText.call(component),
+    roundTrips: [
+      '=2+2*3',
+      '=SUM(C36:C37)',
+      '="Hello, world: [ok] (v1)! #50% / path?"',
+    ].map(source => {{
+      const roundTripCalls = [];
+      const blank = {{
+        worker: {{ type: 'value', name: '', unit: '', value_type: 'auto', formula: {{ source }} }},
+        storedValueText: 'computed',
+        valueEditIncludesName: true,
+        slotIndex: 9,
+        parseValueEditText: methods.parseValueEditText,
+        validateValueEditText: methods.validateValueEditText,
+        cancelValueEdit() {{}},
+        $root: {{ saveWorkerConfig(payload) {{ roundTripCalls.push(payload); }} }},
+      }};
+      blank.valueEditText = WorkerCard.computed.valueEditSourceText.call(blank);
+      methods.commitValueEdit.call(blank);
+      return {{ source, editText: blank.valueEditText, calls: roundTripCalls }};
+    }}),
   }};
   methods.commitValueEdit.call(component);
   globalThis.__result.calls = calls;
@@ -765,6 +786,12 @@ process.stdout.write(JSON.stringify(context.__result));
     assert payload["namedParsed"] == {"name": "net total", "unit": "eur", "value": "=SUM(C36:C37)"}
     assert payload["escaped"] == {"name": "total", "unit": "usd", "value": "'=SUM(C36:C37)"}
     assert payload["sourceText"] == "total/usd:=SUM(C36:C37)"
+    for item in payload["roundTrips"]:
+        assert item["editText"] == item["source"]
+        assert item["calls"] == [{
+            "slot": 9,
+            "fields": {"formula_source": item["source"], "name": "", "unit": ""},
+        }]
     assert payload["calls"] == [{
         "slot": 8,
         "fields": {"formula_source": "=SUM(C36:C37)", "name": "net total", "unit": "eur"},

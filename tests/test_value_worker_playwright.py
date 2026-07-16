@@ -89,8 +89,16 @@ def test_value_number_formatting_and_string_preservation_in_chromium():
                 proc.kill()
 
 
-def test_typing_formula_into_empty_cell_calculates_in_chromium():
-    """Cover the worksheet shortcut that creates a Value via worker:add."""
+@pytest.mark.parametrize(
+    ("formula", "expected_text", "expected_value"),
+    [
+        ("=2+2*3", "8", 8),
+        ("=SUM(C36:C37)", "0", 0),
+        ('="Hello, world: [ok] (v1)! #50% / path?"', "Hello, world: [ok] (v1)! #50% / path?", "Hello, world: [ok] (v1)! #50% / path?"),
+    ],
+)
+def test_formula_entry_is_reeditable_without_change_in_chromium(formula, expected_text, expected_value):
+    """Formula source must survive a compact-editor double-click/Enter round trip."""
     with tempfile.TemporaryDirectory(prefix="bullpen_formula_add_pw_") as workspace:
         port = _free_port()
         proc = _start_server(workspace, port)
@@ -106,35 +114,33 @@ def test_typing_formula_into_empty_cell_calculates_in_chromium():
 
                 viewport = page.locator(".worker-grid-viewport")
                 viewport.focus()
-                page.keyboard.type("=2+2")
+                page.keyboard.type("=")
                 editor = page.get_by_role("textbox", name="Create value worker")
-                expect(editor).to_have_value("=2+2")
+                editor.fill(formula)
+                expect(editor).to_have_value(formula)
                 editor.press("Enter")
 
                 card = page.locator(".worker-card", has=page.locator(".worker-card-formula-badge"))
-                expect(card.locator(".worker-card-value-main")).to_have_text("4")
+                expect(card.locator(".worker-card-value-main")).to_have_text(expected_text)
                 expect(card.locator(".worker-card-formula-badge")).to_have_text("fx")
 
                 page.get_by_role("button", name="Small Rows", exact=True).click()
                 compact_value = page.get_by_role("button", name="Edit name and value", exact=True)
-                compact_value.click()
+                expect(compact_value).to_have_text(expected_text)
+                compact_value.dblclick()
                 compact_editor = page.get_by_role("textbox", name="Edit name and value", exact=True)
-                expect(compact_editor).to_have_value(":=2+2")
-                compact_editor.fill("=SUM(C36:C37)")
+                expect(compact_editor).to_have_value(formula)
                 compact_editor.press("Enter")
-                expect(compact_value).to_have_text("0")
-
-                compact_value.click()
-                expect(compact_editor).to_have_value(":=SUM(C36:C37)")
-                compact_editor.press("Escape")
+                expect(compact_value).to_have_text(expected_text)
                 browser.close()
 
             with open(os.path.join(workspace, ".bullpen", "layout.json"), encoding="utf-8") as handle:
                 layout = json.load(handle)
             worker = next(slot for slot in layout["slots"] if slot and slot.get("type") == "value")
-            assert worker["value"] == 0
-            assert worker["formula"] == {"source": "=SUM(C36:C37)", "version": 1}
+            assert worker["value"] == expected_value
+            assert worker["formula"] == {"source": formula, "version": 1}
             assert worker["formula_state"]["status"] == "ok"
+            assert len(worker["history"]) == 1
         finally:
             proc.terminate()
             try:

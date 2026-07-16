@@ -746,7 +746,8 @@ const WorkerCard = {
       const name = String(this.worker?.name || '').trim();
       const unit = String(this.worker?.unit || '').trim();
       const source = this.worker?.formula?.source || this.storedValueText;
-      return `${unit ? `${name}/${unit}` : name}:${source}`;
+      const label = unit ? `${name}/${unit}` : name;
+      return label ? `${label}:${source}` : source;
     },
     showCompactValue() {
       return this.isValue && this.effectiveLayoutMode === 'small';

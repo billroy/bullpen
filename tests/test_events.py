@@ -291,6 +291,40 @@ def test_ui_formula_result_type_change_preserves_and_recalculates_formula(client
     assert worker["formula_state"]["status"] == "ok"
 
 
+@pytest.mark.parametrize(
+    ("formula", "expected"),
+    [
+        ("=2+2*3", 8),
+        ("=SUM(C36:C37)", 30),
+        ('="Hello, world: [ok] (v1)! #50% / path?"', "Hello, world: [ok] (v1)! #50% / path?"),
+    ],
+)
+def test_reentering_formula_source_preserves_source_value_and_history(client, formula, expected):
+    c, _app = client
+    for row, value in ((35, "10"), (36, "20")):
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": row}, "type": "value",
+            "fields": {"value": value, "value_type": "auto"},
+        })
+        get_event(c, "layout:updated")
+
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 0}, "type": "value",
+        "fields": {"value": formula, "value_type": "auto"},
+    })
+    before = get_event(c, "layout:updated")["slots"][2]
+    before_history = list(before["history"])
+
+    c.emit("formula:set", {"ref": "A1", "formula": formula})
+    after = get_event(c, "layout:updated")["slots"][2]
+
+    assert before["formula"]["source"] == formula
+    assert after["formula"]["source"] == formula
+    assert before["value"] == expected
+    assert after["value"] == expected
+    assert after["history"] == before_history
+
+
 def test_formula_error_persists_source_and_preserves_last_successful_value(client):
     c, _app = client
     c.emit("worker:add", {
