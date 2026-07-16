@@ -117,6 +117,33 @@ def _formula_aware_ui_input(value):
     return "value", value
 
 
+def _translate_structural_formula(slot, source_coord, destination_coord, *, updated_at, reset_result=False):
+    """Translate one formula slot in place for a structural destination."""
+    formula = slot.get("formula") if isinstance(slot, dict) else None
+    if not isinstance(formula, dict) or not formula.get("source"):
+        return False
+    translated = formula_mod.translate_formula_source(
+        formula["source"],
+        source_coord=source_coord,
+        destination_coord=destination_coord,
+    )
+    slot["formula"] = formula_mod.normalize_formula(translated)
+    slot["formula_state"] = formula_mod.normalize_formula_state({"status": "pending"})
+    slot["formula_updated_at"] = updated_at
+    if reset_result:
+        slot["value"] = ""
+        slot["resolved_value_type"] = "string"
+        slot["history"] = []
+    return True
+
+
+def _layout_formula_indices(layout):
+    return {
+        index for index, slot in enumerate(layout.get("slots", []))
+        if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
+    }
+
+
 def _condition_result(operator, configured_value, *, matched, coerced_value=None, coerced_value_type=None, error=None):
     return {
         "matched": bool(matched),
@@ -2271,10 +2298,25 @@ def register_events(socketio, app):
             if occupied_slot is not None:
                 emit("error", {"message": "Coordinate already occupied", "code": "coordinate_collision"})
                 return
-            layout["slots"][from_slot]["col"] = to_coord["col"]
-            layout["slots"][from_slot]["row"] = to_coord["row"]
-            _save_layout(bp_dir, layout)
-            _emit("layout:updated", layout, ws_id)
+            worker = layout["slots"][from_slot]
+            source_coord = {"col": _slot_coord(worker, from_slot, cols)[0], "row": _slot_coord(worker, from_slot, cols)[1]}
+            updated_at = _now_iso()
+            _translate_structural_formula(worker, source_coord, to_coord, updated_at=updated_at)
+            worker["col"] = to_coord["col"]
+            worker["row"] = to_coord["row"]
+            formula_indices = _layout_formula_indices(layout)
+            if formula_indices:
+                _commit_formula_generation(
+                    bp_dir,
+                    layout,
+                    root_indices=formula_indices,
+                    updated_at=updated_at,
+                    changed_by="worker:move",
+                    ws_id=ws_id,
+                )
+            else:
+                _save_layout(bp_dir, layout)
+                _emit("layout:updated", layout, ws_id)
             return
 
         # Ensure slots list is large enough
@@ -2380,9 +2422,30 @@ def register_events(socketio, app):
         clone["col"] = target_coord["col"]
         clone["name"] = candidate
 
+        duplicate_time = _now_iso()
+        _translate_structural_formula(
+            clone,
+            {"col": source_col, "row": source_row},
+            target_coord,
+            updated_at=duplicate_time,
+            reset_result=True,
+        )
+
         layout["slots"][target] = clone
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_indices = _layout_formula_indices(layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_indices,
+                updated_at=duplicate_time,
+                changed_by="worker:duplicate",
+                ws_id=ws_id,
+                deliver_triggers=False,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:duplicate_group")
     @with_lock
@@ -2468,10 +2531,23 @@ def register_events(socketio, app):
 
         layout = _load_layout(bp_dir)
         config = read_json(os.path.join(bp_dir, "config.json"))
+        pasted_worker = copy_worker_for_fragment(source)
+        paste_time = _now_iso()
+        try:
+            source_coord = {"col": int(source.get("col")), "row": int(source.get("row"))}
+        except (TypeError, ValueError):
+            source_coord = dict(coord)
+        _translate_structural_formula(
+            pasted_worker,
+            source_coord,
+            coord,
+            updated_at=paste_time,
+            reset_result=True,
+        )
         try:
             result = apply_worker_fragments_to_layout(
                 layout,
-                [{"coord": coord, "worker": copy_worker_for_fragment(source)}],
+                [{"coord": coord, "worker": pasted_worker}],
                 config=config,
                 replace=bool(data.get("replace")),
             )
@@ -2479,8 +2555,20 @@ def register_events(socketio, app):
             emit("error", {"message": e.message, "code": e.code})
             return
         layout = result["layout"]
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
+        formula_indices = _layout_formula_indices(layout)
+        if formula_indices:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices=formula_indices,
+                updated_at=paste_time,
+                changed_by="worker:paste",
+                ws_id=ws_id,
+                deliver_triggers=False,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:paste_group")
     @with_lock

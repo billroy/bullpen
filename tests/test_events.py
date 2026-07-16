@@ -2198,6 +2198,72 @@ class TestWorkerEvents:
         assert err is not None
         assert err["code"] == "coordinate_collision"
 
+    def test_move_formula_to_coordinate_translates_and_recalculates(self, client):
+        c, _ = client
+        for row, value in ((35, "10"), (36, "20")):
+            c.emit("worker:add", {
+                "coord": {"col": 2, "row": row}, "type": "value",
+                "fields": {"value": value, "value_type": "auto"},
+            })
+            get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": 37}, "type": "value",
+            "fields": {"value": "=SUM(C36:C37)", "value_type": "auto"},
+        })
+        layout = get_event(c, "layout:updated")
+        formula_slot = next(i for i, slot in enumerate(layout["slots"]) if slot and slot.get("formula"))
+
+        c.emit("worker:move", {"from": formula_slot, "to_coord": {"col": 3, "row": 37}})
+        updates = get_all_events(c, "layout:updated")
+        assert len(updates) == 1
+        layout = updates[0]
+        moved = layout["slots"][formula_slot]
+
+        assert (moved["col"], moved["row"]) == (3, 37)
+        assert moved["formula"]["source"] == "=SUM(D36:D37)"
+        assert moved["value"] == 0
+        assert moved["formula_state"]["status"] == "ok"
+        assert [entry["value"] for entry in moved["history"]] == [30, 0]
+        assert layout["calculation"]["evaluated_count"] == 1
+
+    def test_duplicate_formula_translates_and_builds_baseline_history(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": 37}, "type": "value",
+            "fields": {"value": "=2+2", "value_type": "auto"},
+        })
+        layout = get_event(c, "layout:updated")
+        source_slot = next(i for i, slot in enumerate(layout["slots"]) if slot)
+
+        c.emit("worker:duplicate", {"slot": source_slot})
+        layout = get_event(c, "layout:updated")
+        clone = next(slot for i, slot in enumerate(layout["slots"]) if slot and i != source_slot)
+
+        assert (clone["col"], clone["row"]) == (3, 37)
+        assert clone["formula"]["source"] == "=2+2"
+        assert clone["value"] == 4
+        assert [entry["value"] for entry in clone["history"]] == [4]
+
+    def test_single_formula_paste_translates_and_recalculates(self, client):
+        c, _ = client
+        c.emit("worker:add", {
+            "coord": {"col": 2, "row": 37}, "type": "value",
+            "fields": {"value": "=C36+1", "value_type": "auto"},
+        })
+        source_layout = get_event(c, "layout:updated")
+        source = next(slot for slot in source_layout["slots"] if slot)
+
+        c.emit("worker:paste", {
+            "coord": {"col": 3, "row": 37},
+            "worker": source,
+        })
+        layout = get_event(c, "layout:updated")
+        pasted = next(slot for slot in layout["slots"] if slot and slot.get("col") == 3)
+
+        assert pasted["formula"]["source"] == "=D36+1"
+        assert pasted["formula_state"]["error_code"] == "#REF!"
+        assert pasted["history"] == []
+
     def test_move_worker_group_updates_all_members_atomically(self, client):
         c, _ = client
         c.emit("worker:add", {"coord": {"col": 0, "row": 0}, "profile": "feature-architect"})
