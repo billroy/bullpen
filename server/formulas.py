@@ -60,6 +60,7 @@ class RangeValue:
 
 _NUMBER_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
 _COORD_RE = re.compile(r"\$?[A-Za-z]+\$?\d+")
+_COORD_PARTS_RE = re.compile(r"^(\$?)([A-Za-z]+)(\$?)(\d+)$")
 _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 _OPERATORS = ("<=", ">=", "<>", "+", "-", "*", "/", "%", "^", "&", "=", "<", ">", "(", ")", ",", ":")
 
@@ -173,6 +174,10 @@ def tokenize(source: str) -> list[Token]:
             i += 1
             continue
         position = i + 1
+        if text.startswith("#REF!", i):
+            tokens.append(Token("ERROR_REF", "#REF!", position))
+            i += 5
+            continue
         if ch == '"':
             i += 1
             pieces: list[str] = []
@@ -240,6 +245,72 @@ def tokenize(source: str) -> list[Token]:
         raise FormulaError("#PARSE!", f"Unexpected character: {ch}", position)
     tokens.append(Token("EOF", None, len(source)))
     return tokens
+
+
+def _translate_coord_token(raw: str, delta_col: int, delta_row: int) -> str | None:
+    match = _COORD_PARTS_RE.fullmatch(raw)
+    parsed = parse_cell_ref(raw.replace("$", ""))
+    if not match or not parsed:
+        raise FormulaError("#REF!", f"Invalid coordinate reference: {raw}")
+    col_absolute, original_col, row_absolute, original_row = match.groups()
+    col = parsed["col"] if col_absolute else parsed["col"] + delta_col
+    row = parsed["row"] if row_absolute else parsed["row"] + delta_row
+    if col < 0 or row < 0:
+        return None
+    canonical = coord_to_cell_ref({"col": col, "row": row})
+    canonical_match = re.fullmatch(r"([A-Z]+)(\d+)", canonical or "")
+    if not canonical_match:
+        return None
+    translated_col = original_col if col_absolute else canonical_match.group(1)
+    translated_row = original_row if row_absolute else canonical_match.group(2)
+    return f"{col_absolute}{translated_col}{row_absolute}{translated_row}"
+
+
+def translate_formula_source(
+    source: str,
+    *,
+    source_coord: dict[str, Any],
+    destination_coord: dict[str, Any],
+) -> str:
+    """Translate coordinate-token spans for one structural copy or relocation."""
+    source = str(source or "")
+    try:
+        delta_col = int(destination_coord["col"]) - int(source_coord["col"])
+        delta_row = int(destination_coord["row"]) - int(source_coord["row"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise FormulaError("#REF!", "Formula translation requires valid source and destination coordinates") from exc
+    if delta_col == 0 and delta_row == 0:
+        return source
+
+    tokens = tokenize(source)
+    replacements: list[tuple[int, int, str]] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token.kind != "COORD":
+            index += 1
+            continue
+        if index + 2 < len(tokens) and tokens[index + 1].kind == ":" and tokens[index + 2].kind == "COORD":
+            end = tokens[index + 2]
+            translated_start = _translate_coord_token(token.value, delta_col, delta_row)
+            translated_end = _translate_coord_token(end.value, delta_col, delta_row)
+            if translated_start is None or translated_end is None:
+                replacements.append((token.position, end.position + len(end.value), "#REF!"))
+            else:
+                replacements.append((token.position, token.position + len(token.value), translated_start))
+                replacements.append((end.position, end.position + len(end.value), translated_end))
+            index += 3
+            continue
+        translated = _translate_coord_token(token.value, delta_col, delta_row)
+        replacements.append((token.position, token.position + len(token.value), translated or "#REF!"))
+        index += 1
+
+    translated_source = source
+    for start, end, value in sorted(replacements, reverse=True):
+        translated_source = translated_source[:start] + value + translated_source[end:]
+    if len(translated_source) > FORMULA_MAX_LENGTH:
+        raise FormulaError("#LIMIT!", f"Translated formula exceeds {FORMULA_MAX_LENGTH} characters")
+    return translated_source
 
 
 class Parser:
@@ -311,6 +382,9 @@ class Parser:
         if token.kind in {"NUMBER", "STRING"}:
             self.take()
             return ("literal", token.value)
+        if token.kind == "ERROR_REF":
+            self.take()
+            return ("error", "#REF!", token.position)
         if token.kind == "COORD":
             self.take()
             if self.current.kind == ":":
@@ -420,6 +494,8 @@ class Evaluator:
         kind = node[0]
         if kind == "literal":
             return node[1]
+        if kind == "error":
+            raise FormulaError(node[1], "Invalid structural reference", node[2])
         if kind == "reference":
             return self.reference(node[1], node[2], node[3])
         if kind == "range":
@@ -745,6 +821,8 @@ def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None
 
 def _walk_references(node, refs: list[tuple[str, bool, int, bool]], calls: set[str]) -> None:
     kind = node[0]
+    if kind in {"literal", "error"}:
+        return
     if kind == "reference":
         refs.append((node[1], node[2], node[3], False))
         return

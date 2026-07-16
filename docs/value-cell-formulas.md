@@ -14,8 +14,10 @@ value-change trigger contracts in:
 Formula support is a later phase of Value workers. It does not change ordinary
 constant Value cells or make Value workers runnable.
 
-All P0 decisions in this proposal were accepted on 2026-07-15. Remaining P1
-and P2 items are explicitly open unless another section records a decision.
+The original P0 decisions in this proposal were accepted on 2026-07-15. The P0
+revision to structural relocation semantics was accepted on 2026-07-16.
+Remaining P1 and P2 items are explicitly open unless another section records a
+decision.
 
 ---
 
@@ -51,7 +53,8 @@ current recalculation pass so it can order evaluation and detect cycles.
 
 - Let users enter formulas in Value cells with familiar spreadsheet syntax.
 - Reference Value cells by coordinate or stable human-readable name.
-- Support relative, absolute, and mixed coordinate references for copy/paste.
+- Support relative, absolute, and mixed coordinate references consistently for
+  copy, paste, duplicate, drag, move, and group relocation.
 - Recalculate dependent formulas after every accepted server-backed value
   write or formula edit.
 - Preserve the last successful computed value when a formula cannot evaluate.
@@ -227,15 +230,32 @@ A$1     relative column, absolute row
 The draft that preceded this proposal reversed relative and absolute notation;
 the definitions above use standard spreadsheet semantics.
 
-The `$` markers matter when a formula cell is copied or pasted. They do not
-change lookup during evaluation. A reference resolves only to a Value worker at
-that coordinate. A blank grid position or a non-Value worker produces `#REF!`
-for a direct reference.
+The `$` markers matter whenever a formula cell is copied or changes coordinate,
+including paste, duplicate, drag, move, group move, and swap. They do not change
+lookup during evaluation. A reference resolves only to a Value worker at that
+coordinate. A blank grid position or a non-Value worker produces `#REF!` for a
+direct reference.
 
-Moving a referenced Value worker does not rewrite formulas; coordinate
-references continue to mean the coordinate. Moving a formula cell does not
-rewrite its source. Copying a formula cell adjusts relative portions by the
-copy displacement, while absolute portions remain fixed.
+Formula translation uses the formula cell's source and destination coordinates.
+For displacement `(delta_col, delta_row)`, translate each reference component
+independently:
+
+```text
+A1       translate column and row
+$A1      keep column; translate row
+A$1      translate column; keep row
+$A$1     keep column and row
+```
+
+Range endpoints follow the same rule independently. Named references do not
+change. Translation must replace coordinate-token spans rather than deparse and
+reformat the AST: case, whitespace, punctuation, function spelling, and string
+literals outside translated references remain byte-for-byte unchanged.
+
+Moving a referenced Value worker does not rewrite formulas elsewhere;
+coordinate references continue to mean worksheet coordinates. Moving the
+formula cell itself does translate its relative and mixed coordinate references
+by the formula cell's displacement, using the same rule as copy/paste.
 
 ### Named References
 
@@ -509,7 +529,7 @@ A formula becomes dirty when:
   write or changes formula state;
 - a Value worker is created, deleted, moved, or renamed in a coordinate range
   or named-reference candidate set that the formula uses;
-- a formula cell is pasted to a new coordinate and relative refs are adjusted;
+- a formula cell is copied or relocated and its relative refs are adjusted;
 - a server-coalesced workspace activation finds a volatile result stale; or
 - the user requests recalculation.
 
@@ -723,27 +743,64 @@ constants or names. Do not include it in unrelated ticket bodies or logs.
 
 ## Structural Operations
 
+### Shared Translation Rule
+
+Copy, paste, duplicate, drag, move, group move, and swap use one formula
+translation operation. Given a formula cell's original coordinate and final
+coordinate, apply the displacement to relative reference components and leave
+absolute components fixed. A no-op placement has zero displacement and leaves
+source unchanged.
+
+Translation is derived entirely from the pre-operation layout and each cell's
+final coordinate. Install the complete final layout before evaluating any
+formula. This prevents operation order from changing group results.
+
+If translation would move a reference before row 1 or column A, the affected
+reference expression becomes the persisted structural error token `#REF!`; it
+must not wrap or clamp. The parser accepts this token only as a structural error
+expression, and evaluation records normal `#REF!` formula state while preserving
+the last successful value. If either endpoint of a range becomes invalid, the
+whole range expression becomes `#REF!`.
+
 ### Copy, Paste, And Duplicate
 
-- Copying a formula cell preserves formula source and adjusts relative
-  coordinate components by destination displacement.
+- Copying a formula cell starts from its stored formula source and adjusts
+  relative coordinate components by destination displacement.
 - Absolute components do not move.
 - Named references do not change.
 - Copying a group treats each copied formula relative to its own source and
   destination.
-- A reference adjusted before row 1 or column A becomes `#REF!`; do not wrap or
-  clamp it.
 - Pasted formulas calculate after the entire paste batch exists, not once per
   cell, so intra-batch references see the completed batch.
-- Structural paste creates baseline history according to the existing Value
-  lifecycle contract and does not fire initial value-change triggers.
+- Newly created structural copies, including paste and duplicate, create
+  baseline history according to the existing Value lifecycle contract and do
+  not fire initial value-change triggers.
 
-### Move
+### Drag, Move, Group Move, And Swap
 
-Moving a formula cell preserves its source exactly. Moving a referenced cell
-does not rewrite coordinate references. Name references follow the resolved
-name subject to duplicate-name rules. A move dirties formulas whose coordinate
-ranges or name resolution may have changed.
+- Dragging is a relocation, but formula translation is intentionally identical
+  to copy/paste translation. A formula moved from C38 to D38 rewrites
+  `=SUM(C36:C37)` to `=SUM(D36:D37)`.
+- Every relocated formula translates from its own pre-operation coordinate to
+  its own final coordinate. In a swap, both formula cells translate; in a group
+  move, each member uses the same group displacement only when its actual source
+  and destination imply that displacement.
+- Moving a referenced cell does not rewrite coordinate references in other
+  formulas. Those formulas are dirtied against the old and new layouts and
+  resolve the same coordinate source against the final layout.
+- Name references do not translate. Moves that can change name resolution dirty
+  the affected candidate set.
+- The server installs all final coordinates and translated sources, calculates
+  one affected dependency graph, persists once, and emits one committed
+  generation broadcast. Intermediate layouts and results are never observable.
+- Successful changed results from relocating existing cells follow ordinary
+  formula history and post-commit trigger rules. An unchanged result creates no
+  value history or trigger even when structural translation changed source.
+
+This translation rule does not change aggregate blank handling. In the C38 to
+D38 example, if D36:D37 is empty, `SUM(D36:D37)` evaluates to `0`; it is not a
+`#VALUE!` error. Direct reference to an empty coordinate remains `#REF!`, and
+other empty aggregate contracts remain as defined under Range And Coercion.
 
 ### Import, Export, Teams, And Backup
 
@@ -904,10 +961,21 @@ formula results themselves.
 
 ### Lifecycle
 
-- Copy/paste adjustment for all four relative/absolute combinations.
+- Copy, paste, duplicate, single drag, group drag, and swap adjustment for all
+  four relative/absolute combinations and both endpoints of ranges.
+- Paired copy-versus-drag fixtures proving that the destination formula source,
+  formula state, and computed result are identical for the same source and
+  destination; only source-cell retention and structural audit facts differ.
+- Source-preservation tests proving that translation changes coordinate tokens
+  only, including formulas with whitespace, lowercase function names, and
+  punctuation-heavy string literals.
+- Boundary translation to structural `#REF!`, plus recovery after a later
+  source edit.
 - Multi-cell paste calculation after batch completion.
-- Move semantics, import/export, teams, backup restore, and legacy leading-`=`
-  strings.
+- Atomic final-layout calculation for moves and swaps, including formulas that
+  move with referenced cells, move into self-reference/cycles, or affect range
+  membership at old and new coordinates.
+- Import/export, teams, backup restore, and legacy leading-`=` strings.
 - Formatting and interpolation always use the successful computed value and
   clearly surface stale/error status where relevant.
 - History contains changed successful results only; formula audit captures
@@ -952,8 +1020,8 @@ cross-machine millisecond guarantee.
 
 Formula support is ready when:
 
-- formulas can be created, edited, copied, loaded, and recalculated through UI
-  and MCP;
+- formulas can be created, edited, copied, relocated, loaded, and recalculated
+  through UI and MCP;
 - results are identical across those entry paths;
 - cycles and failures never overwrite the last successful value;
 - successful derived changes integrate with formatting, history,
@@ -1002,11 +1070,49 @@ Formula support is ready when:
 
 ### Phase 5 — Structural Lifecycle And Optimization
 
-- Complete relative-ref copy/paste, batch import/team behavior, and dependency
-  warnings for delete/convert.
-- Benchmark representative workspaces.
-- Add an in-memory reverse dependency index if scanning no longer meets the
+#### Tranche 5A — Translation Core And Conformance
+
+- Implement token-span coordinate translation without reformatting unrelated
+  formula source.
+- Cover scalar/range references, relative/absolute/mixed components, negative
+  boundaries, structural `#REF!`, strings containing coordinate-like text, and
+  exact source preservation.
+- Keep this tranche pure and deterministic: no persistence, events, or layout
+  mutation.
+
+#### Tranche 5B — Single-Cell Structural Transactions
+
+- Integrate the shared translator with single-cell drag/move, duplicate, and
+  paste.
+- Build one server-owned generation from the final layout, including formulas
+  affected at old and new coordinates.
+- Verify history, formula audit, triggers, one-save/one-broadcast behavior,
+  error preservation, and rollback.
+
+#### Tranche 5C — Group Moves, Swaps, Duplicate, And Paste
+
+- Translate every formula from the pre-operation layout to its final coordinate
+  before evaluation.
+- Cover group drag, occupied-cell swap, duplicate group, rectangular paste,
+  moving a formula with its precedents, intra-group dependencies, cycles, and
+  order independence.
+- Persist and broadcast only the complete final generation.
+
+#### Tranche 5D — Remaining Structural Lifecycle
+
+- Complete dirtying for create, delete, convert, rename, and movement into or
+  out of coordinate ranges and named-reference candidate sets.
+- Complete import, team, transfer, backup-restore, and dependency-warning
+  behavior using the same final-layout calculation boundary.
+- Add browser coverage for drag source translation and visible recalculation.
+
+#### Tranche 5E — Optimization And Final Verification
+
+- Benchmark representative workspaces and structural batches.
+- Add an in-memory reverse dependency index only if scanning no longer meets the
   budget. Treat it as rebuildable cache, not persisted truth.
+- Run parser, evaluator, lifecycle, collaboration, trigger, rollback, browser,
+  and performance suites before declaring structural work complete.
 
 ---
 
@@ -1031,12 +1137,29 @@ Formula support is ready when:
 6. **Atomic generation boundary — accepted.** A root mutation and all derived
    results persist as one locked generation and one save, with rollback on
    failure. Partial generations are prohibited.
-7. **Copy/move reference semantics — accepted.** Copy uses standard `$`
-   behavior. Move preserves formula source, and moving a referenced cell does
-   not rewrite coordinate references.
+7. **Original copy/move reference semantics — superseded.**
+   The original decision made copy use standard `$` behavior while move
+   preserved formula source. The proposed P0 revision below replaces that
+   distinction and is accepted below.
 8. **Evaluator limits — accepted.** Formula, nesting, range, dependency,
    generation, and time limits are required, with `#LIMIT!` preserving the last
    successful value.
+
+### Accepted P0 Revision
+
+1. **Unified copy/relocation translation.** Copy, paste, duplicate, drag, move,
+   group move, and swap use the same standard `$` translation based on each
+   formula cell's source and destination coordinates. Moving a referenced cell
+   still does not rewrite formulas elsewhere; it dirties affected formulas
+   against the final layout.
+2. **Blank range behavior remains unchanged.** Relocating C38 to D38 translates
+   `=SUM(C36:C37)` to `=SUM(D36:D37)`. If D36:D37 is empty, the result is `0`,
+   not `#VALUE!`. Changing that result would be a separate aggregate-function
+   compatibility decision.
+3. **Out-of-bounds translation is persisted.** A translated coordinate or
+   range that crosses above row 1 or before column A becomes structural
+   `#REF!` source, evaluates as `#REF!`, and preserves the last successful
+   value.
 
 ### Additional Accepted Architecture Decisions
 

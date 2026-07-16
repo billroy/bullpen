@@ -11,6 +11,7 @@ from server.formulas import (
     parse_formula,
     recalculate_layout,
     is_formula_stale,
+    translate_formula_source,
 )
 
 
@@ -49,6 +50,46 @@ def _slots():
 )
 def test_scalar_operators_and_precedence(source, expected):
     assert evaluate_formula(source, []).value == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "source_coord", "destination_coord", "expected"),
+    [
+        (
+            '=sum(c36:c37)+$C36+C$36+$C$36&"C36:C37"',
+            {"col": 2, "row": 37},
+            {"col": 3, "row": 39},
+            '=sum(D38:D39)+$C38+D$36+$C$36&"C36:C37"',
+        ),
+        ("=$c36+c$36+$c$36", {"col": 2, "row": 37}, {"col": 3, "row": 38}, "=$c37+D$36+$c$36"),
+        ("=[C36]&\"A1\"", {"col": 2, "row": 37}, {"col": 3, "row": 38}, "=[C36]&\"A1\""),
+        ("=A1", {"col": 1, "row": 1}, {"col": 0, "row": 0}, "=#REF!"),
+        ("=SUM(A1:B2)", {"col": 1, "row": 1}, {"col": 0, "row": 1}, "=SUM(#REF!)"),
+    ],
+)
+def test_formula_translation_preserves_source_and_applies_mixed_reference_rules(
+    source, source_coord, destination_coord, expected
+):
+    assert translate_formula_source(
+        source,
+        source_coord=source_coord,
+        destination_coord=destination_coord,
+    ) == expected
+
+
+def test_formula_translation_noop_is_byte_exact():
+    source = ' =sum( c36 : c37 ) & " punctuation: A1! " '
+    assert translate_formula_source(
+        source,
+        source_coord={"col": 2, "row": 37},
+        destination_coord={"col": 2, "row": 37},
+    ) == source
+
+
+def test_structural_ref_token_parses_and_evaluates_as_ref_error():
+    with pytest.raises(FormulaError) as caught:
+        evaluate_formula("=SUM(#REF!)", [])
+    assert caught.value.code == "#REF!"
 
 
 def test_coordinate_and_named_references_record_dependencies_and_warnings():
