@@ -233,6 +233,7 @@ const WorkerConfigModal = {
             stop_timeout_seconds: w.stop_timeout_seconds ?? 5,
             log_max_bytes: w.log_max_bytes ?? 5242880,
             value: w.value ?? '',
+            formula_source: w.formula?.source || '',
             value_type: w.value_type || 'auto',
             resolved_value_type: w.resolved_value_type || 'string',
             unit: w.unit || '',
@@ -245,6 +246,7 @@ const WorkerConfigModal = {
           this.valueInitialForm = w.type === 'value' ? {
             name: String(this.form.name || '').trim(),
             value: String(this.form.value ?? ''),
+            formula_source: String(this.form.formula_source || ''),
             value_type: String(this.form.value_type || 'auto'),
             unit: String(this.form.unit || '').trim(),
             format: JSON.stringify(this.form.format || { kind: 'general' }),
@@ -593,6 +595,16 @@ const WorkerConfigModal = {
           </template>
 
           <template v-if="isValue">
+            <label class="form-label">
+              Formula
+              <input class="form-input" v-model="form.formula_source"
+                     placeholder="=A1*2" aria-describedby="value-formula-status">
+              <span id="value-formula-status" class="form-hint" v-if="worker.formula">
+                {{ worker.formula_state?.status === 'error'
+                  ? (worker.formula_state.error_code + ' ' + worker.formula_state.error_message)
+                  : 'Last calculated value: ' + worker.value }}
+              </span>
+            </label>
             <div class="form-row">
               <label class="form-label">
                 Value
@@ -1712,6 +1724,7 @@ const WorkerConfigModal = {
         const candidates = {
           name: fields.name,
           value: String(fields.value ?? ''),
+          formula_source: String(fields.formula_source || '').trim(),
           value_type: fields.value_type,
           unit: fields.unit,
           format: fields.format,

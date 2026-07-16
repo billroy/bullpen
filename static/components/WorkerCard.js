@@ -176,6 +176,7 @@ const WorkerCard = {
           <template v-else>{{ emptyLabel }}</template>
         </div>
         <div v-else-if="isValue" class="worker-card-value">
+          <span v-if="isFormulaValue" class="worker-card-formula-badge" aria-label="Formula value">fx</span>
           <template v-if="valueEditing">
             <input class="worker-card-value-input"
                    ref="valueEditInput"
@@ -643,10 +644,19 @@ const WorkerCard = {
       return String(this.worker?.resolved_value_type || '') === 'number' ? 'right' : 'left';
     },
     valueDisplay() {
+      if (this.formulaError) return this.formulaError;
       const base = this.valueDisplayBase;
       if (!base) return '';
       const unit = this.valueUsesFullUnitLabel ? this.valueUnitLabels.name : this.valueUnitLabels.abbr;
       return unit ? `${base} ${unit}` : base;
+    },
+    isFormulaValue() {
+      return this.isValue && !!this.worker?.formula?.source;
+    },
+    formulaError() {
+      return this.isFormulaValue && this.worker?.formula_state?.status === 'error'
+        ? String(this.worker.formula_state.error_code || '#VALUE!')
+        : '';
     },
     numericValueHistory() {
       const points = [];
@@ -934,6 +944,7 @@ const WorkerCard = {
       const valueType = String(this.worker?.value_type || 'auto');
       const parsed = this.valueEditIncludesName ? this.parseValueEditText(text) : { value: String(text || '').trim() };
       const trimmed = parsed.value;
+      if (trimmed.startsWith('=')) return '';
       if (valueType === 'number' && !/^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(trimmed)) {
         return 'Enter a valid number.';
       }
@@ -942,7 +953,7 @@ const WorkerCard = {
     startValueEdit() {
       if (!this.isValue) return;
       this.valueEditIncludesName = false;
-      this.valueEditText = this.storedValueText;
+      this.valueEditText = this.worker?.formula?.source || this.storedValueText;
       this.valueEditError = '';
       this.valueEditing = true;
       this.$nextTick(() => {
@@ -990,6 +1001,15 @@ const WorkerCard = {
       const parsed = this.valueEditIncludesName
         ? this.parseValueEditText(this.valueEditText)
         : { value: String(this.valueEditText) };
+      const isFormula = String(parsed.value || '').trim().startsWith('=');
+      if (isFormula) {
+        this.$root.saveWorkerConfig({
+          slot: this.slotIndex,
+          fields: { formula_source: String(parsed.value).trim() },
+        });
+        this.cancelValueEdit({ restoreGridFocus: true });
+        return;
+      }
       this.$root.saveWorkerConfig({
         slot: this.slotIndex,
         fields: this.valueEditIncludesName

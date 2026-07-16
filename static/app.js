@@ -1799,7 +1799,24 @@ const app = createApp({
       }
       closeTransferModal();
     }
-    function saveWorkerConfig({ slot, fields }) { socket.emit('worker:configure', _wsData({ slot, fields })); }
+    function saveWorkerConfig({ slot, fields }) {
+      const patch = { ...(fields || {}) };
+      if (Object.prototype.hasOwnProperty.call(patch, 'formula_source')) {
+        const formula = String(patch.formula_source || '').trim();
+        delete patch.formula_source;
+        if (formula) {
+          const worker = state.layout?.slots?.[slot];
+          const ref = window.GridGeometry?.coordToCellRef?.(worker) || worker?.name;
+          socket.emit('formula:set', _wsData({ ref, formula, value_type: patch.value_type || worker?.value_type || 'auto' }));
+          delete patch.value;
+          delete patch.value_type;
+        } else {
+          const worker = state.layout?.slots?.[slot];
+          if (worker?.formula) patch.value = String(patch.value ?? worker.value ?? '');
+        }
+      }
+      if (Object.keys(patch).length) socket.emit('worker:configure', _wsData({ slot, fields: patch }));
+    }
     function saveWorkersConfig({ slots, fields }) { socket.emit('worker:configure_many', _wsData({ slots, fields })); }
 
     // Execution actions

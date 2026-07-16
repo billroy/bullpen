@@ -3527,6 +3527,15 @@ body.worker-singleton-dragging * {
   padding: 7px 4px 6px;
 }
 
+.worker-card-formula-badge {
+  align-self: flex-start;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  margin: 0 0 2px 2px;
+}
+
 .worker-card-value-main {
   min-width: 0;
   color: var(--text-primary);
