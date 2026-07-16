@@ -44,10 +44,20 @@ def test_empty_cells_use_single_ghost_target_and_clipboard_does_not_materialize_
     assert "A non-empty pane clipboard" not in text
 
 
+def test_keyboard_selected_empty_cell_does_not_leave_menu_highlight_stale():
+    tab = _read("static/components/BullpenTab.js")
+    style = _read("static/style.css")
+
+    assert "'menu-open': emptyMenuOpenFor(ghostCell)" in tab
+    assert ".worker-grid-ghost-cell.menu-open .empty-slot-menu-btn" in style
+    assert ".worker-grid-ghost-cell.selected .empty-slot-menu-btn" not in style
+
+
 def test_worker_drag_over_empty_cell_tracks_valid_drop_target_for_ghost_highlight():
     text = _read("static/components/BullpenTab.js")
     assert "dragOverCoord: null" in text
-    assert ":class=\"{ selected: isSelected(ghostCell), 'drag-over': isDragOverGhost(ghostCell) }\"" in text
+    assert "selected: isSelected(ghostCell)" in text
+    assert "'drag-over': isDragOverGhost(ghostCell)" in text
     assert "const coord = this.dragOverCoord || this.emptyMenuCoord || this.selectedCell || this.hoveredCoord;" in text
     assert "this.dragOverCoord = { ...coord };" in text
     assert "this.dragOverCoord = null;" in text

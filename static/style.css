@@ -2688,7 +2688,7 @@ body {
 
 .worker-grid-ghost-cell:hover .empty-slot-menu-btn,
 .worker-grid-ghost-cell:focus-within .empty-slot-menu-btn,
-.worker-grid-ghost-cell.selected .empty-slot-menu-btn {
+.worker-grid-ghost-cell.menu-open .empty-slot-menu-btn {
   visibility: visible;
   opacity: 1;
   background: var(--bg-hover);

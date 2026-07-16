@@ -208,7 +208,11 @@ const BullpenTab = {
 
           <div v-if="ghostCell"
                class="grid-slot empty-slot worker-grid-ghost-cell"
-               :class="{ selected: isSelected(ghostCell), 'drag-over': isDragOverGhost(ghostCell) }"
+               :class="{
+                 selected: isSelected(ghostCell),
+                 'drag-over': isDragOverGhost(ghostCell),
+                 'menu-open': emptyMenuOpenFor(ghostCell),
+               }"
                :style="ghostStyle"
                role="gridcell"
                tabindex="-1"
