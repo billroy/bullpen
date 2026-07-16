@@ -89,6 +89,47 @@ def test_value_number_formatting_and_string_preservation_in_chromium():
                 proc.kill()
 
 
+def test_typing_formula_into_empty_cell_calculates_in_chromium():
+    """Cover the worksheet shortcut that creates a Value via worker:add."""
+    with tempfile.TemporaryDirectory(prefix="bullpen_formula_add_pw_") as workspace:
+        port = _free_port()
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                page = browser.new_page(locale="en-US")
+                page.goto(base_url)
+                page.get_by_role("button", name="Workers").click()
+
+                viewport = page.locator(".worker-grid-viewport")
+                viewport.focus()
+                page.keyboard.type("=2+2")
+                editor = page.get_by_role("textbox", name="Create value worker")
+                expect(editor).to_have_value("=2+2")
+                editor.press("Enter")
+
+                card = page.locator(".worker-card", has=page.locator(".worker-card-formula-badge"))
+                expect(card.locator(".worker-card-value-main")).to_have_text("4")
+                expect(card.locator(".worker-card-formula-badge")).to_have_text("fx")
+                browser.close()
+
+            with open(os.path.join(workspace, ".bullpen", "layout.json"), encoding="utf-8") as handle:
+                layout = json.load(handle)
+            worker = next(slot for slot in layout["slots"] if slot and slot.get("type") == "value")
+            assert worker["value"] == 4
+            assert worker["formula"] == {"source": "=2+2", "version": 1}
+            assert worker["formula_state"]["status"] == "ok"
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def test_scalar_and_rectangular_system_clipboard_paste_in_chromium():
     with tempfile.TemporaryDirectory(prefix="bullpen_value_paste_pw_") as workspace:
         port = _free_port()

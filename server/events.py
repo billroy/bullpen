@@ -2009,13 +2009,33 @@ def register_events(socketio, app):
             }
         elif worker_type == "value":
             updated_at = _now_iso()
-            try:
-                payload = value_mod.classify_value_input(
-                    fields.get("value", ""), fields.get("value_type", "auto"), source="ui"
-                )
-            except ValueError as exc:
-                emit("error", {"message": str(exc)})
-                return
+            raw_value = fields.get("value", "")
+            raw_formula = fields.get("formula_source")
+            formula_input = (
+                raw_formula
+                if isinstance(raw_formula, str) and raw_formula.strip()
+                else raw_value
+            )
+            formula_ui_add = isinstance(formula_input, str) and formula_input.strip().startswith("=")
+            if formula_ui_add:
+                try:
+                    formula = formula_mod.normalize_formula(formula_input)
+                except formula_mod.FormulaError as exc:
+                    emit("error", {"message": exc.message, "code": exc.code})
+                    return
+                payload = {
+                    "value": "",
+                    "value_type": "auto",
+                    "resolved_value_type": "string",
+                }
+            else:
+                try:
+                    payload = value_mod.classify_value_input(
+                        raw_value, fields.get("value_type", "auto"), source="ui"
+                    )
+                except ValueError as exc:
+                    emit("error", {"message": str(exc)})
+                    return
             worker = {
                 "type": "value",
                 "row": row,
@@ -2030,7 +2050,12 @@ def register_events(socketio, app):
                 "color": "value",
                 "updated_at": updated_at,
             }
-            value_mod.append_value_history(worker, updated_at)
+            if formula_ui_add:
+                worker["formula"] = formula
+                worker["formula_state"] = formula_mod.normalize_formula_state({"status": "pending"})
+                worker["formula_updated_at"] = updated_at
+            else:
+                value_mod.append_value_history(worker, updated_at)
         else:  # marker or notification
             if worker_type == "marker":
                 base_name = fields.get("name") or "Marker"
@@ -2082,9 +2107,19 @@ def register_events(socketio, app):
             layout["slots"].append(None)
 
         layout["slots"][slot_index] = worker
-        _save_layout(bp_dir, layout)
-        _emit("layout:updated", layout, ws_id)
-        if worker_type == "value":
+        if worker_type == "value" and formula_ui_add:
+            _commit_formula_generation(
+                bp_dir,
+                layout,
+                root_indices={slot_index},
+                updated_at=updated_at,
+                changed_by="worker:add",
+                ws_id=ws_id,
+            )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
+        if worker_type == "value" and not formula_ui_add:
             _fire_value_change_triggers(
                 bp_dir, layout, slot_index, {},
                 updated_at=worker.get("updated_at") or _now_iso(),

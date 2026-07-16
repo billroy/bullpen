@@ -188,6 +188,34 @@ def test_ui_worker_configure_leading_equals_is_calculated_not_stored_as_text(cli
     assert worker["formula_state"]["status"] == "ok"
 
 
+def test_ui_worker_add_leading_equals_is_calculated_not_stored_as_text(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 28}, "type": "value",
+        "fields": {"name": "", "value": "=2+2", "value_type": "auto"},
+    })
+    layout = get_event(c, "layout:updated")
+    worker = next(slot for slot in layout["slots"] if slot and slot.get("row") == 28)
+
+    assert worker["value"] == 4
+    assert worker["resolved_value_type"] == "number"
+    assert worker["formula"] == {"source": "=2+2", "version": 1}
+    assert worker["formula_state"]["status"] == "ok"
+
+
+def test_ui_worker_add_formula_field_is_calculated(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 1, "row": 28}, "type": "value",
+        "fields": {"name": "", "value": "", "formula_source": "=3*3", "value_type": "auto"},
+    })
+    layout = get_event(c, "layout:updated")
+    worker = next(slot for slot in layout["slots"] if slot and slot.get("col") == 1)
+
+    assert worker["value"] == 9
+    assert worker["formula"] == {"source": "=3*3", "version": 1}
+
+
 def test_formula_error_persists_source_and_preserves_last_successful_value(client):
     c, _app = client
     c.emit("worker:add", {
