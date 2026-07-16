@@ -111,7 +111,19 @@ ok
 step "Installing AI agent CLIs (claude, codex, antigravity, opencode)"
 CLI_OUT=$(sprite exec $S -- bash -c "
     set -euo pipefail
-    npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai
+    # OpenCode's npm package installs its platform binary in postinstall.
+    # npm 12 blocks lifecycle scripts unless each package is explicitly
+    # allowed. Keep the exception scoped to this install command.
+    npm install -g \
+        --allow-scripts=@anthropic-ai/claude-code,opencode-ai \
+        @anthropic-ai/claude-code @openai/codex opencode-ai
+    # Sprite's npm shim installs global executables into a versioned Node
+    # prefix that is not on the PATH of non-interactive shells or services.
+    # Publish OpenCode at a stable path Bullpen can resolve.
+    test -x \$(npm prefix -g)/bin/opencode
+    ln -sf \$(npm prefix -g)/bin/opencode /usr/local/bin/opencode
+    command -v opencode
+    opencode --version
     curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir /usr/local/bin
     command -v agy
     agy --version

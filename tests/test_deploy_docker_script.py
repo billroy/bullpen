@@ -133,6 +133,19 @@ def test_deploy_sprite_installs_antigravity_with_official_installer():
     assert "gemini auth login" not in text
 
 
+def test_deploy_sprite_runs_and_verifies_opencode_postinstall():
+    text = _read("deploy-sprite.sh")
+
+    assert "npm install -g" in text
+    assert "--ignore-scripts=false" not in text
+    assert "--allow-scripts=@anthropic-ai/claude-code,opencode-ai" in text
+    assert "opencode-ai" in text
+    assert "test -x \\$(npm prefix -g)/bin/opencode" in text
+    assert "ln -sf \\$(npm prefix -g)/bin/opencode /usr/local/bin/opencode" in text
+    assert "command -v opencode" in text
+    assert "opencode --version" in text
+
+
 def test_docker_compose_hides_unavailable_projects_in_container():
     text = _read("docker-compose.yml")
     assert 'BULLPEN_HIDE_UNAVAILABLE_PROJECTS: "1"' in text
