@@ -16,6 +16,7 @@ from server.values import (
     validate_value_snapshot,
     parse_cell_ref as parse_value_cell_ref,
 )
+from server.formulas import normalize_formula, normalize_formula_state
 
 
 VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "notification", "value", "eval"}
@@ -590,6 +591,13 @@ def normalize_worker_slot(raw, *, index, config):
         slot["color"] = str(slot.get("color") or "value")
         slot["updated_at"] = str(slot.get("updated_at") or "")
         slot["history"] = history
+        formula = normalize_formula(slot.get("formula"))
+        if formula is not None:
+            slot["formula"] = formula
+            slot["formula_state"] = normalize_formula_state(slot.get("formula_state"))
+        else:
+            slot.pop("formula", None)
+            slot.pop("formula_state", None)
         for key in (
             "activation",
             "disposition",

@@ -316,7 +316,11 @@ def validate_worker_configure(data, max_slots=100):
 
     # Type-specific and unknown-type fields are admitted here and canonicalized
     # by the worker type normalization layer. Runtime ownership stays server-only.
-    disallowed_runtime = {"task_queue", "state", "started_at"}
+    disallowed_runtime = {
+        "task_queue", "state", "started_at",
+        "formula", "formula_state", "formula_updated_at",
+        "resolved_value_type",
+    }
     for key, value in fields.items():
         if key in consumed or key in disallowed_runtime:
             continue

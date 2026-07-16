@@ -49,6 +49,7 @@ from server.global_settings import last_ai_selection, load_global_settings, reme
 from server import workers as worker_mod
 from server import service_worker as service_worker_mod
 from server import values as value_mod
+from server import formulas as formula_mod
 from server.workers import _terminate_proc
 from server.transfer import TransferError, transfer_worker
 from server.locks import write_lock as _write_lock
@@ -2501,6 +2502,9 @@ def register_events(socketio, app):
                 worker[k] = v
         if value_payload is not None:
             worker.update(value_payload)
+            worker.pop("formula", None)
+            worker.pop("formula_state", None)
+            worker.pop("formula_updated_at", None)
             updated_at = _now_iso()
             worker["updated_at"] = updated_at
             value_mod.append_value_history(worker, updated_at)
@@ -2793,6 +2797,9 @@ def register_events(socketio, app):
         slot["value"] = payload["value"]
         slot["value_type"] = payload["value_type"]
         slot["resolved_value_type"] = payload["resolved_value_type"]
+        slot.pop("formula", None)
+        slot.pop("formula_state", None)
+        slot.pop("formula_updated_at", None)
         if "unit" in data:
             slot["unit"] = value_mod.normalize_unit(data.get("unit"))
         updated_at = _now_iso()
@@ -2807,6 +2814,71 @@ def register_events(socketio, app):
             changed_by="value:set",
             ws_id=ws_id,
         )
+
+    @socketio.on("formula:set")
+    @with_lock
+    def on_formula_set(data):
+        data = data or {}
+        ws_id, bp_dir = _resolve(data)
+        layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
+        cols = _safe_legacy_cols(config)
+        ref = str(data.get("ref") or "").strip()
+        if not ref:
+            emit("error", {"message": "formula:set requires ref"})
+            return
+        match = _resolve_value_slot(layout, ref, cols)
+        if not match:
+            return
+        slot = match["slot"]
+        old_slot = copy.deepcopy(slot)
+        updated_at = _now_iso()
+        try:
+            formula = formula_mod.normalize_formula(data.get("formula"))
+        except formula_mod.FormulaError as exc:
+            emit("error", {"message": exc.message, "code": exc.code})
+            return
+        if formula is None:
+            emit("error", {"message": "Formula is required", "code": "#PARSE!"})
+            return
+        slot["formula"] = formula
+        try:
+            # Evaluate against a snapshot containing the accepted source while
+            # retaining the previous successful result until evaluation succeeds.
+            result = formula_mod.evaluate_formula(
+                formula["source"], layout.get("slots", []), current_index=match["index"], cols=cols
+            )
+            value_type = data.get("value_type", slot.get("value_type", "auto"))
+            value, resolved_type = formula_mod.coerce_formula_result(result.value, value_type)
+            slot["value"] = value
+            slot["value_type"] = value_mod.normalize_value_type(value_type)
+            slot["resolved_value_type"] = resolved_type
+            slot["formula_state"] = formula_mod.formula_ok_state(result, calculated_at=updated_at)
+            slot["updated_at"] = updated_at
+            if (
+                old_slot.get("value") != value
+                or old_slot.get("resolved_value_type") != resolved_type
+            ):
+                value_mod.append_value_history(slot, updated_at)
+        except formula_mod.FormulaError as exc:
+            # Formula source is authoritative even when it cannot calculate;
+            # preserve the last successful value and expose safe error state.
+            slot["formula_state"] = formula_mod.formula_error_state(exc, calculated_at=updated_at)
+        slot["formula_updated_at"] = updated_at
+        layout["slots"][match["index"]] = normalize_worker_slot(slot, index=match["index"], config=config)
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+        current = layout["slots"][match["index"]]
+        if current.get("formula_state", {}).get("status") == "ok" and (
+            old_slot.get("value") != current.get("value")
+            or old_slot.get("resolved_value_type") != current.get("resolved_value_type")
+        ):
+            _fire_value_change_triggers(
+                bp_dir, layout, match["index"], old_slot,
+                updated_at=updated_at,
+                changed_by="formula:set",
+                ws_id=ws_id,
+            )
 
     @socketio.on("value:increment")
     @with_lock

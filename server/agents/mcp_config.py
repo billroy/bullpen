@@ -18,6 +18,7 @@ TOOL_PROFILES = {
         "list_tickets_by_title",
         "list_values",
         "get_value",
+        "get_formula",
     },
     "ticket-write": {
         "list_tickets",
@@ -32,7 +33,9 @@ TOOL_PROFILES = {
         "list_tickets_by_title",
         "list_values",
         "get_value",
+        "get_formula",
         "set_value",
+        "set_formula",
         "increment_value",
         "decrement_value",
         "speak_text",

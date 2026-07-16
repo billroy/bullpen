@@ -159,6 +159,30 @@ TOOLS = [
         },
     },
     {
+        "name": "get_formula",
+        "description": "Get formula source, result, status, and dependencies for a Value worker.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Value coordinate alias or name"},
+            },
+            "required": ["ref"],
+        },
+    },
+    {
+        "name": "set_formula",
+        "description": "Set and calculate a server-authoritative formula on an existing Value worker.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Value coordinate alias or name"},
+                "formula": {"type": "string", "description": "Formula source beginning with ="},
+                "value_type": {"type": "string", "enum": ["auto", "number", "string"]},
+            },
+            "required": ["ref", "formula"],
+        },
+    },
+    {
         "name": "increment_value",
         "description": "Increment a numeric Value worker.",
         "inputSchema": {
@@ -561,6 +585,18 @@ class BullpenClient:
             return None, "Value was updated but could not be read back"
         return _value_summary(match), None
 
+    def set_formula(self, args: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+        payload = {"ref": args.get("ref"), "formula": args.get("formula")}
+        if "value_type" in args:
+            payload["value_type"] = args["value_type"]
+        layout, err = self._emit_value_mutation("formula:set", payload)
+        if err:
+            return None, err
+        match = find_value_by_ref((layout or {}).get("slots", []), args.get("ref"))
+        if not match:
+            return None, "Formula was updated but could not be read back"
+        return _value_summary(match), None
+
     def increment_value(self, args: dict[str, Any], *, sign: int = 1) -> tuple[dict[str, Any] | None, str | None]:
         amount = args.get("amount", 1)
         try:
@@ -660,6 +696,10 @@ def _value_summary(match: dict[str, Any]) -> dict[str, Any]:
         "updated_at": slot.get("updated_at", ""),
         "history": slot.get("history", []),
     }
+    if slot.get("formula"):
+        payload["formula"] = slot.get("formula")
+        payload["formula_state"] = slot.get("formula_state", {})
+        payload["formula_updated_at"] = slot.get("formula_updated_at", "")
     warning = value_ref_warning(match)
     if warning:
         payload["warnings"] = [warning]
@@ -799,6 +839,33 @@ def handle_call(
             _tool_result(msg_id, "Error: set_value unavailable", is_error=True, mode=io_mode)
             return
         payload, err = client.set_value(args)
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "validation", "message": err}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name == "get_formula":
+        payload, err = _get_value_summary(bp_dir, args.get("ref"))
+        if err:
+            _tool_result(msg_id, json.dumps({"error": "not_found", "message": err}), is_error=True, mode=io_mode)
+            return
+        if not payload.get("formula"):
+            _tool_result(msg_id, json.dumps({"error": "not_formula", "message": "Value cell has no formula"}), is_error=True, mode=io_mode)
+            return
+        _tool_result(msg_id, json.dumps(payload, indent=2), mode=io_mode)
+        return
+
+    if name == "set_formula":
+        ref = str(args.get("ref", "")).strip()
+        formula = str(args.get("formula", "")).strip()
+        if not ref or not formula:
+            _tool_result(msg_id, "Error: ref and formula are required", is_error=True, mode=io_mode)
+            return
+        if client is None:
+            _tool_result(msg_id, "Error: set_formula unavailable", is_error=True, mode=io_mode)
+            return
+        payload, err = client.set_formula(args)
         if err:
             _tool_result(msg_id, json.dumps({"error": "validation", "message": err}), is_error=True, mode=io_mode)
             return

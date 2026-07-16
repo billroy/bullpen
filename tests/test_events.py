@@ -138,6 +138,72 @@ def _wait_for_event(client, name, timeout=3.0):
     return None
 
 
+def test_formula_set_calculates_on_server_and_constant_write_clears_formula(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 0}, "type": "value",
+        "fields": {"name": "Input", "value": "4", "value_type": "number"},
+    })
+    get_event(c, "layout:updated")
+    c.emit("worker:add", {
+        "coord": {"col": 1, "row": 0}, "type": "value",
+        "fields": {"name": "Output", "value": "0", "value_type": "auto"},
+    })
+    get_event(c, "layout:updated")
+
+    c.emit("formula:set", {"ref": "B1", "formula": "=A1*2"})
+    layout = get_event(c, "layout:updated")
+    output = layout["slots"][1]
+    assert output["value"] == 8
+    assert output["formula"] == {"source": "=A1*2", "version": 1}
+    assert output["formula_state"]["status"] == "ok"
+    assert output["formula_state"]["dependencies"] == ["A1"]
+
+    c.emit("value:set", {"ref": "B1", "value": "literal", "value_type": "string"})
+    layout = get_event(c, "layout:updated")
+    output = layout["slots"][1]
+    assert output["value"] == "literal"
+    assert "formula" not in output
+    assert "formula_state" not in output
+
+
+def test_formula_error_persists_source_and_preserves_last_successful_value(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 0}, "type": "value",
+        "fields": {"name": "Output", "value": "7", "value_type": "number"},
+    })
+    get_event(c, "layout:updated")
+
+    c.emit("formula:set", {"ref": "A1", "formula": "=1/0"})
+    layout = get_event(c, "layout:updated")
+    output = layout["slots"][0]
+
+    assert output["value"] == 7
+    assert output["formula"]["source"] == "=1/0"
+    assert output["formula_state"]["status"] == "error"
+    assert output["formula_state"]["error_code"] == "#DIV/0!"
+
+
+def test_worker_configure_cannot_write_formula_result_fields(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 0}, "type": "value",
+        "fields": {"name": "Output", "value": "7", "value_type": "number"},
+    })
+    get_event(c, "layout:updated")
+
+    c.emit("worker:configure", {
+        "slot": 0,
+        "fields": {"formula_state": {"status": "ok"}, "resolved_value_type": "string"},
+    })
+    layout = get_event(c, "layout:updated")
+    output = layout["slots"][0]
+
+    assert output["resolved_value_type"] == "number"
+    assert "formula_state" not in output
+
+
 def test_direct_speech_payload_normalizes_defaults_and_voice():
     payload = events_mod._normalize_direct_speech_payload({"text": "  Hello Bullpen  "})
 
