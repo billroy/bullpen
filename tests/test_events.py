@@ -167,6 +167,27 @@ def test_formula_set_calculates_on_server_and_constant_write_clears_formula(clie
     assert "formula_state" not in output
 
 
+def test_ui_worker_configure_leading_equals_is_calculated_not_stored_as_text(client):
+    c, _app = client
+    c.emit("worker:add", {
+        "coord": {"col": 0, "row": 28}, "type": "value",
+        "fields": {"name": "", "value": "0", "value_type": "auto"},
+    })
+    layout = get_event(c, "layout:updated")
+    slot_index = next(index for index, slot in enumerate(layout["slots"]) if slot and slot.get("row") == 28)
+
+    # This is the payload emitted by browser windows opened before the
+    # formula-specific client save path was introduced.
+    c.emit("worker:configure", {"slot": slot_index, "fields": {"value": "=2+2"}})
+    layout = get_event(c, "layout:updated")
+    worker = layout["slots"][slot_index]
+
+    assert worker["value"] == 4
+    assert worker["resolved_value_type"] == "number"
+    assert worker["formula"] == {"source": "=2+2", "version": 1}
+    assert worker["formula_state"]["status"] == "ok"
+
+
 def test_formula_error_persists_source_and_preserves_last_successful_value(client):
     c, _app = client
     c.emit("worker:add", {

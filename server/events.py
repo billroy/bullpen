@@ -2486,17 +2486,30 @@ def register_events(socketio, app):
 
         value_write_old_slot = None
         value_payload = None
+        formula_ui_write = False
         if worker.get("type") == "value" and any(k in fields for k in ("value", "value_type")):
             value_write_old_slot = copy.deepcopy(worker)
-            try:
-                value_payload = value_mod.classify_value_input(
-                    fields.get("value", worker.get("value")),
-                    fields.get("value_type", worker.get("value_type", "auto")),
-                    source="ui",
-                )
-            except ValueError as exc:
-                emit("error", {"message": str(exc)})
-                return
+            raw_ui_value = fields.get("value")
+            formula_ui_write = isinstance(raw_ui_value, str) and raw_ui_value.strip().startswith("=")
+            if formula_ui_write:
+                try:
+                    worker["formula"] = formula_mod.normalize_formula(raw_ui_value)
+                except formula_mod.FormulaError as exc:
+                    emit("error", {"message": exc.message, "code": exc.code})
+                    return
+                worker["formula_state"] = formula_mod.normalize_formula_state({"status": "pending"})
+                worker["formula_updated_at"] = _now_iso()
+                fields = {key: value for key, value in fields.items() if key != "value"}
+            else:
+                try:
+                    value_payload = value_mod.classify_value_input(
+                        fields.get("value", worker.get("value")),
+                        fields.get("value_type", worker.get("value_type", "auto")),
+                        source="ui",
+                    )
+                except ValueError as exc:
+                    emit("error", {"message": str(exc)})
+                    return
         for k, v in fields.items():
             if k not in ("task_queue", "state", "resolved_value_type"):
                 worker[k] = v
@@ -2515,14 +2528,15 @@ def register_events(socketio, app):
             _remember_ai_selection(app, worker.get("agent"), worker.get("model"))
 
         if value_write_old_slot is not None:
+            generation_time = worker.get("formula_updated_at") if formula_ui_write else worker.get("updated_at")
             _commit_formula_generation(
                 bp_dir,
                 layout,
                 root_indices={slot_index},
-                updated_at=worker.get("updated_at") or _now_iso(),
+                updated_at=generation_time or _now_iso(),
                 changed_by="worker_configure",
                 ws_id=ws_id,
-                root_events=[(slot_index, value_write_old_slot, "worker_configure")],
+                root_events=[] if formula_ui_write else [(slot_index, value_write_old_slot, "worker_configure")],
             )
         else:
             _save_layout(bp_dir, layout)
