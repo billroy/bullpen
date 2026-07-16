@@ -1,6 +1,9 @@
 """Regression checks for sparse worker grid implementation."""
 
+import json
 from pathlib import Path
+import shutil
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +54,96 @@ def test_keyboard_selected_empty_cell_does_not_leave_menu_highlight_stale():
     assert "'menu-open': emptyMenuOpenFor(ghostCell)" in tab
     assert ".worker-grid-ghost-cell.menu-open .empty-slot-menu-btn" in style
     assert ".worker-grid-ghost-cell.selected .empty-slot-menu-btn" not in style
+
+
+def test_all_arrow_keys_move_from_formula_to_empty_cell_without_opening_menu():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "BullpenTab.js"))}, 'utf8');
+const context = {{
+  console,
+  localStorage: {{ getItem: () => null, setItem: () => {{}} }},
+  WorkerCard: {{}},
+}};
+vm.createContext(context);
+vm.runInContext(source + `
+  const methods = BullpenTab.methods;
+  const expected = {{
+    ArrowUp: {{ col: 5, row: 4 }},
+    ArrowDown: {{ col: 5, row: 6 }},
+    ArrowLeft: {{ col: 4, row: 5 }},
+    ArrowRight: {{ col: 6, row: 5 }},
+  }};
+  const results = {{}};
+  for (const [key, destination] of Object.entries(expected)) {{
+    const component = {{
+      selectedCell: {{ col: 5, row: 5 }},
+      selectionAnchor: {{ col: 5, row: 5 }},
+      selectedWorkerSlots: [7],
+      selectedWorkerScope: 'item',
+      emptyMenuCoord: null,
+      showLibrary: false,
+      showGoTo: false,
+      showHelp: false,
+      viewportOrigin: {{ col: 0, row: 0 }},
+      viewportPx: {{ width: 1000, height: 800 }},
+      columnWidth: 200,
+      rowHeight: 100,
+      valueShortcutTargetCoord() {{ return null; }},
+      isWritableCoord(coord) {{ return coord.col >= 0 && coord.row >= 0; }},
+      itemAtCoord(coord) {{
+        return coord.col === 5 && coord.row === 5
+          ? {{ slotIndex: 7, coord: {{ col: 5, row: 5 }}, worker: {{ name: 'Formula', formula: {{ source: '=2+2' }} }} }}
+          : null;
+      }},
+      selectCell(coord) {{
+        this.selectedCell = {{ ...coord }};
+        this.selectionAnchor = {{ ...coord }};
+        this.selectedWorkerSlots = [];
+        this.selectedWorkerScope = 'none';
+        this.emptyMenuCoord = null;
+      }},
+      selectWorker() {{ throw new Error('destination should be empty'); }},
+      ensureCoordVisible() {{}},
+      flashBoundary() {{}},
+      printableValueShortcutKey: methods.printableValueShortcutKey,
+    }};
+    const event = {{
+      key,
+      target: null,
+      shiftKey: false,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      defaultPrevented: false,
+      preventDefault() {{ this.defaultPrevented = true; }},
+    }};
+    methods.onKeydown.call(component, event);
+    results[key] = {{
+      selectedCell: component.selectedCell,
+      emptyMenuCoord: component.emptyMenuCoord,
+      defaultPrevented: event.defaultPrevented,
+      expected: destination,
+    }};
+  }}
+  globalThis.__results = results;
+`, context);
+process.stdout.write(JSON.stringify(context.__results));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    results = json.loads(result.stdout)
+
+    for key, payload in results.items():
+        assert payload["defaultPrevented"] is True, key
+        assert payload["selectedCell"] == payload["expected"], key
+        assert payload["emptyMenuCoord"] is None, key
 
 
 def test_worker_drag_over_empty_cell_tracks_valid_drop_target_for_ghost_highlight():
