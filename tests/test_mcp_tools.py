@@ -462,8 +462,10 @@ def test_list_formula_functions_is_searchable_and_machine_readable(tmp_workspace
 
     payload = json.loads(captured["text"])
     assert captured["is_error"] is False
-    assert payload["count"] == 4
-    assert {item["name"] for item in payload["functions"]} == {"PV", "FV", "PMT", "NPV"}
+    assert payload["count"] == 10
+    assert {item["name"] for item in payload["functions"]} == {
+        "PV", "FV", "PMT", "NPV", "IRR", "MIRR", "NPER", "RATE", "XIRR", "XNPV",
+    }
     assert all(item["signature"] and item["summary"] and item["examples"] for item in payload["functions"])
 
 

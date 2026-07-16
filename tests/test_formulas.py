@@ -191,9 +191,19 @@ def test_volatile_functions_use_injected_server_clock():
 
 def test_public_function_catalog_examples_are_supported_by_evaluator():
     assert len(FORMULA_FUNCTION_NAMES) == len(FORMULA_FUNCTIONS)
+    values = [-100, "2026-01-01", 60, "2027-01-01", 60, "2028-01-01"]
+    slots = [
+        {"type": "value", "value": value, "row": index // 2, "col": index % 2}
+        for index, value in enumerate(values)
+    ]
     for entry in FORMULA_FUNCTIONS:
-        result = evaluate_formula(entry["examples"][0], [])
-        assert result is not None, entry["name"]
+        if entry["name"] == "NA":
+            with pytest.raises(FormulaError) as caught:
+                evaluate_formula(entry["examples"][0], slots, current_index=0, cols=2)
+            assert caught.value.code == "#N/A"
+        else:
+            result = evaluate_formula(entry["examples"][0], slots, current_index=0, cols=2)
+            assert result is not None, entry["name"]
 
 
 def test_volatile_staleness_is_derived_without_mutating_formula_state():

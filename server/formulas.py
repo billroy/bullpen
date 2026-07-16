@@ -7,8 +7,10 @@ import re
 import copy
 import uuid
 import heapq
+import calendar
+import statistics
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable
 
@@ -65,6 +67,8 @@ class EvaluationResult:
 @dataclass
 class RangeValue:
     values: list[Any]
+    rows: int = 1
+    cols: int = 1
 
 
 class FormulaResolver:
@@ -269,7 +273,8 @@ def tokenize(source: str) -> list[Token]:
         if coord:
             raw = coord.group(0)
             end = coord.end()
-            if end == len(text) or not (text[end].isalnum() or text[end] in "_."):
+            function_call = end < len(text) and text[end] == "(" and raw.upper() in FORMULA_FUNCTION_NAMES
+            if not function_call and (end == len(text) or not (text[end].isalnum() or text[end] in "_.")):
                 tokens.append(Token("COORD", raw, position))
                 i = end
                 continue
@@ -521,6 +526,170 @@ def coerce_formula_result(value: Any, value_type: object = "auto") -> tuple[Any,
     return value, resolved
 
 
+def _as_date(value: Any, position: int | None = None) -> date:
+    text = _canonical_text(value).strip()
+    try:
+        return date.fromisoformat(text[:10])
+    except (TypeError, ValueError):
+        raise FormulaError("#VALUE!", "Strict ISO date required", position)
+
+
+def _as_time(value: Any, position: int | None = None) -> time:
+    text = _canonical_text(value).strip()
+    candidate = text.split("T", 1)[1] if "T" in text else text
+    candidate = candidate.removesuffix("Z")
+    try:
+        return time.fromisoformat(candidate)
+    except (TypeError, ValueError):
+        raise FormulaError("#VALUE!", "Strict ISO time or timestamp required", position)
+
+
+def _add_months(value: date, months: int, *, end_of_month: bool = False) -> date:
+    month_index = value.year * 12 + value.month - 1 + months
+    year, month_zero = divmod(month_index, 12)
+    month = month_zero + 1
+    last = calendar.monthrange(year, month)[1]
+    day = last if end_of_month else min(value.day, last)
+    return date(year, month, day)
+
+
+def _range_items(value: Any) -> list[Any]:
+    return list(value.values) if isinstance(value, RangeValue) else [value]
+
+
+def _numeric_items(value: Any, position: int | None = None) -> list[float | int]:
+    return [item for item in _range_items(value)
+            if isinstance(item, (int, float)) and not isinstance(item, bool)]
+
+
+def _equal(left: Any, right: Any) -> bool:
+    if isinstance(left, str) and isinstance(right, str):
+        return left.casefold() == right.casefold()
+    return left == right
+
+
+def _wildcard_regex(pattern: str) -> re.Pattern[str]:
+    pieces: list[str] = []
+    escaped = False
+    for ch in pattern:
+        if escaped:
+            pieces.append(re.escape(ch))
+            escaped = False
+        elif ch == "~":
+            escaped = True
+        elif ch == "*":
+            pieces.append(".*")
+        elif ch == "?":
+            pieces.append(".")
+        else:
+            pieces.append(re.escape(ch))
+    if escaped:
+        pieces.append(re.escape("~"))
+    return re.compile("^" + "".join(pieces) + "$", re.IGNORECASE | re.DOTALL)
+
+
+def _criterion_match(value: Any, criterion: Any) -> bool:
+    if not isinstance(criterion, str):
+        return _equal(value, criterion)
+    match = re.match(r"^(<=|>=|<>|=|<|>)(.*)$", criterion, re.DOTALL)
+    op, target_text = (match.group(1), match.group(2)) if match else ("=", criterion)
+    target: Any = target_text
+    try:
+        target = float(target_text) if any(ch in target_text.lower() for ch in ".e") else int(target_text)
+    except (TypeError, ValueError):
+        pass
+    if op in {"=", "<>"} and isinstance(target, str) and any(ch in target for ch in "*?"):
+        matched = bool(_wildcard_regex(target).match(_canonical_text(value)))
+        return matched if op == "=" else not matched
+    if op in {"=", "<>"}:
+        matched = _equal(value, target)
+        return matched if op == "=" else not matched
+    try:
+        if isinstance(value, str) and isinstance(target, str):
+            left, right = value.casefold(), target.casefold()
+        else:
+            left, right = value, target
+        return {"<": left < right, "<=": left <= right, ">": left > right, ">=": left >= right}[op]
+    except TypeError:
+        return False
+
+
+def _percentile(numbers: list[float | int], k: float, position: int) -> float | int:
+    if not numbers:
+        raise FormulaError("#DIV/0!", "Percentile has no numeric values", position)
+    if not 0 <= k <= 1:
+        raise FormulaError("#NUM!", "Percentile must be between 0 and 1", position)
+    ordered = sorted(numbers)
+    rank = (len(ordered) - 1) * k
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (rank - lower)
+
+
+_BASE_INFO = {
+    "BIN": (2, 10, -512, 511),
+    "OCT": (8, 10, -536870912, 536870911),
+    "HEX": (16, 10, -549755813888, 549755813887),
+}
+
+
+def _decode_base(value: Any, source: str, position: int) -> int:
+    base, width, _minimum, _maximum = _BASE_INFO[source]
+    text = _canonical_text(value).strip().upper()
+    if not text or len(text) > width:
+        raise FormulaError("#NUM!", f"Invalid {source} value", position)
+    try:
+        unsigned = int(text, base)
+    except ValueError:
+        raise FormulaError("#NUM!", f"Invalid {source} value", position)
+    bits = {"BIN": 10, "OCT": 30, "HEX": 40}[source]
+    if len(text) == width and unsigned & (1 << (bits - 1)):
+        return unsigned - (1 << bits)
+    if unsigned > _BASE_INFO[source][3]:
+        raise FormulaError("#NUM!", f"{source} value is out of range", position)
+    return unsigned
+
+
+def _encode_base(number: int, target: str, places: int | None, position: int) -> str:
+    base, width, minimum, maximum = _BASE_INFO[target]
+    if number < minimum or number > maximum:
+        raise FormulaError("#NUM!", f"Value is out of range for {target}", position)
+    bits = {"BIN": 10, "OCT": 30, "HEX": 40}[target]
+    unsigned = number if number >= 0 else (1 << bits) + number
+    encoded = {2: lambda n: format(n, "b"), 8: lambda n: format(n, "o"), 16: lambda n: format(n, "X")}[base](unsigned)
+    if number < 0:
+        return encoded.rjust(width, {2: "1", 8: "7", 16: "F"}[base])
+    if places is not None:
+        if places < len(encoded) or places < 1 or places > width:
+            raise FormulaError("#NUM!", "Invalid places argument", position)
+        encoded = encoded.rjust(places, "0")
+    return encoded
+
+
+def _bounded_root(function: Callable[[float], float], guess: float, position: int) -> float:
+    value = guess
+    for _ in range(100):
+        current = function(value)
+        if abs(current) <= 1e-10:
+            return value
+        step = max(1e-7, abs(value) * 1e-6)
+        try:
+            derivative = (function(value + step) - function(value - step)) / (2 * step)
+        except (ValueError, ZeroDivisionError, OverflowError):
+            derivative = 0
+        if not derivative or not math.isfinite(derivative):
+            break
+        candidate = value - current / derivative
+        if candidate <= -0.999999999 or not math.isfinite(candidate):
+            candidate = (value - 0.999999999) / 2
+        if abs(candidate - value) <= 1e-12:
+            return candidate
+        value = candidate
+    raise FormulaError("#NUM!", "Calculation did not converge", position)
+
+
 class Evaluator:
     def __init__(self, slots: list[Any], *, current_index: int | None = None, cols: int = 4,
                  now: datetime | None = None, resolver: FormulaResolver | None = None):
@@ -597,7 +766,7 @@ class Evaluator:
                 if ref not in self.dependencies:
                     self.dependencies.append(ref)
                 values.append(slot.get("value", ""))
-        return RangeValue(values)
+        return RangeValue(values, rows=max_row - min_row + 1, cols=max_col - min_col + 1)
 
     def binary(self, op: str, left_node, right_node):
         left = self.evaluate(left_node)
@@ -671,6 +840,41 @@ class Evaluator:
                 return False
             except FormulaError:
                 return True
+        if name in {"ISERR", "ISNA"}:
+            if len(args) != 1:
+                raise FormulaError("#VALUE!", f"{name} expects 1 argument", position)
+            try:
+                self.evaluate(args[0])
+                return False
+            except FormulaError as error:
+                return error.code != "#N/A" if name == "ISERR" else error.code == "#N/A"
+        if name == "IFNA":
+            if len(args) != 2:
+                raise FormulaError("#VALUE!", "IFNA expects 2 arguments", position)
+            try:
+                return self.evaluate(args[0])
+            except FormulaError as error:
+                if error.code != "#N/A":
+                    raise
+                return self.evaluate(args[1])
+        if name == "IFS":
+            if not args or len(args) % 2:
+                raise FormulaError("#VALUE!", "IFS expects condition/value pairs", position)
+            for index in range(0, len(args), 2):
+                if bool(self.evaluate(args[index])):
+                    return self.evaluate(args[index + 1])
+            raise FormulaError("#N/A", "IFS found no true condition", position)
+        if name == "SWITCH":
+            if len(args) < 3:
+                raise FormulaError("#VALUE!", "SWITCH expects an expression and cases", position)
+            expression = self.evaluate(args[0])
+            pair_end = len(args) if len(args) % 2 else len(args) - 1
+            for index in range(1, pair_end, 2):
+                if _equal(expression, self.evaluate(args[index])):
+                    return self.evaluate(args[index + 1])
+            if pair_end < len(args):
+                return self.evaluate(args[-1])
+            raise FormulaError("#N/A", "SWITCH found no matching case", position)
         if name in {"AND", "OR"}:
             if not args:
                 raise FormulaError("#VALUE!", f"{name} expects at least 1 argument", position)
@@ -683,6 +887,20 @@ class Evaluator:
                 if bool(self.evaluate(arg)):
                     return True
             return False
+        if name in {"ROW", "COLUMN"}:
+            if len(args) > 1:
+                raise FormulaError("#VALUE!", f"{name} expects 0 or 1 arguments", position)
+            if args:
+                node = args[0]
+                if node[0] not in {"reference", "range"} or (node[0] == "reference" and not node[2]):
+                    raise FormulaError("#VALUE!", f"{name} requires a coordinate reference", position)
+                parsed = parse_cell_ref(node[1].replace("$", ""))
+                if not parsed:
+                    raise FormulaError("#REF!", "Invalid coordinate reference", position)
+                return parsed["row"] + 1 if name == "ROW" else parsed["col"] + 1
+            if self.current_index is None:
+                raise FormulaError("#VALUE!", f"{name} requires cell context", position)
+            return self.current_index // self.cols + 1 if name == "ROW" else self.current_index % self.cols + 1
         values = self._args(args)
         if name in {"SUM", "AVERAGE", "MIN", "MAX", "COUNT"}:
             flat = self._flatten(values)
@@ -698,6 +916,127 @@ class Evaluator:
             if name == "AVERAGE":
                 return sum(numbers) / len(numbers)
             return min(numbers) if name == "MIN" else max(numbers)
+        if name in {"COUNTA", "COUNTBLANK"}:
+            flat = self._flatten(values)
+            if name == "COUNTA":
+                return sum(item is not None and item != "" for item in flat)
+            return sum(item is None or item == "" for item in flat)
+        if name in {"COUNTIF", "SUMIF", "AVERAGEIF"}:
+            expected = 2 if name == "COUNTIF" else None
+            if (expected and len(values) != expected) or (not expected and len(values) not in {2, 3}):
+                raise FormulaError("#VALUE!", f"Invalid {name} arguments", position)
+            criteria_items = _range_items(values[0])
+            selected = [index for index, item in enumerate(criteria_items) if _criterion_match(item, values[1])]
+            if name == "COUNTIF":
+                return len(selected)
+            result_items = _range_items(values[2]) if len(values) == 3 else criteria_items
+            if len(result_items) != len(criteria_items):
+                raise FormulaError("#VALUE!", "Criteria and result ranges must have equal size", position)
+            numbers = [result_items[index] for index in selected
+                       if isinstance(result_items[index], (int, float)) and not isinstance(result_items[index], bool)]
+            if name == "SUMIF":
+                return sum(numbers)
+            if not numbers:
+                raise FormulaError("#DIV/0!", "AVERAGEIF has no matching numeric values", position)
+            return sum(numbers) / len(numbers)
+        if name in {"COUNTIFS", "SUMIFS", "AVERAGEIFS", "MAXIFS", "MINIFS"}:
+            if name == "COUNTIFS":
+                if len(values) < 2 or len(values) % 2:
+                    raise FormulaError("#VALUE!", "COUNTIFS expects range/criterion pairs", position)
+                result_items = None
+                pairs = values
+            else:
+                if len(values) < 3 or len(values) % 2 == 0:
+                    raise FormulaError("#VALUE!", f"{name} expects a result range and range/criterion pairs", position)
+                result_items = _range_items(values[0])
+                pairs = values[1:]
+            ranges = [_range_items(pairs[index]) for index in range(0, len(pairs), 2)]
+            size = len(ranges[0])
+            if any(len(items) != size for items in ranges) or (result_items is not None and len(result_items) != size):
+                raise FormulaError("#VALUE!", "Criteria and result ranges must have equal size", position)
+            selected = [index for index in range(size) if all(
+                _criterion_match(ranges[pair_index][index], pairs[pair_index * 2 + 1])
+                for pair_index in range(len(ranges))
+            )]
+            if name == "COUNTIFS":
+                return len(selected)
+            numbers = [result_items[index] for index in selected
+                       if isinstance(result_items[index], (int, float)) and not isinstance(result_items[index], bool)]
+            if name == "SUMIFS":
+                return sum(numbers)
+            if not numbers:
+                raise FormulaError("#DIV/0!" if name == "AVERAGEIFS" else "#VALUE!",
+                                   f"{name} has no matching numeric values", position)
+            if name == "AVERAGEIFS":
+                return sum(numbers) / len(numbers)
+            return max(numbers) if name == "MAXIFS" else min(numbers)
+        if name == "SUMPRODUCT":
+            if not values:
+                raise FormulaError("#VALUE!", "SUMPRODUCT expects at least 1 argument", position)
+            arrays = [_range_items(value) for value in values]
+            if any(len(items) != len(arrays[0]) for items in arrays):
+                raise FormulaError("#VALUE!", "SUMPRODUCT arguments must have equal size", position)
+            total = 0
+            for index in range(len(arrays[0])):
+                product = 1
+                for items in arrays:
+                    item = items[index]
+                    product *= item if isinstance(item, (int, float)) and not isinstance(item, bool) else 0
+                total += product
+            return total
+        if name in {"PRODUCT", "SUMSQ"}:
+            numbers = [item for item in self._flatten(values)
+                       if isinstance(item, (int, float)) and not isinstance(item, bool)]
+            if name == "SUMSQ":
+                return sum(item * item for item in numbers)
+            product = 1
+            for item in numbers:
+                product *= item
+            return product
+        if name in {"MEDIAN", "LARGE", "SMALL", "PERCENTILE.INC", "QUARTILE.INC", "RANK.EQ", "STDEV.P", "STDEV.S"}:
+            if not values:
+                raise FormulaError("#VALUE!", f"{name} expects arguments", position)
+            numbers = _numeric_items(values[0], position)
+            if name in {"MEDIAN", "STDEV.P", "STDEV.S"} and len(values) > 1:
+                numbers = [item for item in self._flatten(values)
+                           if isinstance(item, (int, float)) and not isinstance(item, bool)]
+            if name == "MEDIAN":
+                if not numbers:
+                    raise FormulaError("#DIV/0!", "MEDIAN has no numeric values", position)
+                return statistics.median(numbers)
+            if name in {"LARGE", "SMALL"}:
+                self._arity(name, values, 2, position)
+                rank = int(_number(values[1], position))
+                if rank < 1 or rank > len(numbers):
+                    raise FormulaError("#NUM!", "Rank is out of range", position)
+                return sorted(numbers, reverse=name == "LARGE")[rank - 1]
+            if name == "PERCENTILE.INC":
+                self._arity(name, values, 2, position)
+                return _percentile(numbers, float(_number(values[1], position)), position)
+            if name == "QUARTILE.INC":
+                self._arity(name, values, 2, position)
+                quartile = int(_number(values[1], position))
+                if quartile not in range(5):
+                    raise FormulaError("#NUM!", "Quartile must be 0 through 4", position)
+                return _percentile(numbers, quartile / 4, position)
+            if name == "RANK.EQ":
+                if len(values) not in {2, 3}:
+                    raise FormulaError("#VALUE!", "RANK.EQ expects 2 or 3 arguments", position)
+                target = _number(values[0], position)
+                numbers = _numeric_items(values[1], position)
+                ascending = bool(values[2]) if len(values) == 3 else False
+                ordered = sorted(numbers, reverse=not ascending)
+                try:
+                    return ordered.index(target) + 1
+                except ValueError:
+                    raise FormulaError("#N/A", "Value is not in the ranked range", position)
+            if name == "STDEV.P":
+                if not numbers:
+                    raise FormulaError("#DIV/0!", "STDEV.P has no numeric values", position)
+                return statistics.pstdev(numbers)
+            if len(numbers) < 2:
+                raise FormulaError("#DIV/0!", "STDEV.S requires at least 2 numeric values", position)
+            return statistics.stdev(numbers)
         if name == "NOT":
             self._arity(name, values, 1, position)
             return not bool(values[0])
@@ -710,9 +1049,201 @@ class Evaluator:
         if name == "ISBLANK":
             self._arity(name, values, 1, position)
             return values[0] == "" or values[0] is None
+        if name == "NA":
+            self._arity(name, values, 0, position)
+            raise FormulaError("#N/A", "Not available", position)
+        if name in {"ISEVEN", "ISODD"}:
+            self._arity(name, values, 1, position)
+            number = math.trunc(_number(values[0], position))
+            return number % 2 == (0 if name == "ISEVEN" else 1)
+        if name == "ISLOGICAL":
+            self._arity(name, values, 1, position)
+            return isinstance(values[0], bool)
+        if name == "N":
+            self._arity(name, values, 1, position)
+            if isinstance(values[0], bool):
+                return int(values[0])
+            return values[0] if isinstance(values[0], (int, float)) else 0
+        if name == "TYPE":
+            self._arity(name, values, 1, position)
+            if isinstance(values[0], RangeValue):
+                return 64
+            if isinstance(values[0], bool):
+                return 4
+            if isinstance(values[0], (int, float)):
+                return 1
+            return 2
+        if name == "XOR":
+            if not values:
+                raise FormulaError("#VALUE!", "XOR expects at least 1 argument", position)
+            return sum(bool(item) for item in self._flatten(values)) % 2 == 1
+        if name == "CHOOSE":
+            if len(values) < 2:
+                raise FormulaError("#VALUE!", "CHOOSE expects an index and values", position)
+            index = int(_number(values[0], position))
+            if index < 1 or index >= len(values):
+                raise FormulaError("#VALUE!", "CHOOSE index is out of range", position)
+            return values[index]
+        if name in {"ROWS", "COLUMNS"}:
+            self._arity(name, values, 1, position)
+            value = values[0]
+            if not isinstance(value, RangeValue):
+                return 1
+            return value.rows if name == "ROWS" else value.cols
+        if name == "INDEX":
+            if len(values) not in {2, 3}:
+                raise FormulaError("#VALUE!", "INDEX expects 2 or 3 arguments", position)
+            source = values[0] if isinstance(values[0], RangeValue) else RangeValue([values[0]])
+            row = int(_number(values[1], position))
+            col = int(_number(values[2], position)) if len(values) == 3 else 1
+            if row < 1 or col < 1 or row > source.rows or col > source.cols:
+                raise FormulaError("#REF!", "INDEX position is outside the range", position)
+            return source.values[(row - 1) * source.cols + col - 1]
+        if name in {"MATCH", "XMATCH"}:
+            if len(values) < 2 or len(values) > (4 if name == "XMATCH" else 3):
+                raise FormulaError("#VALUE!", f"Invalid {name} arguments", position)
+            lookup = values[0]
+            items = _range_items(values[1])
+            match_mode = int(_number(values[2], position)) if len(values) > 2 else (0 if name == "XMATCH" else 1)
+            search_mode = int(_number(values[3], position)) if len(values) > 3 else 1
+            allowed_modes = {0, 1, -1, 2} if name == "XMATCH" else {0, 1, -1}
+            if match_mode not in allowed_modes or search_mode not in {1, -1}:
+                raise FormulaError("#VALUE!", f"Unsupported {name} match or search mode", position)
+            order = range(len(items) - 1, -1, -1) if search_mode == -1 else range(len(items))
+            for index in order:
+                matched = (_wildcard_regex(_canonical_text(lookup)).match(_canonical_text(items[index])) is not None
+                           if match_mode == 2 else _equal(items[index], lookup))
+                if matched:
+                    return index + 1
+            comparable = [(index, item) for index, item in enumerate(items)
+                          if isinstance(item, (int, float)) and isinstance(lookup, (int, float))]
+            if match_mode in {1, -1}:
+                candidates = [(index, item) for index, item in comparable
+                              if (item >= lookup if match_mode == 1 and name == "XMATCH" else
+                                  item <= lookup if match_mode == -1 and name == "XMATCH" else
+                                  item <= lookup if match_mode == 1 else item >= lookup)]
+                if candidates:
+                    chosen = min(candidates, key=lambda pair: pair[1]) if (match_mode == 1 and name == "XMATCH") or (match_mode == -1 and name != "XMATCH") else max(candidates, key=lambda pair: pair[1])
+                    return chosen[0] + 1
+            raise FormulaError("#N/A", f"{name} did not find a match", position)
+        if name == "XLOOKUP":
+            if len(values) < 3 or len(values) > 6:
+                raise FormulaError("#VALUE!", "XLOOKUP expects 3 to 6 arguments", position)
+            lookup_items, return_items = _range_items(values[1]), _range_items(values[2])
+            if len(lookup_items) != len(return_items):
+                raise FormulaError("#VALUE!", "Lookup and return ranges must have equal size", position)
+            match_mode = int(_number(values[4], position)) if len(values) > 4 else 0
+            search_mode = int(_number(values[5], position)) if len(values) > 5 else 1
+            if match_mode not in {0, 1, -1, 2} or search_mode not in {1, -1}:
+                raise FormulaError("#VALUE!", "Unsupported XLOOKUP match or search mode", position)
+            order = range(len(lookup_items) - 1, -1, -1) if search_mode == -1 else range(len(lookup_items))
+            for index in order:
+                matched = (_wildcard_regex(_canonical_text(values[0])).match(_canonical_text(lookup_items[index])) is not None
+                           if match_mode == 2 else _equal(values[0], lookup_items[index]))
+                if matched:
+                    return return_items[index]
+            if match_mode in {1, -1} and isinstance(values[0], (int, float)):
+                candidates = [(index, item) for index, item in enumerate(lookup_items)
+                              if isinstance(item, (int, float)) and
+                              (item >= values[0] if match_mode == 1 else item <= values[0])]
+                if candidates:
+                    chosen = min(candidates, key=lambda pair: pair[1]) if match_mode == 1 else max(candidates, key=lambda pair: pair[1])
+                    return return_items[chosen[0]]
+            if len(values) > 3:
+                return values[3]
+            raise FormulaError("#N/A", "XLOOKUP did not find a match", position)
         if name == "ABS":
             self._arity(name, values, 1, position)
             return abs(_number(values[0], position))
+        if name in {"EXP", "LN", "LOG", "LOG10", "SQRT", "POWER", "PI", "SIGN", "INT", "TRUNC", "CEILING.MATH", "FLOOR.MATH", "QUOTIENT"}:
+            if name == "PI":
+                self._arity(name, values, 0, position)
+                return math.pi
+            if name == "POWER":
+                self._arity(name, values, 2, position)
+                operands = (_number(values[0], position), _number(values[1], position))
+                try:
+                    return _number(math.pow(*operands), position)
+                except (ValueError, OverflowError):
+                    raise FormulaError("#NUM!", "Invalid POWER result", position)
+            if name == "LOG":
+                if len(values) not in {1, 2}:
+                    raise FormulaError("#VALUE!", "LOG expects 1 or 2 arguments", position)
+                number = _number(values[0], position)
+                base = _number(values[1], position) if len(values) == 2 else 10
+                if number <= 0 or base <= 0 or base == 1:
+                    raise FormulaError("#NUM!", "Invalid LOG domain", position)
+                return math.log(number, base)
+            if name in {"CEILING.MATH", "FLOOR.MATH"}:
+                if len(values) not in {1, 2, 3}:
+                    raise FormulaError("#VALUE!", f"{name} expects 1 to 3 arguments", position)
+                number = _number(values[0], position)
+                significance = abs(_number(values[1], position)) if len(values) > 1 else 1
+                mode = bool(values[2]) if len(values) > 2 else False
+                if significance == 0:
+                    return 0
+                scaled = number / significance
+                if name == "CEILING.MATH":
+                    rounded = math.floor(scaled) if number < 0 and mode else math.ceil(scaled)
+                else:
+                    rounded = math.ceil(scaled) if number < 0 and mode else math.floor(scaled)
+                return rounded * significance
+            if name == "QUOTIENT":
+                self._arity(name, values, 2, position)
+                divisor = _number(values[1], position)
+                if divisor == 0:
+                    raise FormulaError("#DIV/0!", "Division by zero", position)
+                return math.trunc(_number(values[0], position) / divisor)
+            self._arity(name, values, 1, position)
+            number = _number(values[0], position)
+            try:
+                if name == "EXP": return _number(math.exp(number), position)
+                if name == "LN": return _number(math.log(number), position)
+                if name == "LOG10": return _number(math.log10(number), position)
+                if name == "SQRT": return _number(math.sqrt(number), position)
+                if name == "SIGN": return 0 if number == 0 else (1 if number > 0 else -1)
+                if name == "INT": return math.floor(number)
+                return math.trunc(number)
+            except (ValueError, OverflowError):
+                raise FormulaError("#NUM!", f"Invalid {name} result", position)
+        if name in {"ACOS", "ACOSH", "ASIN", "ASINH", "ATAN", "ATANH", "COS", "COSH", "SIN", "SINH", "TAN", "TANH", "DEGREES", "RADIANS"}:
+            self._arity(name, values, 1, position)
+            number = _number(values[0], position)
+            functions = {"ACOS": math.acos, "ACOSH": math.acosh, "ASIN": math.asin,
+                         "ASINH": math.asinh, "ATAN": math.atan, "ATANH": math.atanh,
+                         "COS": math.cos, "COSH": math.cosh, "SIN": math.sin,
+                         "SINH": math.sinh, "TAN": math.tan, "TANH": math.tanh,
+                         "DEGREES": math.degrees, "RADIANS": math.radians}
+            try:
+                return _number(functions[name](number), position)
+            except (ValueError, OverflowError):
+                raise FormulaError("#NUM!", f"Invalid {name} result", position)
+        if name == "ATAN2":
+            self._arity(name, values, 2, position)
+            x, y = _number(values[0], position), _number(values[1], position)
+            if x == 0 and y == 0:
+                raise FormulaError("#DIV/0!", "ATAN2 arguments cannot both be zero", position)
+            return math.atan2(y, x)
+        if name in {"COMBIN", "FACT", "GCD", "LCM"}:
+            numbers = [math.trunc(_number(item, position)) for item in values]
+            if any(item < 0 for item in numbers):
+                raise FormulaError("#NUM!", f"{name} requires non-negative integers", position)
+            try:
+                if name == "FACT":
+                    self._arity(name, values, 1, position)
+                    if numbers[0] > 170:
+                        raise FormulaError("#NUM!", "FACT result would overflow", position)
+                    return math.factorial(numbers[0])
+                if name == "COMBIN":
+                    self._arity(name, values, 2, position)
+                    if numbers[0] > 10000:
+                        raise FormulaError("#LIMIT!", "COMBIN input is too large", position)
+                    return math.comb(numbers[0], numbers[1])
+                if not numbers:
+                    raise FormulaError("#VALUE!", f"{name} expects arguments", position)
+                return math.gcd(*numbers) if name == "GCD" else math.lcm(*numbers)
+            except ValueError:
+                raise FormulaError("#NUM!", f"Invalid {name} arguments", position)
         if name in {"ROUND", "ROUNDUP", "ROUNDDOWN"}:
             if len(values) not in {1, 2}:
                 raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
@@ -773,6 +1304,106 @@ class Evaluator:
                 raise FormulaError("#VALUE!", "SUBSTITUTE occurrence must be positive", position)
             parts = text.split(old)
             return old.join(parts[:occurrence]) + (new + old.join(parts[occurrence:]) if len(parts) > occurrence else "")
+        if name in {"CLEAN", "PROPER", "CHAR", "CODE", "UNICODE", "UNICHAR", "REPT", "EXACT"}:
+            if name == "EXACT":
+                self._arity(name, values, 2, position)
+                return _canonical_text(values[0]) == _canonical_text(values[1])
+            if name == "REPT":
+                self._arity(name, values, 2, position)
+                count = math.trunc(_number(values[1], position))
+                if count < 0:
+                    raise FormulaError("#VALUE!", "REPT count cannot be negative", position)
+                result = _canonical_text(values[0]) * count
+                if len(result) > FORMULA_MAX_LENGTH:
+                    raise FormulaError("#LIMIT!", "REPT result is too long", position)
+                return result
+            self._arity(name, values, 1, position)
+            if name == "CLEAN":
+                return "".join(ch for ch in _canonical_text(values[0]) if ord(ch) >= 32)
+            if name == "PROPER":
+                return _canonical_text(values[0]).title()
+            if name in {"CODE", "UNICODE"}:
+                text = _canonical_text(values[0])
+                if not text:
+                    raise FormulaError("#VALUE!", f"{name} requires non-empty text", position)
+                return ord(text[0])
+            codepoint = math.trunc(_number(values[0], position))
+            if name == "CHAR" and not 1 <= codepoint <= 255:
+                raise FormulaError("#VALUE!", "CHAR code must be 1 through 255", position)
+            try:
+                return chr(codepoint)
+            except (ValueError, OverflowError):
+                raise FormulaError("#VALUE!", "Invalid Unicode code point", position)
+        if name in {"FIND", "SEARCH"}:
+            if len(values) not in {2, 3}:
+                raise FormulaError("#VALUE!", f"{name} expects 2 or 3 arguments", position)
+            needle, haystack = _canonical_text(values[0]), _canonical_text(values[1])
+            start = math.trunc(_number(values[2], position)) if len(values) == 3 else 1
+            if start < 1 or start > len(haystack) + 1:
+                raise FormulaError("#VALUE!", "Search start is out of range", position)
+            if name == "SEARCH":
+                needle, haystack = needle.casefold(), haystack.casefold()
+            found = haystack.find(needle, start - 1)
+            if found < 0:
+                raise FormulaError("#VALUE!", f"{name} text was not found", position)
+            return found + 1
+        if name == "REPLACE":
+            self._arity(name, values, 4, position)
+            text = _canonical_text(values[0])
+            start = math.trunc(_number(values[1], position))
+            count = math.trunc(_number(values[2], position))
+            if start < 1 or count < 0:
+                raise FormulaError("#VALUE!", "REPLACE indices are invalid", position)
+            return text[:start - 1] + _canonical_text(values[3]) + text[start - 1 + count:]
+        if name in {"TEXTBEFORE", "TEXTAFTER"}:
+            if len(values) not in {2, 3}:
+                raise FormulaError("#VALUE!", f"{name} expects 2 or 3 arguments", position)
+            text, delimiter = _canonical_text(values[0]), _canonical_text(values[1])
+            instance = math.trunc(_number(values[2], position)) if len(values) == 3 else 1
+            if not delimiter or instance == 0:
+                raise FormulaError("#VALUE!", "Delimiter and instance are invalid", position)
+            positions = [match.start() for match in re.finditer(re.escape(delimiter), text)]
+            selected = instance - 1 if instance > 0 else len(positions) + instance
+            if selected < 0 or selected >= len(positions):
+                raise FormulaError("#N/A", "Delimiter occurrence was not found", position)
+            cut = positions[selected]
+            return text[:cut] if name == "TEXTBEFORE" else text[cut + len(delimiter):]
+        if name in {"VALUE", "NUMBERVALUE"}:
+            if name == "VALUE":
+                self._arity(name, values, 1, position)
+                decimal, group = ".", ","
+            else:
+                if len(values) not in {1, 2, 3}:
+                    raise FormulaError("#VALUE!", "NUMBERVALUE expects 1 to 3 arguments", position)
+                decimal = _canonical_text(values[1]) if len(values) > 1 else "."
+                group = _canonical_text(values[2]) if len(values) > 2 else ","
+            text = _canonical_text(values[0]).strip()
+            if decimal == group or len(decimal) != 1 or len(group) > 1:
+                raise FormulaError("#VALUE!", "Invalid numeric separators", position)
+            percent = text.endswith("%")
+            if percent:
+                text = text[:-1].strip()
+            if group:
+                text = text.replace(group, "")
+            if decimal != ".":
+                text = text.replace(decimal, ".")
+            try:
+                result = float(text)
+            except ValueError:
+                raise FormulaError("#VALUE!", "Text is not a number", position)
+            result = result / 100 if percent else result
+            return int(result) if result.is_integer() else result
+        if name == "TEXT":
+            self._arity(name, values, 2, position)
+            value, pattern = values[0], _canonical_text(values[1])
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                percent = "%" in pattern
+                number = value * 100 if percent else value
+                decimals = len(pattern.split(".", 1)[1].replace("%", "")) if "." in pattern else 0
+                grouping = "," in pattern.split(".", 1)[0]
+                rendered = f"{number:,.{decimals}f}" if grouping else f"{number:.{decimals}f}"
+                return rendered + ("%" if percent else "")
+            return _canonical_text(value)
         if name == "DATE":
             self._arity(name, values, 3, position)
             try:
@@ -794,12 +1425,169 @@ class Evaluator:
             except ValueError:
                 raise FormulaError("#VALUE!", "Strict ISO dates required", position)
             return (end - start).days
+        if name in {"DATEVALUE", "TIMEVALUE", "HOUR", "MINUTE", "SECOND"}:
+            self._arity(name, values, 1, position)
+            if name == "DATEVALUE":
+                return _as_date(values[0], position).isoformat()
+            parsed = _as_time(values[0], position)
+            if name == "TIMEVALUE":
+                return parsed.replace(microsecond=0).isoformat()
+            return {"HOUR": parsed.hour, "MINUTE": parsed.minute, "SECOND": parsed.second}[name]
+        if name == "TIME":
+            self._arity(name, values, 3, position)
+            parts = [math.trunc(_number(value, position)) for value in values]
+            total = parts[0] * 3600 + parts[1] * 60 + parts[2]
+            if total < 0:
+                raise FormulaError("#NUM!", "TIME cannot be negative", position)
+            total %= 86400
+            return time(total // 3600, (total % 3600) // 60, total % 60).isoformat()
+        if name in {"EDATE", "EOMONTH"}:
+            self._arity(name, values, 2, position)
+            start = _as_date(values[0], position)
+            months = math.trunc(_number(values[1], position))
+            return _add_months(start, months, end_of_month=name == "EOMONTH").isoformat()
+        if name in {"WEEKDAY", "WEEKNUM", "ISOWEEKNUM"}:
+            if name == "ISOWEEKNUM":
+                self._arity(name, values, 1, position)
+                return _as_date(values[0], position).isocalendar().week
+            if len(values) not in {1, 2}:
+                raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
+            parsed = _as_date(values[0], position)
+            mode = math.trunc(_number(values[1], position)) if len(values) == 2 else 1
+            weekday = parsed.weekday()
+            if name == "WEEKDAY":
+                if mode == 1: return (weekday + 1) % 7 + 1
+                if mode == 2: return weekday + 1
+                if mode == 3: return weekday
+                starts = {11: 0, 12: 1, 13: 2, 14: 3, 15: 4, 16: 5, 17: 6}
+                if mode in starts: return (weekday - starts[mode]) % 7 + 1
+                raise FormulaError("#NUM!", "Unsupported WEEKDAY return type", position)
+            if mode == 21:
+                return parsed.isocalendar().week
+            starts = {1: 6, 2: 0, 11: 0, 12: 1, 13: 2, 14: 3, 15: 4, 16: 5, 17: 6}
+            if mode not in starts:
+                raise FormulaError("#NUM!", "Unsupported WEEKNUM return type", position)
+            year_start = date(parsed.year, 1, 1)
+            offset = (year_start.weekday() - starts[mode]) % 7
+            return ((parsed - year_start).days + offset) // 7 + 1
+        if name == "DATEDIF":
+            self._arity(name, values, 3, position)
+            start, end = _as_date(values[0], position), _as_date(values[1], position)
+            unit = _canonical_text(values[2]).upper()
+            if end < start:
+                raise FormulaError("#NUM!", "DATEDIF end precedes start", position)
+            years = end.year - start.year - ((end.month, end.day) < (start.month, start.day))
+            months = (end.year - start.year) * 12 + end.month - start.month - (end.day < start.day)
+            if unit == "Y": return years
+            if unit == "M": return months
+            if unit == "D": return (end - start).days
+            if unit == "YM": return months - years * 12
+            if unit == "MD":
+                anchor = _add_months(start, months)
+                return (end - anchor).days
+            if unit == "YD":
+                anchor = date(end.year, start.month, min(start.day, calendar.monthrange(end.year, start.month)[1]))
+                if anchor > end: anchor = date(end.year - 1, start.month, min(start.day, calendar.monthrange(end.year - 1, start.month)[1]))
+                return (end - anchor).days
+            raise FormulaError("#VALUE!", "Unsupported DATEDIF unit", position)
+        if name in {"NETWORKDAYS", "NETWORKDAYS.INTL", "WORKDAY", "WORKDAY.INTL"}:
+            international = name.endswith(".INTL")
+            workday = name.startswith("WORKDAY")
+            minimum, maximum = (2, 4) if international else (2, 3)
+            if len(values) < minimum or len(values) > maximum:
+                raise FormulaError("#VALUE!", f"Invalid {name} arguments", position)
+            weekend_arg_index = 2 if international else None
+            holiday_index = 3 if international else 2
+            weekend_value = values[weekend_arg_index] if weekend_arg_index is not None and len(values) > weekend_arg_index else 1
+            weekend_codes = {1:{5,6},2:{6,0},3:{0,1},4:{1,2},5:{2,3},6:{3,4},7:{4,5},11:{6},12:{0},13:{1},14:{2},15:{3},16:{4},17:{5}}
+            if isinstance(weekend_value, str) and len(weekend_value) == 7 and set(weekend_value) <= {"0","1"}:
+                weekends = {index for index, flag in enumerate(weekend_value) if flag == "1"}
+            else:
+                code = math.trunc(_number(weekend_value, position))
+                if code not in weekend_codes:
+                    raise FormulaError("#NUM!", "Invalid weekend code", position)
+                weekends = weekend_codes[code]
+            holidays = {_as_date(item, position) for item in _range_items(values[holiday_index]) if item not in {None, ""}} if len(values) > holiday_index else set()
+            is_workday = lambda day: day.weekday() not in weekends and day not in holidays
+            if workday:
+                current = _as_date(values[0], position)
+                remaining = abs(math.trunc(_number(values[1], position)))
+                if remaining > 1000000:
+                    raise FormulaError("#LIMIT!", "WORKDAY span is too large", position)
+                direction = 1 if _number(values[1], position) >= 0 else -1
+                while remaining:
+                    current += timedelta(days=direction)
+                    if is_workday(current): remaining -= 1
+                return current.isoformat()
+            start, end = _as_date(values[0], position), _as_date(values[1], position)
+            if abs((end - start).days) > 1000000:
+                raise FormulaError("#LIMIT!", "NETWORKDAYS span is too large", position)
+            direction = 1 if end >= start else -1
+            count, current = 0, start
+            while True:
+                if is_workday(current): count += direction
+                if current == end: break
+                current += timedelta(days=direction)
+            return count
+        if name == "YEARFRAC":
+            if len(values) not in {2, 3}:
+                raise FormulaError("#VALUE!", "YEARFRAC expects 2 or 3 arguments", position)
+            start, end = _as_date(values[0], position), _as_date(values[1], position)
+            basis = math.trunc(_number(values[2], position)) if len(values) == 3 else 0
+            sign = 1
+            if end < start: start, end, sign = end, start, -1
+            if basis == 2: result = (end - start).days / 360
+            elif basis == 3: result = (end - start).days / 365
+            elif basis in {0, 4}:
+                d1 = min(start.day, 30)
+                d2 = min(end.day, 30) if basis == 4 or d1 == 30 else end.day
+                result = ((end.year-start.year)*360 + (end.month-start.month)*30 + d2-d1) / 360
+            elif basis == 1:
+                if start.year == end.year:
+                    result = (end-start).days / (366 if calendar.isleap(start.year) else 365)
+                else:
+                    result = (date(start.year+1,1,1)-start).days/(366 if calendar.isleap(start.year) else 365)
+                    result += sum(1 for _year in range(start.year+1,end.year))
+                    result += (end-date(end.year,1,1)).days/(366 if calendar.isleap(end.year) else 365)
+            else: raise FormulaError("#NUM!", "YEARFRAC basis must be 0 through 4", position)
+            return sign * result
         if name in {"DELTA", "GESTEP"}:
             if len(values) not in {1, 2}:
                 raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
             left = _number(values[0], position)
             right = _number(values[1], position) if len(values) == 2 else 0
             return 1 if (left == right if name == "DELTA" else left >= right) else 0
+        if name in {"BIN2DEC", "BIN2HEX", "BIN2OCT", "DEC2BIN", "DEC2HEX", "DEC2OCT", "HEX2BIN", "HEX2DEC", "HEX2OCT", "OCT2BIN", "OCT2DEC", "OCT2HEX"}:
+            if len(values) not in {1, 2}:
+                raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
+            source, target = name.split("2")
+            if target == "DEC" and len(values) != 1:
+                raise FormulaError("#VALUE!", f"{name} does not accept places", position)
+            number = math.trunc(_number(values[0], position)) if source == "DEC" and isinstance(values[0], (int, float)) and not isinstance(values[0], bool) else (_decode_base(values[0], source, position) if source != "DEC" else None)
+            if source == "DEC" and number is None:
+                raise FormulaError("#VALUE!", f"{name} requires a decimal number", position)
+            if target == "DEC":
+                return number
+            places = math.trunc(_number(values[1], position)) if len(values) == 2 else None
+            return _encode_base(number, target, places, position)
+        if name in {"BITAND", "BITOR", "BITXOR", "BITLSHIFT", "BITRSHIFT"}:
+            self._arity(name, values, 2, position)
+            left, right = (_number(values[0], position), _number(values[1], position))
+            if left != math.trunc(left) or right != math.trunc(right):
+                raise FormulaError("#NUM!", "Bitwise arguments must be integers", position)
+            left, right = int(left), int(right)
+            limit = (1 << 48) - 1
+            if left < 0 or left > limit or (name in {"BITAND","BITOR","BITXOR"} and (right < 0 or right > limit)):
+                raise FormulaError("#NUM!", "Bitwise argument is outside the 48-bit range", position)
+            if name == "BITAND": result = left & right
+            elif name == "BITOR": result = left | right
+            elif name == "BITXOR": result = left ^ right
+            else:
+                shift = right if name == "BITLSHIFT" else -right
+                result = left << shift if shift >= 0 else left >> -shift
+            if result < 0 or result > limit:
+                raise FormulaError("#NUM!", "Bitwise result is outside the 48-bit range", position)
+            return result
         if name == "CONVERT":
             self._arity(name, values, 3, position)
             value = _number(values[0], position)
@@ -811,6 +1599,66 @@ class Evaluator:
             if (source in length) != (target in length):
                 raise FormulaError("#VALUE!", "Incompatible conversion units", position)
             return value * factors[source] / factors[target]
+        if name in {"IRR", "MIRR", "NPER", "RATE", "XIRR", "XNPV"}:
+            if name == "IRR":
+                if not values:
+                    raise FormulaError("#VALUE!", "IRR expects cash flows", position)
+                flows = [_number(item, position) for item in self._flatten(values)]
+                if not any(item < 0 for item in flows) or not any(item > 0 for item in flows):
+                    raise FormulaError("#NUM!", "IRR requires positive and negative cash flows", position)
+                return _bounded_root(lambda rate: sum(flow / ((1 + rate) ** index) for index, flow in enumerate(flows)), 0.1, position)
+            if name == "MIRR":
+                if len(values) < 3:
+                    raise FormulaError("#VALUE!", "MIRR expects cash flows and two rates", position)
+                finance_rate = _number(values[-2], position)
+                reinvest_rate = _number(values[-1], position)
+                flows = [_number(item, position) for item in self._flatten(values[:-2])]
+                if len(flows) < 2 or not any(item < 0 for item in flows) or not any(item > 0 for item in flows):
+                    raise FormulaError("#NUM!", "MIRR requires positive and negative cash flows", position)
+                periods = len(flows) - 1
+                present_negative = sum(flow / ((1 + finance_rate) ** index) for index, flow in enumerate(flows) if flow < 0)
+                future_positive = sum(flow * ((1 + reinvest_rate) ** (periods - index)) for index, flow in enumerate(flows) if flow > 0)
+                return (future_positive / -present_negative) ** (1 / periods) - 1
+            if name == "NPER":
+                if len(values) not in {3,4,5}:
+                    raise FormulaError("#VALUE!", "NPER expects 3 to 5 arguments", position)
+                rate, payment, present = map(lambda item: _number(item, position), values[:3])
+                future = _number(values[3], position) if len(values)>3 else 0
+                due = _number(values[4], position) if len(values)>4 else 0
+                try:
+                    return -(present + future) / payment if rate == 0 else math.log((payment*(1+rate*due)-future*rate)/(present*rate+payment*(1+rate*due))) / math.log(1+rate)
+                except (ValueError, ZeroDivisionError):
+                    raise FormulaError("#NUM!", "Invalid NPER inputs", position)
+            if name == "RATE":
+                if len(values) not in {3,4,5,6}:
+                    raise FormulaError("#VALUE!", "RATE expects 3 to 6 arguments", position)
+                nper, payment, present = map(lambda item: _number(item, position), values[:3])
+                future = _number(values[3], position) if len(values)>3 else 0
+                due = _number(values[4], position) if len(values)>4 else 0
+                guess = _number(values[5], position) if len(values)>5 else 0.1
+                def balance(rate):
+                    factor=(1+rate)**nper
+                    return present*factor + payment*(1+rate*due)*(factor-1)/rate + future if rate else present+payment*nper+future
+                return _bounded_root(balance, guess, position)
+            if name == "XNPV":
+                self._arity(name, values, 3, position)
+                rate = _number(values[0], position)
+                flows = [_number(item, position) for item in _range_items(values[1])]
+                date_values = values[2]
+            else:
+                if len(values) not in {2, 3}:
+                    raise FormulaError("#VALUE!", "XIRR expects 2 or 3 arguments", position)
+                flows = [_number(item, position) for item in _range_items(values[0])]
+                date_values = values[1]
+                guess = _number(values[2], position) if len(values) == 3 else 0.1
+            dates = [_as_date(item, position) for item in _range_items(date_values)]
+            if len(flows) != len(dates) or not flows:
+                raise FormulaError("#VALUE!", "Cash-flow and date ranges must have equal size", position)
+            if not any(item < 0 for item in flows) or not any(item > 0 for item in flows):
+                raise FormulaError("#NUM!", f"{name} requires positive and negative cash flows", position)
+            origin = dates[0]
+            value_at = lambda rate: sum(flow / ((1+rate) ** ((day-origin).days/365)) for flow,day in zip(flows,dates))
+            return value_at(rate) if name == "XNPV" else _bounded_root(value_at, guess, position)
         if name in {"PV", "FV", "PMT"}:
             if len(values) not in {3, 4, 5}:
                 raise FormulaError("#VALUE!", f"{name} expects 3 to 5 arguments", position)
