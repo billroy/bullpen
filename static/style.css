@@ -3202,6 +3202,36 @@ body.worker-singleton-dragging * {
   flex-shrink: 0;
 }
 
+.worker-type-icon-host {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.value-kind-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 800;
+  letter-spacing: -0.08em;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.value-kind-glyph--card {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+}
+
+.value-kind-glyph--roster {
+  width: 14px;
+  height: 14px;
+  font-size: 9px;
+}
+
 .worker-type-icon svg,
 [data-lucide] {
   display: block;

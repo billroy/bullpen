@@ -91,7 +91,13 @@ const LeftPane = {
                @dragleave="onRosterDragLeave"
                @drop="onRosterDrop($event, w.slot)">
             <span class="roster-name">
-              <i class="worker-type-icon worker-type-icon--roster" :data-lucide="workerTypeIcon(w)" aria-hidden="true"></i>
+              <span class="worker-type-icon-host"
+                    role="img"
+                    :title="workerTypeVisualLabel(w)"
+                    :aria-label="workerTypeVisualLabel(w)">
+                <span v-if="valueWorkerVisualKind(w) === 'formula'" class="value-kind-glyph value-kind-glyph--roster" aria-hidden="true">fx</span>
+                <i v-else class="worker-type-icon worker-type-icon--roster" :data-lucide="workerTypeIcon(w)" aria-hidden="true"></i>
+              </span>
               <span class="roster-label">{{ w.name }}</span>
             </span>
             <span class="status-pill" :class="'status-' + workerStatusClass(w)">{{ workerStatusLabel(w) }}</span>
@@ -251,6 +257,10 @@ const LeftPane = {
           retry_max: s.retry_max,
           agent: s.agent,
           type: s.type,
+          value: s.value,
+          value_type: s.value_type,
+          resolved_value_type: s.resolved_value_type,
+          formula: s.formula,
           color: s.color,
           service_state: s.service_state,
           port: s.port,
@@ -446,6 +456,12 @@ const LeftPane = {
     },
     workerTypeIcon(worker) {
       return getWorkerTypeIcon(worker);
+    },
+    valueWorkerVisualKind(worker) {
+      return typeof getValueWorkerVisualKind === 'function' ? getValueWorkerVisualKind(worker) : '';
+    },
+    workerTypeVisualLabel(worker) {
+      return typeof workerTypeLabel === 'function' ? workerTypeLabel(worker) : 'Worker';
     },
     workerType(worker) {
       return String(worker?.type || 'ai');

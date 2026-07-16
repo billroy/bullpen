@@ -670,8 +670,13 @@ unrelated writes and volatile ticks from producing automation storms.
   successful value** fields so source and result are never confused.
 
 The inline editor shows formula source when editing and formatted computed value
-when not editing. Formula cards display a small `fx` indicator. Error cards
-show the error token and preserve access to the source and last good value.
+when not editing. Value cards and roster entries use a semantic icon triplet:
+numeric constants display `#`, string/null/other nonnumeric constants display
+`T`, and formulas display a small `fx` indicator regardless of the computed
+result type. Error cards retain the `fx` identity, show the error token, and
+preserve access to the source and last good value. Tooltips and accessible
+labels identify the categories as **Numeric value**, **Text value**, and
+**Formula** so the distinction does not depend on the glyph alone.
 
 ### Point Mode
 

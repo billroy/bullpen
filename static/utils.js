@@ -106,6 +106,16 @@ function isValueWorker(worker) {
   return worker?.type === 'value';
 }
 
+function getValueWorkerVisualKind(worker) {
+  if (!isValueWorker(worker)) return '';
+  if (worker?.formula && typeof worker.formula === 'object' && worker.formula.source) return 'formula';
+  const resolved = String(worker?.resolved_value_type || '').trim().toLowerCase();
+  if (resolved === 'number') return 'number';
+  if (!resolved && (String(worker?.value_type || '').trim().toLowerCase() === 'number'
+      || (typeof worker?.value === 'number' && Number.isFinite(worker.value)))) return 'number';
+  return 'text';
+}
+
 function getServiceSiteUrl(worker, locationLike = window.location) {
   if (!isServiceWorker(worker)) return '';
   const port = Number(worker?.port);
@@ -141,7 +151,11 @@ function getWorkerTypeIcon(worker) {
   if (isServiceWorker(worker)) return 'server-cog';
   if (isMarkerWorker(worker)) return 'square-dot';
   if (isNotificationWorker(worker)) return 'bell-ring';
-  if (isValueWorker(worker)) return 'equal';
+  if (isValueWorker(worker)) {
+    const kind = getValueWorkerVisualKind(worker);
+    if (kind === 'formula') return '';
+    return kind === 'number' ? 'hash' : 'type';
+  }
   if (isEvalWorker(worker)) return 'flask-conical';
   if (isUnknownWorkerType(worker)) return 'circle-help';
   return 'bot';
@@ -152,7 +166,11 @@ function workerTypeLabel(worker) {
   if (isServiceWorker(worker)) return 'Service';
   if (isMarkerWorker(worker)) return 'Marker';
   if (isNotificationWorker(worker)) return 'Notification';
-  if (isValueWorker(worker)) return 'Value';
+  if (isValueWorker(worker)) {
+    const kind = getValueWorkerVisualKind(worker);
+    if (kind === 'formula') return 'Formula';
+    return kind === 'number' ? 'Numeric value' : 'Text value';
+  }
   if (isEvalWorker(worker)) return 'Eval';
   if (isHumanWorker(worker)) return 'Human';
   if (isUnknownWorkerType(worker)) return worker.type;
@@ -209,6 +227,7 @@ window.notificationSummaryItems = notificationSummaryItems;
 window.workerColor = workerColor;
 window.isHumanWorker = isHumanWorker;
 window.isValueWorker = isValueWorker;
+window.getValueWorkerVisualKind = getValueWorkerVisualKind;
 window.getColumnIcon = getColumnIcon;
 
 function formatTaskDuration(ms) {

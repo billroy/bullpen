@@ -15,8 +15,65 @@ def test_value_worker_type_metadata_is_registered():
     assert "worker?.type === 'value'" in text
     assert "'value', 'eval'" in text
     assert "function isValueWorker(worker)" in text
-    assert "return 'equal';" in text
-    assert "return 'Value';" in text
+    assert "function getValueWorkerVisualKind(worker)" in text
+    assert "return kind === 'number' ? 'hash' : 'type';" in text
+    assert "if (kind === 'formula') return 'Formula';" in text
+
+
+def test_value_worker_icon_triplet_uses_formula_numeric_and_text_semantics():
+    node = shutil.which("node")
+    if not node:
+        import pytest
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "utils.js"))}, 'utf8');
+const context = {{ window: {{}}, URL, console }};
+vm.createContext(context);
+vm.runInContext(source + `
+  const workers = {{
+    formulaNumber: {{ type: 'value', value: 4, resolved_value_type: 'number', formula: {{ source: '=2+2' }} }},
+    formulaText: {{ type: 'value', value: 'ok', resolved_value_type: 'string', formula: {{ source: '=\"ok\"' }} }},
+    numeric: {{ type: 'value', value: 42, value_type: 'auto', resolved_value_type: 'number' }},
+    text: {{ type: 'value', value: '42', value_type: 'string', resolved_value_type: 'string' }},
+    empty: {{ type: 'value', value: null, value_type: 'auto', resolved_value_type: 'null' }},
+  }};
+  globalThis.__result = Object.fromEntries(Object.entries(workers).map(([key, worker]) => [key, {{
+    kind: getValueWorkerVisualKind(worker),
+    icon: getWorkerTypeIcon(worker),
+    label: workerTypeLabel(worker),
+  }}]));
+`, context);
+process.stdout.write(JSON.stringify(context.__result));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload["formulaNumber"] == {"kind": "formula", "icon": "", "label": "Formula"}
+    assert payload["formulaText"] == {"kind": "formula", "icon": "", "label": "Formula"}
+    assert payload["numeric"] == {"kind": "number", "icon": "hash", "label": "Numeric value"}
+    assert payload["text"] == {"kind": "text", "icon": "type", "label": "Text value"}
+    assert payload["empty"] == {"kind": "text", "icon": "type", "label": "Text value"}
+
+
+def test_value_icon_triplet_is_rendered_on_cards_and_roster_with_accessible_labels():
+    card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+    roster = (ROOT / "static" / "components" / "LeftPane.js").read_text()
+    style = (ROOT / "static" / "style.css").read_text()
+
+    assert "valueVisualKind === 'formula'" in card
+    assert "value-kind-glyph value-kind-glyph--card" in card
+    assert ':aria-label="workerTypeLabel"' in card
+    assert "valueWorkerVisualKind(w) === 'formula'" in roster
+    assert "value-kind-glyph value-kind-glyph--roster" in roster
+    assert ':aria-label="workerTypeVisualLabel(w)"' in roster
+    assert "resolved_value_type: s.resolved_value_type" in roster
+    assert "formula: s.formula" in roster
+    assert ".value-kind-glyph--card" in style
+    assert ".value-kind-glyph--roster" in style
 
 
 def test_grid_geometry_exposes_cell_reference_helpers_used_by_bullpen_tab():
