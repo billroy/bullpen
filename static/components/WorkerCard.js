@@ -84,7 +84,7 @@ const WorkerCard = {
                @click.stop
                @dblclick.stop
                aria-label="Edit name and value">
-        <div v-else class="worker-card-identity">
+        <div v-else-if="!usesSpreadsheetStyle || spreadsheetHasLabel" class="worker-card-identity">
           <div class="worker-card-title-row" ref="titleRow">
             <span v-if="!usesSpreadsheetStyle"
                   :key="'worker-type-icon-' + valueVisualKind + '-' + workerIcon"
@@ -102,7 +102,7 @@ const WorkerCard = {
         <button v-if="showCompactValue && !valueEditing"
                 type="button"
                 class="worker-card-compact-value worker-card-compact-value-button"
-                :class="usesSpreadsheetStyle ? 'worker-card-compact-value--' + valueAlignment : null"
+                :class="usesSpreadsheetStyle ? 'worker-card-compact-value--' + spreadsheetValueAlignment : null"
                 :title="valueDisplay || 'Empty'"
                 @click.stop="startCompactValueEdit"
                 @dblclick.stop
@@ -373,6 +373,9 @@ const WorkerCard = {
         && !this.isSelected
         && !this.valueEditing
       );
+    },
+    spreadsheetHasLabel() {
+      return String(this.worker?.name || '').trim().length > 0;
     },
     passDir() {
       const d = this.worker.disposition || '';
@@ -668,6 +671,13 @@ const WorkerCard = {
       const kind = String(this.worker?.format?.kind || 'general');
       if (kind === 'string-left') return 'left';
       if (kind === 'string-right' || kind === 'number' || kind === 'currency') return 'right';
+      return String(this.worker?.resolved_value_type || '') === 'number' ? 'right' : 'left';
+    },
+    spreadsheetValueAlignment() {
+      const kind = String(this.worker?.format?.kind || 'general');
+      if (kind === 'string-left') return 'left';
+      if (kind === 'string-right' || kind === 'number' || kind === 'currency') return 'right';
+      if (this.spreadsheetHasLabel) return 'right';
       return String(this.worker?.resolved_value_type || '') === 'number' ? 'right' : 'left';
     },
     valueDisplay() {

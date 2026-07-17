@@ -264,6 +264,7 @@ process.stdout.write(JSON.stringify(context.__result));
 
 def test_value_worker_alignment_follows_format_and_resolved_type():
     card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+    grid = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
     css = (ROOT / "static" / "style.css").read_text()
 
     assert "valueAlignment()" in card
@@ -271,6 +272,12 @@ def test_value_worker_alignment_follows_format_and_resolved_type():
     assert "kind === 'string-right' || kind === 'number' || kind === 'currency'" in card
     assert ".worker-card-value-main--left" in css
     assert ".worker-card-value-main--right" in css
+    assert "spreadsheetHasLabel()" in card
+    assert "v-else-if=\"!usesSpreadsheetStyle || spreadsheetHasLabel\"" in card
+    assert "spreadsheetValueAlignment()" in card
+    assert "if (this.spreadsheetHasLabel) return 'right';" in card
+    assert "'worker-card-compact-value--' + spreadsheetValueAlignment" in card
+    assert "interactiveTarget && !e.target.closest('.worker-card-compact-value-button')" in grid
 
 
 def test_numeric_value_worker_card_has_sparkline_and_graph_modal():

@@ -1272,7 +1272,10 @@ const BullpenTab = {
     },
     onWorkerClick(e, item) {
       if (window._bullpenSuppressWorkerClickUntil && Date.now() < window._bullpenSuppressWorkerClickUntil) return;
-      if (e.target.closest('.card-height-resize-handle, .connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea')) {
+      const interactiveTarget = e.target.closest(
+        '.card-height-resize-handle, .connect-handle, .status-pill, .worker-menu-btn, .worker-menu, button, input, select, textarea'
+      );
+      if (interactiveTarget && !e.target.closest('.worker-card-compact-value-button')) {
         return;
       }
       if (e.shiftKey) {

@@ -186,6 +186,126 @@ def test_compact_value_spreadsheet_style_selection_theme_and_persistence_in_chro
                 proc.kill()
 
 
+def test_compact_value_spreadsheet_alignment_matrix_in_chromium():
+    with tempfile.TemporaryDirectory(prefix="bullpen_value_alignment_pw_") as workspace:
+        port = _free_port()
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+            bp_dir = os.path.join(workspace, ".bullpen")
+            config_path = os.path.join(bp_dir, "config.json")
+            layout_path = os.path.join(bp_dir, "layout.json")
+
+            with open(config_path, encoding="utf-8") as handle:
+                config = json.load(handle)
+            config["grid"] = {
+                **(config.get("grid") or {}),
+                "rowHeight": 32,
+                "rowHeights": {},
+            }
+            config["worker_pill_styles"]["value"] = False
+            with open(config_path, "w", encoding="utf-8") as handle:
+                json.dump(config, handle, indent=2)
+                handle.write("\n")
+
+            with open(layout_path, encoding="utf-8") as handle:
+                layout = json.load(handle)
+
+            def value_slot(name, value, resolved, col, row, kind="general"):
+                return {
+                    "type": "value",
+                    "name": name,
+                    "value": value,
+                    "value_type": "auto",
+                    "resolved_value_type": resolved,
+                    "format": {"kind": kind},
+                    "state": "idle",
+                    "task_queue": [],
+                    "col": col,
+                    "row": row,
+                }
+
+            layout["slots"] = [
+                value_slot("direction", "west", "string", 0, 0),
+                value_slot("", "femoral artery", "string", 1, 0),
+                value_slot("", "1.02e24", "string", 2, 0),
+                value_slot("", None, "null", 3, 0),
+                value_slot("", 4504, "number", 0, 1),
+                value_slot("left override", "tucson", "string", 1, 1, "string-left"),
+                value_slot("right override", "east", "string", 2, 1, "string-right"),
+            ]
+            with open(layout_path, "w", encoding="utf-8") as handle:
+                json.dump(layout, handle, indent=2)
+                handle.write("\n")
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                page = browser.new_page(locale="en-US")
+                page.goto(base_url)
+                page.get_by_role("button", name="Workers").click()
+                cards = page.locator(".worker-card")
+                expect(cards).to_have_count(7)
+                viewport = page.locator(".worker-grid-viewport")
+                viewport.focus()
+                for _ in range(4):
+                    viewport.press("ArrowRight")
+
+                def alignment_for(card):
+                    return card.evaluate(
+                        """element => {
+                          const value = element.querySelector('.worker-card-compact-value');
+                          const cardRect = element.getBoundingClientRect();
+                          const valueRect = value.getBoundingClientRect();
+                          return {
+                            align: getComputedStyle(value).textAlign,
+                            identityCount: element.querySelectorAll('.worker-card-identity').length,
+                            leftInset: valueRect.left - cardRect.left,
+                            rightInset: cardRect.right - valueRect.right,
+                          };
+                        }"""
+                    )
+
+                labeled_string = alignment_for(cards.filter(has_text="direction").first)
+                assert labeled_string["identityCount"] == 1
+                assert labeled_string["align"] == "right"
+
+                unlabeled_string = alignment_for(cards.filter(has_text="femoral artery").first)
+                assert unlabeled_string["identityCount"] == 0
+                assert unlabeled_string["align"] == "left"
+                assert unlabeled_string["leftInset"] < 10
+                assert unlabeled_string["rightInset"] < 10
+
+                scientific_text = alignment_for(cards.filter(has_text="1.02e24").first)
+                assert scientific_text["identityCount"] == 0
+                assert scientific_text["align"] == "left"
+                assert scientific_text["leftInset"] < 10
+
+                empty_value = alignment_for(cards.filter(has_text="Empty").first)
+                assert empty_value["identityCount"] == 0
+                assert empty_value["align"] == "left"
+                assert empty_value["leftInset"] < 10
+
+                unlabeled_number = alignment_for(cards.filter(has_text="4504").first)
+                assert unlabeled_number["identityCount"] == 0
+                assert unlabeled_number["align"] == "right"
+                assert unlabeled_number["rightInset"] < 10
+
+                explicit_left = alignment_for(cards.filter(has_text="left override").first)
+                assert explicit_left["identityCount"] == 1
+                assert explicit_left["align"] == "left"
+                explicit_right = alignment_for(cards.filter(has_text="right override").first)
+                assert explicit_right["identityCount"] == 1
+                assert explicit_right["align"] == "right"
+                browser.close()
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 @pytest.mark.parametrize(
     ("formula", "expected_text", "expected_value"),
     [
