@@ -78,6 +78,26 @@ def test_leftpane_workerlist_orders_marker_groups_then_loose():
     assert out == ["M1", "A", "C", "M2", "B", "L1", "L2"]
 
 
+def test_leftpane_workerlist_excludes_value_cells_from_roster():
+    layout = {
+        "slots": [
+            {"name": "Worker A", "type": "ai", "row": 0, "col": 0, "disposition": ""},
+            {"name": "Revenue", "type": "value", "row": 0, "col": 1, "value": 42},
+            {
+                "name": "Total",
+                "type": "value",
+                "row": 0,
+                "col": 2,
+                "value": 84,
+                "formula": {"source": "=B1*2"},
+            },
+            {"name": "Worker B", "type": "ai", "row": 0, "col": 3, "disposition": ""},
+        ]
+    }
+    out = _harness(layout, {"grid": {"cols": 4}})
+    assert out == ["Worker A", "Worker B"]
+
+
 def test_leftpane_workerlist_pass_direction_groups_neighbor():
     layout = {
         "slots": [

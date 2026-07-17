@@ -244,7 +244,7 @@ const LeftPane = {
         ordered.push(e);
       }
 
-      return ordered.map(e => {
+      return ordered.filter(e => e.slotData.type !== 'value').map(e => {
         const s = e.slotData;
         return {
           slot: e.slot,
