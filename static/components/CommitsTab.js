@@ -263,7 +263,7 @@ const CommitsTab = {
         this.actionResult = data;
         if (data.error) this.actionError = data.error;
         await this.refreshGitStatus();
-        if (['init', 'fetch', 'pull'].includes(action)) {
+        if (['init', 'fetch', 'pull', 'push'].includes(action)) {
           await this.refresh();
         }
       } catch (e) {

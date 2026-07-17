@@ -101,3 +101,9 @@ def test_git_tab_exposes_status_branch_diff_and_command_menu():
     assert "{ id: 'branch', label: 'git branch --all --verbose', icon: 'git-branch' }" in text
     assert "{ id: 'remote', label: 'git remote --verbose', icon: 'radio-tower' }" in text
     assert "title: 'Open Git'" in commands
+
+
+def test_git_push_refreshes_commit_refs_after_action():
+    text = _read("static/components/CommitsTab.js")
+    assert "['init', 'fetch', 'pull', 'push'].includes(action)" in text
+    assert "await this.refresh();" in text
