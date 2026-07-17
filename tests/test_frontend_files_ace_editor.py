@@ -61,6 +61,32 @@ def test_files_tab_has_new_file_draft_flow():
     assert "successEvent: 'files:mkdir:result'" in app
 
 
+def test_files_tab_menu_has_upload_and_move_file_commands():
+    text = _read("static/components/FilesTab.js")
+    app = _read("static/app.js")
+
+    assert 'data-lucide="upload"' in text
+    assert "<span class=\"menu-item-label\">Upload File</span>" in text
+    assert 'data-lucide="move"' in text
+    assert "<span class=\"menu-item-label\">Move File</span>" in text
+    assert "uploadFile()" in text
+    assert "async _uploadSelectedFile(file)" in text
+    assert "prompt('Upload as path', file.name)" in text
+    assert "this.$root.requestFileUpload({" in text
+    assert "async moveFile()" in text
+    assert "prompt('Move file', this.activeFile?.path || '')" in text
+    assert "prompt('Move to path', source)" in text
+    assert "this.$root.requestFileMove({" in text
+    assert "_normalizeWorkspaceFilePath(raw)" in text
+    assert "_applyMovedOpenFile(source, destination)" in text
+    assert "function requestFileUpload(payload = {})" in app
+    assert "requestEvent: 'files:upload'" in app
+    assert "successEvent: 'files:uploaded'" in app
+    assert "function requestFileMove(payload = {})" in app
+    assert "requestEvent: 'files:move'" in app
+    assert "successEvent: 'files:moved'" in app
+
+
 def test_files_tab_has_resizable_tree_pane():
     text = _read("static/components/FilesTab.js")
 

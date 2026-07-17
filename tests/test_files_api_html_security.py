@@ -179,6 +179,165 @@ def test_create_only_file_write_creates_missing_file(tmp_workspace):
     client.disconnect()
 
 
+def test_upload_file_writes_binary_payload(tmp_workspace):
+    init_workspace(tmp_workspace)
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    payload = b"\x00\x01uploaded"
+    client.emit("files:upload", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "upload-binary",
+        "path": "uploads/data.bin",
+        "file": payload,
+    })
+
+    body = _received(client, "files:uploaded")
+    assert body is not None
+    assert body["request_id"] == "upload-binary"
+    assert body["path"] == "uploads/data.bin"
+    assert body["size"] == len(payload)
+    with open(os.path.join(tmp_workspace, "uploads", "data.bin"), "rb") as handle:
+        assert handle.read() == payload
+    client.disconnect()
+
+
+def test_upload_file_rejects_existing_destination_without_overwrite(tmp_workspace):
+    init_workspace(tmp_workspace)
+    path = os.path.join(tmp_workspace, "exists.bin")
+    with open(path, "wb") as handle:
+        handle.write(b"original")
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("files:upload", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "upload-existing",
+        "path": "exists.bin",
+        "file": b"replacement",
+    })
+
+    body = _received(client, "files:error")
+    assert body is not None
+    assert body["request_id"] == "upload-existing"
+    assert body["status"] == 409
+    assert body["error"] == "File already exists"
+    with open(path, "rb") as handle:
+        assert handle.read() == b"original"
+    client.disconnect()
+
+
+def test_upload_file_rejects_traversal(tmp_workspace):
+    init_workspace(tmp_workspace)
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("files:upload", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "upload-traversal",
+        "path": "../outside.bin",
+        "file": b"outside",
+    })
+
+    body = _received(client, "files:error")
+    assert body is not None
+    assert body["request_id"] == "upload-traversal"
+    assert body["status"] == 403
+    assert not os.path.exists(os.path.join(os.path.dirname(tmp_workspace), "outside.bin"))
+    client.disconnect()
+
+
+def test_move_file_moves_workspace_file(tmp_workspace):
+    init_workspace(tmp_workspace)
+    source = os.path.join(tmp_workspace, "old.txt")
+    with open(source, "w", encoding="utf-8") as handle:
+        handle.write("move me")
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("files:move", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "move-file",
+        "source": "old.txt",
+        "destination": "docs/new.txt",
+    })
+
+    body = _received(client, "files:moved")
+    assert body is not None
+    assert body["request_id"] == "move-file"
+    assert body["source"] == "old.txt"
+    assert body["path"] == "docs/new.txt"
+    assert not os.path.exists(source)
+    with open(os.path.join(tmp_workspace, "docs", "new.txt"), encoding="utf-8") as handle:
+        assert handle.read() == "move me"
+    client.disconnect()
+
+
+def test_move_file_rejects_existing_destination_without_overwrite(tmp_workspace):
+    init_workspace(tmp_workspace)
+    source = os.path.join(tmp_workspace, "source.txt")
+    destination = os.path.join(tmp_workspace, "destination.txt")
+    with open(source, "w", encoding="utf-8") as handle:
+        handle.write("source")
+    with open(destination, "w", encoding="utf-8") as handle:
+        handle.write("destination")
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("files:move", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "move-existing",
+        "source": "source.txt",
+        "destination": "destination.txt",
+    })
+
+    body = _received(client, "files:error")
+    assert body is not None
+    assert body["request_id"] == "move-existing"
+    assert body["status"] == 409
+    assert body["error"] == "Destination already exists"
+    with open(source, encoding="utf-8") as handle:
+        assert handle.read() == "source"
+    with open(destination, encoding="utf-8") as handle:
+        assert handle.read() == "destination"
+    client.disconnect()
+
+
+def test_move_file_rejects_traversal(tmp_workspace):
+    init_workspace(tmp_workspace)
+    with open(os.path.join(tmp_workspace, "source.txt"), "w", encoding="utf-8") as handle:
+        handle.write("source")
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+
+    client.emit("files:move", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "move-traversal",
+        "source": "source.txt",
+        "destination": "../outside.txt",
+    })
+
+    body = _received(client, "files:error")
+    assert body is not None
+    assert body["request_id"] == "move-traversal"
+    assert body["status"] == 403
+    assert os.path.exists(os.path.join(tmp_workspace, "source.txt"))
+    assert not os.path.exists(os.path.join(os.path.dirname(tmp_workspace), "outside.txt"))
+    client.disconnect()
+
+
 def test_mkdir_creates_folder_and_nested_parents(tmp_workspace):
     init_workspace(tmp_workspace)
 

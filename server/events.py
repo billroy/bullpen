@@ -30,8 +30,10 @@ from server.file_browser import (
     build_file_tree,
     create_directory,
     file_exists,
+    move_file,
     read_binary_file,
     read_text_file,
+    write_binary_file,
     write_text_file,
 )
 from server.persistence import read_json, write_json, atomic_write
@@ -794,6 +796,27 @@ def register_events(socketio, app):
         if isinstance(payload, bytes):
             return BytesIO(payload)
         raise ValueError("Archive payload must be bytes")
+
+    def _file_upload_bytes(data):
+        payload = (data or {}).get("file")
+        if payload is None:
+            payload = (data or {}).get("data")
+        if payload is None:
+            raise FileBrowserError("Missing upload file", status=400)
+        if isinstance(payload, BytesIO):
+            payload.seek(0)
+            return payload.read()
+        if isinstance(payload, memoryview):
+            return payload.tobytes()
+        if isinstance(payload, bytearray):
+            return bytes(payload)
+        if isinstance(payload, bytes):
+            return payload
+        if isinstance(payload, list):
+            return bytes(payload)
+        if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+            return bytes(payload["data"])
+        raise FileBrowserError("Upload payload must be bytes", status=400)
 
     def _build_bento_preview(fileobj, bp_dir):
         carrier_preview = inspect_bento(fileobj)
@@ -1711,6 +1734,82 @@ def register_events(socketio, app):
             "request_id": (data or {}).get("request_id"),
         })
         emit("files:written", result)
+        socketio.emit("files:changed", {"workspaceId": ws_id}, to=ws_id)
+
+    @socketio.on("files:upload")
+    def on_files_upload(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            result = write_binary_file(
+                ws.path,
+                str((data or {}).get("path") or ""),
+                _file_upload_bytes(data or {}),
+                overwrite=bool((data or {}).get("overwrite")),
+            )
+        except FileBrowserError as e:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "status": e.status,
+            })
+            return
+        result.update({
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+        })
+        emit("files:uploaded", result)
+        socketio.emit("files:changed", {"workspaceId": ws_id}, to=ws_id)
+
+    @socketio.on("files:move")
+    def on_files_move(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            result = move_file(
+                ws.path,
+                str((data or {}).get("source") or ""),
+                str((data or {}).get("destination") or ""),
+                overwrite=bool((data or {}).get("overwrite")),
+            )
+        except FileBrowserError as e:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "status": e.status,
+            })
+            return
+        result.update({
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+        })
+        emit("files:moved", result)
         socketio.emit("files:changed", {"workspaceId": ws_id}, to=ws_id)
 
     # --- Task events ---

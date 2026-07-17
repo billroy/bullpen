@@ -3,10 +3,12 @@
 import mimetypes
 import os
 import subprocess
+import tempfile
 
 from server.persistence import atomic_write, ensure_within
 
 MAX_BINARY_FILE_BYTES = 50 * 1024 * 1024
+MAX_TEXT_FILE_BYTES = 1_000_000
 
 
 class FileBrowserError(Exception):
@@ -152,7 +154,7 @@ def create_directory(workspace, dirpath):
 
 def write_text_file(workspace, filepath, content, *, create=False):
     full_path = workspace_file_path(workspace, filepath)
-    if len(content) > 1_000_000:
+    if len(content) > MAX_TEXT_FILE_BYTES:
         raise FileBrowserError("File too large (max 1MB)", status=400)
     if create and os.path.exists(full_path):
         raise FileBrowserError("File already exists", status=409)
@@ -162,3 +164,54 @@ def write_text_file(workspace, filepath, content, *, create=False):
         raise FileBrowserError("Binary files cannot be edited", status=400)
     atomic_write(full_path, content)
     return {"ok": True, "path": filepath}
+
+
+def write_binary_file(workspace, filepath, content, *, overwrite=False):
+    normalized = str(filepath or "").strip().strip("/\\")
+    if not normalized:
+        raise FileBrowserError("File path is required", status=400)
+    if len(content) > MAX_BINARY_FILE_BYTES:
+        raise FileBrowserError("File too large (max 50MB)", status=413)
+    full_path = workspace_file_path(workspace, normalized)
+    if os.path.isdir(full_path):
+        raise FileBrowserError("Path is a folder", status=409)
+    if os.path.exists(full_path) and not overwrite:
+        raise FileBrowserError("File already exists", status=409)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(full_path), prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+        os.replace(tmp_path, full_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    return {"ok": True, "path": normalized, "size": len(content)}
+
+
+def move_file(workspace, source, destination, *, overwrite=False):
+    src = str(source or "").strip().strip("/\\")
+    dest = str(destination or "").strip().strip("/\\")
+    if not src:
+        raise FileBrowserError("Source file path is required", status=400)
+    if not dest:
+        raise FileBrowserError("Destination file path is required", status=400)
+    src_path = workspace_file_path(workspace, src)
+    dest_path = workspace_file_path(workspace, dest)
+    if src_path == dest_path:
+        raise FileBrowserError("Source and destination are the same", status=400)
+    if not os.path.isfile(src_path):
+        raise FileBrowserError("Source file not found", status=404)
+    if os.path.isdir(dest_path):
+        raise FileBrowserError("Destination is a folder", status=409)
+    if os.path.exists(dest_path) and not overwrite:
+        raise FileBrowserError("Destination already exists", status=409)
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    try:
+        os.replace(src_path, dest_path)
+    except OSError as e:
+        raise FileBrowserError(f"Failed to move file: {e}", status=400)
+    return {"ok": True, "source": src, "path": dest}

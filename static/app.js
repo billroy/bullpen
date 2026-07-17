@@ -1818,6 +1818,24 @@ const app = createApp({
         errorMessage: 'Save failed',
       });
     }
+    function requestFileUpload(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:upload',
+        successEvent: 'files:uploaded',
+        payload,
+        timeoutMessage: 'File upload timed out',
+        errorMessage: 'Upload failed',
+      });
+    }
+    function requestFileMove(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:move',
+        successEvent: 'files:moved',
+        payload,
+        timeoutMessage: 'File move timed out',
+        errorMessage: 'Move failed',
+      });
+    }
     async function transferWorker(payload) {
       try {
         const groupTransfer = Array.isArray(payload.source_slots) && payload.source_slots.length > 1;
@@ -2737,7 +2755,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCodexModels, requestClaudeModels, requestCommits, requestCommitDiff, requestGitStatus, requestGitBranchDiff, requestGitAction, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCodexModels, requestClaudeModels, requestCommits, requestCommitDiff, requestGitStatus, requestGitBranchDiff, requestGitAction, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, requestFileUpload, requestFileMove, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

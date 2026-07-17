@@ -60,6 +60,14 @@ const FilesTab = {
                 <i class="menu-item-icon" data-lucide="folder-plus" aria-hidden="true"></i>
                 <span class="menu-item-label">New Folder</span>
               </button>
+              <button class="project-menu-item" @click="uploadFile">
+                <i class="menu-item-icon" data-lucide="upload" aria-hidden="true"></i>
+                <span class="menu-item-label">Upload File</span>
+              </button>
+              <button class="project-menu-item" @click="moveFile">
+                <i class="menu-item-icon" data-lucide="move" aria-hidden="true"></i>
+                <span class="menu-item-label">Move File</span>
+              </button>
             </div>
           </div>
         </div>
@@ -427,6 +435,87 @@ const FilesTab = {
         alert('Create folder failed: ' + e.message);
       }
     },
+    uploadFile() {
+      this.showFileMenu = false;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.style.display = 'none';
+      input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        input.remove();
+        if (file) this._uploadSelectedFile(file);
+      }, { once: true });
+      document.body.appendChild(input);
+      input.click();
+    },
+    async _uploadSelectedFile(file) {
+      if (file.size > 50 * 1024 * 1024) {
+        alert('Upload failed: File too large (max 50MB)');
+        return;
+      }
+      const path = this._normalizeWorkspaceFilePath(prompt('Upload as path', file.name));
+      if (!path) return;
+      if (this.editing && this.activeFile?.path === path) {
+        if (!confirm('Discard unsaved changes?')) return;
+        const discarded = this.activeFile;
+        this._destroyAceEditor();
+        this.editing = false;
+        if (discarded?.isNew) this._removeOpenFile(discarded.path);
+      }
+      const exists = await this._fileExists(path);
+      if (exists === null) return;
+      const overwrite = exists && confirm('A file already exists at that path. Replace it?');
+      if (exists && !overwrite) return;
+      try {
+        const data = await file.arrayBuffer();
+        await this.$root.requestFileUpload({
+          workspaceId: this.workspaceId,
+          path,
+          file: data,
+          overwrite,
+        });
+        this._updateOpenFileAfterUpload(path);
+        await this.loadTree();
+      } catch (e) {
+        alert('Upload failed: ' + e.message);
+      }
+    },
+    async moveFile() {
+      this.showFileMenu = false;
+      const source = this._normalizeWorkspaceFilePath(prompt('Move file', this.activeFile?.path || ''));
+      if (!source) return;
+      if (this.editing && this.activeFile?.path === source) {
+        if (this.activeFile?.isNew) {
+          alert('Save the new file before moving it.');
+          return;
+        }
+        if (!confirm('Discard unsaved changes?')) return;
+        this._destroyAceEditor();
+        this.editing = false;
+      }
+      const destination = this._normalizeWorkspaceFilePath(prompt('Move to path', source));
+      if (!destination) return;
+      if (source === destination) {
+        alert('Source and destination are the same.');
+        return;
+      }
+      const exists = await this._fileExists(destination);
+      if (exists === null) return;
+      const overwrite = exists && confirm('A file already exists at the destination. Replace it?');
+      if (exists && !overwrite) return;
+      try {
+        await this.$root.requestFileMove({
+          workspaceId: this.workspaceId,
+          source,
+          destination,
+          overwrite,
+        });
+        this._applyMovedOpenFile(source, destination);
+        await this.loadTree();
+      } catch (e) {
+        alert('Move failed: ' + e.message);
+      }
+    },
     switchToFile(f) {
       if (this.editing) {
         if (!confirm('Discard unsaved changes?')) return;
@@ -569,6 +658,15 @@ const FilesTab = {
       }
       return name;
     },
+    _normalizeWorkspaceFilePath(raw) {
+      const path = String(raw || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      if (!path) return '';
+      if (/[?#\u0000-\u001f]/.test(path) || path.split('/').some(part => !part || part === '.' || part === '..')) {
+        alert('Enter a file path inside the workspace.');
+        return '';
+      }
+      return path;
+    },
     async _fileExists(path) {
       try {
         const data = await this.$root.requestFileExists({ workspaceId: this.workspaceId, path });
@@ -577,6 +675,23 @@ const FilesTab = {
         alert('Could not verify whether that file exists.');
         return null;
       }
+    },
+    _updateOpenFileAfterUpload(path) {
+      const file = this.openFiles.find(f => f.path === path);
+      if (!file) return;
+      this._revokeObjectUrl(file);
+      if (this.activeFile === file) this.reloadActiveFile();
+    },
+    _applyMovedOpenFile(source, destination) {
+      const destinationFile = this.openFiles.find(f => f.path === destination && f.path !== source);
+      if (destinationFile) this._removeOpenFile(destination);
+      const file = this.openFiles.find(f => f.path === source);
+      if (!file) return;
+      this._revokeObjectUrl(file);
+      file.path = destination;
+      file.name = destination.split('/').pop();
+      file.isNew = false;
+      if (this.activeFile === file) this.reloadActiveFile();
     },
     _createAceEditor() {
       if (!this.editing) return;
