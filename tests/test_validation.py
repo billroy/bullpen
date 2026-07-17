@@ -271,6 +271,25 @@ class TestConfigUpdate:
         result = validate_config_update({"provider_colors": {"value": "#166534"}})
         assert result["provider_colors"]["value"] == "#166534"
 
+    def test_worker_pill_styles_accept_partial_boolean_map(self):
+        result = validate_config_update({"worker_pill_styles": {"value": False}})
+        assert result["worker_pill_styles"]["value"] is False
+        assert result["worker_pill_styles"]["codex"] is True
+
+    def test_worker_pill_styles_none_restores_defaults(self):
+        result = validate_config_update({"worker_pill_styles": None})
+        assert result["worker_pill_styles"]
+        assert all(result["worker_pill_styles"].values())
+
+    @pytest.mark.parametrize("value", [0, 1, "false", None, []])
+    def test_worker_pill_styles_reject_non_boolean_values(self, value):
+        with pytest.raises(ValidationError, match=r"worker_pill_styles\['value'\] must be a boolean"):
+            validate_config_update({"worker_pill_styles": {"value": value}})
+
+    def test_worker_pill_styles_reject_unknown_keys(self):
+        with pytest.raises(ValidationError, match="Unknown key in worker_pill_styles"):
+            validate_config_update({"worker_pill_styles": {"unknown": False}})
+
 
 class TestWorkerMove:
     def test_valid_move(self):

@@ -32,7 +32,7 @@ def test_worker_card_accepts_neighbor_slots_prop():
 def test_worker_card_renders_drag_handles_only_for_existing_neighbors():
     text = _read("static/components/WorkerCard.js")
     assert "v-for=\"dir in ['up','down','left','right']\"" in text
-    assert "v-if=\"canConnect(dir)\"" in text
+    assert "v-if=\"!usesSpreadsheetStyle && canConnect(dir)\"" in text
     assert "class=\"connect-handle\"" in text
     assert "@dragstart.stop=\"onHandleDragStart(dir, $event)\"" in text
     assert "@dragend.stop=\"onHandleDragEnd\"" in text

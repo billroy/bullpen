@@ -156,6 +156,7 @@ const app = createApp({
       safe.ambient_volume = _normalizeAmbientVolume(safe.ambient_volume);
       safe.ambient_mute_while_idle = _normalizeAmbientMuteWhileIdle(safe.ambient_mute_while_idle);
       safe.provider_colors = _normalizeProviderColors(safe.provider_colors);
+      safe.worker_pill_styles = _normalizeWorkerPillStyles(safe.worker_pill_styles);
       safe.worker_automation_paused = safe.worker_automation_paused === true;
       return safe;
     }
@@ -174,6 +175,17 @@ const app = createApp({
         for (const agent of Object.keys(defaults)) {
           const v = value[agent];
           if (typeof v === 'string' && HEX_COLOR_RE.test(v)) result[agent] = v.toLowerCase();
+        }
+      }
+      return result;
+    }
+
+    function _normalizeWorkerPillStyles(value) {
+      const defaults = window.DEFAULT_WORKER_PILL_STYLES || {};
+      const result = { ...defaults };
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        for (const key of Object.keys(defaults)) {
+          if (typeof value[key] === 'boolean') result[key] = value[key];
         }
       }
       return result;
@@ -2536,6 +2548,27 @@ const app = createApp({
       }
       updateConfig({ provider_colors: null });
     }
+    function setWorkerPillStyle(key, enabled) {
+      if (!activeWorkspaceId.value) return;
+      const defaults = window.DEFAULT_WORKER_PILL_STYLES || {};
+      if (!(key in defaults) || typeof enabled !== 'boolean') return;
+      const ws = _getWs(activeWorkspaceId.value);
+      const next = {
+        ..._normalizeWorkerPillStyles(ws.config?.worker_pill_styles),
+        [key]: enabled,
+      };
+      ws.config = { ...(ws.config || {}), worker_pill_styles: next };
+      if (_isActive(activeWorkspaceId.value)) state.config = ws.config;
+      updateConfig({ worker_pill_styles: next });
+    }
+    function resetWorkerPillStyles() {
+      if (!activeWorkspaceId.value) return;
+      const defaults = { ...(window.DEFAULT_WORKER_PILL_STYLES || {}) };
+      const ws = _getWs(activeWorkspaceId.value);
+      ws.config = { ...(ws.config || {}), worker_pill_styles: defaults };
+      if (_isActive(activeWorkspaceId.value)) state.config = ws.config;
+      updateConfig({ worker_pill_styles: null });
+    }
     function setAmbientVolume(volume) {
       const next = _normalizeAmbientVolume(volume);
       if (!activeWorkspaceId.value) return;
@@ -2695,6 +2728,8 @@ const app = createApp({
     const currentAmbientMuteWhileIdle = computed(() => _normalizeAmbientMuteWhileIdle(state.config?.ambient_mute_while_idle));
     const currentProviderColors = computed(() => _normalizeProviderColors(state.config?.provider_colors));
     const defaultProviderColors = computed(() => ({ ...(window.DEFAULT_AGENT_COLORS || {}) }));
+    const currentWorkerPillStyles = computed(() => _normalizeWorkerPillStyles(state.config?.worker_pill_styles));
+    const defaultWorkerPillStyles = computed(() => ({ ...(window.DEFAULT_WORKER_PILL_STYLES || {}) }));
     const activeProjectName = computed(() => _workspaceBaseName(state.workspace));
     const ticketListShownCount = ref(null);
     const visibleTicketTasks = computed(() => {
@@ -2751,7 +2786,7 @@ const app = createApp({
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, bentoImportReview, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
-      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setAmbientMuteWhileIdle, setProviderColor, resetProviderColors, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentAmbientMuteWhileIdle, currentProviderColors, defaultProviderColors, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
+      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setAmbientMuteWhileIdle, setProviderColor, resetProviderColors, setWorkerPillStyle, resetWorkerPillStyles, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentAmbientMuteWhileIdle, currentProviderColors, defaultProviderColors, currentWorkerPillStyles, defaultWorkerPillStyles, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
@@ -2798,6 +2833,8 @@ const app = createApp({
         :ambient-mute-while-idle="currentAmbientMuteWhileIdle"
         :provider-colors="currentProviderColors"
         :default-provider-colors="defaultProviderColors"
+        :worker-pill-styles="currentWorkerPillStyles"
+        :default-worker-pill-styles="defaultWorkerPillStyles"
         :worker-automation-paused="state.config.worker_automation_paused === true"
         :worker-minimap-collapsed="workerMinimapCollapsed"
         :quick-create-clear-token="quickCreateClearToken"
@@ -2813,6 +2850,8 @@ const app = createApp({
         @set-ambient-mute-while-idle="setAmbientMuteWhileIdle"
         @set-provider-color="(agent, color) => setProviderColor(agent, color)"
         @reset-provider-colors="resetProviderColors"
+        @set-worker-pill-style="(key, enabled) => setWorkerPillStyle(key, enabled)"
+        @reset-worker-pill-styles="resetWorkerPillStyles"
         @pause-automation="pauseAutomation"
         @resume-automation="resumeAutomation"
         @stop-the-line="stopTheLine"

@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerPillStyles', 'defaultWorkerPillStyles', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -9,6 +9,8 @@ const TopToolbar = {
     'set-ambient-mute-while-idle',
     'set-provider-color',
     'reset-provider-colors',
+    'set-worker-pill-style',
+    'reset-worker-pill-styles',
     'pause-automation',
     'resume-automation',
     'stop-the-line',
@@ -233,6 +235,15 @@ const TopToolbar = {
       if (!value) return;
       this.$emit('set-provider-color', agent, value);
     },
+    workerPillStyleValue(key) {
+      if (this.workerPillStyles && typeof this.workerPillStyles[key] === 'boolean') {
+        return this.workerPillStyles[key];
+      }
+      return !this.defaultWorkerPillStyles || this.defaultWorkerPillStyles[key] !== false;
+    },
+    onWorkerPillStyleChange(key, event) {
+      this.$emit('set-worker-pill-style', key, event?.target?.checked === true);
+    },
     onThemeSelect(event) {
       const value = event?.target?.value;
       if (!value) return;
@@ -240,6 +251,9 @@ const TopToolbar = {
     },
     onResetProviderColors() {
       this.$emit('reset-provider-colors');
+    },
+    onResetWorkerPillStyles() {
+      this.$emit('reset-worker-pill-styles');
     },
     onPauseCurrentAutomation() {
       this.showSafetyMenu = false;
@@ -714,7 +728,12 @@ const TopToolbar = {
               <i data-lucide="palette" aria-hidden="true"></i>
             </button>
             <div v-if="showProviderColorsMenu" class="project-menu toolbar-menu provider-colors-menu">
-              <div class="provider-colors-title">Worker colors</div>
+              <div class="provider-colors-title">Worker appearance</div>
+              <div class="provider-colors-columns" aria-hidden="true">
+                <span></span>
+                <span>Color</span>
+                <span>Pill</span>
+              </div>
               <div class="provider-colors-row" v-for="agent in ['antigravity','claude','codex','opencode','shell','service','marker','notification','value']" :key="agent">
                 <span class="provider-colors-swatch" :style="{ background: providerColorValue(agent) }"></span>
                 <label class="provider-colors-label">{{ agent }}</label>
@@ -724,9 +743,17 @@ const TopToolbar = {
                   :value="providerColorValue(agent)"
                   @input="onProviderColorInput(agent, $event)"
                 />
+                <input
+                  type="checkbox"
+                  class="provider-pill-style-input"
+                  :checked="workerPillStyleValue(agent)"
+                  :aria-label="'Use compact pill for ' + agent + ' workers'"
+                  @change="onWorkerPillStyleChange(agent, $event)"
+                />
               </div>
               <div class="provider-colors-actions">
-                <button class="btn btn-sm" @click="onResetProviderColors">Restore defaults</button>
+                <button class="btn btn-sm" @click="onResetProviderColors">Restore colors</button>
+                <button class="btn btn-sm" @click="onResetWorkerPillStyles">Restore pill styles</button>
               </div>
             </div>
           </div>

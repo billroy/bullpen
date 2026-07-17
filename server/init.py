@@ -18,6 +18,10 @@ DEFAULT_PROVIDER_COLORS = {
     "value": "#166534",
 }
 
+DEFAULT_WORKER_PILL_STYLES = {
+    key: True for key in DEFAULT_PROVIDER_COLORS
+}
+
 DEFAULT_CONFIG = {
     "name": "Bullpen",
     "theme": "dark",
@@ -26,6 +30,7 @@ DEFAULT_CONFIG = {
     "ambient_volume": 40,
     "ambient_mute_while_idle": False,
     "provider_colors": dict(DEFAULT_PROVIDER_COLORS),
+    "worker_pill_styles": dict(DEFAULT_WORKER_PILL_STYLES),
     "worker_automation_paused": False,
     "grid": {"layout": "medium", "columnWidth": 220, "viewportOrigin": {"col": 0, "row": 0}},
     "columns": [

@@ -23,11 +23,11 @@ const VALUE_UNIT_LABELS = {
 };
 
 const WorkerCard = {
-  props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'allWorkers', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
+  props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'allWorkers', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'useCompactPill', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'worker-scope-action', 'menu-opened', 'menu-closed', 'vertical-resize-start', 'value-edit-ended'],
   template: `
-    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
-         :style="effectiveLayoutMode === 'small' ? { background: agentColor } : null"
+    <div class="worker-card" :class="{ 'drag-over': dragOver, 'connect-target': connectTarget, 'worker-card--small': effectiveLayoutMode === 'small', 'worker-card--spreadsheet': usesSpreadsheetStyle, 'worker-card--spreadsheet-stale': usesSpreadsheetStyle && formulaStale, 'is-dragging': isDragging, 'worker-card--disabled-type': isDisabledType }"
+         :style="effectiveLayoutMode === 'small' && !usesSpreadsheetStyle ? { background: agentColor } : null"
          :aria-label="cardAriaLabel"
          draggable="true"
          @pointerdown="onPointerDown"
@@ -52,7 +52,7 @@ const WorkerCard = {
            aria-label="Drag to expand this card vertically"
            @pointerdown.stop="onVerticalResizeHandleDown"></div>
       <template v-for="dir in ['up','down','left','right']" :key="'handle-' + dir">
-        <div v-if="canConnect(dir)"
+        <div v-if="!usesSpreadsheetStyle && canConnect(dir)"
              class="connect-handle"
              :class="['connect-handle-' + dir, { 'connect-handle-active': hoveredHandle === dir }]"
              draggable="true"
@@ -63,14 +63,14 @@ const WorkerCard = {
           <span class="connect-handle-arrow" aria-hidden="true">{{ connectHandleArrow(dir) }}</span>
         </div>
       </template>
-      <span v-if="passDir === 'up' && !passConnectsToNeighbor" class="pass-indicator pass-up" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
-      <span v-if="passDir === 'down' && !passConnectsToNeighbor" class="pass-indicator pass-down" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
-      <span v-if="passDir === 'left' && !passConnectsToNeighbor" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
-      <span v-if="passDir === 'right' && !passConnectsToNeighbor" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
-      <span v-if="passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
+      <span v-if="!usesSpreadsheetStyle && passDir === 'up' && !passConnectsToNeighbor" class="pass-indicator pass-up" title="This worker passes tickets up" aria-label="This worker passes tickets up">&#x25B2;</span>
+      <span v-if="!usesSpreadsheetStyle && passDir === 'down' && !passConnectsToNeighbor" class="pass-indicator pass-down" title="This worker passes tickets down" aria-label="This worker passes tickets down">&#x25BC;</span>
+      <span v-if="!usesSpreadsheetStyle && passDir === 'left' && !passConnectsToNeighbor" class="pass-indicator pass-left" title="This worker passes tickets left" aria-label="This worker passes tickets left">&#x25C0;</span>
+      <span v-if="!usesSpreadsheetStyle && passDir === 'right' && !passConnectsToNeighbor" class="pass-indicator pass-right" title="This worker passes tickets right" aria-label="This worker passes tickets right">&#x25B6;</span>
+      <span v-if="!usesSpreadsheetStyle && passDir === 'random'" class="pass-indicator pass-random" title="This worker passes tickets in a random direction" aria-label="This worker passes tickets in a random direction">?</span>
       <div class="worker-card-header"
-           :class="{ 'worker-card-header--value-editing': showCompactValue && valueEditing }"
-           :style="{ background: agentColor }"
+           :class="{ 'worker-card-header--value-editing': showCompactValue && valueEditing, 'worker-card-header--spreadsheet': usesSpreadsheetStyle }"
+           :style="usesSpreadsheetStyle ? null : { background: agentColor }"
            @click="onHeaderClick"
            @dblclick="onHeaderDblClick">
         <input v-if="showCompactValue && valueEditing"
@@ -86,7 +86,8 @@ const WorkerCard = {
                aria-label="Edit name and value">
         <div v-else class="worker-card-identity">
           <div class="worker-card-title-row" ref="titleRow">
-            <span :key="'worker-type-icon-' + valueVisualKind + '-' + workerIcon"
+            <span v-if="!usesSpreadsheetStyle"
+                  :key="'worker-type-icon-' + valueVisualKind + '-' + workerIcon"
                   class="worker-type-icon-host"
                   role="img"
                   :title="workerTypeLabel"
@@ -101,13 +102,14 @@ const WorkerCard = {
         <button v-if="showCompactValue && !valueEditing"
                 type="button"
                 class="worker-card-compact-value worker-card-compact-value-button"
+                :class="usesSpreadsheetStyle ? 'worker-card-compact-value--' + valueAlignment : null"
                 :title="valueDisplay || 'Empty'"
                 @click.stop="startCompactValueEdit"
                 @dblclick.stop
                 aria-label="Edit name and value">
           {{ valueDisplay || 'Empty' }}
         </button>
-        <div v-if="!showCompactValue || !valueEditing" class="worker-card-actions">
+        <div v-if="(!showCompactValue || !valueEditing) && !usesSpreadsheetStyle" class="worker-card-actions">
           <span class="worker-card-header-status">
             <span v-if="(workerState !== 'idle' || isPaused || isHeldQueue) && !pillInBody" class="status-pill" :class="['status-' + workerState, { 'status-pill-clickable': isWorking || isService }]" @click.stop="onStatusPillClick">
               {{ statusLabel }}
@@ -363,6 +365,14 @@ const WorkerCard = {
       const rawHeight = Number(this.cardHeight);
       const height = Number.isFinite(rawHeight) ? rawHeight : (this.layoutMode === 'small' ? 32 : 140);
       return height < 40 ? 'small' : 'medium';
+    },
+    usesSpreadsheetStyle() {
+      return (
+        this.effectiveLayoutMode === 'small'
+        && this.useCompactPill === false
+        && !this.isSelected
+        && !this.valueEditing
+      );
     },
     passDir() {
       const d = this.worker.disposition || '';

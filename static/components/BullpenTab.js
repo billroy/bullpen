@@ -163,6 +163,7 @@ const BullpenTab = {
             :layout-mode="layoutMode"
             :card-height="cardHeightForSlot(item.slotIndex)"
             :is-selected="isSelected(item.coord)"
+            :use-compact-pill="workerUsesCompactPill(item.worker)"
             :multiple-selection-active="isMultipleSelectionActive"
             :menu-context="workerMenuContext(item.slotIndex)"
             :is-vertical-resizing="cardVerticalResize && cardVerticalResize.slotIndex === item.slotIndex"
@@ -1303,6 +1304,11 @@ const BullpenTab = {
       const item = this.itemAtCoord(coord);
       if (item && this.selectedWorkerSlots.includes(item.slotIndex)) return true;
       return !!(this.selectedCell && this.selectedCell.col === coord.col && this.selectedCell.row === coord.row);
+    },
+    workerUsesCompactPill(worker) {
+      const key = window.workerColorKey?.(worker);
+      if (!key) return true;
+      return this.config?.worker_pill_styles?.[key] !== false;
     },
     expandSelectionSlots(slots) {
       const out = new Set();

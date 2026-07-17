@@ -99,8 +99,13 @@ def test_app_wires_toolbar_export_import_events():
 def test_worker_colors_menu_includes_opencode_marker_and_notification():
     text = _read("static/components/TopToolbar.js")
     utils = _read("static/utils.js")
-    assert "class=\"provider-colors-title\">Worker colors</div>" in text
+    assert "class=\"provider-colors-title\">Worker appearance</div>" in text
     assert "v-for=\"agent in ['antigravity','claude','codex','opencode','shell','service','marker','notification','value']\"" in text
+    assert "class=\"provider-pill-style-input\"" in text
+    assert ":checked=\"workerPillStyleValue(agent)\"" in text
+    assert "@change=\"onWorkerPillStyleChange(agent, $event)\"" in text
+    assert "Restore colors" in text
+    assert "Restore pill styles" in text
     assert "antigravity: '#0f8b8d'" in utils
     assert "opencode: '#63b3ed'" in utils
     assert "notification: '#d7ad4a'" in utils
@@ -198,6 +203,15 @@ def test_worker_config_modal_receives_workspace_palette_colors():
     text = _read("static/app.js")
     assert ":provider-colors=\"currentProviderColors\"" in text
     assert ":default-provider-colors=\"defaultProviderColors\"" in text
+
+
+def test_app_persists_workspace_worker_pill_styles():
+    text = _read("static/app.js")
+    assert "safe.worker_pill_styles = _normalizeWorkerPillStyles(safe.worker_pill_styles);" in text
+    assert "function setWorkerPillStyle(key, enabled)" in text
+    assert "updateConfig({ worker_pill_styles: next });" in text
+    assert ":worker-pill-styles=\"currentWorkerPillStyles\"" in text
+    assert "@set-worker-pill-style=\"(key, enabled) => setWorkerPillStyle(key, enabled)\"" in text
 
 
 def test_toolbar_menu_css_anchors_from_left_edge():

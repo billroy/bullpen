@@ -5,6 +5,7 @@ import tempfile
 import os
 import shutil
 import json
+import re
 
 import pytest
 
@@ -80,6 +81,102 @@ def test_value_number_formatting_and_string_preservation_in_chromium():
                 modal.get_by_role("button", name="Save").click()
 
                 expect(value).to_have_text("12000")
+                browser.close()
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def test_compact_value_spreadsheet_style_selection_theme_and_persistence_in_chromium():
+    with tempfile.TemporaryDirectory(prefix="bullpen_value_spreadsheet_pw_") as workspace:
+        port = _free_port()
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                page = browser.new_page(locale="en-US")
+                page.goto(base_url)
+                page.get_by_role("button", name="Workers").click()
+                viewport = page.locator(".worker-grid-viewport")
+
+                for formula in ("=1", "=2"):
+                    viewport.focus()
+                    page.keyboard.type("=")
+                    editor = page.get_by_role("textbox", name="Create value worker")
+                    editor.fill(formula)
+                    editor.press("Enter")
+                    expect(page.locator(".worker-card")).to_have_count(1 if formula == "=1" else 2)
+                    if formula == "=1":
+                        viewport.focus()
+                        viewport.press("ArrowRight")
+
+                page.get_by_role("button", name="Small Rows").click()
+                cards = page.locator(".worker-card")
+                first = cards.nth(0)
+                second = cards.nth(1)
+
+                page.get_by_title("Worker colors").click()
+                pill_checkbox = page.get_by_label("Use compact pill for value workers")
+                expect(pill_checkbox).to_be_checked()
+                pill_checkbox.uncheck()
+
+                expect(first).to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                expect(second).to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                expect(first.locator(".worker-type-icon-host")).to_have_count(0)
+                assert first.evaluate(
+                    "element => getComputedStyle(element).backgroundColor"
+                ) == "rgba(0, 0, 0, 0)"
+
+                page.locator(".theme-select").select_option("light")
+                expect(page.locator("html")).to_have_attribute("data-theme", "light")
+                assert first.locator(".worker-card-compact-value").evaluate(
+                    """element => {
+                      const probe = document.createElement('span');
+                      probe.style.color = 'var(--text-primary)';
+                      document.body.appendChild(probe);
+                      const expected = getComputedStyle(probe).color;
+                      probe.remove();
+                      return getComputedStyle(element).color === expected;
+                    }"""
+                )
+
+                first.click(position={"x": 8, "y": 16})
+                page.keyboard.press("Escape")
+                expect(first).not_to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                expect(first.locator(".worker-type-icon-host")).to_have_count(1)
+                second.click(position={"x": 8, "y": 16}, modifiers=["Shift"])
+                page.keyboard.press("Escape")
+                expect(first).not_to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                expect(second).not_to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                expect(second.locator(".worker-type-icon-host")).to_have_count(1)
+
+                viewport.focus()
+                viewport.press("ArrowRight")
+                expect(first).to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                expect(second).to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+
+                config_path = os.path.join(workspace, ".bullpen", "config.json")
+                with open(config_path, encoding="utf-8") as handle:
+                    persisted = json.load(handle)
+                assert persisted["worker_pill_styles"]["value"] is False
+
+                page.reload()
+                page.get_by_role("button", name="Workers").click()
+                viewport = page.locator(".worker-grid-viewport")
+                viewport.focus()
+                viewport.press("ArrowRight")
+                viewport.press("ArrowRight")
+                cards = page.locator(".worker-card")
+                expect(cards.nth(0)).to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                expect(cards.nth(1)).to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
+                page.get_by_title("Worker colors").click()
+                expect(page.get_by_label("Use compact pill for value workers")).not_to_be_checked()
                 browser.close()
         finally:
             proc.terminate()

@@ -186,6 +186,23 @@ def test_value_worker_small_card_shows_value_in_header():
     assert "padding: 0 8px;" in compact_editor_styles
 
 
+def test_compact_worker_spreadsheet_style_restores_pill_when_selected():
+    card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
+    grid = (ROOT / "static" / "components" / "BullpenTab.js").read_text()
+    css = (ROOT / "static" / "style.css").read_text()
+
+    assert "'worker-card--spreadsheet': usesSpreadsheetStyle" in card
+    assert "this.useCompactPill === false" in card
+    assert "&& !this.isSelected" in card
+    assert "&& !this.valueEditing" in card
+    assert 'v-if="!usesSpreadsheetStyle"' in card
+    assert ":use-compact-pill=\"workerUsesCompactPill(item.worker)\"" in grid
+    assert "return this.config?.worker_pill_styles?.[key] !== false;" in grid
+    assert ".worker-card.worker-card--small.worker-card--spreadsheet" in css
+    assert ".worker-card--spreadsheet .worker-card-compact-value--left" in css
+    assert ".worker-card--spreadsheet .worker-card-compact-value--right" in css
+
+
 def test_value_worker_card_rejects_ticket_drop_affordances():
     card = (ROOT / "static" / "components" / "WorkerCard.js").read_text()
     roster = (ROOT / "static" / "components" / "LeftPane.js").read_text()

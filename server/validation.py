@@ -347,7 +347,7 @@ VALID_CONFIG_KEYS = {
     "name", "grid", "columns", "agent_timeout_seconds", "chat_timeout_seconds",
     "max_prompt_chars", "auto_commit", "auto_pr", "theme",
     "ambient_preset", "ambient_volume", "ambient_mute_while_idle", "provider_colors",
-    "worker_automation_paused", "timezone",
+    "worker_pill_styles", "worker_automation_paused", "timezone",
 }
 
 HEX_COLOR_REGEX = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
@@ -369,6 +369,23 @@ def _validate_provider_colors(val):
         if not isinstance(v, str) or not HEX_COLOR_REGEX.match(v):
             raise ValidationError(f"provider_colors['{k}'] must be a hex color (e.g. '#rrggbb')")
         sanitized[k] = v.lower()
+    return sanitized
+
+
+def _validate_worker_pill_styles(val):
+    """Validate worker_pill_styles. Missing keys retain the pill default."""
+    from server.init import DEFAULT_WORKER_PILL_STYLES
+    if val is None:
+        return dict(DEFAULT_WORKER_PILL_STYLES)
+    if not isinstance(val, dict):
+        raise ValidationError("worker_pill_styles must be an object")
+    sanitized = dict(DEFAULT_WORKER_PILL_STYLES)
+    for k, v in val.items():
+        if k not in VALID_WORKER_COLOR_KEYS:
+            raise ValidationError(f"Unknown key in worker_pill_styles: '{k}'")
+        if not isinstance(v, bool):
+            raise ValidationError(f"worker_pill_styles['{k}'] must be a boolean")
+        sanitized[k] = v
     return sanitized
 
 
@@ -401,6 +418,9 @@ def validate_config_update(data):
             continue
         if k == "provider_colors":
             sanitized[k] = _validate_provider_colors(v)
+            continue
+        if k == "worker_pill_styles":
+            sanitized[k] = _validate_worker_pill_styles(v)
             continue
         if k == "worker_automation_paused":
             sanitized[k] = bool(v)

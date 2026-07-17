@@ -55,6 +55,10 @@ function sortedClaudeModelOptions(options) {
 
 const DEFAULT_AGENT_COLORS = { antigravity: '#0f8b8d', claude: '#da7756', codex: '#5b6fd6', opencode: '#63b3ed', shell: '#64748b', service: '#0f766e', marker: '#c8b38c', notification: '#d7ad4a', value: '#166534' };
 window.DEFAULT_AGENT_COLORS = DEFAULT_AGENT_COLORS;
+const DEFAULT_WORKER_PILL_STYLES = Object.fromEntries(
+  Object.keys(DEFAULT_AGENT_COLORS).map(key => [key, true]),
+);
+window.DEFAULT_WORKER_PILL_STYLES = DEFAULT_WORKER_PILL_STYLES;
 window.BULLPEN_AGENT_COLORS = (window.Vue && window.Vue.reactive)
   ? window.Vue.reactive({ overrides: {} })
   : { overrides: {} };
@@ -225,6 +229,7 @@ window.getWorkerTypeIcon = getWorkerTypeIcon;
 window.workerTypeLabel = workerTypeLabel;
 window.notificationSummaryItems = notificationSummaryItems;
 window.workerColor = workerColor;
+window.workerColorKey = workerColorKey;
 window.isHumanWorker = isHumanWorker;
 window.isValueWorker = isValueWorker;
 window.getValueWorkerVisualKind = getValueWorkerVisualKind;

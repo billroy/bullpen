@@ -3985,6 +3985,26 @@ class TestConfigEvents:
         assert config["name"] == "My Team"
         assert config["theme"] == "nord"
 
+    def test_worker_pill_style_config_is_workspace_scoped(self, client, tmp_path):
+        c, app = client
+        manager = app.config["manager"]
+        startup_ws_id = app.config["startup_workspace_id"]
+        other = tmp_path / "other-appearance-project"
+        other.mkdir()
+        other_ws_id = manager.register_project(str(other), name="Other Appearance")
+
+        c.emit("config:update", {
+            "workspaceId": startup_ws_id,
+            "worker_pill_styles": {"value": False},
+        })
+        updated = get_event(c, "config:updated")
+        assert updated["worker_pill_styles"]["value"] is False
+
+        startup_config = read_json(os.path.join(manager.get_bp_dir(startup_ws_id), "config.json"))
+        other_config = read_json(os.path.join(manager.get_bp_dir(other_ws_id), "config.json"))
+        assert startup_config["worker_pill_styles"]["value"] is False
+        assert all(other_config["worker_pill_styles"].values())
+
     def test_pause_and_resume_worker_automation_events(self, client):
         c, app = client
         c.emit("workers:pause_automation", {})
