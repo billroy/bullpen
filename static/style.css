@@ -3250,6 +3250,10 @@ body.worker-singleton-dragging * {
   flex: 1 1 auto;
 }
 
+.worker-card--small .worker-card-identity--cell-ref {
+  flex: 0 1 auto;
+}
+
 .worker-card-service-meta {
   display: flex;
   align-items: center;
@@ -3353,6 +3357,11 @@ body.worker-singleton-dragging * {
   cursor: text;
   font-family: inherit;
   padding: 0;
+}
+
+.worker-card-compact-value--wide {
+  flex: 1 1 auto;
+  max-width: none;
 }
 
 .worker-card-compact-value-editor {

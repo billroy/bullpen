@@ -105,14 +105,14 @@ def test_compact_value_spreadsheet_style_selection_theme_and_persistence_in_chro
                 page.get_by_role("button", name="Workers").click()
                 viewport = page.locator(".worker-grid-viewport")
 
-                for formula in ("=1", "=2"):
+                for formula_index, formula in enumerate(("=NOW()", "=2")):
                     viewport.focus()
                     page.keyboard.type("=")
                     editor = page.get_by_role("textbox", name="Create value worker")
                     editor.fill(formula)
                     editor.press("Enter")
-                    expect(page.locator(".worker-card")).to_have_count(1 if formula == "=1" else 2)
-                    if formula == "=1":
+                    expect(page.locator(".worker-card")).to_have_count(formula_index + 1)
+                    if formula_index == 0:
                         viewport.focus()
                         viewport.press("ArrowRight")
 
@@ -150,6 +150,20 @@ def test_compact_value_spreadsheet_style_selection_theme_and_persistence_in_chro
                 page.keyboard.press("Escape")
                 expect(first).not_to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))
                 expect(first.locator(".worker-type-icon-host")).to_have_count(1)
+                page.locator(".theme-select").hover()
+                now_value_layout = first.locator(".worker-card-compact-value").evaluate(
+                    """element => ({
+                      text: element.textContent.trim(),
+                      title: element.getAttribute('title'),
+                      clientWidth: element.clientWidth,
+                      scrollWidth: element.scrollWidth,
+                      maxWidth: getComputedStyle(element).maxWidth,
+                    })"""
+                )
+                assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", now_value_layout["text"])
+                assert now_value_layout["title"] == now_value_layout["text"]
+                assert now_value_layout["scrollWidth"] <= now_value_layout["clientWidth"], now_value_layout
+                assert now_value_layout["maxWidth"] == "none"
                 second.click(position={"x": 8, "y": 16}, modifiers=["Shift"])
                 page.keyboard.press("Escape")
                 expect(first).not_to_have_class(re.compile(r"\bworker-card--spreadsheet\b"))

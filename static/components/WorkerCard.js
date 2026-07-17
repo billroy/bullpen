@@ -84,7 +84,9 @@ const WorkerCard = {
                @click.stop
                @dblclick.stop
                aria-label="Edit name and value">
-        <div v-else-if="!usesSpreadsheetStyle || spreadsheetHasLabel" class="worker-card-identity">
+        <div v-else-if="!usesSpreadsheetStyle || spreadsheetHasLabel"
+             class="worker-card-identity"
+             :class="{ 'worker-card-identity--cell-ref': isValue && !spreadsheetHasLabel }">
           <div class="worker-card-title-row" ref="titleRow">
             <span v-if="!usesSpreadsheetStyle"
                   :key="'worker-type-icon-' + valueVisualKind + '-' + workerIcon"
@@ -102,7 +104,10 @@ const WorkerCard = {
         <button v-if="showCompactValue && !valueEditing"
                 type="button"
                 class="worker-card-compact-value worker-card-compact-value-button"
-                :class="usesSpreadsheetStyle ? 'worker-card-compact-value--' + spreadsheetValueAlignment : null"
+                :class="[
+                  usesSpreadsheetStyle ? 'worker-card-compact-value--' + spreadsheetValueAlignment : null,
+                  { 'worker-card-compact-value--wide': !spreadsheetHasLabel },
+                ]"
                 :title="valueDisplay || 'Empty'"
                 @click.stop="startCompactValueEdit"
                 @dblclick.stop

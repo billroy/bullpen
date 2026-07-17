@@ -175,6 +175,13 @@ def test_value_worker_small_card_shows_value_in_header():
     assert "return label ? `${label}:${source}` : source;" in card
     assert ".worker-card-compact-value {" in css
     assert ".worker-card-compact-value-button {" in css
+    assert "'worker-card-compact-value--wide': !spreadsheetHasLabel" in card
+    wide_value_styles = css.split(".worker-card-compact-value--wide {", 1)[1].split("}", 1)[0]
+    assert "flex: 1 1 auto;" in wide_value_styles
+    assert "max-width: none;" in wide_value_styles
+    assert "'worker-card-identity--cell-ref': isValue && !spreadsheetHasLabel" in card
+    cell_ref_styles = css.split(".worker-card--small .worker-card-identity--cell-ref {", 1)[1].split("}", 1)[0]
+    assert "flex: 0 1 auto;" in cell_ref_styles
     assert ".worker-card-compact-value-editor {" in css
     assert "text-overflow: ellipsis;" in css
     compact_button_styles = css.split(".worker-card-compact-value-button {", 1)[1].split("}", 1)[0]
