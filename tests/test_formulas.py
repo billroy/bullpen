@@ -172,6 +172,9 @@ def test_first_cut_string_date_finance_and_engineering_functions():
     assert evaluate_formula('=LEN(TRIM(" a  b "))', []).value == 3
     assert evaluate_formula('=UPPER("a")&LOWER("B")', []).value == "Ab"
     assert evaluate_formula('=SUBSTITUTE("a-b-a","a","x")', []).value == "x-b-x"
+    assert evaluate_formula('=SUBSTITUTE("ab","","x",1)', []).value == "xab"
+    assert evaluate_formula('=SUBSTITUTE("ab","","x",3)', []).value == "abx"
+    assert evaluate_formula('=SUBSTITUTE("ab","","x",4)', []).value == "ab"
     assert evaluate_formula("=YEAR(DATE(2026,7,16))", []).value == 2026
     assert evaluate_formula('=DAYS("2026-07-16","2026-07-01")', []).value == 15
     assert evaluate_formula("=DELTA(2,2)+GESTEP(3,2)", []).value == 2
@@ -249,6 +252,8 @@ def test_volatile_staleness_accepts_formula_whitespace():
         '=REPT("x",1000000000)',
         "=BITLSHIFT(1,1000000000)",
         "=POWER(2,1000000000)",
+        "=ROUND(1,1000000000)",
+        "=FV(1,1000000000,1)",
     ],
 )
 def test_adversarial_formula_inputs_fail_with_limit_errors(source):
@@ -266,6 +271,8 @@ sources = [
     "=2^1000000000",
     '=REPT("x",1000000000)',
     "=BITLSHIFT(1,1000000000)",
+    "=ROUND(1,1000000000)",
+    "=FV(1,1000000000,1)",
 ]
 for source in sources:
     try:
@@ -284,6 +291,25 @@ for source in sources:
     )
 
     assert completed.returncode == 0, completed.stderr
+
+
+@pytest.mark.parametrize(
+    ("source", "code"),
+    [
+        ('=SUBSTITUTE("a","","b",1)', None),
+        ("=PMT(0,0,1)", "#DIV/0!"),
+        ("=NPV(-1,1)", "#DIV/0!"),
+        ("=FV(1,1000000,1)", "#LIMIT!"),
+        ('=EDATE("2026-01-01",1000000000)', "#VALUE!"),
+    ],
+)
+def test_public_functions_never_leak_host_language_exceptions(source, code):
+    if code is None:
+        assert evaluate_formula(source, []).value == "ba"
+        return
+    with pytest.raises(FormulaError) as caught:
+        evaluate_formula(source, [])
+    assert caught.value.code == code
 
 
 def test_formula_normalization_and_state_are_bounded_and_stable():
@@ -406,3 +432,67 @@ def test_recalculation_only_touches_transitive_dependents_of_root():
     assert result["affected_indices"] == [2]
     assert layout["slots"][2]["value"] == 4
     assert layout["slots"][3]["value"] == 99
+
+
+def test_generation_reference_budget_never_leaves_unanalysed_dependents_stale(monkeypatch):
+    monkeypatch.setattr("server.formulas.FORMULA_MAX_GENERATION_REFERENCES", 1)
+    layout = {"slots": [
+        {
+            "type": "value", "value": 2, "value_type": "number",
+            "resolved_value_type": "number", "row": 0, "col": 0,
+        },
+        {
+            "type": "value", "value": 10, "value_type": "auto",
+            "resolved_value_type": "number", "row": 0, "col": 1,
+            "formula": {"source": "=A1*2", "version": 1},
+        },
+        {
+            "type": "value", "value": 999, "value_type": "auto",
+            "resolved_value_type": "number", "row": 0, "col": 2,
+            "formula": {"source": "=A1*3", "version": 1},
+        },
+    ]}
+
+    result = recalculate_layout(
+        layout,
+        root_indices={0},
+        calculated_at="2026-07-17T00:00:00Z",
+    )
+
+    assert result["affected_indices"] == [1, 2]
+    assert result["changed_count"] == 1
+    assert result["error_count"] == 1
+    assert layout["slots"][1]["value"] == 4
+    assert layout["slots"][2]["value"] == 999
+    assert layout["slots"][2]["formula_state"]["error_code"] == "#LIMIT!"
+
+
+def test_raw_function_domain_error_isolated_to_affected_formula():
+    layout = {"slots": [
+        {
+            "type": "value", "value": 2, "value_type": "number",
+            "resolved_value_type": "number", "row": 0, "col": 0,
+        },
+        {
+            "type": "value", "value": 10, "value_type": "auto",
+            "resolved_value_type": "number", "row": 0, "col": 1,
+            "formula": {"source": "=PMT(0,0,A1)", "version": 1},
+        },
+        {
+            "type": "value", "value": 0, "value_type": "auto",
+            "resolved_value_type": "number", "row": 0, "col": 2,
+            "formula": {"source": "=A1*2", "version": 1},
+        },
+    ]}
+
+    result = recalculate_layout(
+        layout,
+        root_indices={0},
+        calculated_at="2026-07-17T00:00:00Z",
+    )
+
+    assert result["error_count"] == 1
+    assert result["changed_count"] == 1
+    assert layout["slots"][1]["value"] == 10
+    assert layout["slots"][1]["formula_state"]["error_code"] == "#DIV/0!"
+    assert layout["slots"][2]["value"] == 4

@@ -8,8 +8,14 @@ from server import formulas as formula_mod
 from server import formula_runtime
 from server.layout_runtime import bump_layout_revision
 from server.locks import write_lock
+from server.operation_journal import (
+    begin_operation,
+    finish_operation,
+    mark_operation_committed,
+    rollback_operation,
+)
 from server.persistence import read_json, write_json
-from server.profiles import get_profile, create_profile, delete_profile
+from server.profiles import get_profile, create_profile
 from server.worker_types import copy_worker_slot, normalize_layout
 
 _AI_TRANSFER_FIELDS = {
@@ -114,6 +120,7 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
             read_json(os.path.join(src_ws.bp_dir, "layout.json")),
             config=src_config,
         )
+        src_layout_before = copy.deepcopy(src_layout)
         src_slots = src_layout.get("slots", [])
 
         # Validate source slot
@@ -228,6 +235,8 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
 
         # --- Profile handling ---
         profile_copied = False
+        profile_data_to_copy = None
+        profile_restore_path = None
         profile_id = clone.get("profile")
         if profile_id and copy_profile:
             src_profile = get_profile(src_ws.bp_dir, profile_id)
@@ -237,7 +246,8 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
                     # Copy profile to destination (strip workspaceId if present)
                     profile_data = dict(src_profile)
                     profile_data.pop("workspaceId", None)
-                    create_profile(dst_ws.bp_dir, profile_data)
+                    profile_data_to_copy = profile_data
+                    profile_restore_path = os.path.join(dst_ws.bp_dir, "profiles", f"{profile_id}.json")
                     profile_copied = True
                 else:
                     warnings.append(
@@ -275,56 +285,72 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
         else:
             bump_layout_revision(dst_layout)
         dst_layout_path = os.path.join(dst_ws.bp_dir, "layout.json")
+        src_layout_path = os.path.join(src_ws.bp_dir, "layout.json")
+        restore_files = [
+            {"path": dst_layout_path, "content": dst_layout_before},
+            {"path": src_layout_path, "content": src_layout_before},
+        ]
+        if profile_restore_path:
+            restore_files.append({"path": profile_restore_path, "content": None})
         try:
-            write_json(dst_layout_path, normalize_layout(dst_layout, config=dst_config))
+            operation_path = begin_operation(
+                src_ws.bp_dir,
+                kind="worker-transfer",
+                restore_files=restore_files,
+                metadata={
+                    "source_workspace_id": source_workspace_id,
+                    "destination_workspace_id": dest_workspace_id,
+                    "mode": mode,
+                    "source_slots": [source_slot],
+                },
+            )
         except Exception as exc:
-            cleanup_failed = False
-            if profile_copied:
-                try:
-                    delete_profile(dst_ws.bp_dir, profile_id)
-                except Exception:
-                    cleanup_failed = True
-            message = "destination write failed; source was not changed"
-            if cleanup_failed:
-                message += " and copied-profile cleanup requires manual repair"
-            raise TransferError(message, 500) from exc
-
-        # --- Clear source on move ---
-        if mode == "move":
-            src_slots[source_slot] = None
-            src_formula_indices = {
-                index for index, slot in enumerate(src_slots)
-                if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
-            }
-            if src_formula_indices:
-                formula_runtime.calculate_generation(
-                    src_layout,
-                    root_indices=src_formula_indices,
-                    cols=src_cols,
-                    calculated_at=transfer_time,
-                    timezone_name=src_config.get("timezone", "UTC"),
-                )
-            else:
-                bump_layout_revision(src_layout)
-            try:
+            raise TransferError("transfer could not prepare its recovery journal", 500) from exc
+        phase = "destination"
+        try:
+            if profile_data_to_copy is not None:
+                create_profile(dst_ws.bp_dir, profile_data_to_copy)
+            write_json(dst_layout_path, normalize_layout(dst_layout, config=dst_config))
+            # --- Clear source on move ---
+            if mode == "move":
+                phase = "source"
+                src_slots[source_slot] = None
+                src_formula_indices = {
+                    index for index, slot in enumerate(src_slots)
+                    if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
+                }
+                if src_formula_indices:
+                    formula_runtime.calculate_generation(
+                        src_layout,
+                        root_indices=src_formula_indices,
+                        cols=src_cols,
+                        calculated_at=transfer_time,
+                        timezone_name=src_config.get("timezone", "UTC"),
+                    )
+                else:
+                    bump_layout_revision(src_layout)
                 write_json(
-                    os.path.join(src_ws.bp_dir, "layout.json"),
+                    src_layout_path,
                     normalize_layout(src_layout, config=src_config),
                 )
-            except Exception as exc:
-                try:
-                    write_json(dst_layout_path, dst_layout_before)
-                    if profile_copied:
-                        delete_profile(dst_ws.bp_dir, profile_id)
-                except Exception as rollback_exc:
-                    raise TransferError(
-                        "source removal failed and destination rollback also failed; manual repair is required",
-                        500,
-                    ) from rollback_exc
+            phase = "commit"
+            mark_operation_committed(operation_path)
+        except Exception as exc:
+            try:
+                rollback_operation(operation_path, [src_ws.bp_dir, dst_ws.bp_dir])
+            except Exception as rollback_exc:
                 raise TransferError(
-                    "source removal failed; destination copy was rolled back",
+                    f"{phase} write failed and rollback also failed; manual repair is required",
                     500,
-                ) from exc
+                ) from rollback_exc
+            if phase == "source":
+                message = "source removal failed; destination copy was rolled back"
+            elif phase == "commit":
+                message = "transfer commit failed; source and destination were rolled back"
+            else:
+                message = "destination write failed; source was not changed"
+            raise TransferError(message, 500) from exc
+        finish_operation(operation_path)
 
     return {
         "ok": True,

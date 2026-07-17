@@ -11,7 +11,7 @@ import calendar
 import statistics
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP, ROUND_UP
 from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -753,6 +753,43 @@ def _bounded_root(function: Callable[[float], float], guess: float, position: in
     raise FormulaError("#NUM!", "Calculation did not converge", position)
 
 
+def _bounded_power(base: float | int, exponent: float | int, position: int, *, label: str = "Exponentiation"):
+    """Apply the evaluator's numeric budgets to helper-local exponentiation."""
+    if abs(exponent) > FORMULA_MAX_EXPONENT:
+        raise FormulaError("#LIMIT!", f"{label} exceeds the exponent budget", position)
+    if (
+        isinstance(base, int)
+        and not isinstance(base, bool)
+        and isinstance(exponent, int)
+        and not isinstance(exponent, bool)
+        and exponent >= 0
+        and base not in {-1, 0, 1}
+        and base.bit_length() * exponent > FORMULA_MAX_INTEGER_BITS
+    ):
+        raise FormulaError("#LIMIT!", f"{label} exceeds the integer budget", position)
+    try:
+        result = base ** exponent
+    except (OverflowError, ValueError, ZeroDivisionError):
+        raise FormulaError("#NUM!", f"Invalid {label.lower()} result", position)
+    if isinstance(result, complex):
+        raise FormulaError("#NUM!", f"Invalid {label.lower()} result", position)
+    if isinstance(result, int) and not isinstance(result, bool) and result.bit_length() > FORMULA_MAX_INTEGER_BITS:
+        raise FormulaError("#LIMIT!", f"{label} exceeds the integer budget", position)
+    if isinstance(result, float) and not math.isfinite(result):
+        raise FormulaError("#NUM!", f"Invalid {label.lower()} result", position)
+    return result
+
+
+def _bounded_join(parts: list[str], delimiter: str, position: int, *, label: str) -> str:
+    """Reject oversized joins before allocating their combined result."""
+    if not parts:
+        return ""
+    projected_length = sum(len(part) for part in parts) + len(delimiter) * (len(parts) - 1)
+    if projected_length > FORMULA_MAX_OUTPUT_LENGTH:
+        raise FormulaError("#LIMIT!", f"{label} result is too long", position)
+    return delimiter.join(parts)
+
+
 class Evaluator:
     def __init__(self, slots: list[Any], *, current_index: int | None = None, cols: int = 4,
                  now: datetime | None = None, timezone_name: str | None = "UTC",
@@ -862,7 +899,7 @@ class Evaluator:
                     raise FormulaError(str(state.get("error_code") or "#VALUE!"), f"Referenced formula {ref} is in error", position)
                 if ref not in self.dependencies:
                     self.dependencies.append(ref)
-                values.append(slot.get("value", ""))
+                values.append(self._validate_result(slot.get("value", ""), position))
         return RangeValue(values, rows=max_row - min_row + 1, cols=max_col - min_col + 1)
 
     def binary(self, op: str, left_node, right_node):
@@ -1368,17 +1405,19 @@ class Evaluator:
                 raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
             number = _number(values[0], position)
             digits = int(_number(values[1], position)) if len(values) == 2 else 0
-            factor = 10 ** digits
-            if name == "ROUND":
-                try:
-                    quantum = Decimal(1).scaleb(-digits)
-                    rounded = Decimal(str(number)).quantize(quantum, rounding=ROUND_HALF_UP)
-                    return int(rounded) if digits <= 0 and rounded == rounded.to_integral() else float(rounded)
-                except (InvalidOperation, ValueError, OverflowError):
-                    raise FormulaError("#NUM!", "Invalid rounding result", position)
-            scaled = number * factor
-            rounded = math.ceil(abs(scaled)) if name == "ROUNDUP" else math.floor(abs(scaled))
-            return math.copysign(rounded / factor, number)
+            if abs(digits) > FORMULA_MAX_NUMERIC_DIGITS:
+                raise FormulaError("#LIMIT!", f"{name} digits exceed the numeric budget", position)
+            try:
+                quantum = Decimal(1).scaleb(-digits)
+                rounding = {
+                    "ROUND": ROUND_HALF_UP,
+                    "ROUNDUP": ROUND_UP,
+                    "ROUNDDOWN": ROUND_DOWN,
+                }[name]
+                rounded = Decimal(str(number)).quantize(quantum, rounding=rounding)
+                return int(rounded) if digits <= 0 and rounded == rounded.to_integral() else float(rounded)
+            except (InvalidOperation, ValueError, OverflowError):
+                raise FormulaError("#NUM!", "Invalid rounding result", position)
         if name == "MOD":
             self._arity(name, values, 2, position)
             left, right = _number(values[0], position), _number(values[1], position)
@@ -1387,13 +1426,19 @@ class Evaluator:
             return left % right
         if name in {"CONCAT", "TEXTJOIN"}:
             if name == "CONCAT":
-                return "".join(_canonical_text(value) for value in self._flatten(values) if value is not None)
+                parts = [_canonical_text(value) for value in self._flatten(values) if value is not None]
+                return _bounded_join(parts, "", position, label="CONCAT")
             if len(values) < 3:
                 raise FormulaError("#VALUE!", "TEXTJOIN expects at least 3 arguments", position)
             delimiter = _canonical_text(values[0])
             ignore_empty = bool(values[1])
             items = self._flatten(values[2:])
-            return delimiter.join(_canonical_text(value) for value in items if not (ignore_empty and (value is None or value == "")))
+            parts = [
+                _canonical_text(value)
+                for value in items
+                if not (ignore_empty and (value is None or value == ""))
+            ]
+            return _bounded_join(parts, delimiter, position, label="TEXTJOIN")
         if name in {"LEFT", "RIGHT"}:
             if len(values) not in {1, 2}:
                 raise FormulaError("#VALUE!", f"{name} expects 1 or 2 arguments", position)
@@ -1425,6 +1470,14 @@ class Evaluator:
             occurrence = int(_number(values[3], position))
             if occurrence < 1:
                 raise FormulaError("#VALUE!", "SUBSTITUTE occurrence must be positive", position)
+            if old == "":
+                projected_length = len(text) + len(new)
+                if projected_length > FORMULA_MAX_OUTPUT_LENGTH:
+                    raise FormulaError("#LIMIT!", "SUBSTITUTE result is too long", position)
+                if occurrence > len(text) + 1:
+                    return text
+                insertion = occurrence - 1
+                return text[:insertion] + new + text[insertion:]
             parts = text.split(old)
             if len(parts) > occurrence and len(text) - len(old) + len(new) > FORMULA_MAX_OUTPUT_LENGTH:
                 raise FormulaError("#LIMIT!", "SUBSTITUTE result is too long", position)
@@ -1736,7 +1789,14 @@ class Evaluator:
                 flows = [_number(item, position) for item in self._flatten(values)]
                 if not any(item < 0 for item in flows) or not any(item > 0 for item in flows):
                     raise FormulaError("#NUM!", "IRR requires positive and negative cash flows", position)
-                return _bounded_root(lambda rate: sum(flow / ((1 + rate) ** index) for index, flow in enumerate(flows)), 0.1, position)
+                return _bounded_root(
+                    lambda rate: sum(
+                        flow / _bounded_power(1 + rate, index, position, label="IRR exponentiation")
+                        for index, flow in enumerate(flows)
+                    ),
+                    0.1,
+                    position,
+                )
             if name == "MIRR":
                 if len(values) < 3:
                     raise FormulaError("#VALUE!", "MIRR expects cash flows and two rates", position)
@@ -1746,9 +1806,25 @@ class Evaluator:
                 if len(flows) < 2 or not any(item < 0 for item in flows) or not any(item > 0 for item in flows):
                     raise FormulaError("#NUM!", "MIRR requires positive and negative cash flows", position)
                 periods = len(flows) - 1
-                present_negative = sum(flow / ((1 + finance_rate) ** index) for index, flow in enumerate(flows) if flow < 0)
-                future_positive = sum(flow * ((1 + reinvest_rate) ** (periods - index)) for index, flow in enumerate(flows) if flow > 0)
-                return (future_positive / -present_negative) ** (1 / periods) - 1
+                present_negative = sum(
+                    flow / _bounded_power(1 + finance_rate, index, position, label="MIRR exponentiation")
+                    for index, flow in enumerate(flows) if flow < 0
+                )
+                future_positive = sum(
+                    flow * _bounded_power(
+                        1 + reinvest_rate,
+                        periods - index,
+                        position,
+                        label="MIRR exponentiation",
+                    )
+                    for index, flow in enumerate(flows) if flow > 0
+                )
+                return _bounded_power(
+                    future_positive / -present_negative,
+                    1 / periods,
+                    position,
+                    label="MIRR exponentiation",
+                ) - 1
             if name == "NPER":
                 if len(values) not in {3,4,5}:
                     raise FormulaError("#VALUE!", "NPER expects 3 to 5 arguments", position)
@@ -1767,7 +1843,7 @@ class Evaluator:
                 due = _number(values[4], position) if len(values)>4 else 0
                 guess = _number(values[5], position) if len(values)>5 else 0.1
                 def balance(rate):
-                    factor=(1+rate)**nper
+                    factor = _bounded_power(1 + rate, nper, position, label="RATE exponentiation")
                     return present*factor + payment*(1+rate*due)*(factor-1)/rate + future if rate else present+payment*nper+future
                 return _bounded_root(balance, guess, position)
             if name == "XNPV":
@@ -1787,7 +1863,15 @@ class Evaluator:
             if not any(item < 0 for item in flows) or not any(item > 0 for item in flows):
                 raise FormulaError("#NUM!", f"{name} requires positive and negative cash flows", position)
             origin = dates[0]
-            value_at = lambda rate: sum(flow / ((1+rate) ** ((day-origin).days/365)) for flow,day in zip(flows,dates))
+            value_at = lambda rate: sum(
+                flow / _bounded_power(
+                    1 + rate,
+                    (day - origin).days / 365,
+                    position,
+                    label=f"{name} exponentiation",
+                )
+                for flow, day in zip(flows, dates)
+            )
             return value_at(rate) if name == "XNPV" else _bounded_root(value_at, guess, position)
         if name in {"PV", "FV", "PMT"}:
             if len(values) not in {3, 4, 5}:
@@ -1796,7 +1880,7 @@ class Evaluator:
             third = _number(values[2], position)
             fourth = _number(values[3], position) if len(values) > 3 else 0
             due = _number(values[4], position) if len(values) > 4 else 0
-            factor = (1 + rate) ** nper
+            factor = _bounded_power(1 + rate, nper, position, label=f"{name} exponentiation")
             if name == "FV":
                 return -(fourth * factor + third * (1 + rate * due) * (factor - 1) / rate) if rate else -(fourth + third * nper)
             if name == "PV":
@@ -1809,7 +1893,10 @@ class Evaluator:
                 raise FormulaError("#VALUE!", "NPV expects a rate and cash flows", position)
             rate = _number(values[0], position)
             flows = [_number(value, position) for value in self._flatten(values[1:]) if value is not None and value != ""]
-            return sum(flow / ((1 + rate) ** (index + 1)) for index, flow in enumerate(flows))
+            return sum(
+                flow / _bounded_power(1 + rate, index + 1, position, label="NPV exponentiation")
+                for index, flow in enumerate(flows)
+            )
         if name in {"NOW", "TODAY"}:
             self._arity(name, values, 0, position)
             self.volatile = True
@@ -1837,7 +1924,18 @@ def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None
         timezone_name=timezone_name,
         resolver=resolver,
     )
-    value = evaluator.evaluate(ast)
+    try:
+        value = evaluator.evaluate(ast)
+    except FormulaError:
+        raise
+    except OverflowError as exc:
+        raise FormulaError("#NUM!", "Formula numeric result overflowed") from exc
+    except ZeroDivisionError as exc:
+        raise FormulaError("#DIV/0!", "Division by zero") from exc
+    except ArithmeticError as exc:
+        raise FormulaError("#NUM!", "Invalid numeric result") from exc
+    except ValueError as exc:
+        raise FormulaError("#VALUE!", "Invalid function arguments") from exc
     if isinstance(value, RangeValue):
         raise FormulaError("#VALUE!", "A range cannot be a top-level formula result")
     if isinstance(value, float) and not math.isfinite(value):
@@ -2037,8 +2135,11 @@ def recalculate_layout(
     if root_indices is None:
         affected = set(formula_indices)
     else:
-        affected = {index for index in root_indices if index in formula_indices}
-        pending = list(root_indices)
+        # Analysis failures have no reliable reverse edges. Include them
+        # conservatively so a budget or parse failure can never preserve an
+        # apparently successful stale value during a partial generation.
+        affected = {index for index in root_indices if index in formula_indices} | set(analysis_errors)
+        pending = list(root_indices) + list(analysis_errors)
         while pending:
             root = pending.pop(0)
             for dependent in reverse.get(root, set()):

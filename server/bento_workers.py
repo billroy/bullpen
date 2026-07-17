@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import copy
 import hashlib
 from io import BytesIO
 import json
@@ -14,8 +15,14 @@ from server.bento_carrier import BentoCarrierError, inspect_bento
 from server import formulas as formula_mod
 from server import formula_runtime
 from server.layout_runtime import bump_layout_revision
+from server.operation_journal import (
+    begin_operation,
+    finish_operation,
+    mark_operation_committed,
+    rollback_operation,
+)
 from server.persistence import read_json, write_json
-from server.profiles import create_profile, delete_profile, get_profile
+from server.profiles import create_profile, get_profile
 from server.worker_types import copy_worker_slot, normalize_layout
 
 
@@ -707,6 +714,7 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
 
     config = read_json(os.path.join(bp_dir, "config.json"))
     layout = normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
+    layout_before = copy.deepcopy(layout)
     slots = layout.setdefault("slots", [])
     cols = _safe_cols(config)
     placement = placement if isinstance(placement, dict) else {}
@@ -783,23 +791,45 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
         )
     else:
         bump_layout_revision(layout)
+    layout_path = os.path.join(bp_dir, "layout.json")
+    restore_files = [{"path": layout_path, "content": layout_before}]
+    restore_files.extend(
+        {
+            "path": os.path.join(bp_dir, "profiles", f"{profile['id']}.json"),
+            "content": None,
+        }
+        for profile in profiles_to_create
+    )
+    try:
+        operation_path = begin_operation(
+            bp_dir,
+            kind="bento-worker-import",
+            restore_files=restore_files,
+            metadata={"profile_ids": [profile["id"] for profile in profiles_to_create]},
+        )
+    except Exception as exc:
+        raise BentoCarrierError(
+            "Worker import could not prepare its recovery journal",
+            "import-write-failed",
+        ) from exc
     created_profile_ids = []
     try:
         for profile in profiles_to_create:
             create_profile(bp_dir, profile)
             created_profile_ids.append(profile["id"])
-        write_json(os.path.join(bp_dir, "layout.json"), layout)
+        write_json(layout_path, layout)
+        mark_operation_committed(operation_path)
     except Exception as exc:
-        cleanup_errors = []
-        for profile_id in reversed(created_profile_ids):
-            try:
-                delete_profile(bp_dir, profile_id)
-            except Exception as cleanup_exc:
-                cleanup_errors.append(str(cleanup_exc))
+        cleanup_error = None
+        try:
+            rollback_operation(operation_path, [bp_dir])
+        except Exception as rollback_exc:
+            cleanup_error = str(rollback_exc)
         message = "Worker import failed; workspace layout was not changed"
-        if cleanup_errors:
+        if cleanup_error:
             message += " and profile cleanup requires manual repair"
         raise BentoCarrierError(message, "import-write-failed") from exc
+    finish_operation(operation_path)
     imported_profiles.extend(created_profile_ids)
     for profile_id in skipped_profiles:
         warnings.append(f"profile '{profile_id}' already exists and was kept")

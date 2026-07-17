@@ -6,6 +6,7 @@ import tempfile
 import time
 import json
 import threading
+from datetime import datetime, timezone
 
 import pytest
 
@@ -1408,6 +1409,61 @@ class TestWorkerEvents:
             source.disconnect()
             dest.disconnect()
 
+    def test_worker_group_transfer_rolls_back_all_members_on_later_failure(self, monkeypatch):
+        with tempfile.TemporaryDirectory(prefix="bullpen_transfer_group_socket_") as root:
+            ws_a = os.path.join(root, "project-a")
+            ws_b = os.path.join(root, "project-b")
+            os.makedirs(ws_a)
+            os.makedirs(ws_b)
+            app = create_app(ws_a, no_browser=True)
+            manager = app.config["manager"]
+            ws_a_id = app.config["startup_workspace_id"]
+            ws_b_id = manager.register_project(ws_b, name="Project B")
+            bp_a = manager.get_bp_dir(ws_a_id)
+            bp_b = manager.get_bp_dir(ws_b_id)
+            source_layout_path = os.path.join(bp_a, "layout.json")
+            source_layout = read_json(source_layout_path)
+            source_layout["slots"] = [
+                {"name": "Alpha", "type": "ai", "state": "idle", "task_queue": []},
+                {"name": "Beta", "type": "ai", "state": "idle", "task_queue": []},
+            ]
+            write_json(source_layout_path, source_layout)
+            destination_before = read_json(os.path.join(bp_b, "layout.json"))
+
+            original_transfer = events_mod.transfer_worker
+            calls = 0
+
+            def fail_second(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise events_mod.TransferError("simulated second-member failure", 500)
+                return original_transfer(*args, **kwargs)
+
+            monkeypatch.setattr(events_mod, "transfer_worker", fail_second)
+            source = socketio.test_client(app)
+            source.get_received()
+            source.emit("worker:transfer", {
+                "workspaceId": ws_a_id,
+                "source_workspace_id": ws_a_id,
+                "source_slots": [0, 1],
+                "dest_workspace_id": ws_b_id,
+                "mode": "move",
+            })
+
+            error = _wait_for_event(source, "worker:transfer:error")
+            assert error is not None
+            assert error["results"] == []
+            assert error["rolled_back"] is True
+            assert error["rolled_back_count"] == 1
+            restored_source = read_json(source_layout_path)
+            restored_destination = read_json(os.path.join(bp_b, "layout.json"))
+            assert [slot["name"] for slot in restored_source["slots"]] == ["Alpha", "Beta"]
+            assert restored_destination == destination_before
+            operations_dir = os.path.join(bp_a, "operations")
+            assert not os.path.isdir(operations_dir) or not os.listdir(operations_dir)
+            source.disconnect()
+
     def test_worker_transfer_rest_routes_are_removed(self, client):
         _c, app = client
         routes = {rule.rule for rule in app.url_map.iter_rules()}
@@ -1715,6 +1771,8 @@ class TestWorkerEvents:
     def test_value_trigger_outbox_retries_failed_delivery_without_duplicate_ticket(self, client, monkeypatch):
         c, app = client
         starts = []
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_RETRY_BASE_SECONDS", 60)
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_RETRY_MAX_SECONDS", 60)
         monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
         c.emit("worker:add", {
             "slot": 0,
@@ -1752,6 +1810,8 @@ class TestWorkerEvents:
             for event in c.get_received()
             if event["name"] == "layout:updated"
         )
+        failed_layout["_formula_trigger_outbox"][0]["next_attempt_at"] = None
+        write_json(os.path.join(app.config["bp_dir"], "layout.json"), failed_layout)
 
         drain = app.config["drain_formula_trigger_outbox"]
         ws_id = app.config["startup_workspace_id"]
@@ -1784,6 +1844,222 @@ class TestWorkerEvents:
         persisted = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
         assert "_formula_trigger_outbox" not in persisted
         assert starts
+
+    def test_value_trigger_outbox_retries_automatically_without_client_activity(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_RETRY_BASE_SECONDS", 0.01)
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_RETRY_MAX_SECONDS", 0.01)
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+            },
+        })
+        get_event(c, "layout:updated")
+
+        original_create = task_mod.create_task
+        attempts = 0
+
+        def fail_once(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise OSError("transient disk error")
+            return original_create(*args, **kwargs)
+
+        monkeypatch.setattr(task_mod, "create_task", fail_once)
+        c.emit("value:set", {"ref": "Counter", "value": "8", "value_type": "number"})
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            persisted = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+            if "_formula_trigger_outbox" not in persisted:
+                break
+            time.sleep(0.01)
+
+        created = [
+            task for task in task_mod.list_tasks(app.config["bp_dir"])
+            if task.get("trigger_kind") == "on_value_change"
+        ]
+        assert attempts == 2
+        assert len(created) == 1
+        assert "_formula_trigger_outbox" not in persisted
+        assert starts
+
+    def test_value_trigger_outbox_recovers_during_application_startup(self, tmp_path, monkeypatch):
+        workspace_root = tmp_path / "workspace"
+        global_dir = tmp_path / "global"
+        workspace_root.mkdir()
+        original_create = task_mod.create_task
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_RETRY_BASE_SECONDS", 60)
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_RETRY_MAX_SECONDS", 60)
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: None)
+        first_app = create_app(
+            str(workspace_root),
+            no_browser=True,
+            global_dir=str(global_dir),
+        )
+        first_client = socketio.test_client(first_app)
+        first_client.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        get_event(first_client, "layout:updated")
+        first_client.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        get_event(first_client, "layout:updated")
+        first_client.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+            },
+        })
+        get_event(first_client, "layout:updated")
+        monkeypatch.setattr(
+            task_mod,
+            "create_task",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")),
+        )
+        first_client.emit("value:set", {"ref": "Counter", "value": "8", "value_type": "number"})
+        bp_dir = first_app.config["bp_dir"]
+        persisted = read_json(os.path.join(bp_dir, "layout.json"))
+        persisted["_formula_trigger_outbox"][0]["next_attempt_at"] = None
+        write_json(os.path.join(bp_dir, "layout.json"), persisted)
+        first_client.disconnect()
+
+        monkeypatch.setattr(task_mod, "create_task", original_create)
+        create_app(
+            str(workspace_root),
+            no_browser=True,
+            global_dir=str(global_dir),
+        )
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            persisted = read_json(os.path.join(bp_dir, "layout.json"))
+            if "_formula_trigger_outbox" not in persisted:
+                break
+            time.sleep(0.01)
+
+        assert "_formula_trigger_outbox" not in persisted
+        assert len([
+            task for task in task_mod.list_tasks(bp_dir)
+            if task.get("trigger_kind") == "on_value_change"
+        ]) == 1
+
+    def test_value_trigger_outbox_dead_letters_after_bounded_attempts(self, client, monkeypatch):
+        c, app = client
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_MAX_ATTEMPTS", 1)
+        monkeypatch.setattr(task_mod, "create_task", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: None)
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+            },
+        })
+        get_event(c, "layout:updated")
+
+        c.emit("value:set", {"ref": "Counter", "value": "8", "value_type": "number"})
+
+        persisted = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert "_formula_trigger_outbox" not in persisted
+        assert persisted["_formula_trigger_dead_letters"][0]["status"] == "dead_letter"
+        assert persisted["_formula_trigger_dead_letters"][0]["attempts"] == 1
+        toast = get_event(c, "toast")
+        assert "requires review" in toast["message"]
+        observer = socketio.test_client(app)
+        try:
+            persisted_notice = get_event(observer, "toast")
+            assert persisted_notice["level"] == "error"
+            assert persisted_notice["message"] == "1 value-change trigger delivery requires review."
+        finally:
+            observer.disconnect()
+
+    def test_two_clients_coalesce_volatile_activation_without_history_or_triggers(self, client):
+        c, app = client
+        c.emit("formula:set", {"ref": "A1", "formula": "=NOW()"})
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Clock Watcher"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "coord",
+                "value_trigger_ref": "A1",
+            },
+        })
+        get_event(c, "layout:updated")
+        layout_path = os.path.join(app.config["bp_dir"], "layout.json")
+        persisted = read_json(layout_path)
+        persisted["slots"][0]["value"] = "2000-01-01T00:00:00Z"
+        persisted["slots"][0]["formula_state"]["calculated_at"] = "2000-01-01T00:00:00Z"
+        history_before = list(persisted["slots"][0].get("history", []))
+        revision_before = persisted["workspace_revision"]
+        write_json(layout_path, persisted)
+        activation_time = datetime(2026, 7, 17, 12, 30, tzinfo=timezone.utc)
+        app.config["formula_clock"] = lambda: activation_time
+
+        second = socketio.test_client(app)
+        try:
+            c.get_received()
+            second.get_received()
+            c.emit("formula:activate", {})
+            second.emit("formula:activate", {})
+
+            updated = read_json(layout_path)
+            assert updated["workspace_revision"] == revision_before + 1
+            assert updated["slots"][0]["value"] == "2026-07-17T12:30:00Z"
+            assert updated["slots"][0]["history"] == history_before
+            assert updated["slots"][0]["formula_state"]["calculated_at"] == "2026-07-17T12:30:00Z"
+            assert not [
+                task for task in task_mod.list_tasks(app.config["bp_dir"])
+                if task.get("trigger_kind") == "on_value_change"
+            ]
+            assert sum(event["name"] == "layout:updated" for event in c.get_received()) == 1
+            assert sum(event["name"] == "layout:updated" for event in second.get_received()) == 1
+        finally:
+            second.disconnect()
 
     def test_value_trigger_backpressure_rejects_write_without_partial_value_or_cooldown(self, client, monkeypatch):
         c, app = client

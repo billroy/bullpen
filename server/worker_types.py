@@ -659,6 +659,7 @@ def serialize_layout(layout, *, viewer, config=None):
         layout = normalize_layout(layout, config=config)
     serialized = dict(layout if isinstance(layout, dict) else {})
     serialized.pop("_formula_trigger_outbox", None)
+    serialized.pop("_formula_trigger_dead_letters", None)
     slots = serialized.get("slots", [])
     if not isinstance(slots, list):
         slots = []

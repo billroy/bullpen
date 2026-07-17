@@ -23,6 +23,7 @@ from flask_socketio import SocketIO, join_room
 
 from server import auth
 from server import formula_runtime
+from server.operation_journal import recover_pending_operations
 from server.layout_runtime import bump_layout_revision
 from server.archive_transport import (
     MAX_IMPORT_ARCHIVE_FILES as _MAX_IMPORT_ARCHIVE_FILES,
@@ -195,6 +196,7 @@ def create_app(
             # do not silently delete user data.
             continue
     bp_dir = manager.get_bp_dir(startup_id) if startup_id else None
+    recover_pending_operations(workspace.bp_dir for workspace in manager.all_workspaces())
 
     app = Flask(
         __name__,
@@ -443,6 +445,26 @@ def create_app(
             return None, (jsonify({"error": "Unknown workspace"}), 404)
         return ws, None
 
+    def _notify_formula_trigger_dead_letters(bp_dir, sid):
+        """Surface persisted terminal trigger failures without leaking payloads."""
+        try:
+            dead_letters = read_json(os.path.join(bp_dir, "layout.json")).get(
+                "_formula_trigger_dead_letters"
+            )
+        except (OSError, ValueError, TypeError):
+            return
+        count = len(dead_letters) if isinstance(dead_letters, list) else 0
+        if count:
+            socketio.emit("toast", {
+                "message": (
+                    f"{count} value-change trigger delivery "
+                    f"{'requires' if count == 1 else 'require'} review."
+                ),
+                "level": "error",
+            }, to=sid)
+
+    app.config["notify_formula_trigger_dead_letters"] = _notify_formula_trigger_dead_letters
+
     @socketio.on("connect")
     def on_connect(auth_data=None):
         # Reject unauthenticated Socket.IO upgrades. Flask-SocketIO makes
@@ -473,6 +495,7 @@ def create_app(
             state["workspaceId"] = ws.id
             state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
+            _notify_formula_trigger_dead_letters(ws.bp_dir, request.sid)
             drain = app.config.get("drain_formula_trigger_outbox")
             pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get("_formula_trigger_outbox")
             if drain and pending_triggers:
@@ -488,6 +511,7 @@ def create_app(
             state["workspaceId"] = ws.id
             state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
+            _notify_formula_trigger_dead_letters(ws.bp_dir, request.sid)
             drain = app.config.get("drain_formula_trigger_outbox")
             pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get("_formula_trigger_outbox")
             if drain and pending_triggers:

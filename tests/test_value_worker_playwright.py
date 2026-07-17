@@ -287,6 +287,69 @@ def test_sparse_row_column_formula_and_two_window_revision_sync_in_chromium():
                 proc.kill()
 
 
+def test_two_window_volatile_activation_coalesces_without_history_in_chromium():
+    with tempfile.TemporaryDirectory(prefix="bullpen_formula_volatile_pw_") as workspace:
+        port = _free_port()
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+            layout_path = os.path.join(workspace, ".bullpen", "layout.json")
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                setup = browser.new_page(locale="en-US")
+                setup.goto(base_url)
+                setup.get_by_role("button", name="Workers").click()
+                viewport = setup.locator(".worker-grid-viewport")
+                viewport.focus()
+                setup.keyboard.type("=")
+                editor = setup.get_by_role("textbox", name="Create value worker")
+                editor.fill("=NOW()")
+                editor.press("Enter")
+                expect(setup.locator(".worker-card-formula-badge")).to_have_text("fx")
+                setup.close()
+
+                with open(layout_path, encoding="utf-8") as handle:
+                    stale_layout = json.load(handle)
+                formula = next(slot for slot in stale_layout["slots"] if slot and slot.get("formula"))
+                formula["value"] = "2000-01-01T00:00:00Z"
+                formula["formula_state"]["calculated_at"] = "2000-01-01T00:00:00Z"
+                history_before = list(formula.get("history", []))
+                revision_before = stale_layout["workspace_revision"]
+                with open(layout_path, "w", encoding="utf-8") as handle:
+                    json.dump(stale_layout, handle, indent=2)
+                    handle.write("\n")
+
+                first = browser.new_page(locale="en-US")
+                second = browser.new_page(locale="en-US")
+                first.goto(base_url)
+                second.goto(base_url)
+                for page in (first, second):
+                    page.get_by_role("button", name="Workers").click()
+                first.wait_for_timeout(2100)
+                first.bring_to_front()
+                first.evaluate("window.dispatchEvent(new Event('focus'))")
+                second.bring_to_front()
+                second.evaluate("window.dispatchEvent(new Event('focus'))")
+                for page in (first, second):
+                    expect(page.locator(".worker-card-value-main")).not_to_have_text("2000-01-01T00:00:00Z")
+
+                with open(layout_path, encoding="utf-8") as handle:
+                    activated = json.load(handle)
+                activated_formula = next(slot for slot in activated["slots"] if slot and slot.get("formula"))
+                assert activated["workspace_revision"] == revision_before + 1
+                assert activated_formula["history"] == history_before
+                assert activated_formula["value"] != "2000-01-01T00:00:00Z"
+                browser.close()
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def test_scalar_and_rectangular_system_clipboard_paste_in_chromium():
     with tempfile.TemporaryDirectory(prefix="bullpen_value_paste_pw_") as workspace:
         port = _free_port()

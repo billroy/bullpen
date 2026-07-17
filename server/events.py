@@ -11,7 +11,7 @@ import time
 import hashlib
 import copy
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import request
 from flask_socketio import emit, join_room, rooms
@@ -35,7 +35,13 @@ from server.file_browser import (
     write_text_file,
 )
 from server.persistence import read_json, write_json, atomic_write
-from server.profiles import create_profile, list_profiles
+from server.profiles import create_profile, get_profile, list_profiles
+from server.operation_journal import (
+    begin_operation,
+    finish_operation,
+    mark_operation_committed,
+    rollback_operation,
+)
 from server.teams import save_team, load_team, list_teams
 from server.usage import (
     build_usage_entry,
@@ -107,6 +113,11 @@ VALUE_TRIGGER_CONDITION_OPERATORS = {"any", "contains", "<", "<=", "==", ">", ">
 VALUE_TRIGGER_RELATIONAL_OPERATORS = {"<", "<=", "==", ">", ">="}
 FORMULA_TRIGGER_OUTBOX_KEY = "_formula_trigger_outbox"
 FORMULA_TRIGGER_OUTBOX_LIMIT = 1000
+FORMULA_TRIGGER_DEAD_LETTER_KEY = "_formula_trigger_dead_letters"
+FORMULA_TRIGGER_RETRY_BASE_SECONDS = 1.0
+FORMULA_TRIGGER_RETRY_MAX_SECONDS = 60.0
+FORMULA_TRIGGER_MAX_ATTEMPTS = 8
+FORMULA_TRIGGER_DEAD_LETTER_LIMIT = 100
 
 
 def _formula_aware_ui_input(value):
@@ -633,9 +644,13 @@ def register_events(socketio, app):
             except Exception:
                 payload = copy.deepcopy(payload)
         if isinstance(payload, dict):
-            if event == "layout:updated" and FORMULA_TRIGGER_OUTBOX_KEY in payload:
+            if event == "layout:updated" and (
+                FORMULA_TRIGGER_OUTBOX_KEY in payload
+                or FORMULA_TRIGGER_DEAD_LETTER_KEY in payload
+            ):
                 payload = copy.deepcopy(payload)
                 payload.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
+                payload.pop(FORMULA_TRIGGER_DEAD_LETTER_KEY, None)
             payload["workspaceId"] = ws_id
         socketio.emit(event, payload, to=ws_id)
         # layout:updated replaces the client-side slot objects. Re-broadcast
@@ -2339,26 +2354,110 @@ def register_events(socketio, app):
 
         results = []
         warnings = []
+
+        def _run_transfer_batch():
+            group_operation_path = None
+            source_ws = manager.get_or_activate(source_ws_id)
+            destination_ws_id = data.get("dest_workspace_id")
+            destination_ws = manager.get_or_activate(destination_ws_id)
+            if source_ws is None:
+                raise TransferError("source workspace not found", 404)
+            if destination_ws is None:
+                raise TransferError("destination workspace not found", 404)
+            if len(slots) > 1:
+                source_layout_path = os.path.join(source_ws.bp_dir, "layout.json")
+                destination_layout_path = os.path.join(destination_ws.bp_dir, "layout.json")
+                restore_files = [
+                    {"path": source_layout_path, "content": read_json(source_layout_path)},
+                    {"path": destination_layout_path, "content": read_json(destination_layout_path)},
+                ]
+                if bool(data.get("copy_profile", False)):
+                    source_layout = restore_files[0]["content"]
+                    for source_slot in slots:
+                        source_workers = source_layout.get("slots", [])
+                        worker = (
+                            source_workers[source_slot]
+                            if 0 <= source_slot < len(source_workers)
+                            else None
+                        )
+                        profile_id = worker.get("profile") if isinstance(worker, dict) else None
+                        try:
+                            destination_profile = (
+                                get_profile(destination_ws.bp_dir, profile_id)
+                                if profile_id else None
+                            )
+                        except ValueError as exc:
+                            raise TransferError("source worker has an invalid profile id", 400) from exc
+                        if profile_id and destination_profile is None:
+                            profile_path = os.path.join(
+                                destination_ws.bp_dir,
+                                "profiles",
+                                f"{profile_id}.json",
+                            )
+                            if not any(item["path"] == profile_path for item in restore_files):
+                                restore_files.append({"path": profile_path, "content": None})
+                try:
+                    group_operation_path = begin_operation(
+                        source_ws.bp_dir,
+                        kind="worker-transfer-group",
+                        restore_files=restore_files,
+                        metadata={
+                            "source_workspace_id": source_ws_id,
+                            "destination_workspace_id": destination_ws_id,
+                            "mode": data.get("mode", "copy"),
+                            "source_slots": slots,
+                        },
+                    )
+                except Exception as exc:
+                    raise TransferError(
+                        "group transfer could not prepare its recovery journal",
+                        500,
+                    ) from exc
+            try:
+                for slot in slots:
+                    result = transfer_worker(
+                        manager,
+                        source_workspace_id=source_ws_id,
+                        source_slot=slot,
+                        dest_workspace_id=destination_ws_id,
+                        dest_slot=data.get("dest_slot") if len(slots) == 1 else None,
+                        mode=data.get("mode", "copy"),
+                        copy_profile=bool(data.get("copy_profile", False)),
+                    )
+                    results.append(result)
+                    warnings.extend(result.get("warnings") or [])
+                if group_operation_path:
+                    mark_operation_committed(group_operation_path)
+            except Exception as exc:
+                if group_operation_path:
+                    try:
+                        rollback_operation(
+                            group_operation_path,
+                            [source_ws.bp_dir, destination_ws.bp_dir],
+                        )
+                    except Exception as rollback_exc:
+                        raise TransferError(
+                            "group transfer failed and rollback also failed; manual repair is required",
+                            500,
+                        ) from rollback_exc
+                if isinstance(exc, TransferError):
+                    raise
+                raise TransferError("group transfer failed; all members were rolled back", 500) from exc
+            if group_operation_path:
+                finish_operation(group_operation_path)
+
         try:
-            for slot in slots:
-                result = transfer_worker(
-                    manager,
-                    source_workspace_id=source_ws_id,
-                    source_slot=slot,
-                    dest_workspace_id=data.get("dest_workspace_id"),
-                    dest_slot=data.get("dest_slot") if len(slots) == 1 else None,
-                    mode=data.get("mode", "copy"),
-                    copy_profile=bool(data.get("copy_profile", False)),
-                )
-                results.append(result)
-                warnings.extend(result.get("warnings") or [])
+            with _write_lock:
+                _run_transfer_batch()
         except TransferError as e:
             emit("worker:transfer:error", {
                 "workspaceId": source_ws_id,
                 "ok": False,
                 "error": str(e),
                 "status": e.status,
-                "results": results,
+                "results": [],
+                "rolled_back": bool(results),
+                "rolled_back_count": len(results),
             })
             return
 
@@ -3213,6 +3312,8 @@ def register_events(socketio, app):
                 "deliveries": deliveries,
                 "attempts": 0,
                 "last_error": "",
+                "status": "pending",
+                "next_attempt_at": None,
             })
         if not outbox:
             layout.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
@@ -3243,20 +3344,86 @@ def register_events(socketio, app):
             _save_layout(bp_dir, layout, bump_revision=False)
 
     def _record_trigger_failure(bp_dir, intent_id, message):
+        outcome = None
         with _write_lock:
             layout = _load_layout(bp_dir)
             outbox = layout.get(FORMULA_TRIGGER_OUTBOX_KEY)
             if not isinstance(outbox, list):
-                return
-            for intent in outbox:
+                return None
+            for index, intent in enumerate(outbox):
                 if isinstance(intent, dict) and intent.get("id") == intent_id:
-                    intent["attempts"] = int(intent.get("attempts") or 0) + 1
+                    attempts = int(intent.get("attempts") or 0) + 1
+                    intent["attempts"] = attempts
                     intent["last_error"] = str(message)[:512]
+                    if attempts >= FORMULA_TRIGGER_MAX_ATTEMPTS:
+                        intent["status"] = "dead_letter"
+                        intent["dead_lettered_at"] = _now_iso()
+                        dead_letters = layout.get(FORMULA_TRIGGER_DEAD_LETTER_KEY)
+                        if not isinstance(dead_letters, list):
+                            dead_letters = []
+                        dead_letters.append(copy.deepcopy(intent))
+                        layout[FORMULA_TRIGGER_DEAD_LETTER_KEY] = dead_letters[-FORMULA_TRIGGER_DEAD_LETTER_LIMIT:]
+                        outbox.pop(index)
+                        if not outbox:
+                            layout.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
+                        outcome = {"dead_letter": True, "attempts": attempts}
+                    else:
+                        delay = min(
+                            FORMULA_TRIGGER_RETRY_MAX_SECONDS,
+                            FORMULA_TRIGGER_RETRY_BASE_SECONDS * (2 ** max(0, attempts - 1)),
+                        )
+                        retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+                        intent["status"] = "retry_wait"
+                        intent["next_attempt_at"] = retry_at.isoformat().replace("+00:00", "Z")
+                        outcome = {"dead_letter": False, "attempts": attempts, "delay": delay}
                     break
             _save_layout(bp_dir, layout, bump_revision=False)
+        return outcome
 
     trigger_drain_locks = {}
     trigger_drain_locks_guard = threading.Lock()
+    trigger_retry_deadlines = {}
+    trigger_retry_guard = threading.Lock()
+
+    def _schedule_trigger_retry(bp_dir, ws_id, delay):
+        delay = max(0.0, float(delay))
+        deadline = time.monotonic() + delay
+        with trigger_retry_guard:
+            existing = trigger_retry_deadlines.get(bp_dir)
+            if existing is not None and existing <= deadline:
+                return
+            trigger_retry_deadlines[bp_dir] = deadline
+
+        def _retry():
+            socketio.sleep(delay)
+            with trigger_retry_guard:
+                if trigger_retry_deadlines.get(bp_dir) != deadline:
+                    return
+                trigger_retry_deadlines.pop(bp_dir, None)
+            try:
+                _drain_formula_trigger_outbox(bp_dir, ws_id)
+            except FileNotFoundError:
+                # The workspace may have been removed while a persisted retry
+                # was sleeping. There is no outbox left to recover in that
+                # case, so let the background task end quietly.
+                logging.debug(
+                    "Discarding formula trigger retry for removed workspace %s",
+                    bp_dir,
+                )
+
+        socketio.start_background_task(_retry)
+
+    def _trigger_retry_delay(intent):
+        raw = intent.get("next_attempt_at") if isinstance(intent, dict) else None
+        if not raw:
+            return 0.0
+        try:
+            retry_at = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
 
     def _drain_formula_trigger_outbox(bp_dir, ws_id):
         with trigger_drain_locks_guard:
@@ -3280,12 +3447,23 @@ def register_events(socketio, app):
                     (
                         item for item in outbox
                         if isinstance(item, dict) and isinstance(item.get("deliveries"), list) and item["deliveries"]
+                        and _trigger_retry_delay(item) <= 0
                     ),
                     None,
                 )
                 if intent is None:
-                    layout.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
-                    _save_layout(bp_dir, layout, bump_revision=False)
+                    retry_delays = [
+                        _trigger_retry_delay(item)
+                        for item in outbox
+                        if isinstance(item, dict)
+                        and isinstance(item.get("deliveries"), list)
+                        and item["deliveries"]
+                    ]
+                    if retry_delays:
+                        _schedule_trigger_retry(bp_dir, ws_id, min(retry_delays))
+                    else:
+                        layout.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
+                        _save_layout(bp_dir, layout, bump_revision=False)
                     return
                 delivery = intent["deliveries"][0]
                 intent_id = str(intent.get("id") or "")
@@ -3334,8 +3512,18 @@ def register_events(socketio, app):
                 )
                 delivered += 1
             except Exception as exc:
-                _record_trigger_failure(bp_dir, intent_id, exc)
+                outcome = _record_trigger_failure(bp_dir, intent_id, exc)
                 logging.exception("Failed to deliver value-change trigger intent %s", intent_id)
+                if outcome and outcome.get("dead_letter"):
+                    _emit("toast", {
+                        "message": (
+                            "A value-change trigger could not be delivered after "
+                            f"{outcome['attempts']} attempts and requires review."
+                        ),
+                        "level": "error",
+                    }, ws_id)
+                elif outcome:
+                    _schedule_trigger_retry(bp_dir, ws_id, outcome.get("delay", 0))
                 return
 
     def _fire_value_change_triggers(bp_dir, layout, value_index, old_slot, *, updated_at, changed_by, ws_id):
@@ -3366,6 +3554,7 @@ def register_events(socketio, app):
         root_events=None,
         record_history=True,
         deliver_triggers=True,
+        now=None,
     ):
         """Calculate, persist, and broadcast one server-owned formula generation."""
         config = read_json(os.path.join(bp_dir, "config.json"))
@@ -3376,6 +3565,7 @@ def register_events(socketio, app):
             calculated_at=updated_at,
             timezone_name=config.get("timezone", "UTC"),
             record_history=record_history,
+            now=now,
         )
         generation = runtime_generation.calculation
         trigger_events = list(root_events or []) if deliver_triggers else []
@@ -3581,9 +3771,17 @@ def register_events(socketio, app):
         activations[ws_id] = now
         layout = _load_layout(bp_dir)
         config = read_json(os.path.join(bp_dir, "config.json"))
+        formula_clock = app.config.get("formula_clock")
+        activation_time = formula_clock() if callable(formula_clock) else datetime.now(timezone.utc)
+        if activation_time.tzinfo is None:
+            activation_time = activation_time.replace(tzinfo=timezone.utc)
         stale = {
             index for index, slot in enumerate(layout.get("slots", []))
-            if formula_mod.is_formula_stale(slot, timezone_name=config.get("timezone", "UTC"))
+            if formula_mod.is_formula_stale(
+                slot,
+                now=activation_time,
+                timezone_name=config.get("timezone", "UTC"),
+            )
         }
         if not stale:
             return
@@ -3591,11 +3789,12 @@ def register_events(socketio, app):
             bp_dir,
             layout,
             root_indices=stale,
-            updated_at=_now_iso(),
+            updated_at=activation_time.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             ws_id=ws_id,
             changed_by="formula:activate",
             record_history=False,
             deliver_triggers=False,
+            now=activation_time,
         )
 
     @socketio.on("value:increment")
@@ -4265,7 +4464,11 @@ def register_events(socketio, app):
         state["globalSettings"] = load_global_settings(manager.global_dir)
         emit("state:init", state)
         _emit_chat_tabs(ws_id, sid=request.sid)
-        pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get(FORMULA_TRIGGER_OUTBOX_KEY)
+        private_layout = read_json(os.path.join(ws.bp_dir, "layout.json"))
+        notify_dead_letters = app.config.get("notify_formula_trigger_dead_letters")
+        if callable(notify_dead_letters):
+            notify_dead_letters(ws.bp_dir, request.sid)
+        pending_triggers = private_layout.get(FORMULA_TRIGGER_OUTBOX_KEY)
         if pending_triggers:
             socketio.start_background_task(_drain_formula_trigger_outbox, ws.bp_dir, ws_id)
 
@@ -5015,3 +5218,7 @@ def register_events(socketio, app):
                 pass
 
     app.config["drain_formula_trigger_outbox"] = _drain_formula_trigger_outbox
+    for workspace in app.config["manager"].all_workspaces():
+        pending = read_json(os.path.join(workspace.bp_dir, "layout.json")).get(FORMULA_TRIGGER_OUTBOX_KEY)
+        if pending:
+            _schedule_trigger_retry(workspace.bp_dir, workspace.id, 0)
