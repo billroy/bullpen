@@ -676,9 +676,7 @@ const WorkerCard = {
     spreadsheetValueAlignment() {
       const kind = String(this.worker?.format?.kind || 'general');
       if (kind === 'string-left') return 'left';
-      if (kind === 'string-right' || kind === 'number' || kind === 'currency') return 'right';
-      if (this.spreadsheetHasLabel) return 'right';
-      return String(this.worker?.resolved_value_type || '') === 'number' ? 'right' : 'left';
+      return 'right';
     },
     valueDisplay() {
       if (this.formulaError) return this.formulaError;

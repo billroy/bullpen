@@ -34,7 +34,7 @@ VALUE_UNIT_OPTIONS = {
     "dollar": {"abbr": "USD", "name": "US dollar", "aliases": {"usd", "dollar", "dollars"}},
 }
 _CELL_REF_RE = re.compile(r"^\s*([A-Za-z]+)\s*(\d+)\s*$")
-_PLAIN_NUMBER_RE = re.compile(r"^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?$")
+_PLAIN_NUMBER_RE = re.compile(r"^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$")
 
 
 def is_value_worker(slot: dict | None) -> bool:
@@ -262,7 +262,7 @@ def _parse_plain_number(value: object):
     text = str(value if value is not None else "").strip()
     if not _PLAIN_NUMBER_RE.match(text):
         return None
-    if "." in text:
+    if "." in text or "e" in text.lower():
         try:
             parsed = float(text)
         except ValueError:

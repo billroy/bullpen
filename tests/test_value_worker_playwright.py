@@ -229,7 +229,7 @@ def test_compact_value_spreadsheet_alignment_matrix_in_chromium():
             layout["slots"] = [
                 value_slot("direction", "west", "string", 0, 0),
                 value_slot("", "femoral artery", "string", 1, 0),
-                value_slot("", "1.02e24", "string", 2, 0),
+                value_slot("", 1.02e24, "number", 2, 0),
                 value_slot("", None, "null", 3, 0),
                 value_slot("", 4504, "number", 0, 1),
                 value_slot("left override", "tucson", "string", 1, 1, "string-left"),
@@ -272,19 +272,19 @@ def test_compact_value_spreadsheet_alignment_matrix_in_chromium():
 
                 unlabeled_string = alignment_for(cards.filter(has_text="femoral artery").first)
                 assert unlabeled_string["identityCount"] == 0
-                assert unlabeled_string["align"] == "left"
+                assert unlabeled_string["align"] == "right"
                 assert unlabeled_string["leftInset"] < 10
                 assert unlabeled_string["rightInset"] < 10
 
-                scientific_text = alignment_for(cards.filter(has_text="1.02e24").first)
-                assert scientific_text["identityCount"] == 0
-                assert scientific_text["align"] == "left"
-                assert scientific_text["leftInset"] < 10
+                scientific_number = alignment_for(cards.filter(has_text="1.02e+24").first)
+                assert scientific_number["identityCount"] == 0
+                assert scientific_number["align"] == "right"
+                assert scientific_number["rightInset"] < 10
 
                 empty_value = alignment_for(cards.filter(has_text="Empty").first)
                 assert empty_value["identityCount"] == 0
-                assert empty_value["align"] == "left"
-                assert empty_value["leftInset"] < 10
+                assert empty_value["align"] == "right"
+                assert empty_value["rightInset"] < 10
 
                 unlabeled_number = alignment_for(cards.filter(has_text="4504").first)
                 assert unlabeled_number["identityCount"] == 0

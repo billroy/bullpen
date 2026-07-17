@@ -84,12 +84,30 @@ def test_parse_plain_number_matches_value_worker_numeric_grammar():
     assert parse_plain_number("5") == 5
     assert parse_plain_number("5.25") == 5.25
     assert parse_plain_number("-0.5") == -0.5
+    assert parse_plain_number("1.02e24") == 1.02e24
+    assert parse_plain_number("-5E-3") == -0.005
     assert parse_plain_number("00123") is None
+    assert parse_plain_number("1e") is None
+    assert parse_plain_number("1e309") is None
     assert parse_plain_number("5%") is None
     assert parse_plain_number("$5") is None
     assert parse_plain_number("1,000") is None
     assert parse_plain_number("NaN") is None
     assert parse_plain_number("Infinity") is None
+
+
+def test_ui_auto_classifies_finite_scientific_notation_as_numeric():
+    assert classify_value_input("1.02e24", "auto", source="ui") == {
+        "value": 1.02e24,
+        "value_type": "auto",
+        "resolved_value_type": "number",
+    }
+    assert classify_value_input("1.02e24", "string", source="ui") == {
+        "value": "1.02e24",
+        "value_type": "string",
+        "resolved_value_type": "string",
+    }
+    assert classify_value_input("1.234567890123456e2", "auto", source="ui")["resolved_value_type"] == "string"
 
 
 def test_value_history_entries_normalize_values_and_timestamps():
