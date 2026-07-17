@@ -228,7 +228,7 @@ def test_worker_card_icon_refreshes_when_reused_slot_changes_type_in_browser():
         page.wait_for_timeout(300)
 
         assert page.locator(".worker-card-name").first.inner_text() == "Move"
-        assert page.locator(".worker-type-icon--card").get_attribute("data-lucide") == "equal"
+        assert page.locator(".worker-type-icon--card").get_attribute("data-lucide") == "type"
         browser.close()
 
 

@@ -31,7 +31,8 @@ def _create_manager_profile_socket(client, **payload):
     return result["profile"]
 
 
-def test_create_profile_allocates_ports_and_persists(tmp_path):
+def test_create_profile_allocates_ports_and_persists(tmp_path, monkeypatch):
+    monkeypatch.setattr(manager_mod, "is_port_listening", lambda *_args, **_kwargs: False)
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -56,6 +57,7 @@ def test_create_profile_allocates_ports_and_persists(tmp_path):
 
 
 def test_port_allocator_skips_reserved_and_listening_ports(tmp_path, monkeypatch):
+    monkeypatch.setattr(manager_mod, "is_port_listening", lambda *_args, **_kwargs: False)
     registry = ProfileRegistry(tmp_path / "manager")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -207,7 +209,8 @@ def test_create_microsandbox_profile_rejects_invalid_resources(tmp_path):
         )
 
 
-def test_manager_socketio_create_profile(tmp_path):
+def test_manager_socketio_create_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(manager_mod, "is_port_listening", lambda *_args, **_kwargs: False)
     home = tmp_path / "manager"
     workspace = tmp_path / "workspace"
     workspace.mkdir()

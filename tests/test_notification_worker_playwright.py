@@ -6,12 +6,17 @@ import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 import pytest
 
 
 pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import sync_playwright  # noqa: E402
+
+_BROWSER_CACHE = Path("/Users/bill/Library/Caches/ms-playwright")
+if _BROWSER_CACHE.exists() and not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_BROWSER_CACHE)
 
 
 def _free_port():
@@ -103,9 +108,9 @@ def test_notification_dialog_controls_and_run_menu_with_playwright():
                 page.goto(base_url)
 
                 page.get_by_role("button", name="Workers").click()
-                page.get_by_role("gridcell", name="Empty cell at column 0, row 0").get_by_role(
-                    "button", name="…"
-                ).click()
+                viewport = page.locator(".worker-grid-viewport")
+                viewport.focus()
+                viewport.press("Enter")
                 page.get_by_role("button", name="Add Worker").click()
                 page.get_by_role("tab", name="Notification").click()
                 page.get_by_text("Blank notification worker", exact=True).click()
@@ -127,7 +132,7 @@ def test_notification_dialog_controls_and_run_menu_with_playwright():
                 modal.locator('input[type="number"]').nth(1).fill("1.4")
                 modal.locator('input[type="number"]').nth(2).fill("0.6")
                 modal.get_by_role("checkbox", name="Sound", exact=True).check()
-                modal.get_by_label("Effect").select_option("warning")
+                modal.get_by_role("combobox", name="Effect", exact=True).select_option("warning")
                 modal.locator('input[type="number"]').nth(3).fill("4")
                 modal.locator('input[type="number"]').nth(4).fill("750")
                 modal.locator('input[type="number"]').nth(5).fill("0.7")

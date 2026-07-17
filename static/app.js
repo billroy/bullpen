@@ -1,4 +1,4 @@
-const { createApp, reactive, ref, computed } = Vue;
+const { createApp, reactive, ref, computed, onBeforeUnmount } = Vue;
 
 const app = createApp({
   components: {
@@ -99,6 +99,7 @@ const app = createApp({
         teams: [],
         filesVersion: 0,
         unseenActivity: 0,
+        workspaceRevision: 0,
       };
     }
 
@@ -354,7 +355,10 @@ const app = createApp({
       // Join the workspace room before emitting any workspace-scoped events
       // (e.g. chat:tab:open from _ensureChatTabForWorkspace). The server
       // rejects workspace-scoped events from clients not yet in the room.
-      if (socket?.connected) socket.emit('project:join', { workspaceId: wsId });
+      if (socket?.connected) {
+        socket.emit('project:join', { workspaceId: wsId });
+        activateStaleFormulas(wsId);
+      }
       const ensuredChatTab = _ensureChatTabForWorkspace(wsId);
       _syncToView(wsId);
       _applyWorkspaceTheme(wsId);
@@ -769,6 +773,21 @@ const app = createApp({
 
     let hasConnectedOnce = false;
     let disconnectToastId = null;
+    function activateStaleFormulas(wsId = activeWorkspaceId.value) {
+      if (!wsId || !socket?.connected) return;
+      socket.emit('formula:activate', { workspaceId: wsId });
+    }
+    function activateVisibleFormulas() {
+      if (document.visibilityState === 'visible') activateStaleFormulas();
+    }
+    window.addEventListener('focus', activateVisibleFormulas);
+    document.addEventListener('visibilitychange', activateVisibleFormulas);
+    const formulaActivationInterval = setInterval(activateVisibleFormulas, 60000);
+    onBeforeUnmount(() => {
+      clearInterval(formulaActivationInterval);
+      window.removeEventListener('focus', activateVisibleFormulas);
+      document.removeEventListener('visibilitychange', activateVisibleFormulas);
+    });
     socket.on('connect', () => {
       const wasDisconnected = hasConnectedOnce && !connected.value;
       connected.value = true;
@@ -778,6 +797,7 @@ const app = createApp({
       }
       if (wasDisconnected) {
         if (activeWorkspaceId.value) socket.emit('project:join', { workspaceId: activeWorkspaceId.value });
+        if (activeWorkspaceId.value) activateStaleFormulas(activeWorkspaceId.value);
         addToast('Reconnected to Bullpen server');
       }
       hasConnectedOnce = true;
@@ -814,7 +834,16 @@ const app = createApp({
       const ws = _getWs(wsId);
       ws.workspace = data.workspace;
       ws.config = _normalizeConfig(data.config);
-      ws.layout = data.layout;
+      const incomingRevision = Number(data.layout?.workspace_revision || 0);
+      const acceptLayout = !ws.layout || (
+        incomingRevision > 0
+          ? incomingRevision >= ws.workspaceRevision
+          : ws.workspaceRevision <= 0
+      );
+      if (acceptLayout) {
+        ws.layout = data.layout;
+        ws.workspaceRevision = incomingRevision;
+      }
       ws.tasks = data.tasks;
       ws.profiles = data.profiles || [];
       ws.teams = data.teams || [];
@@ -902,6 +931,9 @@ const app = createApp({
     socket.on('layout:updated', (layout) => {
       const wsId = layout.workspaceId || activeWorkspaceId.value;
       const ws = _getWs(wsId);
+      const incomingRevision = Number(layout.workspace_revision || 0);
+      if (incomingRevision > 0 && incomingRevision <= ws.workspaceRevision) return;
+      if (incomingRevision > 0) ws.workspaceRevision = incomingRevision;
       ws.layout = layout;
       if (_isActive(wsId)) {
         state.layout = layout;

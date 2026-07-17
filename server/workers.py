@@ -42,6 +42,7 @@ from server.prompt_hardening import (
 )
 from server.templates import render_context_value_template, render_value_template
 from server.worker_types import get_worker_type, normalize_layout
+from server.layout_runtime import bump_layout_revision
 from server.validation import VALID_PRIORITIES, MAX_TAGS, MAX_TAG_LEN, MAX_TITLE, MAX_DESCRIPTION
 
 MAX_HANDOFF_DEPTH = 0
@@ -260,6 +261,9 @@ def _consume_cancelled_run(run_id):
 
 def _ws_emit(socketio, event, payload, ws_id=None):
     """Emit a socket event with workspaceId attached, scoped to workspace room."""
+    if event == "layout:updated" and isinstance(payload, dict) and "_formula_trigger_outbox" in payload:
+        payload = dict(payload)
+        payload.pop("_formula_trigger_outbox", None)
     if ws_id and isinstance(payload, dict):
         payload["workspaceId"] = ws_id
     socketio.emit(event, payload, to=ws_id)
@@ -404,6 +408,7 @@ def _save_layout(bp_dir, layout):
     except Exception:
         config = {}
     normalized = normalize_layout(layout, config=config)
+    bump_layout_revision(normalized)
     layout.clear()
     layout.update(normalized)
     write_json(os.path.join(bp_dir, "layout.json"), layout)
@@ -563,7 +568,14 @@ def create_auto_task(bp_dir, slot_index, worker, socketio=None, ws_id=None,
     return task
 
 
-def _defer_start_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_task_id=None):
+def _defer_start_worker(
+    bp_dir,
+    slot_index,
+    socketio=None,
+    ws_id=None,
+    expected_task_id=None,
+    wait_for_start=False,
+):
     """Start a worker after the current event path unwinds.
 
     This avoids re-entering worker startup from inside Socket.IO handlers that
@@ -606,6 +618,8 @@ def _defer_start_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_
     with _deferred_start_lock:
         _deferred_start_threads.add(thread)
     thread.start()
+    if wait_for_start:
+        thread.join(timeout=1)
 
 
 def drain_runnable_queues(bp_dir, socketio=None, ws_id=None):

@@ -4,10 +4,12 @@ import io
 import json
 import os
 import zipfile
+from unittest.mock import patch
 
 from server.app import create_app, socketio
 from server.init import init_workspace
 from server.persistence import read_json, write_json
+from server.profiles import delete_profile, get_profile
 
 
 def _read_zip_json(data, path):
@@ -408,6 +410,38 @@ def test_bento_import_translates_and_recalculates_formula_group(tmp_workspace):
     assert by_name["Formula"]["formula"]["source"] == "=D36+1"
     assert by_name["Formula"]["value"] == 11
     assert [entry["value"] for entry in by_name["Formula"]["history"]] == [11]
+
+
+def test_bento_worker_import_rolls_back_created_profiles_when_layout_write_fails(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    write_json(
+        os.path.join(bp_dir, "layout.json"),
+        {"slots": [{
+            "name": "Builder",
+            "type": "shell",
+            "profile": "custom-worker",
+            "command": "true",
+            "col": 0,
+            "row": 0,
+        }]},
+    )
+    write_json(
+        os.path.join(bp_dir, "profiles", "custom-worker.json"),
+        {"id": "custom-worker", "name": "Custom Worker"},
+    )
+    exported = _export_worker(client, kind="worker", slot=0)
+    delete_profile(bp_dir, "custom-worker")
+    write_json(os.path.join(bp_dir, "layout.json"), {"slots": []})
+
+    with patch("server.bento_workers.write_json", side_effect=IOError("disk full")):
+        client.emit("bento:import", {"file": exported["data"]})
+
+    error = _received(client, "bento:error")
+    assert error["code"] == "import-write-failed"
+    assert read_json(os.path.join(bp_dir, "layout.json"))["slots"] == []
+    assert get_profile(bp_dir, "custom-worker") is None
 
 
 def test_bento_import_preserve_reports_placement_conflict(tmp_workspace):

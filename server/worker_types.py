@@ -16,7 +16,7 @@ from server.values import (
     validate_value_snapshot,
     parse_cell_ref as parse_value_cell_ref,
 )
-from server.formulas import normalize_formula, normalize_formula_state
+from server.formulas import is_formula_stale, normalize_formula, normalize_formula_state
 
 
 VALID_WORKER_TYPES = {"ai", "shell", "service", "marker", "notification", "value", "eval"}
@@ -658,10 +658,18 @@ def serialize_layout(layout, *, viewer, config=None):
     if config is not None:
         layout = normalize_layout(layout, config=config)
     serialized = dict(layout if isinstance(layout, dict) else {})
+    serialized.pop("_formula_trigger_outbox", None)
     slots = serialized.get("slots", [])
     if not isinstance(slots, list):
         slots = []
     serialized["slots"] = [serialize_worker_slot(slot, viewer=viewer) for slot in slots]
+    timezone_name = (config or {}).get("timezone", "UTC") if isinstance(config, dict) else "UTC"
+    for slot in serialized["slots"]:
+        if not isinstance(slot, dict) or not slot.get("formula"):
+            continue
+        state = dict(slot.get("formula_state") or {})
+        state["derived_stale"] = is_formula_stale(slot, timezone_name=timezone_name)
+        slot["formula_state"] = state
     return serialized
 
 

@@ -50,9 +50,9 @@ def test_value_number_formatting_and_string_preservation_in_chromium():
                 page.goto(base_url)
 
                 page.get_by_role("button", name="Workers").click()
-                page.get_by_role("gridcell", name="Empty cell at column 0, row 0").get_by_role(
-                    "button", name="…"
-                ).click()
+                viewport = page.locator(".worker-grid-viewport")
+                viewport.focus()
+                viewport.press("Enter")
                 page.get_by_role("button", name="Add Worker").click()
                 page.get_by_role("tab", name="Value").click()
                 page.get_by_text("Blank value worker", exact=True).click()
@@ -180,6 +180,13 @@ def test_drag_formula_translates_source_and_recalculates_in_chromium():
                 formula_card = page.locator(".worker-card", has=page.locator(".worker-card-formula-badge"))
                 expect(formula_card.locator(".worker-card-value-main")).to_have_text("30")
 
+                # Empty grid cells are virtualized around the current selection.
+                # Select B3 before resolving the drag target so this test drives
+                # the same accessibility path a keyboard user would.
+                viewport.focus()
+                page.keyboard.press("ArrowRight")
+                page.keyboard.press("ArrowDown")
+                page.keyboard.press("ArrowDown")
                 destination = page.get_by_role("gridcell", name="Empty cell at column 1, row 2")
                 formula_card.drag_to(destination)
 
@@ -194,6 +201,84 @@ def test_drag_formula_translates_source_and_recalculates_in_chromium():
             assert formula["formula"]["source"] == "=SUM(B1:B2)"
             assert formula["value"] == 0
             assert [entry["value"] for entry in formula["history"]] == [30, 0]
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+def test_sparse_row_column_formula_and_two_window_revision_sync_in_chromium():
+    with tempfile.TemporaryDirectory(prefix="bullpen_formula_sync_pw_") as workspace:
+        port = _free_port()
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                first = browser.new_page(locale="en-US")
+                second = browser.new_page(locale="en-US")
+                for page in (first, second):
+                    page.goto(base_url)
+                    page.get_by_role("button", name="Workers").click()
+
+                first_viewport = first.locator(".worker-grid-viewport")
+                first.get_by_role("gridcell", name="Empty cell at column 0, row 0").click()
+                first_viewport.evaluate(
+                    """(element) => {
+                      const clipboard = new DataTransfer();
+                      clipboard.setData('text/plain', '2\\t=A1*3');
+                      element.dispatchEvent(new ClipboardEvent('paste', {
+                        bubbles: true,
+                        cancelable: true,
+                        clipboardData: clipboard,
+                      }));
+                    }"""
+                )
+                expect(first.locator(".worker-card-value-main").nth(1)).to_have_text("6")
+                expect(second.locator(".worker-card-value-main").nth(1)).to_have_text("6")
+
+                first.locator(".worker-card-value-main").nth(0).click()
+                editor = first.get_by_role("textbox", name="Edit value", exact=True)
+                editor.fill("4")
+                editor.press("Enter")
+                expect(first.locator(".worker-card-value-main").nth(1)).to_have_text("12")
+                expect(second.locator(".worker-card-value-main").nth(1)).to_have_text("12")
+
+                first_viewport.focus()
+                for _ in range(8):
+                    first_viewport.press("ArrowRight")
+                for _ in range(31):
+                    first_viewport.press("ArrowDown")
+                first.keyboard.type("=")
+                formula_editor = first.get_by_role("textbox", name="Create value worker")
+                formula_editor.fill("=ROW()*100+COLUMN()")
+                formula_editor.press("Enter")
+                sparse_card = first.locator(
+                    ".worker-card",
+                    has=first.locator(".worker-card-formula-badge"),
+                ).last
+                expect(sparse_card.locator(".worker-card-value-main")).to_have_text("3209")
+                second_viewport = second.locator(".worker-grid-viewport")
+                second_viewport.focus()
+                for _ in range(8):
+                    second_viewport.press("ArrowRight")
+                for _ in range(31):
+                    second_viewport.press("ArrowDown")
+                expect(second.locator(".worker-card-value-main", has_text="3209")).to_be_visible()
+                browser.close()
+
+            with open(os.path.join(workspace, ".bullpen", "layout.json"), encoding="utf-8") as handle:
+                layout = json.load(handle)
+            sparse = next(
+                slot for slot in layout["slots"]
+                if slot and slot.get("formula", {}).get("source") == "=ROW()*100+COLUMN()"
+            )
+            assert (sparse["col"], sparse["row"]) == (8, 31)
+            assert sparse["value"] == 3209
         finally:
             proc.terminate()
             try:

@@ -12,8 +12,10 @@ import zipfile
 
 from server.bento_carrier import BentoCarrierError, inspect_bento
 from server import formulas as formula_mod
+from server import formula_runtime
+from server.layout_runtime import bump_layout_revision
 from server.persistence import read_json, write_json
-from server.profiles import create_profile, get_profile
+from server.profiles import create_profile, delete_profile, get_profile
 from server.worker_types import copy_worker_slot, normalize_layout
 
 
@@ -738,6 +740,7 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
 
     imported_profiles = []
     skipped_profiles = []
+    profiles_to_create = []
     for item, profile in profile_payloads:
         if not isinstance(profile, dict):
             continue
@@ -755,8 +758,7 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
         profile = dict(profile)
         profile["id"] = profile_id
         profile.pop("workspaceId", None)
-        create_profile(bp_dir, profile)
-        imported_profiles.append(profile_id)
+        profiles_to_create.append(profile)
 
     fragment_result = apply_worker_fragments_to_layout(
         layout,
@@ -772,17 +774,33 @@ def apply_worker_bento(fileobj, *, bp_dir, placement=None, mode="merge", approva
         if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
     }
     if formula_indices:
-        formula_mod.recalculate_layout(
+        formula_runtime.calculate_generation(
             layout,
             root_indices=formula_indices,
             cols=cols,
             calculated_at=import_time,
+            timezone_name=config.get("timezone", "UTC"),
         )
-        try:
-            layout["workspace_revision"] = int(layout.get("workspace_revision") or 0) + 1
-        except (TypeError, ValueError):
-            layout["workspace_revision"] = 1
-    write_json(os.path.join(bp_dir, "layout.json"), layout)
+    else:
+        bump_layout_revision(layout)
+    created_profile_ids = []
+    try:
+        for profile in profiles_to_create:
+            create_profile(bp_dir, profile)
+            created_profile_ids.append(profile["id"])
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+    except Exception as exc:
+        cleanup_errors = []
+        for profile_id in reversed(created_profile_ids):
+            try:
+                delete_profile(bp_dir, profile_id)
+            except Exception as cleanup_exc:
+                cleanup_errors.append(str(cleanup_exc))
+        message = "Worker import failed; workspace layout was not changed"
+        if cleanup_errors:
+            message += " and profile cleanup requires manual repair"
+        raise BentoCarrierError(message, "import-write-failed") from exc
+    imported_profiles.extend(created_profile_ids)
     for profile_id in skipped_profiles:
         warnings.append(f"profile '{profile_id}' already exists and was kept")
 

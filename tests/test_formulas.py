@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import subprocess
+import sys
 
 import pytest
 
@@ -189,6 +191,16 @@ def test_volatile_functions_use_injected_server_clock():
     assert current.volatile is True
 
 
+def test_volatile_functions_honor_injected_iana_timezone():
+    now = datetime(2026, 7, 17, 2, 0, tzinfo=timezone.utc)
+
+    assert evaluate_formula("=TODAY()", [], now=now, timezone_name="America/New_York").value == "2026-07-16"
+    assert (
+        evaluate_formula("=NOW()", [], now=now, timezone_name="America/New_York").value
+        == "2026-07-16T22:00:00-04:00"
+    )
+
+
 def test_public_function_catalog_examples_are_supported_by_evaluator():
     assert len(FORMULA_FUNCTION_NAMES) == len(FORMULA_FUNCTIONS)
     values = [-100, "2026-01-01", 60, "2027-01-01", 60, "2028-01-01"]
@@ -214,6 +226,64 @@ def test_volatile_staleness_is_derived_without_mutating_formula_state():
     assert is_formula_stale(recent, now=now) is False
     assert is_formula_stale(old, now=now) is True
     assert is_formula_stale(yesterday, now=now) is True
+
+
+def test_volatile_staleness_accepts_formula_whitespace():
+    now = datetime(2026, 7, 16, 15, 30, tzinfo=timezone.utc)
+    slot = {
+        "formula": {"source": "=NOW ()"},
+        "formula_state": {
+            "volatile": True,
+            "calculated_at": "2026-07-16T15:28:00Z",
+        },
+    }
+
+    assert is_formula_stale(slot, now=now) is True
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "=" + ("9" * 5000),
+        "=2^1000000000",
+        '=REPT("x",1000000000)',
+        "=BITLSHIFT(1,1000000000)",
+        "=POWER(2,1000000000)",
+    ],
+)
+def test_adversarial_formula_inputs_fail_with_limit_errors(source):
+    with pytest.raises(FormulaError) as caught:
+        evaluate_formula(source, [])
+
+    assert caught.value.code == "#LIMIT!"
+
+
+def test_adversarial_formulas_complete_inside_a_hard_process_timeout():
+    script = """
+from server.formulas import FormulaError, evaluate_formula
+sources = [
+    "=" + ("9" * 5000),
+    "=2^1000000000",
+    '=REPT("x",1000000000)',
+    "=BITLSHIFT(1,1000000000)",
+]
+for source in sources:
+    try:
+        evaluate_formula(source, [])
+    except FormulaError as exc:
+        assert exc.code == "#LIMIT!"
+    else:
+        raise AssertionError(source)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_formula_normalization_and_state_are_bounded_and_stable():
@@ -251,6 +321,32 @@ def test_recalculation_generation_updates_dependency_chain_once_in_order():
     assert layout["slots"][1]["history"][-1]["value"] == 6
 
 
+def test_recalculation_passes_sparse_cell_coordinates_to_row_and_column():
+    layout = {"slots": [
+        None,
+        {
+            "type": "value",
+            "name": "Sparse",
+            "value": 0,
+            "value_type": "number",
+            "resolved_value_type": "number",
+            "row": 31,
+            "col": 8,
+            "formula": {"source": "=ROW()*100+COLUMN()", "version": 1},
+        },
+    ]}
+
+    result = recalculate_layout(
+        layout,
+        root_indices=None,
+        cols=4,
+        calculated_at="2026-07-16T12:00:00Z",
+    )
+
+    assert result["error_count"] == 0
+    assert layout["slots"][1]["value"] == 3209
+
+
 def test_recalculation_marks_cycle_and_downstream_error_without_losing_values():
     layout = {"slots": [
         {"type": "value", "name": "A", "value": 10, "value_type": "auto", "resolved_value_type": "number", "row": 0, "col": 0, "formula": {"source": "=B1", "version": 1}},
@@ -268,6 +364,33 @@ def test_recalculation_marks_cycle_and_downstream_error_without_losing_values():
     assert layout["slots"][0]["formula_state"]["error_code"] == "#CYCLE!"
     assert layout["slots"][1]["formula_state"]["error_code"] == "#CYCLE!"
     assert layout["slots"][2]["formula_state"]["error_code"] == "#CYCLE!"
+
+
+def test_recalculation_handles_dependency_chains_beyond_python_recursion_depth():
+    slots = []
+    for row in range(1500):
+        source = "=1" if row == 0 else f"=A{row}+1"
+        slots.append({
+            "type": "value",
+            "value": 0,
+            "value_type": "number",
+            "resolved_value_type": "number",
+            "row": row,
+            "col": 0,
+            "formula": {"source": source, "version": 1},
+        })
+    layout = {"slots": slots}
+
+    result = recalculate_layout(
+        layout,
+        root_indices=None,
+        calculated_at="2026-07-16T12:00:00Z",
+        record_history=False,
+    )
+
+    assert result["error_count"] == 0
+    assert result["evaluated_count"] == 1500
+    assert layout["slots"][-1]["value"] == 1500
 
 
 def test_recalculation_only_touches_transitive_dependents_of_root():

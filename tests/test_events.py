@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 import json
+import threading
 
 import pytest
 
@@ -481,6 +482,8 @@ def test_value_write_recalculates_chain_once_and_two_windows_do_not_duplicate_tr
 
         assert initial_generation["slots"][1]["value"] == 12
         assert initial_generation["calculation"]["changed_count"] == 1
+        assert initial_generation["calculation"]["formula_revision"] == initial_generation["formula_revision"]
+        assert initial_generation["calculation"]["workspace_revision"] == initial_generation["workspace_revision"]
         created_events = [event["args"][0] for event in events1 if event["name"] == "task:created"]
         assert len(created_events) == 1
         assert sum(event["name"] == "task:created" for event in events2) == 1
@@ -1630,6 +1633,25 @@ class TestWorkerEvents:
         assert [entry["value"] for entry in worker["history"]] == [5, 7]
         assert worker["history"][-1]["updated_at"] == worker["updated_at"]
 
+    def test_value_increment_rejects_formula_backed_value_without_history_mutation(self, client):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Calculated", "value": "=2+3", "value_type": "number"},
+        })
+        initial = get_event(c, "layout:updated")
+        before_history = list(initial["slots"][0].get("history") or [])
+
+        c.emit("value:increment", {"ref": "Calculated", "amount": 2})
+
+        error = get_event(c, "error")
+        assert error["code"] == "formula_read_only"
+        persisted = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert persisted["slots"][0]["value"] == 5
+        assert persisted["slots"][0]["formula"]["source"] == "=2+3"
+        assert persisted["slots"][0].get("history") == before_history
+
     def test_value_set_event_rejects_non_numeric_number(self, client):
         c, app = client
         c.emit("worker:add", {
@@ -1689,6 +1711,127 @@ class TestWorkerEvents:
         layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
         assert created["id"] in layout["slots"][1]["task_queue"]
         assert starts and starts[-1][0][1] == 1
+
+    def test_value_trigger_outbox_retries_failed_delivery_without_duplicate_ticket(self, client, monkeypatch):
+        c, app = client
+        starts = []
+        monkeypatch.setattr(workers_mod, "_defer_start_worker", lambda *args, **kwargs: starts.append((args, kwargs)))
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+                "value_trigger_cooldown_seconds": 60,
+            },
+        })
+        get_event(c, "layout:updated")
+        original_create = task_mod.create_task
+        monkeypatch.setattr(task_mod, "create_task", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")))
+
+        c.emit("value:set", {"ref": "Counter", "value": "8", "value_type": "number"})
+
+        failed_layout = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert failed_layout["_formula_trigger_outbox"][0]["attempts"] == 1
+        assert failed_layout["slots"][1]["last_value_trigger_time"]
+        assert task_mod.list_tasks(app.config["bp_dir"]) == []
+        assert all(
+            "_formula_trigger_outbox" not in event["args"][0]
+            for event in c.get_received()
+            if event["name"] == "layout:updated"
+        )
+
+        drain = app.config["drain_formula_trigger_outbox"]
+        ws_id = app.config["startup_workspace_id"]
+        entered_create = threading.Event()
+        release_create = threading.Event()
+
+        def delayed_create(*args, **kwargs):
+            entered_create.set()
+            assert release_create.wait(timeout=2)
+            return original_create(*args, **kwargs)
+
+        monkeypatch.setattr(task_mod, "create_task", delayed_create)
+        first = threading.Thread(target=drain, args=(app.config["bp_dir"], ws_id))
+        second = threading.Thread(target=drain, args=(app.config["bp_dir"], ws_id))
+        first.start()
+        assert entered_create.wait(timeout=2)
+        second.start()
+        second.join(timeout=2)
+        release_create.set()
+        first.join(timeout=2)
+        assert not first.is_alive()
+        assert not second.is_alive()
+        drain(app.config["bp_dir"], ws_id)
+
+        created = [
+            task for task in task_mod.list_tasks(app.config["bp_dir"])
+            if task.get("trigger_kind") == "on_value_change"
+        ]
+        assert len(created) == 1
+        persisted = read_json(os.path.join(app.config["bp_dir"], "layout.json"))
+        assert "_formula_trigger_outbox" not in persisted
+        assert starts
+
+    def test_value_trigger_backpressure_rejects_write_without_partial_value_or_cooldown(self, client, monkeypatch):
+        c, app = client
+        c.emit("worker:add", {
+            "slot": 0,
+            "type": "value",
+            "fields": {"name": "Counter", "value": "5", "value_type": "number", "save_history": True},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:add", {
+            "slot": 1,
+            "type": "notification",
+            "fields": {"name": "Counter Watcher"},
+        })
+        get_event(c, "layout:updated")
+        c.emit("worker:configure", {
+            "slot": 1,
+            "fields": {
+                "activation": "on_value_change",
+                "value_trigger_scope": "name",
+                "value_trigger_ref": "Counter",
+            },
+        })
+        get_event(c, "layout:updated")
+
+        layout_path = os.path.join(app.config["bp_dir"], "layout.json")
+        before = read_json(layout_path)
+        before["_formula_trigger_outbox"] = [{
+            "id": "already-pending",
+            "generation_id": "existing",
+            "value_event": {},
+            "deliveries": [],
+            "attempts": 1,
+            "last_error": "pending",
+        }]
+        write_json(layout_path, before)
+        monkeypatch.setattr(events_mod, "FORMULA_TRIGGER_OUTBOX_LIMIT", 1)
+
+        c.emit("value:set", {"ref": "Counter", "value": "8", "value_type": "number"})
+
+        error = get_event(c, "error")
+        assert "delivery backlog is full" in error["message"]
+        persisted = read_json(layout_path)
+        assert persisted["workspace_revision"] == before["workspace_revision"]
+        assert persisted["slots"][0]["value"] == 5
+        assert [entry["value"] for entry in persisted["slots"][0]["history"]] == [5]
+        assert persisted["slots"][1].get("last_value_trigger_time") is None
+        assert persisted["_formula_trigger_outbox"] == before["_formula_trigger_outbox"]
 
     def test_value_trigger_condition_filters_without_consuming_cooldown(self, client, monkeypatch):
         c, app = client

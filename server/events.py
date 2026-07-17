@@ -50,6 +50,8 @@ from server import workers as worker_mod
 from server import service_worker as service_worker_mod
 from server import values as value_mod
 from server import formulas as formula_mod
+from server import formula_runtime
+from server.layout_runtime import bump_layout_revision
 from server.workers import _terminate_proc
 from server.transfer import TransferError, transfer_worker
 from server.locks import write_lock as _write_lock
@@ -103,6 +105,8 @@ from server.worker_types import (
 
 VALUE_TRIGGER_CONDITION_OPERATORS = {"any", "contains", "<", "<=", "==", ">", ">="}
 VALUE_TRIGGER_RELATIONAL_OPERATORS = {"<", "<=", "==", ">", ">="}
+FORMULA_TRIGGER_OUTBOX_KEY = "_formula_trigger_outbox"
+FORMULA_TRIGGER_OUTBOX_LIMIT = 1000
 
 
 def _formula_aware_ui_input(value):
@@ -471,12 +475,14 @@ def _load_layout(bp_dir):
     return normalize_layout(layout, config=config)
 
 
-def _save_layout(bp_dir, layout):
+def _save_layout(bp_dir, layout, *, bump_revision=True):
     try:
         config = read_json(os.path.join(bp_dir, "config.json"))
     except Exception:
         config = {}
     normalized = normalize_layout(layout, config=config)
+    if bump_revision:
+        bump_layout_revision(normalized)
     layout.clear()
     layout.update(normalized)
     write_json(os.path.join(bp_dir, "layout.json"), layout)
@@ -619,7 +625,17 @@ def register_events(socketio, app):
 
     def _emit(event, payload, ws_id):
         """Emit an event with workspaceId attached, scoped to workspace room."""
+        if event == "layout:updated" and isinstance(payload, dict):
+            try:
+                bp_dir = app.config["manager"].get_bp_dir(ws_id)
+                config = read_json(os.path.join(bp_dir, "config.json"))
+                payload = serialize_layout(payload, viewer=ViewerContext(can_edit=True), config=config)
+            except Exception:
+                payload = copy.deepcopy(payload)
         if isinstance(payload, dict):
+            if event == "layout:updated" and FORMULA_TRIGGER_OUTBOX_KEY in payload:
+                payload = copy.deepcopy(payload)
+                payload.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
             payload["workspaceId"] = ws_id
         socketio.emit(event, payload, to=ws_id)
         # layout:updated replaces the client-side slot objects. Re-broadcast
@@ -687,17 +703,44 @@ def register_events(socketio, app):
             emit("error", {"message": f"{event_name} {e}"})
             return None
 
+    after_commit_state = threading.local()
+
+    def _after_commit(callback):
+        callbacks = getattr(after_commit_state, "callbacks", None)
+        if callbacks is None:
+            callback()
+        else:
+            callbacks.append(callback)
+
     def with_lock(fn):
         """Execute fn under write lock, emit error on failure."""
         def wrapper(data):
-            with _write_lock:
-                try:
-                    return fn(data)
-                except ValidationError as e:
-                    emit("error", {"message": str(e)})
-                except Exception as e:
-                    logging.exception("Unhandled error in %s", fn.__name__)
-                    emit("error", {"message": "An internal error occurred"})
+            previous_callbacks = getattr(after_commit_state, "callbacks", None)
+            callbacks = []
+            after_commit_state.callbacks = callbacks
+            result = None
+            try:
+                with _write_lock:
+                    try:
+                        result = fn(data)
+                    except ValidationError as e:
+                        callbacks.clear()
+                        emit("error", {"message": str(e)})
+                    except Exception:
+                        callbacks.clear()
+                        logging.exception("Unhandled error in %s", fn.__name__)
+                        emit("error", {"message": "An internal error occurred"})
+            finally:
+                after_commit_state.callbacks = previous_callbacks
+            if previous_callbacks is not None:
+                previous_callbacks.extend(callbacks)
+            else:
+                for callback in callbacks:
+                    try:
+                        callback()
+                    except Exception:
+                        logging.exception("Post-commit callback failed for %s", fn.__name__)
+            return result
         wrapper.__name__ = fn.__name__
         return wrapper
 
@@ -1239,22 +1282,32 @@ def register_events(socketio, app):
                 "refs": [],
             })
 
-        for commit in commits:
+        refs_by_hash = {}
+        if commits:
             try:
                 refs_result = subprocess.run(
-                    ["git", "for-each-ref", "--points-at", commit["hash"], "--format=%(refname:short)"],
+                    [
+                        "git",
+                        "for-each-ref",
+                        "--format=%(objectname)%09%(*objectname)%09%(refname:short)",
+                    ],
                     capture_output=True, text=True, cwd=ws.path, timeout=5,
                 )
             except Exception:
-                continue
-            if refs_result.returncode != 0:
-                continue
-            refs = []
-            for ref in refs_result.stdout.splitlines():
-                ref = ref.strip()
-                if ref and ref not in refs:
-                    refs.append(ref)
-            commit["refs"] = refs
+                refs_result = None
+            if refs_result is not None and refs_result.returncode == 0:
+                commit_hashes = {commit["hash"] for commit in commits}
+                for line in refs_result.stdout.splitlines():
+                    direct_hash, separator, remainder = line.partition("\t")
+                    peeled_hash, second_separator, ref = remainder.partition("\t")
+                    ref = ref.strip()
+                    object_hash = peeled_hash.strip() or direct_hash.strip()
+                    if separator and second_separator and object_hash in commit_hashes and ref:
+                        refs = refs_by_hash.setdefault(object_hash, [])
+                        if ref not in refs:
+                            refs.append(ref)
+        for commit in commits:
+            commit["refs"] = refs_by_hash.get(commit["hash"], [])
 
         try:
             count_result = subprocess.run(
@@ -2179,16 +2232,16 @@ def register_events(socketio, app):
                     else [(slot_index, {}, "worker:add")]
                 ),
             )
-        else:
-            _save_layout(bp_dir, layout)
-            _emit("layout:updated", layout, ws_id)
-        if worker_type == "value" and not formula_ui_add and not formula_indices:
+        elif worker_type == "value" and not formula_ui_add:
             _fire_value_change_triggers(
                 bp_dir, layout, slot_index, {},
                 updated_at=worker.get("updated_at") or _now_iso(),
                 changed_by="worker:add",
                 ws_id=ws_id,
             )
+        else:
+            _save_layout(bp_dir, layout)
+            _emit("layout:updated", layout, ws_id)
 
     @socketio.on("worker:remove")
     @with_lock
@@ -3019,6 +3072,7 @@ def register_events(socketio, app):
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
         scope = str(worker.get("value_trigger_scope") or "name")
         configured_ref = str(worker.get("value_trigger_ref") or "")
+        synthetic_run_key = f"{slot_index}:on_value_change:{value_event.get('event_id')}"
         condition_result = condition_result or _condition_result("any", "", matched=True)
         condition_line = ""
         if condition_result.get("operator") != "any":
@@ -3044,13 +3098,14 @@ def register_events(socketio, app):
             f"- Changed by: {value_event.get('changed_by')}\n"
             f"{condition_line}"
         )
-        task = task_mod.create_task(
-            bp_dir,
-            title,
-            description=body,
-            task_type="chore",
-            priority="normal",
-            tags=["synthetic", "worker-run", "value-change"],
+        task = next(
+            (
+                item
+                for archived in (False, True)
+                for item in task_mod.list_tasks(bp_dir, archived=archived)
+                if item.get("synthetic_run_key") == synthetic_run_key
+            ),
+            None,
         )
         trigger_meta = {
             **value_event,
@@ -3058,27 +3113,58 @@ def register_events(socketio, app):
             "configured_ref": configured_ref,
             "condition": condition_result,
         }
-        task = task_mod.update_task(bp_dir, task["id"], {
-            "synthetic_run": True,
-            "trigger_kind": "on_value_change",
-            "synthetic_run_key": f"{slot_index}:on_value_change:{value_event.get('event_id')}",
-            "value_trigger": trigger_meta,
-        })
-        _emit("task:created", task, ws_id)
+        if task is None:
+            task = task_mod.create_task(
+                bp_dir,
+                title,
+                description=body,
+                task_type="chore",
+                priority="normal",
+                tags=["synthetic", "worker-run", "value-change"],
+            )
+            try:
+                task = task_mod.update_task(bp_dir, task["id"], {
+                    "synthetic_run": True,
+                    "trigger_kind": "on_value_change",
+                    "synthetic_run_key": synthetic_run_key,
+                    "value_trigger": trigger_meta,
+                })
+            except Exception:
+                task_mod.delete_task(bp_dir, task["id"])
+                raise
+            _emit("task:created", task, ws_id)
         worker_mod.assign_task(bp_dir, slot_index, task["id"], socketio, ws_id, suppress_auto_start=True)
         return task
 
-    def _fire_value_change_triggers(bp_dir, layout, value_index, old_slot, *, updated_at, changed_by, ws_id):
+    def _queue_value_change_triggers(
+        layout,
+        value_index,
+        old_slot,
+        *,
+        updated_at,
+        changed_by,
+        generation_id,
+        bp_dir,
+    ):
         config = read_json(os.path.join(bp_dir, "config.json"))
         cols = _safe_legacy_cols(config)
-        value_slot = layout.get("slots", [])[value_index]
+        slots = layout.get("slots", [])
+        if value_index < 0 or value_index >= len(slots) or not isinstance(slots[value_index], dict):
+            return 0
+        value_slot = slots[value_index]
         coord = value_mod.value_coord(value_slot, index=value_index, cols=cols)
         if coord is None:
-            return
+            return 0
         value_event = _value_slot_event_payload(value_slot, value_index, coord, old_slot, updated_at=updated_at, changed_by=changed_by)
         now_dt = _parse_iso_seconds(updated_at) or datetime.now(timezone.utc)
-        slots_to_start = []
-        touched_runtime = False
+        intent_id = f"{generation_id}:{value_event['event_id']}"
+        outbox = layout.get(FORMULA_TRIGGER_OUTBOX_KEY)
+        if not isinstance(outbox, list):
+            outbox = []
+            layout[FORMULA_TRIGGER_OUTBOX_KEY] = outbox
+        if any(isinstance(item, dict) and item.get("id") == intent_id for item in outbox):
+            return 0
+        deliveries = []
         for slot_index, worker in enumerate(layout.get("slots", [])):
             if not isinstance(worker, dict):
                 continue
@@ -3107,23 +3193,167 @@ def register_events(socketio, app):
                     condition_result.get("error"),
                 )
                 continue
-            worker["last_value_trigger_time"] = updated_at
-            touched_runtime = True
-            layout["slots"][slot_index] = worker
-            _save_layout(bp_dir, layout)
-            _create_value_trigger_task(bp_dir, slot_index, worker, value_event, socketio, ws_id, condition_result)
-            slots_to_start.append(slot_index)
+            deliveries.append({
+                "slot": slot_index,
+                "worker_type": worker.get("type"),
+                "worker_name": worker.get("name"),
+                "condition": condition_result,
+            })
+        if deliveries:
+            if len(outbox) >= FORMULA_TRIGGER_OUTBOX_LIMIT:
+                raise ValidationError(
+                    "Value-trigger delivery backlog is full; retry after pending deliveries recover"
+                )
+            for delivery in deliveries:
+                layout["slots"][delivery["slot"]]["last_value_trigger_time"] = updated_at
+            outbox.append({
+                "id": intent_id,
+                "generation_id": generation_id,
+                "value_event": value_event,
+                "deliveries": deliveries,
+                "attempts": 0,
+                "last_error": "",
+            })
+        if not outbox:
+            layout.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
+        return len(deliveries)
+
+    def _ack_trigger_delivery(bp_dir, intent_id, slot_index):
+        with _write_lock:
             layout = _load_layout(bp_dir)
-        if touched_runtime:
-            _emit("layout:updated", layout, ws_id)
-        for slot_index in slots_to_start:
+            outbox = layout.get(FORMULA_TRIGGER_OUTBOX_KEY)
+            if not isinstance(outbox, list):
+                return
+            remaining = []
+            for intent in outbox:
+                if not isinstance(intent, dict) or intent.get("id") != intent_id:
+                    remaining.append(intent)
+                    continue
+                deliveries = [
+                    delivery for delivery in intent.get("deliveries", [])
+                    if not isinstance(delivery, dict) or delivery.get("slot") != slot_index
+                ]
+                if deliveries:
+                    intent["deliveries"] = deliveries
+                    remaining.append(intent)
+            if remaining:
+                layout[FORMULA_TRIGGER_OUTBOX_KEY] = remaining
+            else:
+                layout.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
+            _save_layout(bp_dir, layout, bump_revision=False)
+
+    def _record_trigger_failure(bp_dir, intent_id, message):
+        with _write_lock:
+            layout = _load_layout(bp_dir)
+            outbox = layout.get(FORMULA_TRIGGER_OUTBOX_KEY)
+            if not isinstance(outbox, list):
+                return
+            for intent in outbox:
+                if isinstance(intent, dict) and intent.get("id") == intent_id:
+                    intent["attempts"] = int(intent.get("attempts") or 0) + 1
+                    intent["last_error"] = str(message)[:512]
+                    break
+            _save_layout(bp_dir, layout, bump_revision=False)
+
+    trigger_drain_locks = {}
+    trigger_drain_locks_guard = threading.Lock()
+
+    def _drain_formula_trigger_outbox(bp_dir, ws_id):
+        with trigger_drain_locks_guard:
+            drain_lock = trigger_drain_locks.setdefault(bp_dir, threading.Lock())
+        if not drain_lock.acquire(blocking=False):
+            return
+        try:
+            _drain_formula_trigger_outbox_locked(bp_dir, ws_id)
+        finally:
+            drain_lock.release()
+
+    def _drain_formula_trigger_outbox_locked(bp_dir, ws_id):
+        delivered = 0
+        while delivered < 1000:
+            with _write_lock:
+                layout = _load_layout(bp_dir)
+                outbox = layout.get(FORMULA_TRIGGER_OUTBOX_KEY)
+                if not isinstance(outbox, list) or not outbox:
+                    return
+                intent = next(
+                    (
+                        item for item in outbox
+                        if isinstance(item, dict) and isinstance(item.get("deliveries"), list) and item["deliveries"]
+                    ),
+                    None,
+                )
+                if intent is None:
+                    layout.pop(FORMULA_TRIGGER_OUTBOX_KEY, None)
+                    _save_layout(bp_dir, layout, bump_revision=False)
+                    return
+                delivery = intent["deliveries"][0]
+                intent_id = str(intent.get("id") or "")
+                slot_index = delivery.get("slot") if isinstance(delivery, dict) else None
+                worker = (
+                    layout.get("slots", [])[slot_index]
+                    if isinstance(slot_index, int) and 0 <= slot_index < len(layout.get("slots", []))
+                    else None
+                )
+                invalid_worker = (
+                    not isinstance(worker, dict)
+                    or worker.get("type") != delivery.get("worker_type")
+                    or worker.get("name") != delivery.get("worker_name")
+                )
+                value_event = copy.deepcopy(intent.get("value_event") or {})
+                condition_result = copy.deepcopy(delivery.get("condition") or {})
+            if invalid_worker:
+                _ack_trigger_delivery(bp_dir, intent_id, slot_index)
+                delivered += 1
+                continue
             try:
+                _create_value_trigger_task(
+                    bp_dir,
+                    slot_index,
+                    worker,
+                    value_event,
+                    socketio,
+                    ws_id,
+                    condition_result,
+                )
+                _ack_trigger_delivery(bp_dir, intent_id, slot_index)
                 current = _load_layout(bp_dir).get("slots", [])
-                queue = current[slot_index].get("task_queue", []) if slot_index < len(current) and current[slot_index] else []
+                queue = (
+                    current[slot_index].get("task_queue", [])
+                    if slot_index < len(current) and current[slot_index]
+                    else []
+                )
                 expected_task_id = queue[0] if queue else None
-                worker_mod._defer_start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id)
-            except Exception:
-                logging.exception("Failed to schedule value-change worker start")
+                worker_mod._defer_start_worker(
+                    bp_dir,
+                    slot_index,
+                    socketio,
+                    ws_id,
+                    expected_task_id=expected_task_id,
+                    wait_for_start=True,
+                )
+                delivered += 1
+            except Exception as exc:
+                _record_trigger_failure(bp_dir, intent_id, exc)
+                logging.exception("Failed to deliver value-change trigger intent %s", intent_id)
+                return
+
+    def _fire_value_change_triggers(bp_dir, layout, value_index, old_slot, *, updated_at, changed_by, ws_id):
+        generation_id = f"direct:{value_index}:{updated_at}"
+        queued = _queue_value_change_triggers(
+            layout,
+            value_index,
+            old_slot,
+            updated_at=updated_at,
+            changed_by=changed_by,
+            generation_id=generation_id,
+            bp_dir=bp_dir,
+        )
+        _save_layout(bp_dir, layout)
+        _emit("layout:updated", layout, ws_id)
+        if queued:
+            _after_commit(lambda: _drain_formula_trigger_outbox(bp_dir, ws_id))
+        return queued
 
     def _commit_formula_generation(
         bp_dir,
@@ -3139,49 +3369,38 @@ def register_events(socketio, app):
     ):
         """Calculate, persist, and broadcast one server-owned formula generation."""
         config = read_json(os.path.join(bp_dir, "config.json"))
-        generation = formula_mod.recalculate_layout(
+        runtime_generation = formula_runtime.calculate_generation(
             layout,
             root_indices=set(root_indices),
             cols=_safe_legacy_cols(config),
             calculated_at=updated_at,
+            timezone_name=config.get("timezone", "UTC"),
             record_history=record_history,
         )
-        try:
-            revision = int(layout.get("workspace_revision") or 0) + 1
-        except (TypeError, ValueError):
-            revision = 1
-        layout["workspace_revision"] = revision
-        _save_layout(bp_dir, layout)
-        event_layout = copy.deepcopy(layout)
-        event_layout["calculation"] = {
-            "workspace_revision": revision,
-            "calculation_id": generation["calculation_id"],
-            "evaluated_count": generation["evaluated_count"],
-            "changed_count": generation["changed_count"],
-            "error_count": generation["error_count"],
-            "errors": generation["errors"][:100],
-        }
-        _emit("layout:updated", event_layout, ws_id)
-
+        generation = runtime_generation.calculation
         trigger_events = list(root_events or []) if deliver_triggers else []
         if deliver_triggers:
             trigger_events.extend(
                 (item["index"], item["old_slot"], "formula")
                 for item in generation["changed"]
             )
+        queued_deliveries = 0
         for index, old_slot, event_changed_by in trigger_events:
-            current_layout = _load_layout(bp_dir)
-            if index >= len(current_layout.get("slots", [])) or not current_layout["slots"][index]:
-                continue
-            _fire_value_change_triggers(
-                bp_dir,
-                current_layout,
+            queued_deliveries += _queue_value_change_triggers(
+                layout,
                 index,
                 old_slot,
                 updated_at=updated_at,
                 changed_by=event_changed_by or changed_by,
-                ws_id=ws_id,
+                generation_id=generation["calculation_id"],
+                bp_dir=bp_dir,
             )
+        _save_layout(bp_dir, layout, bump_revision=False)
+        event_layout = copy.deepcopy(layout)
+        event_layout["calculation"] = runtime_generation.event_layout["calculation"]
+        _emit("layout:updated", event_layout, ws_id)
+        if queued_deliveries or layout.get(FORMULA_TRIGGER_OUTBOX_KEY):
+            _after_commit(lambda: _drain_formula_trigger_outbox(bp_dir, ws_id))
         return generation
 
     @socketio.on("value:set")
@@ -3361,9 +3580,10 @@ def register_events(socketio, app):
             return
         activations[ws_id] = now
         layout = _load_layout(bp_dir)
+        config = read_json(os.path.join(bp_dir, "config.json"))
         stale = {
             index for index, slot in enumerate(layout.get("slots", []))
-            if formula_mod.is_formula_stale(slot)
+            if formula_mod.is_formula_stale(slot, timezone_name=config.get("timezone", "UTC"))
         }
         if not stale:
             return
@@ -3395,6 +3615,12 @@ def register_events(socketio, app):
             return
         slot = match["slot"]
         old_slot = copy.deepcopy(slot)
+        if slot.get("formula"):
+            emit("error", {
+                "message": f"Cannot increment formula-backed Value: {ref}. Replace the formula with a literal first.",
+                "code": "formula_read_only",
+            })
+            return
         if slot.get("resolved_value_type") != "number" or isinstance(slot.get("value"), bool):
             emit("error", {"message": f"Value is not numeric: {ref}"})
             return
@@ -4039,6 +4265,9 @@ def register_events(socketio, app):
         state["globalSettings"] = load_global_settings(manager.global_dir)
         emit("state:init", state)
         _emit_chat_tabs(ws_id, sid=request.sid)
+        pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get(FORMULA_TRIGGER_OUTBOX_KEY)
+        if pending_triggers:
+            socketio.start_background_task(_drain_formula_trigger_outbox, ws.bp_dir, ws_id)
 
     @socketio.on("project:add")
     @with_lock
@@ -4784,3 +5013,5 @@ def register_events(socketio, app):
                 _terminate_proc(proc)
             except OSError:
                 pass
+
+    app.config["drain_formula_trigger_outbox"] = _drain_formula_trigger_outbox

@@ -1,12 +1,15 @@
 """Cross-workspace worker transfer (copy/move)."""
 
+import copy
 import os
 from datetime import datetime, timezone
 
 from server import formulas as formula_mod
+from server import formula_runtime
+from server.layout_runtime import bump_layout_revision
 from server.locks import write_lock
 from server.persistence import read_json, write_json
-from server.profiles import get_profile, create_profile
+from server.profiles import get_profile, create_profile, delete_profile
 from server.worker_types import copy_worker_slot, normalize_layout
 
 _AI_TRANSFER_FIELDS = {
@@ -132,6 +135,7 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
             read_json(os.path.join(dst_ws.bp_dir, "layout.json")),
             config=dst_config,
         )
+        dst_layout_before = copy.deepcopy(dst_layout)
         dst_slots = dst_layout.get("slots", [])
         src_cols = _safe_cols(src_config)
         dst_cols = _safe_cols(dst_config)
@@ -261,13 +265,29 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
             if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
         }
         if dst_formula_indices:
-            formula_mod.recalculate_layout(
+            formula_runtime.calculate_generation(
                 dst_layout,
                 root_indices=dst_formula_indices,
                 cols=dst_cols,
                 calculated_at=transfer_time,
+                timezone_name=dst_config.get("timezone", "UTC"),
             )
-        write_json(os.path.join(dst_ws.bp_dir, "layout.json"), normalize_layout(dst_layout, config=dst_config))
+        else:
+            bump_layout_revision(dst_layout)
+        dst_layout_path = os.path.join(dst_ws.bp_dir, "layout.json")
+        try:
+            write_json(dst_layout_path, normalize_layout(dst_layout, config=dst_config))
+        except Exception as exc:
+            cleanup_failed = False
+            if profile_copied:
+                try:
+                    delete_profile(dst_ws.bp_dir, profile_id)
+                except Exception:
+                    cleanup_failed = True
+            message = "destination write failed; source was not changed"
+            if cleanup_failed:
+                message += " and copied-profile cleanup requires manual repair"
+            raise TransferError(message, 500) from exc
 
         # --- Clear source on move ---
         if mode == "move":
@@ -277,13 +297,34 @@ def transfer_worker(manager, source_workspace_id, source_slot, dest_workspace_id
                 if isinstance(slot, dict) and isinstance(slot.get("formula"), dict) and slot["formula"].get("source")
             }
             if src_formula_indices:
-                formula_mod.recalculate_layout(
+                formula_runtime.calculate_generation(
                     src_layout,
                     root_indices=src_formula_indices,
                     cols=src_cols,
                     calculated_at=transfer_time,
+                    timezone_name=src_config.get("timezone", "UTC"),
                 )
-            write_json(os.path.join(src_ws.bp_dir, "layout.json"), normalize_layout(src_layout, config=src_config))
+            else:
+                bump_layout_revision(src_layout)
+            try:
+                write_json(
+                    os.path.join(src_ws.bp_dir, "layout.json"),
+                    normalize_layout(src_layout, config=src_config),
+                )
+            except Exception as exc:
+                try:
+                    write_json(dst_layout_path, dst_layout_before)
+                    if profile_copied:
+                        delete_profile(dst_ws.bp_dir, profile_id)
+                except Exception as rollback_exc:
+                    raise TransferError(
+                        "source removal failed and destination rollback also failed; manual repair is required",
+                        500,
+                    ) from rollback_exc
+                raise TransferError(
+                    "source removal failed; destination copy was rolled back",
+                    500,
+                ) from exc
 
     return {
         "ok": True,

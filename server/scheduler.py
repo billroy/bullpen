@@ -9,6 +9,7 @@ from datetime import datetime
 from server.locks import write_lock
 from server.persistence import read_json
 from server.worker_types import normalize_layout
+from server.layout_runtime import bump_layout_revision
 from server import workers as worker_mod
 
 log = logging.getLogger(__name__)
@@ -98,7 +99,9 @@ class Scheduler:
 
             if dirty:
                 from server.persistence import write_json
-                write_json(layout_path, normalize_layout(layout, config=config))
+                normalized = normalize_layout(layout, config=config)
+                bump_layout_revision(normalized)
+                write_json(layout_path, normalized)
 
         # Fire workers outside the lock (start_worker acquires it internally via events)
         for slot_index, worker, trigger_kind in to_fire:

@@ -21,6 +21,7 @@ DEFAULT_PROVIDER_COLORS = {
 DEFAULT_CONFIG = {
     "name": "Bullpen",
     "theme": "dark",
+    "timezone": "UTC",
     "ambient_preset": None,
     "ambient_volume": 40,
     "ambient_mute_while_idle": False,

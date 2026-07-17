@@ -103,6 +103,7 @@ def test_commit_list_marks_origin_refs(tmp_workspace):
     _init_repo(tmp_workspace)
     head = _git(tmp_workspace, "rev-parse", "HEAD").stdout.strip()
     _git(tmp_workspace, "update-ref", "refs/remotes/origin/main", head)
+    _git(tmp_workspace, "tag", "-a", "release-test", "-m", "release test", head)
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
     client.get_received()
@@ -118,6 +119,7 @@ def test_commit_list_marks_origin_refs(tmp_workspace):
     assert body is not None
     marked = next(commit for commit in body["commits"] if commit["hash"] == head)
     assert "origin/main" in marked["refs"]
+    assert "release-test" in marked["refs"]
     client.disconnect()
 
 

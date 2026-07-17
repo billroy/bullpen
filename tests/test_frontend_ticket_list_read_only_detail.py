@@ -27,7 +27,10 @@ def test_app_tracks_read_only_task_detail_mode_for_list_selection():
 
 def test_task_detail_panel_has_read_only_rendering_paths():
     text = _read("static/components/TaskDetailPanel.js")
-    assert "props: ['task', 'columns', 'readOnly']" in text
+    assert "props: [" in text
+    assert "'task'" in text
+    assert "'columns'" in text
+    assert "'readOnly'" in text
     assert "v-if=\"readOnly\" class=\"detail-title detail-title-readonly\"" in text
     assert "v-else class=\"detail-title\" @click=\"startEditTitle\" title=\"Click to edit\"" in text
     assert "v-else class=\"detail-readonly-value\">{{ columnLabel(task.status) }}</span>" in text

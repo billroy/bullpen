@@ -22,7 +22,8 @@ from flask import (
 from flask_socketio import SocketIO, join_room
 
 from server import auth
-from server import formulas as formula_mod
+from server import formula_runtime
+from server.layout_runtime import bump_layout_revision
 from server.archive_transport import (
     MAX_IMPORT_ARCHIVE_FILES as _MAX_IMPORT_ARCHIVE_FILES,
     MAX_IMPORT_COMPRESSION_RATIO as _MAX_IMPORT_COMPRESSION_RATIO,
@@ -472,6 +473,10 @@ def create_app(
             state["workspaceId"] = ws.id
             state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
+            drain = app.config.get("drain_formula_trigger_outbox")
+            pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get("_formula_trigger_outbox")
+            if drain and pending_triggers:
+                socketio.start_background_task(drain, ws.bp_dir, ws.id)
             return
 
         join_room("authenticated")
@@ -483,6 +488,10 @@ def create_app(
             state["workspaceId"] = ws.id
             state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
+            drain = app.config.get("drain_formula_trigger_outbox")
+            pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get("_formula_trigger_outbox")
+            if drain and pending_triggers:
+                socketio.start_background_task(drain, ws.bp_dir, ws.id)
         socketio.emit("projects:updated", manager.list_visible_projects(include_path=False), to=request.sid)
 
     @socketio.on("disconnect")
@@ -640,13 +649,16 @@ def reconcile(bp_dir):
             formula_cols = int((config.get("grid") or {}).get("cols") or 4)
         except (TypeError, ValueError):
             formula_cols = 4
-        formula_mod.recalculate_layout(
+        formula_runtime.calculate_generation(
             layout,
             root_indices=formula_indices,
             cols=formula_cols if formula_cols > 0 else 4,
             calculated_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            timezone_name=config.get("timezone", "UTC"),
             record_history=False,
         )
+    else:
+        bump_layout_revision(layout)
     write_json(layout_path, normalize_layout(layout, config=config))
 
     # Check watched columns for idle on_queue workers with unclaimed tasks

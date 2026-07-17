@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from server.formula_functions import FORMULA_FUNCTION_NAMES
 from server.values import (
@@ -20,6 +21,7 @@ from server.values import (
     coord_to_cell_ref,
     iter_value_slots,
     parse_cell_ref,
+    value_coord,
     value_name_key,
     value_ref_warning,
 )
@@ -29,6 +31,15 @@ FORMULA_VERSION = 1
 FORMULA_MAX_LENGTH = 8192
 FORMULA_MAX_DEPTH = 64
 FORMULA_MAX_ARGUMENTS = 255
+FORMULA_MAX_NUMERIC_DIGITS = 1024
+FORMULA_MAX_INTEGER_BITS = 4096
+FORMULA_MAX_EXPONENT = 10000
+FORMULA_MAX_SHIFT = 4096
+FORMULA_MAX_OUTPUT_LENGTH = 8192
+FORMULA_MAX_EVALUATION_STEPS = 50000
+FORMULA_MAX_ANALYSIS_REFERENCES = 50000
+FORMULA_MAX_GENERATION_REFERENCES = 200000
+FORMULA_MAX_WILDCARD_LENGTH = 256
 FORMULA_STATUSES = {"ok", "error", "pending", "stale"}
 
 
@@ -186,7 +197,19 @@ def formula_ok_state(result: EvaluationResult, *, calculated_at: str) -> dict[st
     }
 
 
-def is_formula_stale(slot: object, *, now: datetime | None = None) -> bool:
+def _formula_timezone(timezone_name: str | None) -> ZoneInfo:
+    try:
+        return ZoneInfo(str(timezone_name or "UTC"))
+    except (ValueError, ZoneInfoNotFoundError):
+        return ZoneInfo("UTC")
+
+
+def is_formula_stale(
+    slot: object,
+    *,
+    now: datetime | None = None,
+    timezone_name: str | None = "UTC",
+) -> bool:
     if not isinstance(slot, dict) or not slot.get("formula"):
         return False
     state = slot.get("formula_state") if isinstance(slot.get("formula_state"), dict) else {}
@@ -197,11 +220,18 @@ def is_formula_stale(slot: object, *, now: datetime | None = None) -> bool:
         calculated = datetime.fromisoformat(calculated_at.replace("Z", "+00:00"))
     except ValueError:
         return True
-    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if calculated.tzinfo is None:
+        calculated = calculated.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    formula_timezone = _formula_timezone(timezone_name)
+    current = current.astimezone(formula_timezone)
+    calculated = calculated.astimezone(formula_timezone)
     source = str((slot.get("formula") or {}).get("source") or "").upper()
-    if "TODAY(" in source and calculated.date() != current.date():
+    if re.search(r"\bTODAY\s*\(", source) and calculated.date() != current.date():
         return True
-    return "NOW(" in source and (current - calculated).total_seconds() >= 60
+    return bool(re.search(r"\bNOW\s*\(", source)) and (current - calculated).total_seconds() >= 60
 
 
 def tokenize(source: str) -> list[Token]:
@@ -263,9 +293,16 @@ def tokenize(source: str) -> list[Token]:
         number = _NUMBER_RE.match(text, i)
         if number:
             raw = number.group(0)
-            value = float(raw) if any(c in raw.lower() for c in (".", "e")) else int(raw)
+            if sum(char.isdigit() for char in raw) > FORMULA_MAX_NUMERIC_DIGITS:
+                raise FormulaError("#LIMIT!", "Numeric literal exceeds the digit budget", position)
+            try:
+                value = float(raw) if any(c in raw.lower() for c in (".", "e")) else int(raw)
+            except (OverflowError, ValueError) as exc:
+                raise FormulaError("#LIMIT!", "Numeric literal exceeds the conversion budget", position) from exc
             if isinstance(value, float) and not math.isfinite(value):
                 raise FormulaError("#NUM!", "Numeric literal is not finite", position)
+            if isinstance(value, int) and value.bit_length() > FORMULA_MAX_INTEGER_BITS:
+                raise FormulaError("#LIMIT!", "Numeric literal exceeds the integer budget", position)
             tokens.append(Token("NUMBER", value, position))
             i = number.end()
             continue
@@ -568,24 +605,50 @@ def _equal(left: Any, right: Any) -> bool:
     return left == right
 
 
-def _wildcard_regex(pattern: str) -> re.Pattern[str]:
-    pieces: list[str] = []
+def _wildcard_match(pattern: str, value: str) -> bool:
+    if len(pattern) > FORMULA_MAX_WILDCARD_LENGTH:
+        raise FormulaError("#LIMIT!", "Wildcard pattern exceeds the work budget")
+    tokens: list[tuple[str, str]] = []
     escaped = False
-    for ch in pattern:
+    for ch in pattern.casefold():
         if escaped:
-            pieces.append(re.escape(ch))
+            tokens.append(("literal", ch))
             escaped = False
         elif ch == "~":
             escaped = True
         elif ch == "*":
-            pieces.append(".*")
+            if not tokens or tokens[-1][0] != "star":
+                tokens.append(("star", ""))
         elif ch == "?":
-            pieces.append(".")
+            tokens.append(("any", ""))
         else:
-            pieces.append(re.escape(ch))
+            tokens.append(("literal", ch))
     if escaped:
-        pieces.append(re.escape("~"))
-    return re.compile("^" + "".join(pieces) + "$", re.IGNORECASE | re.DOTALL)
+        tokens.append(("literal", "~"))
+
+    text = value.casefold()
+    text_index = token_index = 0
+    star_index = -1
+    star_text_index = 0
+    while text_index < len(text):
+        if token_index < len(tokens):
+            kind, token_value = tokens[token_index]
+            if kind == "any" or (kind == "literal" and token_value == text[text_index]):
+                text_index += 1
+                token_index += 1
+                continue
+            if kind == "star":
+                star_index = token_index
+                token_index += 1
+                star_text_index = text_index
+                continue
+        if star_index >= 0:
+            star_text_index += 1
+            text_index = star_text_index
+            token_index = star_index + 1
+            continue
+        return False
+    return all(kind == "star" for kind, _value in tokens[token_index:])
 
 
 def _criterion_match(value: Any, criterion: Any) -> bool:
@@ -599,7 +662,7 @@ def _criterion_match(value: Any, criterion: Any) -> bool:
     except (TypeError, ValueError):
         pass
     if op in {"=", "<>"} and isinstance(target, str) and any(ch in target for ch in "*?"):
-        matched = bool(_wildcard_regex(target).match(_canonical_text(value)))
+        matched = _wildcard_match(target, _canonical_text(value))
         return matched if op == "=" else not matched
     if op in {"=", "<>"}:
         matched = _equal(value, target)
@@ -692,34 +755,67 @@ def _bounded_root(function: Callable[[float], float], guess: float, position: in
 
 class Evaluator:
     def __init__(self, slots: list[Any], *, current_index: int | None = None, cols: int = 4,
-                 now: datetime | None = None, resolver: FormulaResolver | None = None):
+                 now: datetime | None = None, timezone_name: str | None = "UTC",
+                 resolver: FormulaResolver | None = None):
         self.slots = slots
         self.current_index = current_index
         self.cols = cols
+        current_slot = (
+            slots[current_index]
+            if current_index is not None and 0 <= current_index < len(slots) and isinstance(slots[current_index], dict)
+            else None
+        )
+        self.current_coord = (
+            value_coord(current_slot, index=current_index, cols=cols)
+            if current_slot is not None and current_index is not None
+            else None
+        )
         self.dependencies: list[str] = []
         self.warnings: list[str] = []
         self.volatile = False
         self.now = now or datetime.now(timezone.utc)
+        if self.now.tzinfo is None:
+            self.now = self.now.replace(tzinfo=timezone.utc)
+        self.timezone = _formula_timezone(timezone_name)
         self.resolver = resolver or FormulaResolver(slots, cols=cols)
+        self.steps = 0
+
+    def _charge(self, count: int = 1) -> None:
+        self.steps += max(0, count)
+        if self.steps > FORMULA_MAX_EVALUATION_STEPS:
+            raise FormulaError("#LIMIT!", "Formula evaluation work budget exceeded")
+
+    @staticmethod
+    def _validate_result(value: Any, position: int | None = None) -> Any:
+        if isinstance(value, int) and not isinstance(value, bool) and value.bit_length() > FORMULA_MAX_INTEGER_BITS:
+            raise FormulaError("#LIMIT!", "Integer result exceeds the bit budget", position)
+        if isinstance(value, float) and not math.isfinite(value):
+            raise FormulaError("#NUM!", "Numeric result is not finite", position)
+        if isinstance(value, str) and len(value) > FORMULA_MAX_OUTPUT_LENGTH:
+            raise FormulaError("#LIMIT!", "Text result exceeds the output budget", position)
+        return value
 
     def evaluate(self, node):
+        self._charge()
         kind = node[0]
         if kind == "literal":
-            return node[1]
-        if kind == "error":
+            result = node[1]
+        elif kind == "error":
             raise FormulaError(node[1], "Invalid structural reference", node[2])
-        if kind == "reference":
-            return self.reference(node[1], node[2], node[3])
-        if kind == "range":
-            return self.range_value(node[1], node[2], node[3])
-        if kind == "unary":
+        elif kind == "reference":
+            result = self.reference(node[1], node[2], node[3])
+        elif kind == "range":
+            result = self.range_value(node[1], node[2], node[3])
+        elif kind == "unary":
             value = _number(self.evaluate(node[2]))
-            return value if node[1] == "+" else -value
-        if kind == "binary":
-            return self.binary(node[1], node[2], node[3])
-        if kind == "call":
-            return self.call(node[1], node[2], node[3])
-        raise FormulaError("#PARSE!", "Unknown expression node")
+            result = value if node[1] == "+" else -value
+        elif kind == "binary":
+            result = self.binary(node[1], node[2], node[3])
+        elif kind == "call":
+            result = self.call(node[1], node[2], node[3])
+        else:
+            raise FormulaError("#PARSE!", "Unknown expression node")
+        return self._validate_result(result, node[-1] if kind in {"reference", "range", "call"} else None)
 
     def reference(self, ref: str, coordinate: bool, position: int):
         clean_ref = ref.replace("$", "") if coordinate else ref
@@ -751,6 +847,7 @@ class Evaluator:
         count = (max_col - min_col + 1) * (max_row - min_row + 1)
         if count > 10000:
             raise FormulaError("#LIMIT!", "Range exceeds 10000 positions", position)
+        self._charge(count)
         values: list[Any] = []
         for row in range(min_row, max_row + 1):
             for col in range(min_col, max_col + 1):
@@ -794,6 +891,24 @@ class Evaluator:
         left_num, right_num = _number(left), _number(right)
         if op in {"/", "%"} and right_num == 0:
             raise FormulaError("#DIV/0!", "Division by zero")
+        if op == "^":
+            if abs(right_num) > FORMULA_MAX_EXPONENT:
+                raise FormulaError("#LIMIT!", "Exponent exceeds the work budget")
+            if (
+                isinstance(left_num, int)
+                and isinstance(right_num, int)
+                and right_num >= 0
+                and left_num not in {-1, 0, 1}
+                and left_num.bit_length() * right_num > FORMULA_MAX_INTEGER_BITS
+            ):
+                raise FormulaError("#LIMIT!", "Exponentiation exceeds the integer budget")
+        if (
+            op == "*"
+            and isinstance(left_num, int)
+            and isinstance(right_num, int)
+            and left_num.bit_length() + right_num.bit_length() > FORMULA_MAX_INTEGER_BITS + 1
+        ):
+            raise FormulaError("#LIMIT!", "Multiplication exceeds the integer budget")
         try:
             value = {
                 "+": lambda: left_num + right_num,
@@ -900,7 +1015,9 @@ class Evaluator:
                 return parsed["row"] + 1 if name == "ROW" else parsed["col"] + 1
             if self.current_index is None:
                 raise FormulaError("#VALUE!", f"{name} requires cell context", position)
-            return self.current_index // self.cols + 1 if name == "ROW" else self.current_index % self.cols + 1
+            if self.current_coord is None:
+                raise FormulaError("#VALUE!", f"{name} requires cell coordinates", position)
+            return self.current_coord["row"] + 1 if name == "ROW" else self.current_coord["col"] + 1
         values = self._args(args)
         if name in {"SUM", "AVERAGE", "MIN", "MAX", "COUNT"}:
             flat = self._flatten(values)
@@ -1111,7 +1228,7 @@ class Evaluator:
                 raise FormulaError("#VALUE!", f"Unsupported {name} match or search mode", position)
             order = range(len(items) - 1, -1, -1) if search_mode == -1 else range(len(items))
             for index in order:
-                matched = (_wildcard_regex(_canonical_text(lookup)).match(_canonical_text(items[index])) is not None
+                matched = (_wildcard_match(_canonical_text(lookup), _canonical_text(items[index]))
                            if match_mode == 2 else _equal(items[index], lookup))
                 if matched:
                     return index + 1
@@ -1138,7 +1255,7 @@ class Evaluator:
                 raise FormulaError("#VALUE!", "Unsupported XLOOKUP match or search mode", position)
             order = range(len(lookup_items) - 1, -1, -1) if search_mode == -1 else range(len(lookup_items))
             for index in order:
-                matched = (_wildcard_regex(_canonical_text(values[0])).match(_canonical_text(lookup_items[index])) is not None
+                matched = (_wildcard_match(_canonical_text(values[0]), _canonical_text(lookup_items[index]))
                            if match_mode == 2 else _equal(values[0], lookup_items[index]))
                 if matched:
                     return return_items[index]
@@ -1162,6 +1279,8 @@ class Evaluator:
             if name == "POWER":
                 self._arity(name, values, 2, position)
                 operands = (_number(values[0], position), _number(values[1], position))
+                if abs(operands[1]) > FORMULA_MAX_EXPONENT:
+                    raise FormulaError("#LIMIT!", "POWER exponent exceeds the work budget", position)
                 try:
                     return _number(math.pow(*operands), position)
                 except (ValueError, OverflowError):
@@ -1298,11 +1417,17 @@ class Evaluator:
                 raise FormulaError("#VALUE!", "SUBSTITUTE expects 3 or 4 arguments", position)
             text, old, new = map(_canonical_text, values[:3])
             if len(values) == 3:
+                occurrences = text.count(old) if old else len(text) + 1
+                projected_length = len(text) + occurrences * (len(new) - len(old))
+                if projected_length > FORMULA_MAX_OUTPUT_LENGTH:
+                    raise FormulaError("#LIMIT!", "SUBSTITUTE result is too long", position)
                 return text.replace(old, new)
             occurrence = int(_number(values[3], position))
             if occurrence < 1:
                 raise FormulaError("#VALUE!", "SUBSTITUTE occurrence must be positive", position)
             parts = text.split(old)
+            if len(parts) > occurrence and len(text) - len(old) + len(new) > FORMULA_MAX_OUTPUT_LENGTH:
+                raise FormulaError("#LIMIT!", "SUBSTITUTE result is too long", position)
             return old.join(parts[:occurrence]) + (new + old.join(parts[occurrence:]) if len(parts) > occurrence else "")
         if name in {"CLEAN", "PROPER", "CHAR", "CODE", "UNICODE", "UNICHAR", "REPT", "EXACT"}:
             if name == "EXACT":
@@ -1313,10 +1438,10 @@ class Evaluator:
                 count = math.trunc(_number(values[1], position))
                 if count < 0:
                     raise FormulaError("#VALUE!", "REPT count cannot be negative", position)
-                result = _canonical_text(values[0]) * count
-                if len(result) > FORMULA_MAX_LENGTH:
+                text = _canonical_text(values[0])
+                if count and len(text) > FORMULA_MAX_OUTPUT_LENGTH // count:
                     raise FormulaError("#LIMIT!", "REPT result is too long", position)
-                return result
+                return text * count
             self._arity(name, values, 1, position)
             if name == "CLEAN":
                 return "".join(ch for ch in _canonical_text(values[0]) if ord(ch) >= 32)
@@ -1512,16 +1637,19 @@ class Evaluator:
             if workday:
                 current = _as_date(values[0], position)
                 remaining = abs(math.trunc(_number(values[1], position)))
-                if remaining > 1000000:
+                if remaining * 2 > FORMULA_MAX_EVALUATION_STEPS:
                     raise FormulaError("#LIMIT!", "WORKDAY span is too large", position)
+                self._charge(remaining * 2)
                 direction = 1 if _number(values[1], position) >= 0 else -1
                 while remaining:
                     current += timedelta(days=direction)
                     if is_workday(current): remaining -= 1
                 return current.isoformat()
             start, end = _as_date(values[0], position), _as_date(values[1], position)
-            if abs((end - start).days) > 1000000:
+            span = abs((end - start).days) + 1
+            if span > FORMULA_MAX_EVALUATION_STEPS:
                 raise FormulaError("#LIMIT!", "NETWORKDAYS span is too large", position)
+            self._charge(span)
             direction = 1 if end >= start else -1
             count, current = 0, start
             while True:
@@ -1575,6 +1703,8 @@ class Evaluator:
             left, right = (_number(values[0], position), _number(values[1], position))
             if left != math.trunc(left) or right != math.trunc(right):
                 raise FormulaError("#NUM!", "Bitwise arguments must be integers", position)
+            if name in {"BITLSHIFT", "BITRSHIFT"} and abs(right) > FORMULA_MAX_SHIFT:
+                raise FormulaError("#LIMIT!", "Bit shift exceeds the work budget", position)
             left, right = int(left), int(right)
             limit = (1 << 48) - 1
             if left < 0 or left > limit or (name in {"BITAND","BITOR","BITXOR"} and (right < 0 or right > limit)):
@@ -1683,7 +1813,7 @@ class Evaluator:
         if name in {"NOW", "TODAY"}:
             self._arity(name, values, 0, position)
             self.volatile = True
-            current = self.now.astimezone(timezone.utc)
+            current = self.now.astimezone(self.timezone)
             if name == "TODAY":
                 return current.date().isoformat()
             return current.isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -1696,9 +1826,17 @@ class Evaluator:
 
 
 def evaluate_formula(source: str, slots: list[Any], *, current_index: int | None = None, cols: int = 4,
-                     now: datetime | None = None, resolver: FormulaResolver | None = None) -> EvaluationResult:
+                     now: datetime | None = None, timezone_name: str | None = "UTC",
+                     resolver: FormulaResolver | None = None) -> EvaluationResult:
     ast = parse_formula(source)
-    evaluator = Evaluator(slots, current_index=current_index, cols=cols, now=now, resolver=resolver)
+    evaluator = Evaluator(
+        slots,
+        current_index=current_index,
+        cols=cols,
+        now=now,
+        timezone_name=timezone_name,
+        resolver=resolver,
+    )
     value = evaluator.evaluate(ast)
     if isinstance(value, RangeValue):
         raise FormulaError("#VALUE!", "A range cannot be a top-level formula result")
@@ -1718,6 +1856,8 @@ def _walk_references(node, refs: list[tuple[str, bool, int, bool]], calls: set[s
     if kind in {"literal", "error"}:
         return
     if kind == "reference":
+        if len(refs) >= FORMULA_MAX_ANALYSIS_REFERENCES:
+            raise FormulaError("#LIMIT!", "Formula reference analysis budget exceeded", node[3])
         refs.append((node[1], node[2], node[3], False))
         return
     if kind == "range":
@@ -1729,6 +1869,9 @@ def _walk_references(node, refs: list[tuple[str, bool, int, bool]], calls: set[s
         min_row, max_row = sorted((start["row"], end["row"]))
         if (max_col - min_col + 1) * (max_row - min_row + 1) > 10000:
             raise FormulaError("#LIMIT!", "Range exceeds 10000 positions", node[3])
+        count = (max_col - min_col + 1) * (max_row - min_row + 1)
+        if len(refs) + count > FORMULA_MAX_ANALYSIS_REFERENCES:
+            raise FormulaError("#LIMIT!", "Formula reference analysis budget exceeded", node[3])
         for row in range(min_row, max_row + 1):
             for col in range(min_col, max_col + 1):
                 refs.append((coord_to_cell_ref({"col": col, "row": row}), True, node[3], True))
@@ -1776,6 +1919,7 @@ def analyze_formula(source: str, slots: list[Any], *, current_index: int | None 
             warnings.append(warning)
     return {
         "ast": ast,
+        "reference_count": len(refs),
         "dependency_indices": dependency_indices,
         "dependencies": dependencies,
         "warnings": warnings,
@@ -1794,43 +1938,54 @@ def _slot_sort_key(slots: list[Any], index: int) -> tuple[int, int, int]:
 
 
 def _cycle_nodes(nodes: set[int], edges: dict[int, set[int]]) -> set[int]:
-    """Return nodes in strongly connected components that are actual cycles."""
-    index_counter = [0]
-    indices: dict[int, int] = {}
-    lowlinks: dict[int, int] = {}
-    stack: list[int] = []
-    on_stack: set[int] = set()
-    cycles: set[int] = set()
+    """Return actual cycle members without recursion proportional to graph size."""
+    adjacency = {
+        node: {dependency for dependency in edges.get(node, set()) if dependency in nodes}
+        for node in nodes
+    }
+    reverse: dict[int, set[int]] = {node: set() for node in nodes}
+    for node, dependencies in adjacency.items():
+        for dependency in dependencies:
+            reverse[dependency].add(node)
 
-    def strong_connect(node: int) -> None:
-        indices[node] = index_counter[0]
-        lowlinks[node] = index_counter[0]
-        index_counter[0] += 1
-        stack.append(node)
-        on_stack.add(node)
-        for dependency in edges.get(node, set()):
-            if dependency not in nodes:
-                continue
-            if dependency not in indices:
-                strong_connect(dependency)
-                lowlinks[node] = min(lowlinks[node], lowlinks[dependency])
-            elif dependency in on_stack:
-                lowlinks[node] = min(lowlinks[node], indices[dependency])
-        if lowlinks[node] != indices[node]:
-            return
-        component: list[int] = []
+    visited: set[int] = set()
+    finish_order: list[int] = []
+    for start in sorted(nodes):
+        if start in visited:
+            continue
+        visited.add(start)
+        stack: list[tuple[int, Any]] = [(start, iter(sorted(adjacency[start])))]
         while stack:
-            member = stack.pop()
-            on_stack.remove(member)
-            component.append(member)
-            if member == node:
-                break
-        if len(component) > 1 or (len(component) == 1 and component[0] in edges.get(component[0], set())):
-            cycles.update(component)
+            node, dependencies = stack[-1]
+            try:
+                dependency = next(dependencies)
+            except StopIteration:
+                stack.pop()
+                finish_order.append(node)
+                continue
+            if dependency not in visited:
+                visited.add(dependency)
+                stack.append((dependency, iter(sorted(adjacency[dependency]))))
 
-    for node in sorted(nodes):
-        if node not in indices:
-            strong_connect(node)
+    visited.clear()
+    cycles: set[int] = set()
+    for start in reversed(finish_order):
+        if start in visited:
+            continue
+        component: list[int] = []
+        stack = [start]
+        visited.add(start)
+        while stack:
+            node = stack.pop()
+            component.append(node)
+            for dependent in reverse[node]:
+                if dependent not in visited:
+                    visited.add(dependent)
+                    stack.append(dependent)
+        if len(component) > 1 or (
+            len(component) == 1 and component[0] in adjacency[component[0]]
+        ):
+            cycles.update(component)
     return cycles
 
 
@@ -1841,6 +1996,7 @@ def recalculate_layout(
     cols: int = 4,
     calculated_at: str,
     now: datetime | None = None,
+    timezone_name: str | None = "UTC",
     calculation_id: str | None = None,
     record_history: bool = True,
 ) -> dict[str, Any]:
@@ -1855,10 +2011,21 @@ def recalculate_layout(
     edges: dict[int, set[int]] = {index: set() for index in formula_indices}
     reverse: dict[int, set[int]] = {}
     resolver = FormulaResolver(slots, cols=cols)
-    for index in formula_indices:
+    generation_reference_count = 0
+    for index in sorted(formula_indices, key=lambda item: _slot_sort_key(slots, item)):
         source = slots[index]["formula"]["source"]
+        if generation_reference_count >= FORMULA_MAX_GENERATION_REFERENCES:
+            analysis_errors[index] = FormulaError(
+                "#LIMIT!",
+                "Formula generation reference budget exceeded",
+            )
+            continue
         try:
             analysis = analyze_formula(source, slots, current_index=index, cols=cols, resolver=resolver)
+            reference_count = int(analysis.get("reference_count") or 0)
+            if generation_reference_count + reference_count > FORMULA_MAX_GENERATION_REFERENCES:
+                raise FormulaError("#LIMIT!", "Formula generation reference budget exceeded")
+            generation_reference_count += reference_count
             analyses[index] = analysis
             for dependency_index in analysis["dependency_indices"]:
                 reverse.setdefault(dependency_index, set()).add(index)
@@ -1922,7 +2089,15 @@ def recalculate_layout(
             if index in analysis_errors:
                 raise analysis_errors[index]
             source = slot["formula"]["source"]
-            result = evaluate_formula(source, slots, current_index=None, cols=cols, now=now, resolver=resolver)
+            result = evaluate_formula(
+                source,
+                slots,
+                current_index=index,
+                cols=cols,
+                now=now,
+                timezone_name=timezone_name,
+                resolver=resolver,
+            )
             value, resolved_type = coerce_formula_result(result.value, slot.get("value_type", "auto"))
             slot["value"] = value
             slot["resolved_value_type"] = resolved_type

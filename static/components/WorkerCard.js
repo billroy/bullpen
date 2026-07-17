@@ -91,7 +91,7 @@ const WorkerCard = {
                   role="img"
                   :title="workerTypeLabel"
                   :aria-label="workerTypeLabel">
-              <span v-if="valueVisualKind === 'formula'" class="value-kind-glyph value-kind-glyph--card" aria-hidden="true">fx</span>
+              <span v-if="valueVisualKind === 'formula'" class="value-kind-glyph value-kind-glyph--card" :class="{ 'value-kind-glyph--stale': formulaStale }" aria-hidden="true">fx</span>
               <i v-else class="worker-type-icon worker-type-icon--card" :data-lucide="workerIcon" aria-hidden="true"></i>
             </span>
             <span class="worker-card-name" ref="nameLabel">{{ workerNameWithPort }}</span>
@@ -182,7 +182,11 @@ const WorkerCard = {
           <template v-else>{{ emptyLabel }}</template>
         </div>
         <div v-else-if="isValue" class="worker-card-value">
-          <span v-if="isFormulaValue" class="worker-card-formula-badge" aria-label="Formula value">fx</span>
+          <span v-if="isFormulaValue"
+                class="worker-card-formula-badge"
+                :class="{ 'worker-card-formula-badge--stale': formulaStale }"
+                :aria-label="formulaStale ? 'Formula value is stale' : 'Formula value'"
+                :title="formulaStale ? 'Formula value is stale and will refresh on activation' : 'Formula value'">fx</span>
           <template v-if="valueEditing">
             <input class="worker-card-value-input"
                    ref="valueEditInput"
@@ -665,6 +669,9 @@ const WorkerCard = {
     },
     isFormulaValue() {
       return this.isValue && !!this.worker?.formula?.source;
+    },
+    formulaStale() {
+      return this.isFormulaValue && this.worker?.formula_state?.derived_stale === true;
     },
     formulaError() {
       return this.isFormulaValue && this.worker?.formula_state?.status === 'error'

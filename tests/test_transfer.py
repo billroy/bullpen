@@ -453,13 +453,36 @@ class TestTransferAtomicity:
         _set_worker(bp_a, 0, _make_worker("Alpha"))
 
         with patch("server.transfer.write_json", side_effect=IOError("disk full")):
-            with pytest.raises(IOError):
+            with pytest.raises(TransferError, match="destination write failed"):
                 transfer_worker(manager, id_a, 0, id_b, None, "move")
 
         # Source must still have the worker
         src_layout = read_json(os.path.join(bp_a, "layout.json"))
         assert src_layout["slots"][0] is not None
         assert src_layout["slots"][0]["name"] == "Alpha"
+
+    def test_failed_source_write_rolls_back_destination_copy(self, two_workspaces):
+        manager, id_a, id_b = two_workspaces
+        bp_a = manager.get_bp_dir(id_a)
+        bp_b = manager.get_bp_dir(id_b)
+        _set_worker(bp_a, 0, _make_worker("Alpha"))
+        calls = 0
+
+        def fail_source_write(path, payload):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise IOError("source disk full")
+            return write_json(path, payload)
+
+        with patch("server.transfer.write_json", side_effect=fail_source_write):
+            with pytest.raises(TransferError, match="destination copy was rolled back"):
+                transfer_worker(manager, id_a, 0, id_b, None, "move")
+
+        src_layout = read_json(os.path.join(bp_a, "layout.json"))
+        dst_layout = read_json(os.path.join(bp_b, "layout.json"))
+        assert src_layout["slots"][0]["name"] == "Alpha"
+        assert dst_layout["slots"] == []
 
 
 class TestTransferNameDedup:

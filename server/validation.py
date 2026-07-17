@@ -2,6 +2,7 @@
 
 import re
 import sys
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from server.prompt_hardening import VALID_TRUST_MODES
 
@@ -346,7 +347,7 @@ VALID_CONFIG_KEYS = {
     "name", "grid", "columns", "agent_timeout_seconds", "chat_timeout_seconds",
     "max_prompt_chars", "auto_commit", "auto_pr", "theme",
     "ambient_preset", "ambient_volume", "ambient_mute_while_idle", "provider_colors",
-    "worker_automation_paused",
+    "worker_automation_paused", "timezone",
 }
 
 HEX_COLOR_REGEX = re.compile(r'^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$')
@@ -403,6 +404,14 @@ def validate_config_update(data):
             continue
         if k == "worker_automation_paused":
             sanitized[k] = bool(v)
+            continue
+        if k == "timezone":
+            value = _str(v, 128, "timezone").strip()
+            try:
+                ZoneInfo(value)
+            except (ValueError, ZoneInfoNotFoundError) as exc:
+                raise ValidationError("timezone must be a valid IANA timezone") from exc
+            sanitized[k] = value
             continue
         sanitized[k] = v
     return sanitized

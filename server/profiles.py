@@ -44,3 +44,12 @@ def create_profile(bp_dir, data):
     ensure_within(path, _profiles_dir(bp_dir))
     write_json(path, data)
     return data
+
+
+def delete_profile(bp_dir, profile_id):
+    """Delete a profile created as part of a failed compound operation."""
+    _id(profile_id, "profile_id")
+    path = os.path.join(_profiles_dir(bp_dir), f"{profile_id}.json")
+    ensure_within(path, _profiles_dir(bp_dir))
+    if os.path.exists(path):
+        os.remove(path)

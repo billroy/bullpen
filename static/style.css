@@ -3566,6 +3566,11 @@ body.worker-singleton-dragging * {
   margin: 0 0 2px 2px;
 }
 
+.worker-card-formula-badge--stale,
+.value-kind-glyph--stale {
+  color: var(--warning, #d97706);
+}
+
 .worker-card-value-main {
   min-width: 0;
   color: var(--text-primary);

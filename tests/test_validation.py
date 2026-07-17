@@ -248,6 +248,13 @@ class TestConfigUpdate:
         with pytest.raises(ValidationError, match="chat_timeout_seconds must be >="):
             validate_config_update({"chat_timeout_seconds": 0})
 
+    def test_timezone_requires_valid_iana_name(self):
+        assert validate_config_update({"timezone": "America/New_York"}) == {
+            "timezone": "America/New_York",
+        }
+        with pytest.raises(ValidationError, match="valid IANA timezone"):
+            validate_config_update({"timezone": "Not/A_Timezone"})
+
     @pytest.mark.parametrize("theme", [
         "shades-of-purple", "solarized", "panda", "cobalt-2", "one-dark-pro",
         "light-ethereal", "light-stone-teal", "light-ivory-olive", "eyeshade-dark",
