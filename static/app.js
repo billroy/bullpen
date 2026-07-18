@@ -2862,6 +2862,7 @@ const app = createApp({
         @quick-create-task="quickCreateTask"
         @run-palette-command="runPaletteCommand"
         @run-palette-input="runPaletteInput"
+        @toast="addToast"
       />
       <div class="app-body">
         <LeftPane

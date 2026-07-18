@@ -25,6 +25,256 @@
     };
   }
 
+  const QUICK_CALCULATE_MAX_LENGTH = 500;
+  const QUICK_CALCULATE_CONSTANTS = {
+    e: Math.E,
+    pi: Math.PI,
+    tau: Math.PI * 2,
+  };
+  const QUICK_CALCULATE_FUNCTIONS = {
+    abs: { min: 1, max: 1, fn: Math.abs },
+    acos: { min: 1, max: 1, fn: Math.acos },
+    asin: { min: 1, max: 1, fn: Math.asin },
+    atan: { min: 1, max: 1, fn: Math.atan },
+    atan2: { min: 2, max: 2, fn: Math.atan2 },
+    ceil: { min: 1, max: 1, fn: Math.ceil },
+    cos: { min: 1, max: 1, fn: Math.cos },
+    exp: { min: 1, max: 1, fn: Math.exp },
+    floor: { min: 1, max: 1, fn: Math.floor },
+    ln: { min: 1, max: 1, fn: Math.log },
+    log: { min: 1, max: 2, fn: (value, base) => base === undefined ? Math.log(value) : Math.log(value) / Math.log(base) },
+    log10: { min: 1, max: 1, fn: Math.log10 },
+    max: { min: 1, max: Infinity, fn: Math.max },
+    min: { min: 1, max: Infinity, fn: Math.min },
+    pow: { min: 2, max: 2, fn: Math.pow },
+    round: { min: 1, max: 1, fn: Math.round },
+    sin: { min: 1, max: 1, fn: Math.sin },
+    sqrt: { min: 1, max: 1, fn: Math.sqrt },
+    tan: { min: 1, max: 1, fn: Math.tan },
+  };
+
+  function formatQuickCalculateResult(value) {
+    const normalized = Object.is(value, -0) ? 0 : value;
+    if (Number.isInteger(normalized)) return String(normalized);
+    const rounded = Number(normalized.toPrecision(12));
+    return String(Object.is(rounded, -0) ? 0 : rounded);
+  }
+
+  class QuickCalculateParser {
+    constructor(expression) {
+      this.expression = expression;
+      this.index = 0;
+    }
+
+    parse() {
+      const value = this.parseExpression();
+      this.skipWhitespace();
+      if (!this.isAtEnd()) throw this.error(`Unexpected "${this.peek()}"`);
+      this.requireFinite(value);
+      return value;
+    }
+
+    parseExpression() {
+      return this.parseAdditive();
+    }
+
+    parseAdditive() {
+      let value = this.parseMultiplicative();
+      for (;;) {
+        if (this.match('+')) {
+          value += this.parseMultiplicative();
+        } else if (this.match('-')) {
+          value -= this.parseMultiplicative();
+        } else {
+          return this.requireFinite(value);
+        }
+      }
+    }
+
+    parseMultiplicative() {
+      let value = this.parsePower();
+      for (;;) {
+        if (this.startsWith('**')) return this.requireFinite(value);
+        if (this.match('*')) {
+          value *= this.parsePower();
+        } else if (this.match('/')) {
+          const divisor = this.parsePower();
+          if (divisor === 0) throw this.error('Division by zero');
+          value /= divisor;
+        } else if (this.match('%')) {
+          const divisor = this.parsePower();
+          if (divisor === 0) throw this.error('Division by zero');
+          value %= divisor;
+        } else {
+          return this.requireFinite(value);
+        }
+      }
+    }
+
+    parsePower() {
+      const value = this.parseUnary();
+      if (this.match('**') || this.match('^')) {
+        return this.requireFinite(Math.pow(value, this.parsePower()));
+      }
+      return this.requireFinite(value);
+    }
+
+    parseUnary() {
+      if (this.match('+')) return this.parseUnary();
+      if (this.match('-')) return this.requireFinite(-this.parseUnary());
+      return this.parsePrimary();
+    }
+
+    parsePrimary() {
+      this.skipWhitespace();
+      if (this.match('(')) {
+        const value = this.parseExpression();
+        this.expect(')', 'Expected ")"');
+        return this.requireFinite(value);
+      }
+      const char = this.peek();
+      if (this.isDigit(char) || char === '.') return this.parseNumber();
+      if (this.isIdentifierStart(char)) return this.parseIdentifier();
+      throw this.error('Expected a number, function, constant, or "("');
+    }
+
+    parseNumber() {
+      const start = this.index;
+      let sawDigit = false;
+      while (this.isDigit(this.peek())) {
+        sawDigit = true;
+        this.index++;
+      }
+      if (this.peek() === '.') {
+        this.index++;
+        while (this.isDigit(this.peek())) {
+          sawDigit = true;
+          this.index++;
+        }
+      }
+      if (!sawDigit) throw this.error('Expected a number');
+      if (this.peek() === 'e' || this.peek() === 'E') {
+        const exponentStart = this.index;
+        this.index++;
+        if (this.peek() === '+' || this.peek() === '-') this.index++;
+        let sawExponentDigit = false;
+        while (this.isDigit(this.peek())) {
+          sawExponentDigit = true;
+          this.index++;
+        }
+        if (!sawExponentDigit) {
+          this.index = exponentStart;
+          throw this.error('Invalid exponent');
+        }
+      }
+      const value = Number(this.expression.slice(start, this.index));
+      return this.requireFinite(value);
+    }
+
+    parseIdentifier() {
+      const start = this.index;
+      this.index++;
+      while (this.isIdentifierPart(this.peek())) this.index++;
+      const name = this.expression.slice(start, this.index).toLowerCase();
+      if (this.match('(')) {
+        const args = this.parseArguments();
+        const fn = QUICK_CALCULATE_FUNCTIONS[name];
+        if (!fn) throw this.error(`Unknown function "${name}"`);
+        if (args.length < fn.min || args.length > fn.max) {
+          const expected = fn.max === Infinity
+            ? `at least ${fn.min}`
+            : (fn.min === fn.max ? String(fn.min) : `${fn.min}-${fn.max}`);
+          const plural = expected === '1' || expected === 'at least 1' ? '' : 's';
+          throw this.error(`Function "${name}" expects ${expected} argument${plural}`);
+        }
+        return this.requireFinite(fn.fn(...args));
+      }
+      if (Object.prototype.hasOwnProperty.call(QUICK_CALCULATE_CONSTANTS, name)) {
+        return QUICK_CALCULATE_CONSTANTS[name];
+      }
+      throw this.error(`Unknown constant "${name}"`);
+    }
+
+    parseArguments() {
+      const args = [];
+      this.skipWhitespace();
+      if (this.match(')')) return args;
+      for (;;) {
+        args.push(this.parseExpression());
+        this.skipWhitespace();
+        if (this.match(')')) return args;
+        this.expect(',', 'Expected "," or ")"');
+      }
+    }
+
+    match(token) {
+      this.skipWhitespace();
+      if (!this.expression.startsWith(token, this.index)) return false;
+      this.index += token.length;
+      return true;
+    }
+
+    expect(token, message) {
+      if (!this.match(token)) throw this.error(message);
+    }
+
+    startsWith(token) {
+      this.skipWhitespace();
+      return this.expression.startsWith(token, this.index);
+    }
+
+    skipWhitespace() {
+      while (/\s/.test(this.peek())) this.index++;
+    }
+
+    peek() {
+      return this.expression[this.index] || '';
+    }
+
+    isAtEnd() {
+      return this.index >= this.expression.length;
+    }
+
+    isDigit(char) {
+      return char >= '0' && char <= '9';
+    }
+
+    isIdentifierStart(char) {
+      return /^[A-Za-z_]$/.test(char);
+    }
+
+    isIdentifierPart(char) {
+      return /^[A-Za-z0-9_]$/.test(char);
+    }
+
+    requireFinite(value) {
+      if (!Number.isFinite(value)) throw this.error('Result is not finite');
+      return value;
+    }
+
+    error(message) {
+      return new Error(`${message} at position ${this.index + 1}`);
+    }
+  }
+
+  function evaluateQuickCalculate(input) {
+    const raw = String(input || '').trimStart();
+    if (!raw.startsWith('=')) {
+      return { ok: false, expression: '', error: 'Quick calculate expressions must start with =' };
+    }
+    const expression = raw.slice(1).trim();
+    if (!expression) return { ok: false, expression: '', error: 'Expression is empty' };
+    if (expression.length > QUICK_CALCULATE_MAX_LENGTH) {
+      return { ok: false, expression, error: `Expression is longer than ${QUICK_CALCULATE_MAX_LENGTH} characters` };
+    }
+    try {
+      const value = new QuickCalculateParser(expression).parse();
+      return { ok: true, expression, value, result: formatQuickCalculateResult(value) };
+    } catch (err) {
+      return { ok: false, expression, error: err?.message || 'Invalid expression' };
+    }
+  }
+
   function normalize(value) {
     return String(value || '').trim().toLowerCase();
   }
@@ -465,6 +715,7 @@
     COMMAND_PREFIX,
     splitQuickCreateText,
     parseCommandInput,
+    evaluateQuickCalculate,
     buildCommands,
     filterCommands,
     findCommand,

@@ -24,6 +24,7 @@ const TopToolbar = {
     'quick-create-task',
     'run-palette-command',
     'run-palette-input',
+    'toast',
   ],
   data() {
     return {
@@ -47,11 +48,12 @@ const TopToolbar = {
       const text = this.quickCreateText.trimStart();
       if (text.startsWith('>')) return 'command';
       if (text.startsWith('?')) return 'help';
+      if (text.startsWith('=')) return 'calculate';
       return 'ticket';
     },
     paletteQuery() {
       const text = this.quickCreateText.trimStart();
-      if (text.startsWith('>') || text.startsWith('?')) return text.slice(1).trim();
+      if (text.startsWith('>') || text.startsWith('?') || text.startsWith('=')) return text.slice(1).trim();
       return text.trim();
     },
     visiblePaletteResults() {
@@ -77,6 +79,18 @@ const TopToolbar = {
           disabledReason: command.disabledReason,
           args: parsed.args,
         }));
+      }
+      if (this.paletteMode === 'calculate') {
+        const expression = this.paletteQuery;
+        return [
+          {
+            kind: 'calculate',
+            title: expression ? `Calculate: ${expression}` : 'Calculate',
+            subtitle: expression ? 'Press Enter for result' : 'Enter an expression after =',
+            shortcut: 'Enter',
+            disabledReason: expression ? '' : 'Expression cannot be empty',
+          },
+        ];
       }
 
       const text = this.quickCreateText.trim();
@@ -487,11 +501,30 @@ const TopToolbar = {
         this.focusActiveInput();
         return;
       }
+      if (result.kind === 'calculate') {
+        this.submitQuickCalculate();
+        return;
+      }
       if (result.kind === 'command' && result.command) {
         this.$emit('run-palette-command', result.command.id, result.args || '');
         this.quickCreateText = '';
         this.closePaletteOverlay();
       }
+    },
+    submitQuickCalculate() {
+      const calculation = window.BullpenCommands?.evaluateQuickCalculate
+        ? window.BullpenCommands.evaluateQuickCalculate(this.quickCreateText)
+        : { ok: false, expression: '', error: 'Calculator unavailable' };
+      const expression = calculation.expression || String(this.quickCreateText || '').trim();
+      if (calculation.ok) {
+        this.$emit('toast', `${calculation.expression} = ${calculation.result}`, 'success');
+        this.quickCreateText = '';
+        this.closePaletteOverlay();
+        return;
+      }
+      this.$emit('toast', `${expression || '='} = ${calculation.error}`, 'error');
+      this.showPalette = true;
+      this.focusActiveInput();
     },
     submitQuickCreate() {
       const text = this.quickCreateText.trim();
@@ -510,6 +543,10 @@ const TopToolbar = {
       if (this.paletteMode === 'help') {
         this.quickCreateText = '>';
         this.showPalette = true;
+        return;
+      }
+      if (this.paletteMode === 'calculate') {
+        this.submitQuickCalculate();
         return;
       }
       const payload = this.splitQuickCreateText(text);
