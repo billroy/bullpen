@@ -686,7 +686,8 @@ def test_value_card_inline_edit_saves_and_reverts():
     assert "valueEditIncludesName: false" in text
     assert '@keydown.enter.prevent.stop="commitValueEdit"' in text
     assert '@keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"' in text
-    assert text.count('@blur="cancelValueEdit"') >= 2
+    assert text.count('@blur="onValueEditBlur"') >= 2
+    assert "if (this.formulaHelpOpen) return;" in text
     assert "this._closeValueEdit = (e) => {" in text
     assert "document.addEventListener('pointerdown', this._closeValueEdit, true);" in text
     assert "document.removeEventListener('pointerdown', this._closeValueEdit, true);" in text

@@ -23,6 +23,9 @@ const VALUE_UNIT_LABELS = {
 };
 
 const WorkerCard = {
+  components: {
+    FormulaHelpCard: typeof FormulaHelpCard === 'undefined' ? {} : FormulaHelpCard,
+  },
   props: ['worker', 'slotIndex', 'tasks', 'taskById', 'outputLines', 'multipleWorkspaces', 'neighborSlots', 'allWorkers', 'menuContext', 'layoutMode', 'cardHeight', 'isSelected', 'useCompactPill', 'multipleSelectionActive', 'isVerticalResizing', 'workspaceId', 'requestOutputCatchup', 'buildWorkerDragPayload', 'buildWorkerDragImage', 'canDropWorkerAtSlot', 'dropWorkerOnSlot', 'updateSingletonWorkerDrag', 'endSingletonWorkerDrag', 'cancelSingletonWorkerDrag'],
   emits: ['configure', 'select-task', 'open-focus', 'transfer', 'copy-worker', 'delete-worker', 'worker-scope-action', 'menu-opened', 'menu-closed', 'vertical-resize-start', 'value-edit-ended'],
   template: `
@@ -73,17 +76,26 @@ const WorkerCard = {
            :style="usesSpreadsheetStyle ? null : { background: agentColor }"
            @click="onHeaderClick"
            @dblclick="onHeaderDblClick">
-        <input v-if="showCompactValue && valueEditing"
-               class="worker-card-compact-value-editor"
-               ref="valueEditInput"
-               v-model="valueEditText"
-               @keydown.stop
-               @keydown.enter.prevent.stop="commitValueEdit"
-               @keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"
-               @blur="cancelValueEdit"
-               @click.stop
-               @dblclick.stop
-               aria-label="Edit name and value">
+        <div v-if="showCompactValue && valueEditing" class="worker-card-compact-value-edit">
+          <input class="worker-card-compact-value-editor"
+                 ref="valueEditInput"
+                 v-model="valueEditText"
+                 @keydown.stop
+                 @keydown.f1.prevent.stop="openFormulaHelp"
+                 @keydown.enter.prevent.stop="commitValueEdit"
+                 @keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"
+                 @blur="onValueEditBlur"
+                 @select="rememberValueEditSelection"
+                 @click.stop
+                 @dblclick.stop
+                 aria-label="Edit name and value">
+          <button type="button"
+                  class="worker-card-formula-help-button"
+                  title="Formula help (F1)"
+                  aria-label="Open formula help. Shortcut F1."
+                  @pointerdown.prevent.stop
+                  @click.stop="openFormulaHelp">fx</button>
+        </div>
         <div v-else-if="!usesSpreadsheetStyle || spreadsheetHasLabel"
              class="worker-card-identity"
              :class="{ 'worker-card-identity--cell-ref': isValue && !spreadsheetHasLabel }">
@@ -194,18 +206,28 @@ const WorkerCard = {
                 :class="{ 'worker-card-formula-badge--stale': formulaStale }"
                 :aria-label="formulaStale ? 'Formula value is stale' : 'Formula value'"
                 :title="formulaStale ? 'Formula value is stale and will refresh on activation' : 'Formula value'">fx</span>
-          <template v-if="valueEditing">
-            <input class="worker-card-value-input"
-                   ref="valueEditInput"
-                   v-model="valueEditText"
-                   @keydown.stop
-                   @keydown.enter.prevent.stop="commitValueEdit"
-                   @keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"
-                   @blur="cancelValueEdit"
-                   @click.stop
-                   aria-label="Edit value">
+          <div v-if="valueEditing" class="worker-card-value-edit">
+            <div class="worker-card-value-edit-row">
+              <input class="worker-card-value-input"
+                     ref="valueEditInput"
+                     v-model="valueEditText"
+                     @keydown.stop
+                     @keydown.f1.prevent.stop="openFormulaHelp"
+                     @keydown.enter.prevent.stop="commitValueEdit"
+                     @keydown.escape.prevent.stop="cancelValueEdit({ restoreGridFocus: true })"
+                     @blur="onValueEditBlur"
+                     @select="rememberValueEditSelection"
+                     @click.stop
+                     aria-label="Edit value">
+              <button type="button"
+                      class="worker-card-formula-help-button"
+                      title="Formula help (F1)"
+                      aria-label="Open formula help. Shortcut F1."
+                      @pointerdown.prevent.stop
+                      @click.stop="openFormulaHelp">fx</button>
+            </div>
             <div v-if="valueEditError" class="worker-card-value-error">{{ valueEditError }}</div>
-          </template>
+          </div>
           <button v-else class="worker-card-value-main worker-card-value-main--button"
                   :class="'worker-card-value-main--' + valueAlignment"
                   :title="valueDisplay"
@@ -243,6 +265,9 @@ const WorkerCard = {
           <template v-else>{{ emptyLabel }}</template>
         </div>
       </div>
+      <FormulaHelpCard v-if="formulaHelpOpen"
+                       :position-style="formulaHelpPosition"
+                       @close="closeFormulaHelp" />
       <Teleport to="body">
         <div v-if="valueGraphOpen" class="modal-overlay value-graph-overlay" @click.self="closeValueGraph" @keydown.escape="closeValueGraph" tabindex="0" ref="valueGraphOverlay">
           <div class="modal value-graph-modal">
@@ -324,6 +349,9 @@ const WorkerCard = {
       valueEditText: '',
       valueEditError: '',
       valueEditIncludesName: false,
+      valueEditSelection: null,
+      formulaHelpOpen: false,
+      formulaHelpPosition: {},
       valueGraphOpen: false,
     };
   },
@@ -348,6 +376,8 @@ const WorkerCard = {
     this._closeValueEdit = (e) => {
       if (!this.valueEditing) return;
       if (this.$el?.contains?.(e.target)) return;
+      if (e.target?.closest?.('[data-formula-help]')) return;
+      this.formulaHelpOpen = false;
       this.cancelValueEdit();
     };
     document.addEventListener('click', this._closeMenu);
@@ -1008,6 +1038,7 @@ const WorkerCard = {
     },
     startValueEdit() {
       if (!this.isValue) return;
+      this.formulaHelpOpen = false;
       this.valueEditIncludesName = false;
       this.valueEditText = this.worker?.formula?.source || this.storedValueText;
       this.valueEditError = '';
@@ -1022,6 +1053,7 @@ const WorkerCard = {
     },
     startCompactValueEdit() {
       if (!this.isValue) return;
+      this.formulaHelpOpen = false;
       this.valueEditIncludesName = true;
       this.valueEditText = this.valueEditSourceText;
       this.valueEditError = '';
@@ -1036,6 +1068,7 @@ const WorkerCard = {
     },
     cancelValueEdit(options = {}) {
       const wasEditing = this.valueEditing;
+      this.formulaHelpOpen = false;
       this.valueEditing = false;
       this.valueEditText = '';
       this.valueEditError = '';
@@ -1045,6 +1078,61 @@ const WorkerCard = {
         renderLucideIcons(this.$el);
         if (options && options.restoreGridFocus === true) {
           this.$emit('value-edit-ended');
+        }
+      });
+    },
+    onValueEditBlur() {
+      if (this.formulaHelpOpen) return;
+      this.cancelValueEdit();
+    },
+    rememberValueEditSelection() {
+      const input = this.$refs.valueEditInput;
+      if (!input) return;
+      this.valueEditSelection = {
+        start: input.selectionStart,
+        end: input.selectionEnd,
+        direction: input.selectionDirection,
+      };
+    },
+    openFormulaHelp() {
+      if (!this.valueEditing) return;
+      const input = this.$refs.valueEditInput;
+      if (!input) return;
+      this.rememberValueEditSelection();
+      const rect = input.getBoundingClientRect();
+      const margin = 12;
+      const gap = 10;
+      const width = Math.min(420, Math.max(280, window.innerWidth - (margin * 2)));
+      const height = Math.min(520, Math.max(320, window.innerHeight - (margin * 2)));
+      let left = rect.right + gap;
+      if (left + width > window.innerWidth - margin) left = rect.left - width - gap;
+      if (left < margin) left = Math.max(margin, window.innerWidth - width - margin);
+      const top = Math.min(
+        Math.max(margin, rect.top),
+        Math.max(margin, window.innerHeight - height - margin),
+      );
+      this.formulaHelpPosition = {
+        left: `${left}px`,
+        top: `${top}px`,
+        width: `${width}px`,
+        maxHeight: `${height}px`,
+      };
+      this.formulaHelpOpen = true;
+    },
+    closeFormulaHelp() {
+      this.formulaHelpOpen = false;
+      this.$nextTick(() => {
+        const input = this.$refs.valueEditInput;
+        if (!input) return;
+        input.focus?.();
+        const selection = this.valueEditSelection;
+        if (
+          selection
+          && Number.isInteger(selection.start)
+          && Number.isInteger(selection.end)
+          && typeof input.setSelectionRange === 'function'
+        ) {
+          input.setSelectionRange(selection.start, selection.end, selection.direction || 'none');
         }
       });
     },

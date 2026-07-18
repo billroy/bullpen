@@ -59,6 +59,7 @@ from server import service_worker as service_worker_mod
 from server import values as value_mod
 from server import formulas as formula_mod
 from server import formula_runtime
+from server.formula_help import formula_function_help, formula_help_index
 from server.layout_runtime import bump_layout_revision
 from server.workers import _terminate_proc
 from server.transfer import TransferError, transfer_worker
@@ -615,6 +616,28 @@ def register_events(socketio, app):
             return False
         emit("error", {"message": f"{event_name} unavailable for MCP-authenticated clients"})
         return True
+
+    @socketio.on("formula-help:index")
+    def on_formula_help_index(data):
+        emit("formula-help:indexed", {
+            "request_id": (data or {}).get("request_id"),
+            "functions": formula_help_index(),
+        })
+
+    @socketio.on("formula-help:function")
+    def on_formula_function_help(data):
+        payload = data if isinstance(data, dict) else {}
+        detail = formula_function_help(payload.get("name"))
+        if detail is None:
+            emit("formula-help:error", {
+                "request_id": payload.get("request_id"),
+                "error": "Unknown formula function",
+            })
+            return
+        emit("formula-help:function-loaded", {
+            "request_id": payload.get("request_id"),
+            "function": detail,
+        })
 
     def _ensure_workspace_membership(ws_id):
         """Ensure the current socket is joined to the target workspace room.
