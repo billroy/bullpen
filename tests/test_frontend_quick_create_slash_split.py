@@ -47,41 +47,19 @@ def test_toolbar_quick_create_placeholder_mentions_ticket_and_description():
     assert 'placeholder="New ticket / description, or > commands"' in text
 
 
-def test_quick_calculate_evaluator_returns_results_and_errors():
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node not available")
+def test_quick_calculate_uses_server_formula_preview_not_a_second_parser():
+    commands = _read("static/commands.js")
+    app = _read("static/app.js")
+    toolbar = _read("static/components/TopToolbar.js")
 
-    script = f"""
-const fs = require('fs');
-const vm = require('vm');
-const source = fs.readFileSync({json.dumps(str(ROOT / "static" / "commands.js"))}, 'utf8');
-const context = {{ window: {{}}, console }};
-vm.createContext(context);
-vm.runInContext(source + `
-  const calculate = window.BullpenCommands.evaluateQuickCalculate;
-  globalThis.__results = {{
-    precedence: calculate('=2+3*4'),
-    exponent: calculate('=2^3^2'),
-    functionCall: calculate('=sqrt(16)+max(2, 5)'),
-    division: calculate('=2/0'),
-    blockedIdentifier: calculate('=window.alert(1)'),
-  }};
-`, context);
-process.stdout.write(JSON.stringify(context.__results));
-"""
-    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
-    assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
-
-    assert payload["precedence"] == {"ok": True, "expression": "2+3*4", "value": 14, "result": "14"}
-    assert payload["exponent"] == {"ok": True, "expression": "2^3^2", "value": 512, "result": "512"}
-    assert payload["functionCall"] == {"ok": True, "expression": "sqrt(16)+max(2, 5)", "value": 9, "result": "9"}
-    assert payload["division"]["ok"] is False
-    assert payload["division"]["expression"] == "2/0"
-    assert "Division by zero" in payload["division"]["error"]
-    assert payload["blockedIdentifier"]["ok"] is False
-    assert "Unknown constant" in payload["blockedIdentifier"]["error"]
+    assert "QuickCalculateParser" not in commands
+    assert "QUICK_CALCULATE_FUNCTIONS" not in commands
+    assert "evaluateQuickCalculate" not in commands
+    assert "function requestQuickCalculate(source)" in app
+    assert "socket.emit('formula:preview'" in app
+    assert "socket.on('formula:previewed', onPreviewed);" in app
+    assert ':quick-calculate="requestQuickCalculate"' in app
+    assert "await this.quickCalculate(submittedText)" in toolbar
 
 
 def test_toolbar_quick_calculate_submits_to_toast_not_ticket_create():
@@ -97,12 +75,29 @@ const toolbarSource = fs.readFileSync({json.dumps(str(ROOT / "static" / "compone
 const context = {{ window: {{}}, console }};
 vm.createContext(context);
 vm.runInContext(commandsSource + '\\n' + toolbarSource + `
+  globalThis.__toolbar = TopToolbar;
+`, context);
+const TopToolbar = context.__toolbar;
+
+(async () => {{
   const emitted = [];
+  const requested = [];
   const component = {{
-    quickCreateText: '=2+2*3',
+    quickCreateText: '=SUM(E45:X49)',
+    quickCalculatePending: false,
     showPalette: true,
     paletteOverlayOpen: true,
     selectedPaletteIndex: 0,
+    quickCalculate: async source => {{
+      requested.push(source);
+      return {{
+        ok: true,
+        expression: 'SUM(E45:X49)',
+        value: 7.5,
+        result: '7.5',
+        warnings: [],
+      }};
+    }},
     focusActiveInput() {{ this.focused = true; }},
     closePaletteOverlay: TopToolbar.methods.closePaletteOverlay,
     submitQuickCalculate: TopToolbar.methods.submitQuickCalculate,
@@ -111,14 +106,20 @@ vm.runInContext(commandsSource + '\\n' + toolbarSource + `
   Object.defineProperty(component, 'paletteMode', {{
     get() {{ return TopToolbar.computed.paletteMode.call(component); }},
   }});
-  TopToolbar.methods.submitQuickCreate.call(component);
+  await TopToolbar.methods.submitQuickCreate.call(component);
 
   const errorEmitted = [];
   const errorComponent = {{
-    quickCreateText: '=2/0',
+    quickCreateText: '=1/0',
+    quickCalculatePending: false,
     showPalette: false,
     paletteOverlayOpen: false,
     selectedPaletteIndex: 0,
+    quickCalculate: async () => ({{
+      ok: false,
+      expression: '1/0',
+      error: {{ code: '#DIV/0!', message: 'Division by zero' }},
+    }}),
     focusActiveInput() {{ this.focused = true; }},
     closePaletteOverlay: TopToolbar.methods.closePaletteOverlay,
     submitQuickCalculate: TopToolbar.methods.submitQuickCalculate,
@@ -127,10 +128,48 @@ vm.runInContext(commandsSource + '\\n' + toolbarSource + `
   Object.defineProperty(errorComponent, 'paletteMode', {{
     get() {{ return TopToolbar.computed.paletteMode.call(errorComponent); }},
   }});
-  TopToolbar.methods.submitQuickCreate.call(errorComponent);
+  await TopToolbar.methods.submitQuickCreate.call(errorComponent);
 
-  globalThis.__result = {{
+  let finishRequest;
+  const raceEmitted = [];
+  const raceComponent = {{
+    quickCreateText: '=SUM(A1:A2)',
+    quickCalculatePending: false,
+    showPalette: true,
+    paletteOverlayOpen: true,
+    selectedPaletteIndex: 0,
+    quickCalculate: () => new Promise(resolve => {{ finishRequest = resolve; }}),
+    focusActiveInput() {{}},
+    closePaletteOverlay: TopToolbar.methods.closePaletteOverlay,
+    $emit(...args) {{ raceEmitted.push(args); }},
+  }};
+  const racePromise = TopToolbar.methods.submitQuickCalculate.call(raceComponent);
+  raceComponent.quickCreateText = '=SUM(B1:B2)';
+  finishRequest({{
+    ok: true,
+    expression: 'SUM(A1:A2)',
+    result: '3',
+    warnings: [],
+  }});
+  await racePromise;
+
+  const disconnectEmitted = [];
+  const disconnectComponent = {{
+    quickCreateText: '=SUM(A1:B1)',
+    quickCalculatePending: false,
+    showPalette: false,
+    paletteOverlayOpen: false,
+    selectedPaletteIndex: 0,
+    quickCalculate: async () => {{ throw new Error('Disconnected from Bullpen server'); }},
+    focusActiveInput() {{ this.focused = true; }},
+    closePaletteOverlay: TopToolbar.methods.closePaletteOverlay,
+    $emit(...args) {{ disconnectEmitted.push(args); }},
+  }};
+  await TopToolbar.methods.submitQuickCalculate.call(disconnectComponent);
+
+  const result = {{
     emitted,
+    requested,
     text: component.quickCreateText,
     showPalette: component.showPalette,
     paletteOverlayOpen: component.paletteOverlayOpen,
@@ -138,22 +177,46 @@ vm.runInContext(commandsSource + '\\n' + toolbarSource + `
     errorText: errorComponent.quickCreateText,
     errorShowPalette: errorComponent.showPalette,
     errorFocused: errorComponent.focused === true,
+    errorPending: errorComponent.quickCalculatePending,
+    raceText: raceComponent.quickCreateText,
+    raceOverlayOpen: raceComponent.paletteOverlayOpen,
+    raceEmitted,
+    disconnectText: disconnectComponent.quickCreateText,
+    disconnectPending: disconnectComponent.quickCalculatePending,
+    disconnectFocused: disconnectComponent.focused === true,
+    disconnectEmitted,
   }};
-`, context);
-process.stdout.write(JSON.stringify(context.__result));
+  process.stdout.write(JSON.stringify(result));
+}})().catch(error => {{
+  console.error(error);
+  process.exitCode = 1;
+}});
 """
     result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
 
-    assert payload["emitted"] == [["toast", "2+2*3 = 8", "success"]]
+    assert payload["requested"] == ["=SUM(E45:X49)"]
+    assert payload["emitted"] == [["toast", "SUM(E45:X49) = 7.5", "success"]]
     assert payload["text"] == ""
     assert payload["showPalette"] is False
     assert payload["paletteOverlayOpen"] is False
     assert payload["errorEmitted"][0][0] == "toast"
     assert payload["errorEmitted"][0][2] == "error"
-    assert payload["errorEmitted"][0][1].startswith("2/0 = Division by zero")
-    assert payload["errorText"] == "=2/0"
+    assert payload["errorEmitted"][0][1] == "1/0 = #DIV/0! Division by zero"
+    assert payload["errorText"] == "=1/0"
     assert payload["errorShowPalette"] is True
     assert payload["errorFocused"] is True
+    assert payload["errorPending"] is False
+    assert payload["raceText"] == "=SUM(B1:B2)"
+    assert payload["raceOverlayOpen"] is True
+    assert payload["raceEmitted"] == [["toast", "SUM(A1:A2) = 3", "success"]]
+    assert payload["disconnectText"] == "=SUM(A1:B1)"
+    assert payload["disconnectPending"] is False
+    assert payload["disconnectFocused"] is True
+    assert payload["disconnectEmitted"] == [[
+        "toast",
+        "SUM(A1:B1) = Disconnected from Bullpen server",
+        "error",
+    ]]
     assert all(call[0] != "quick-create-task" for call in payload["emitted"] + payload["errorEmitted"])

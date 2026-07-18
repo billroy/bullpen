@@ -1252,6 +1252,46 @@ const app = createApp({
       pendingQuickCreates.push({ title, description });
       socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));
     }
+    function requestQuickCalculate(source) {
+      return new Promise((resolve, reject) => {
+        if (!socket?.connected) {
+          reject(new Error('Disconnected from Bullpen server'));
+          return;
+        }
+        const expectedWorkspaceId = activeWorkspaceId.value;
+        if (!expectedWorkspaceId) {
+          reject(new Error('Open a project first'));
+          return;
+        }
+        const requestId = _nextRequestId('formula-preview');
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Formula calculation timed out'));
+        }, 15000);
+        const cleanup = () => {
+          clearTimeout(timer);
+          socket.off('formula:previewed', onPreviewed);
+          socket.off('disconnect', onDisconnect);
+        };
+        const onPreviewed = (payload) => {
+          if (!payload || payload.request_id !== requestId) return;
+          if (payload.workspaceId && payload.workspaceId !== expectedWorkspaceId) return;
+          cleanup();
+          resolve(payload);
+        };
+        const onDisconnect = () => {
+          cleanup();
+          reject(new Error('Disconnected from Bullpen server'));
+        };
+        socket.on('formula:previewed', onPreviewed);
+        socket.on('disconnect', onDisconnect);
+        socket.emit('formula:preview', {
+          source: String(source || ''),
+          request_id: requestId,
+          workspaceId: expectedWorkspaceId,
+        });
+      });
+    }
     function updateTask(data) {
       return emitSocketAction('task:update', data, {
         offlineMessage: 'Disconnected from Bullpen server. Ticket changes were not saved.',
@@ -2786,7 +2826,7 @@ const app = createApp({
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
       showCreateModal, showColumnManager, bentoImportReview, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
-      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setAmbientMuteWhileIdle, setProviderColor, resetProviderColors, setWorkerPillStyle, resetWorkerPillStyles, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentAmbientMuteWhileIdle, currentProviderColors, defaultProviderColors, currentWorkerPillStyles, defaultWorkerPillStyles, createTask, quickCreateTask, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
+      toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setAmbientMuteWhileIdle, setProviderColor, resetProviderColors, setWorkerPillStyle, resetWorkerPillStyles, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentAmbientMuteWhileIdle, currentProviderColors, defaultProviderColors, currentWorkerPillStyles, defaultWorkerPillStyles, createTask, quickCreateTask, requestQuickCalculate, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
@@ -2838,6 +2878,7 @@ const app = createApp({
         :worker-automation-paused="state.config.worker_automation_paused === true"
         :worker-minimap-collapsed="workerMinimapCollapsed"
         :quick-create-clear-token="quickCreateClearToken"
+        :quick-calculate="requestQuickCalculate"
         :palette-commands="paletteCommands"
         @toggle-left-pane="toggleLeftPane"
         @export-workspace="exportWorkspace"

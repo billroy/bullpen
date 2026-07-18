@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerPillStyles', 'defaultWorkerPillStyles', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerPillStyles', 'defaultWorkerPillStyles', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'quickCalculate', 'paletteCommands'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -31,6 +31,7 @@ const TopToolbar = {
       showMainMenu: false,
       showSafetyMenu: false,
       quickCreateText: '',
+      quickCalculatePending: false,
       showPalette: false,
       paletteOverlayOpen: false,
       selectedPaletteIndex: 0,
@@ -86,9 +87,11 @@ const TopToolbar = {
           {
             kind: 'calculate',
             title: expression ? `Calculate: ${expression}` : 'Calculate',
-            subtitle: expression ? 'Press Enter for result' : 'Enter an expression after =',
+            subtitle: expression ? 'Press Enter to calculate with sheet formulas' : 'Enter a formula after =',
             shortcut: 'Enter',
-            disabledReason: expression ? '' : 'Expression cannot be empty',
+            disabledReason: this.quickCalculatePending
+              ? 'Calculating…'
+              : (expression ? '' : 'Expression cannot be empty'),
           },
         ];
       }
@@ -511,22 +514,48 @@ const TopToolbar = {
         this.closePaletteOverlay();
       }
     },
-    submitQuickCalculate() {
-      const calculation = window.BullpenCommands?.evaluateQuickCalculate
-        ? window.BullpenCommands.evaluateQuickCalculate(this.quickCreateText)
-        : { ok: false, expression: '', error: 'Calculator unavailable' };
-      const expression = calculation.expression || String(this.quickCreateText || '').trim();
-      if (calculation.ok) {
-        this.$emit('toast', `${calculation.expression} = ${calculation.result}`, 'success');
-        this.quickCreateText = '';
-        this.closePaletteOverlay();
+    async submitQuickCalculate() {
+      if (this.quickCalculatePending) return;
+      const submittedText = String(this.quickCreateText || '');
+      const expression = submittedText.trimStart().slice(1).trim();
+      if (typeof this.quickCalculate !== 'function') {
+        this.$emit('toast', `${expression || '='} = Formula calculation unavailable`, 'error');
         return;
       }
-      this.$emit('toast', `${expression || '='} = ${calculation.error}`, 'error');
-      this.showPalette = true;
-      this.focusActiveInput();
+      this.quickCalculatePending = true;
+      try {
+        const calculation = await this.quickCalculate(submittedText);
+        const renderedExpression = calculation?.expression || expression;
+        if (calculation?.ok) {
+          const warnings = Array.isArray(calculation.warnings) ? calculation.warnings : [];
+          const warning = warnings.length ? ` — ${warnings[0]}` : '';
+          this.$emit('toast', `${renderedExpression} = ${calculation.result}${warning}`, 'success');
+          if (this.quickCreateText === submittedText) {
+            this.quickCreateText = '';
+            this.closePaletteOverlay();
+          }
+          return;
+        }
+        const error = calculation?.error;
+        const errorText = typeof error === 'string'
+          ? error
+          : [error?.code, error?.message].filter(Boolean).join(' ');
+        this.$emit('toast', `${renderedExpression || '='} = ${errorText || 'Invalid formula'}`, 'error');
+        if (this.quickCreateText === submittedText) {
+          this.showPalette = true;
+          this.focusActiveInput();
+        }
+      } catch (err) {
+        this.$emit('toast', `${expression || '='} = ${err?.message || 'Formula calculation unavailable'}`, 'error');
+        if (this.quickCreateText === submittedText) {
+          this.showPalette = true;
+          this.focusActiveInput();
+        }
+      } finally {
+        this.quickCalculatePending = false;
+      }
     },
-    submitQuickCreate() {
+    async submitQuickCreate() {
       const text = this.quickCreateText.trim();
       if (!text) return;
       if (this.paletteMode === 'command') {
@@ -546,8 +575,7 @@ const TopToolbar = {
         return;
       }
       if (this.paletteMode === 'calculate') {
-        this.submitQuickCalculate();
-        return;
+        return this.submitQuickCalculate();
       }
       const payload = this.splitQuickCreateText(text);
       if (!payload.title) return;

@@ -3715,6 +3715,61 @@ def register_events(socketio, app):
             _after_commit(lambda: _drain_formula_trigger_outbox(bp_dir, ws_id))
         return generation
 
+    @socketio.on("formula:preview")
+    @with_lock
+    def on_formula_preview(data):
+        """Evaluate one formula against a workspace snapshot without mutating it."""
+        data = data or {}
+        ws_id, bp_dir = _resolve(data)
+        request_id = data.get("request_id")
+        raw_source = str(data.get("source") or "").strip()
+        base_payload = {
+            "request_id": request_id,
+            "workspaceId": ws_id,
+            "source": raw_source,
+            "expression": raw_source[1:].strip() if raw_source.startswith("=") else raw_source,
+        }
+        try:
+            if not raw_source.startswith("="):
+                raise formula_mod.FormulaError("#PARSE!", "Formula must start with =")
+            formula = formula_mod.normalize_formula(raw_source)
+            if formula is None:
+                raise formula_mod.FormulaError("#PARSE!", "Expression is empty")
+            layout = _load_layout(bp_dir)
+            config = read_json(os.path.join(bp_dir, "config.json"))
+            result = formula_mod.evaluate_formula(
+                formula["source"],
+                layout.get("slots", []),
+                current_index=None,
+                cols=_safe_legacy_cols(config),
+                timezone_name=config.get("timezone", "UTC"),
+            )
+            value, resolved_value_type = formula_mod.coerce_formula_result(result.value, "auto")
+        except formula_mod.FormulaError as exc:
+            emit("formula:previewed", {
+                **base_payload,
+                "ok": False,
+                "error": exc.payload(),
+            })
+            return
+
+        emit("formula:previewed", {
+            **base_payload,
+            "ok": True,
+            "source": formula["source"],
+            "expression": formula["source"][1:].strip(),
+            "value": value,
+            "resolved_value_type": resolved_value_type,
+            "result": value_mod.format_value(
+                value,
+                {"kind": "general"},
+                resolved_value_type=resolved_value_type,
+            ),
+            "dependencies": result.dependencies,
+            "warnings": result.warnings,
+            "volatile": result.volatile,
+        })
+
     @socketio.on("value:set")
     @with_lock
     def on_value_set(data):
