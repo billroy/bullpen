@@ -412,6 +412,10 @@ def test_value_shortcut_editor_parses_and_creates_values():
     assert "this.commitValueShortcutEditor({ openModal: e.metaKey || e.ctrlKey });" in text
     assert "this.createWorkerAndOpenConfig({ type: 'value', fields: parsed.fields });" in text
     assert "if (e.defaultPrevented) return;" in text
+    assert "valueShortcutHelpOpen: false" in text
+    assert "e.key === 'F1'" in text
+    assert "this.openValueShortcutFormulaHelp();" in text
+    assert "fx Help" in text
 
 
 def test_value_shortcut_parser_handles_label_less_colon_values():

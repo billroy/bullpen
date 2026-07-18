@@ -36,7 +36,10 @@ const BullpenTab = {
   MINIMAP_HEADER_PX: 30,
   props: ['layout', 'config', 'profiles', 'tasks', 'taskById', 'workspace', 'workspaceId', 'multipleWorkspaces', 'minimapCollapsed'],
   emits: ['add-worker', 'configure-worker', 'select-task', 'open-focus', 'transfer-worker', 'set-minimap-collapsed'],
-  components: { WorkerCard },
+  components: {
+    WorkerCard,
+    FormulaHelpCard: typeof FormulaHelpCard === 'undefined' ? {} : FormulaHelpCard,
+  },
   data() {
     return {
       showLibrary: false,
@@ -68,6 +71,10 @@ const BullpenTab = {
       isPanning: false,
       liveMessage: '',
       valueShortcutEditor: null,
+      valueShortcutHelpOpen: false,
+      valueShortcutHelpInitialQuery: '',
+      valueShortcutHelpPosition: {},
+      valueShortcutSelection: null,
       columnResize: null,
       draggingColumnWidth: null,
       pendingColumnWidth: null,
@@ -230,13 +237,26 @@ const BullpenTab = {
                class="value-shortcut-editor"
                :style="valueShortcutEditorStyle"
                @click.stop>
-            <input class="value-shortcut-input"
-                   ref="valueShortcutInput"
-                   v-model="valueShortcutEditor.text"
-                   @keydown.stop="onValueShortcutKeydown"
-                   aria-label="Create value worker">
+            <div class="value-shortcut-edit-row">
+              <input class="value-shortcut-input"
+                     ref="valueShortcutInput"
+                     v-model="valueShortcutEditor.text"
+                     @keydown.stop="onValueShortcutKeydown"
+                     @select="rememberValueShortcutSelection"
+                     aria-label="Create value worker">
+              <button type="button"
+                      class="worker-card-formula-help-button value-shortcut-formula-help-button"
+                      title="Formula help (F1)"
+                      aria-label="Open formula help. Shortcut F1."
+                      @pointerdown.prevent.stop
+                      @click.stop="openValueShortcutFormulaHelp">fx Help</button>
+            </div>
             <div v-if="valueShortcutEditor.error" class="value-shortcut-error">{{ valueShortcutEditor.error }}</div>
           </div>
+          <FormulaHelpCard v-if="valueShortcutHelpOpen"
+                           :initial-query="valueShortcutHelpInitialQuery"
+                           :position-style="valueShortcutHelpPosition"
+                           @close="closeValueShortcutFormulaHelp" />
           <div v-if="ghostCell && emptyMenuOpenFor(ghostCell)"
                class="worker-menu empty-slot-menu"
                :style="emptyMenuStyle"
@@ -1595,6 +1615,7 @@ const BullpenTab = {
     openValueShortcutEditor(coord, initialText = '') {
       if (!coord || !this.isWritableCoord(coord) || this.itemAtCoord(coord)) return;
       this.closeEmptyMenu();
+      this.valueShortcutHelpOpen = false;
       this.valueShortcutEditor = {
         coord: { ...coord },
         text: initialText,
@@ -1611,6 +1632,7 @@ const BullpenTab = {
       });
     },
     closeValueShortcutEditor({ focusViewport = true } = {}) {
+      this.valueShortcutHelpOpen = false;
       this.valueShortcutEditor = null;
       if (focusViewport) this.$nextTick(() => this.$refs.viewport?.focus());
     },
@@ -1645,6 +1667,12 @@ const BullpenTab = {
       this.closeValueShortcutEditor();
     },
     onValueShortcutKeydown(e) {
+      if (e.key === 'F1') {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openValueShortcutFormulaHelp();
+        return;
+      }
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -1656,6 +1684,41 @@ const BullpenTab = {
         e.stopPropagation();
         this.commitValueShortcutEditor({ openModal: e.metaKey || e.ctrlKey });
       }
+    },
+    rememberValueShortcutSelection() {
+      const input = this.$refs.valueShortcutInput;
+      if (!input) return;
+      this.valueShortcutSelection = {
+        start: input.selectionStart,
+        end: input.selectionEnd,
+        direction: input.selectionDirection,
+      };
+    },
+    openValueShortcutFormulaHelp() {
+      if (!this.valueShortcutEditor) return;
+      const input = this.$refs.valueShortcutInput;
+      if (!input) return;
+      this.rememberValueShortcutSelection();
+      this.valueShortcutHelpInitialQuery = bullpenFormulaHelpQuery(input);
+      this.valueShortcutHelpPosition = bullpenFormulaHelpPosition(input);
+      this.valueShortcutHelpOpen = true;
+    },
+    closeValueShortcutFormulaHelp() {
+      this.valueShortcutHelpOpen = false;
+      this.$nextTick(() => {
+        const input = this.$refs.valueShortcutInput;
+        if (!input) return;
+        input.focus?.();
+        const selection = this.valueShortcutSelection;
+        if (
+          selection
+          && Number.isInteger(selection.start)
+          && Number.isInteger(selection.end)
+          && typeof input.setSelectionRange === 'function'
+        ) {
+          input.setSelectionRange(selection.start, selection.end, selection.direction || 'none');
+        }
+      });
     },
     onKeydown(e) {
       const t = e.target;

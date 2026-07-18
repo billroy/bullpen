@@ -2,9 +2,10 @@
 
 ## Purpose
 
-Bullpen formulas are edited primarily in Value cells, where there is not enough
-room to carry reference material. The MVP provides a small, explicit handbook
-that can be consulted without abandoning the in-cell edit.
+Bullpen formulas are created primarily by selecting an empty grid cell and
+typing `=`. The MVP provides a small, explicit handbook that can be consulted
+while creating that expression, without first creating a worker or opening its
+configuration.
 
 The governing design criterion is functional lightness: keep only the pieces
 that make reference help useful, and avoid turning it into an editor subsystem.
@@ -13,12 +14,19 @@ that make reference help useful, and avoid turning it into an editor subsystem.
 
 ### Entry point
 
-- Show a small `fx` help button beside the in-cell Value editor.
-- Open the same help with `F1` while that editor has focus.
-- Never open help automatically or in response to formula text.
+- In the empty-cell expression editor, show a labeled `fx Help` button beside
+  the input.
+- Open the same help with `F1` while that input has focus.
+- Keep the same controls in the editor for an existing Value cell as a
+  secondary workflow.
+- Do not open help automatically while the user types.
 
-The button is available whenever a Value cell is being edited, including before
-the value begins with `=`, so it can help someone start a formula.
+The button is available throughout Value creation, including before the value
+begins with `=`, so it can help someone start a formula. When help is explicitly
+opened, seed handbook search from the function fragment immediately before the
+caret. For example, `=SUM` followed by `F1` opens the handbook filtered to
+`SUM`. This lookup happens only on the explicit action; it is not continuous
+completion or an automatic popup.
 
 ### Reference card
 
@@ -41,16 +49,16 @@ input's caret or selection.
 
 ### Edit-session behavior
 
-Opening or using the handbook must not commit or cancel the cell edit. The
-formula draft, validation state, caret, and selection remain intact while focus
-moves between the input and the reference card.
+Opening or using the handbook must not create a worker, commit, or cancel the
+cell edit. The formula draft, validation state, caret, and selection remain
+intact while focus moves between the input and the reference card.
 
 The existing explicit editor actions keep their meaning:
 
 - `Enter` commits the edit.
 - `Escape` in the formula input cancels the edit.
 - `Escape` in the handbook closes the handbook and resumes the edit.
-- Clicking outside both the cell and handbook cancels the edit as it does now.
+- Existing outside-click behavior remains unchanged.
 
 ### Loading
 
@@ -85,20 +93,29 @@ retryable error. Formula editing continues to work normally.
 
 ## Acceptance criteria
 
-1. A fresh page emits no `formula-help:*` requests.
-2. Clicking `fx` or pressing `F1` opens the function list and makes the first
-   index request.
-3. Opening one function makes one detail request and does not fetch other
+1. Starting from an empty cell, typing `=SUM` opens the expression-creation
+   editor with a visible `fx Help` control.
+2. Pressing `F1` in that editor opens the handbook filtered to `SUM`, preserves
+   the exact draft and selection, and makes the first index request.
+3. Closing help returns focus to the same creation input; pressing `Enter`
+   creates the Value worker with the original expression.
+4. A fresh page emits no `formula-help:*` requests.
+5. Opening one function makes one detail request and does not fetch other
    functions' detail.
-4. Reopening an already fetched function uses the page-memory cache.
-5. Searching finds all 173 public functions by name, category, signature, or
+6. Reopening an already fetched function uses the page-memory cache.
+7. Searching finds all 173 public functions by name, category, signature, or
    short summary.
-6. Opening and closing help preserves the exact in-cell draft and selection.
-7. `Enter`, `Escape`, and outside-click behavior remain predictable as described
+8. The secondary existing-Value editor provides the same `fx` and `F1`
+   reference access.
+9. `Enter`, `Escape`, and outside-click behavior remain predictable as described
    above.
-8. The handbook remains usable at narrow viewport widths and does not obscure
+10. The handbook remains usable at narrow viewport widths and does not obscure
    the active input when the viewport provides room beside it.
-9. Missing or malformed help data cannot prevent formula editing.
+11. Missing or malformed help data cannot prevent expression creation.
+
+The MVP cannot be considered complete unless criteria 1–3 pass through the
+empty-cell creation path. Tests that begin with an already-created Value worker
+are secondary coverage and cannot substitute for that journey.
 
 ## Deferred work
 
@@ -108,8 +125,8 @@ The following are intentionally outside the MVP:
 - a global header icon, permanent side rail, or Ticket/Formula inspector tabs;
 - tutorials, formula-convention articles, error-code articles, and category
   landing pages;
-- autocomplete, signature popovers, caret inspection, automatic function
-  detection, or suggestions;
+- autocomplete, signature popovers, continuous caret inspection, automatic
+  popups, or suggestions;
 - inserting functions or examples directly into the formula;
 - pinning, dragging, resizing, or persisting the reference card;
 - persisted search, navigation, or panel state between page loads;

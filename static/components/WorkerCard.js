@@ -266,6 +266,7 @@ const WorkerCard = {
         </div>
       </div>
       <FormulaHelpCard v-if="formulaHelpOpen"
+                       :initial-query="formulaHelpInitialQuery"
                        :position-style="formulaHelpPosition"
                        @close="closeFormulaHelp" />
       <Teleport to="body">
@@ -351,6 +352,7 @@ const WorkerCard = {
       valueEditIncludesName: false,
       valueEditSelection: null,
       formulaHelpOpen: false,
+      formulaHelpInitialQuery: '',
       formulaHelpPosition: {},
       valueGraphOpen: false,
     };
@@ -1099,24 +1101,8 @@ const WorkerCard = {
       const input = this.$refs.valueEditInput;
       if (!input) return;
       this.rememberValueEditSelection();
-      const rect = input.getBoundingClientRect();
-      const margin = 12;
-      const gap = 10;
-      const width = Math.min(420, Math.max(280, window.innerWidth - (margin * 2)));
-      const height = Math.min(520, Math.max(320, window.innerHeight - (margin * 2)));
-      let left = rect.right + gap;
-      if (left + width > window.innerWidth - margin) left = rect.left - width - gap;
-      if (left < margin) left = Math.max(margin, window.innerWidth - width - margin);
-      const top = Math.min(
-        Math.max(margin, rect.top),
-        Math.max(margin, window.innerHeight - height - margin),
-      );
-      this.formulaHelpPosition = {
-        left: `${left}px`,
-        top: `${top}px`,
-        width: `${width}px`,
-        maxHeight: `${height}px`,
-      };
+      this.formulaHelpInitialQuery = bullpenFormulaHelpQuery(input);
+      this.formulaHelpPosition = bullpenFormulaHelpPosition(input);
       this.formulaHelpOpen = true;
     },
     closeFormulaHelp() {

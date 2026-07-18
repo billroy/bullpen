@@ -2,6 +2,34 @@ let bullpenFormulaHelpIndexCache = null;
 let bullpenFormulaHelpIndexPromise = null;
 const bullpenFormulaHelpDetailCache = new Map();
 
+function bullpenFormulaHelpPosition(input) {
+  const rect = input.getBoundingClientRect();
+  const margin = 12;
+  const gap = 10;
+  const width = Math.min(420, Math.max(280, window.innerWidth - (margin * 2)));
+  const height = Math.min(520, Math.max(320, window.innerHeight - (margin * 2)));
+  let left = rect.right + gap;
+  if (left + width > window.innerWidth - margin) left = rect.left - width - gap;
+  if (left < margin) left = Math.max(margin, window.innerWidth - width - margin);
+  const top = Math.min(
+    Math.max(margin, rect.top),
+    Math.max(margin, window.innerHeight - height - margin),
+  );
+  return {
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
+    maxHeight: `${height}px`,
+  };
+}
+
+function bullpenFormulaHelpQuery(input) {
+  const value = String(input?.value || '');
+  const caret = Number.isInteger(input?.selectionStart) ? input.selectionStart : value.length;
+  const match = value.slice(0, caret).match(/([A-Za-z][A-Za-z0-9.]*)$/);
+  return match ? match[1].toUpperCase() : '';
+}
+
 function requestBullpenFormulaHelp(requestEvent, responseEvent, payload = {}) {
   const socket = window._bullpenSocket;
   if (!socket?.connected) return Promise.reject(new Error('Bullpen is disconnected'));
@@ -67,6 +95,10 @@ async function loadBullpenFormulaHelpDetail(name) {
 
 const FormulaHelpCard = {
   props: {
+    initialQuery: {
+      type: String,
+      default: '',
+    },
     positionStyle: {
       type: Object,
       default: () => ({}),
@@ -160,7 +192,7 @@ const FormulaHelpCard = {
   `,
   data() {
     return {
-      query: '',
+      query: this.initialQuery,
       functions: [],
       selectedName: '',
       detail: null,

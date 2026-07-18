@@ -3996,6 +3996,22 @@ body.worker-singleton-dragging * {
   pointer-events: auto;
 }
 
+.value-shortcut-edit-row {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+}
+
+.value-shortcut-edit-row .value-shortcut-input {
+  flex: 1 1 auto;
+}
+
+.value-shortcut-formula-help-button {
+  flex-basis: auto;
+  min-width: 54px;
+  white-space: nowrap;
+}
+
 .value-shortcut-input,
 .worker-card-value-input {
   width: 100%;
