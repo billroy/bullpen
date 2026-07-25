@@ -31,6 +31,7 @@ from server.file_browser import (
     create_directory,
     file_exists,
     move_file,
+    open_file_in_browser,
     read_binary_file,
     read_text_file,
     write_binary_file,
@@ -1653,6 +1654,39 @@ def register_events(socketio, app):
             "ok": True,
         })
         emit("files:binary", result)
+
+    @socketio.on("files:open_external")
+    def on_files_open_external(data):
+        ws_id, _bp_dir = _resolve(data or {})
+        if not ws_id:
+            return
+        manager = app.config["manager"]
+        ws = manager.get_or_activate(ws_id)
+        if not ws:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": "Unknown workspace",
+            })
+            return
+        try:
+            result = open_file_in_browser(ws.path, str((data or {}).get("path") or ""))
+        except FileBrowserError as e:
+            emit("files:error", {
+                "workspaceId": ws_id,
+                "request_id": (data or {}).get("request_id"),
+                "ok": False,
+                "error": e.message,
+                "status": e.status,
+            })
+            return
+        result.update({
+            "workspaceId": ws_id,
+            "request_id": (data or {}).get("request_id"),
+            "ok": True,
+        })
+        emit("files:opened_external", result)
 
     @socketio.on("files:exists")
     def on_files_exists(data):

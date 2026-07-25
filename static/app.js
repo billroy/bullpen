@@ -1843,6 +1843,15 @@ const app = createApp({
         errorMessage: 'Failed to load file',
       });
     }
+    function requestFileOpenExternal(payload = {}) {
+      return _requestFileEvent({
+        requestEvent: 'files:open_external',
+        successEvent: 'files:opened_external',
+        payload,
+        timeoutMessage: 'Open in browser timed out',
+        errorMessage: 'Could not open file in browser',
+      });
+    }
     function requestFileExists(payload = {}) {
       return _requestFileEvent({
         requestEvent: 'files:exists',
@@ -2830,7 +2839,7 @@ const app = createApp({
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
       saveWorkerConfig, saveWorkersConfig, assignTask, startWorkerSlot,
-      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCodexModels, requestClaudeModels, requestCommits, requestCommitDiff, requestGitStatus, requestGitBranchDiff, requestGitAction, requestFileTree, requestFileRead, requestFileBinary, requestFileExists, requestFileMkdir, requestFileWrite, requestFileUpload, requestFileMove, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
+      stopWorkerSlot, stopWorkerSlots, restartServiceSlot, requestServicePreview, requestOpenCodeModels, requestCodexModels, requestClaudeModels, requestCommits, requestCommitDiff, requestGitStatus, requestGitBranchDiff, requestGitAction, requestFileTree, requestFileRead, requestFileBinary, requestFileOpenExternal, requestFileExists, requestFileMkdir, requestFileWrite, requestFileUpload, requestFileMove, pauseAutomation, resumeAutomation, stopTheLine, pauseAllAutomation, resumeAllAutomation, stopAllLines, openServiceSite, updateConfig, saveColumns, saveTeam, loadTeam, saveProfile, addToast, dismissToast,
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,

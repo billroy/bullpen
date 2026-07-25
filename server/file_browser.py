@@ -4,11 +4,66 @@ import mimetypes
 import os
 import subprocess
 import tempfile
+import webbrowser
+from pathlib import Path
 
 from server.persistence import atomic_write, ensure_within
 
 MAX_BINARY_FILE_BYTES = 50 * 1024 * 1024
 MAX_TEXT_FILE_BYTES = 1_000_000
+BROWSER_OPENABLE_EXTENSIONS = frozenset({
+    ".html",
+    ".htm",
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".ico",
+    ".bmp",
+    ".avif",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".tsv",
+    ".json",
+    ".xml",
+    ".css",
+    ".js",
+    ".mjs",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".py",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".log",
+    ".mp3",
+    ".wav",
+    ".ogg",
+    ".mp4",
+    ".webm",
+    ".mov",
+})
+BROWSER_OPENABLE_MIME_TYPES = frozenset({
+    "application/json",
+    "application/ld+json",
+    "application/pdf",
+    "application/xml",
+    "application/xhtml+xml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/ecmascript",
+    "application/ogg",
+})
+BROWSER_OPENABLE_MIME_PREFIXES = ("text/", "image/", "audio/", "video/")
 
 
 class FileBrowserError(Exception):
@@ -37,6 +92,18 @@ def is_textual_mime(mime):
         mime == prefix or mime.startswith(prefix + ";")
         for prefix in textual_application_prefixes
     )
+
+
+def is_browser_openable_file(path, mime=None):
+    ext = os.path.splitext(path)[1].lower()
+    if ext in BROWSER_OPENABLE_EXTENSIONS:
+        return True
+    if not mime:
+        return False
+    bare_mime = mime.split(";", 1)[0].strip().lower()
+    if bare_mime in BROWSER_OPENABLE_MIME_TYPES:
+        return True
+    return any(bare_mime.startswith(prefix) for prefix in BROWSER_OPENABLE_MIME_PREFIXES)
 
 
 def workspace_file_path(workspace, filepath):
@@ -129,6 +196,27 @@ def read_binary_file(workspace, filepath):
         "data": content,
         "mime": mime or "application/octet-stream",
         "size": size,
+    }
+
+
+def open_file_in_browser(workspace, filepath):
+    full_path = workspace_file_path(workspace, filepath)
+    if not os.path.isfile(full_path):
+        raise FileBrowserError("File not found", status=404)
+    mime, _ = mimetypes.guess_type(full_path)
+    if not is_browser_openable_file(full_path, mime):
+        raise FileBrowserError("File type cannot be opened in browser", status=415)
+    url = Path(full_path).as_uri()
+    try:
+        opened = webbrowser.open(url, new=2)
+    except Exception as e:
+        raise FileBrowserError(f"Failed to open file in browser: {e}", status=500)
+    if not opened:
+        raise FileBrowserError("Could not open file in browser", status=500)
+    return {
+        "ok": True,
+        "path": filepath,
+        "mime": mime or "application/octet-stream",
     }
 
 

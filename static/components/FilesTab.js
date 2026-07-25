@@ -42,6 +42,24 @@ const FileTreeNode = {
   },
 };
 
+const BROWSER_OPENABLE_EXTENSIONS = new Set([
+  '.html', '.htm', '.pdf',
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.avif',
+  '.txt', '.md', '.markdown', '.csv', '.tsv', '.json', '.xml', '.css',
+  '.js', '.mjs', '.jsx', '.ts', '.tsx', '.py', '.sh', '.bash', '.zsh',
+  '.yaml', '.yml', '.toml', '.log',
+  '.mp3', '.wav', '.ogg', '.mp4', '.webm', '.mov',
+]);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.avif']);
+const AUDIO_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg']);
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mov']);
+const BINARY_PREVIEW_EXTENSIONS = new Set([
+  ...IMAGE_EXTENSIONS,
+  '.pdf',
+  ...AUDIO_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
+]);
+
 const FilesTab = {
   props: ['filesVersion', 'workspaceId', 'activeTheme'],
   template: `
@@ -115,6 +133,10 @@ const FilesTab = {
                 <i data-lucide="download" aria-hidden="true"></i>
                 <span>Download</span>
               </button>
+              <button v-if="canOpenInBrowser" class="btn btn-sm file-open-browser-button" @click="openActiveFileInBrowser" title="Open in Browser">
+                <i data-lucide="external-link" aria-hidden="true"></i>
+                <span>Open in Browser</span>
+              </button>
             </template>
             <template v-if="editing">
               <button class="btn btn-sm btn-primary" @click="saveEdit">Save</button>
@@ -134,6 +156,16 @@ const FilesTab = {
           <!-- PDF -->
           <div v-else-if="isPdf" class="file-view-pdf">
             <embed v-if="activeFile.objectUrl" :src="activeFile.objectUrl" type="application/pdf" width="100%" height="100%" />
+            <div v-else class="empty-state">Loading...</div>
+          </div>
+          <!-- Audio -->
+          <div v-else-if="isAudio" class="file-view-audio">
+            <audio v-if="activeFile.objectUrl" :src="activeFile.objectUrl" controls></audio>
+            <div v-else class="empty-state">Loading...</div>
+          </div>
+          <!-- Video -->
+          <div v-else-if="isVideo" class="file-view-video">
+            <video v-if="activeFile.objectUrl" :src="activeFile.objectUrl" controls></video>
             <div v-else class="empty-state">Loading...</div>
           </div>
           <!-- HTML preview -->
@@ -197,10 +229,16 @@ const FilesTab = {
       return dot >= 0 ? name.substring(dot).toLowerCase() : '';
     },
     isImage() {
-      return ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp'].includes(this.ext);
+      return IMAGE_EXTENSIONS.has(this.ext);
     },
     isPdf() {
       return this.ext === '.pdf';
+    },
+    isAudio() {
+      return AUDIO_EXTENSIONS.has(this.ext);
+    },
+    isVideo() {
+      return VIDEO_EXTENSIONS.has(this.ext);
     },
     isHtml() {
       return this.ext === '.html' || this.ext === '.htm';
@@ -216,6 +254,9 @@ const FilesTab = {
       // Size guard: skip if content > 1MB
       if (this.activeFile.content && this.activeFile.content.length > 1_000_000) return false;
       return true;
+    },
+    canOpenInBrowser() {
+      return !!this.activeFile && !this.activeFile.isNew && BROWSER_OPENABLE_EXTENSIONS.has(this.ext);
     },
     renderedMarkdown() {
       if (!this.activeFile?.content) return '';
@@ -376,8 +417,8 @@ const FilesTab = {
         if (!this.editing) this.reloadActiveFile();
         return;
       }
-      // Images/PDFs don't need content fetch
-      if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp', '.pdf'].includes(ext)) {
+      // Binary preview types don't need content fetch
+      if (BINARY_PREVIEW_EXTENSIONS.has(ext)) {
         const file = { path: node.path, name: node.name, content: null, objectUrl: '', mime: '' };
         this.openFiles.push(file);
         this.activeFile = file;
@@ -626,6 +667,14 @@ const FilesTab = {
       link.click();
       link.remove();
       if (shouldRevoke) URL.revokeObjectURL(objectUrl);
+    },
+    async openActiveFileInBrowser() {
+      if (!this.activeFile) return;
+      try {
+        await this.$root.requestFileOpenExternal({ workspaceId: this.workspaceId, path: this.activeFile.path });
+      } catch (e) {
+        alert('Open in browser failed: ' + e.message);
+      }
     },
     getExt(name) {
       const dot = name.lastIndexOf('.');

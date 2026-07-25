@@ -4642,6 +4642,26 @@ body.worker-singleton-dragging * {
   display: block;
 }
 
+.file-view-audio,
+.file-view-video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  height: 100%;
+  background: var(--bg-primary);
+}
+
+.file-view-audio audio {
+  width: min(720px, 100%);
+}
+
+.file-view-video video {
+  max-width: 100%;
+  max-height: 100%;
+  background: #000;
+}
+
 .file-view-html {
   display: flex;
   flex-direction: column;
@@ -4676,7 +4696,8 @@ body.worker-singleton-dragging * {
   flex-shrink: 0;
 }
 
-.file-download-button {
+.file-download-button,
+.file-open-browser-button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -4684,7 +4705,9 @@ body.worker-singleton-dragging * {
 }
 
 .file-download-button [data-lucide],
-.file-download-button svg {
+.file-download-button svg,
+.file-open-browser-button [data-lucide],
+.file-open-browser-button svg {
   width: 14px;
   height: 14px;
 }

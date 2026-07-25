@@ -24,6 +24,26 @@ def test_files_tab_detail_viewer_has_download_button_next_to_edit():
     assert "_filesUrl(" not in text
 
 
+def test_files_tab_detail_viewer_has_browser_open_button():
+    text = _read("static/components/FilesTab.js")
+    app = _read("static/app.js")
+    css = _read("static/style.css")
+    assert "const BROWSER_OPENABLE_EXTENSIONS = new Set([" in text
+    assert "'.html', '.htm', '.pdf'" in text
+    assert "const BINARY_PREVIEW_EXTENSIONS = new Set([" in text
+    assert "BINARY_PREVIEW_EXTENSIONS.has(ext)" in text
+    assert "canOpenInBrowser()" in text
+    assert "class=\"btn btn-sm file-open-browser-button\" @click=\"openActiveFileInBrowser\"" in text
+    assert "data-lucide=\"external-link\"" in text
+    assert "v-else-if=\"isAudio\" class=\"file-view-audio\"" in text
+    assert "v-else-if=\"isVideo\" class=\"file-view-video\"" in text
+    assert "this.$root.requestFileOpenExternal({ workspaceId: this.workspaceId, path: this.activeFile.path })" in text
+    assert "function requestFileOpenExternal(payload = {})" in app
+    assert "requestEvent: 'files:open_external'" in app
+    assert "successEvent: 'files:opened_external'" in app
+    assert ".file-open-browser-button" in css
+
+
 def test_files_tab_has_distinct_loaded_empty_and_error_states():
     text = _read("static/components/FilesTab.js")
     assert 'v-if="loadingTree"' in text
