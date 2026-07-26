@@ -351,7 +351,12 @@ const LeftPane = {
       this.$nextTick(() => renderLucideIcons(this.$el));
     },
     rosterWorkerMenuIconToken() {
-      if (this.openRosterWorkerMenuSlot !== null) this.$nextTick(() => this.renderRosterWorkerMenuIcons());
+      if (this.openRosterWorkerMenuSlot !== null) {
+        this.$nextTick(() => {
+          this.renderRosterWorkerMenuIcons();
+          this.repositionRosterWorkerMenuWithinViewport();
+        });
+      }
     },
   },
   data() {
@@ -360,6 +365,7 @@ const LeftPane = {
       projectDragOverId: null,
       openRosterWorkerMenuSlot: null,
       rosterWorkerMenuPos: { top: 0, left: 0 },
+      rosterWorkerMenuAnchorPos: null,
       selectedColumn: 'inbox',
       showProjectMenu: false,
       showEmptyProjectHint: false,
@@ -373,11 +379,15 @@ const LeftPane = {
   mounted() {
     document.addEventListener('click', this.onGlobalClick);
     window.addEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);
+    window.addEventListener('resize', this.repositionRosterWorkerMenuWithinViewport);
+    window.addEventListener('scroll', this.repositionRosterWorkerMenuWithinViewport, true);
     renderLucideIcons(this.$el);
   },
   beforeUnmount() {
     document.removeEventListener('click', this.onGlobalClick);
     window.removeEventListener('bullpen:menu:close-projects', this.onExternalCloseProjectMenu);
+    window.removeEventListener('resize', this.repositionRosterWorkerMenuWithinViewport);
+    window.removeEventListener('scroll', this.repositionRosterWorkerMenuWithinViewport, true);
     this._teardownResizeListeners();
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
@@ -555,7 +565,8 @@ const LeftPane = {
         const menuWidth = 210;
         let left = rect.right - menuWidth;
         if (left < 4) left = rect.left;
-        this.rosterWorkerMenuPos = { top: rect.bottom + 4, left };
+        this.rosterWorkerMenuAnchorPos = { top: rect.bottom + 4, left };
+        this.rosterWorkerMenuPos = { ...this.rosterWorkerMenuAnchorPos };
       }
       this.openRosterWorkerMenuSlot = worker.slot;
       this.showProjectMenu = false;
@@ -563,12 +574,30 @@ const LeftPane = {
       window.dispatchEvent(new Event('bullpen:menu:close-main'));
       this.$nextTick(() => {
         this.renderRosterWorkerMenuIcons();
+        this.repositionRosterWorkerMenuWithinViewport();
         const [first] = this.workerMenuItems();
         if (first) first.focus();
       });
     },
     closeWorkerMenu() {
       this.openRosterWorkerMenuSlot = null;
+      this.rosterWorkerMenuAnchorPos = null;
+    },
+    repositionRosterWorkerMenuWithinViewport() {
+      if (this.openRosterWorkerMenuSlot === null || !this.rosterWorkerMenuAnchorPos) return;
+      const menu = Array.isArray(this.$refs.rosterWorkerMenu) ? this.$refs.rosterWorkerMenu[0] : this.$refs.rosterWorkerMenu;
+      if (!menu || typeof menu.getBoundingClientRect !== 'function') return;
+      const margin = 8;
+      const rect = menu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const maxLeft = Math.max(margin, viewportWidth - rect.width - margin);
+      const maxTop = Math.max(margin, viewportHeight - rect.height - margin);
+      const left = Math.min(Math.max(this.rosterWorkerMenuAnchorPos.left, margin), maxLeft);
+      const top = Math.min(Math.max(this.rosterWorkerMenuAnchorPos.top, margin), maxTop);
+      if (left !== this.rosterWorkerMenuPos.left || top !== this.rosterWorkerMenuPos.top) {
+        this.rosterWorkerMenuPos = { top, left };
+      }
     },
     renderRosterWorkerMenuIcons() {
       const menu = Array.isArray(this.$refs.rosterWorkerMenu) ? this.$refs.rosterWorkerMenu[0] : this.$refs.rosterWorkerMenu;

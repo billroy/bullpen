@@ -50,6 +50,62 @@ def test_leftpane_worker_roster_uses_grid_single_worker_menu_actions():
     assert 'class="worker-menu-item worker-menu-danger" @click="rosterMenuDelete(w.slot)"' in text
 
 
+def test_leftpane_worker_roster_menu_is_clamped_to_viewport():
+    text = LEFTPANE_PATH.read_text(encoding="utf-8")
+    assert "rosterWorkerMenuAnchorPos: null" in text
+    assert "this.repositionRosterWorkerMenuWithinViewport();" in text
+    assert "viewportWidth - rect.width - margin" in text
+    assert "viewportHeight - rect.height - margin" in text
+    assert "window.addEventListener('resize', this.repositionRosterWorkerMenuWithinViewport);" in text
+    assert "window.addEventListener('scroll', this.repositionRosterWorkerMenuWithinViewport, true);" in text
+    assert "window.removeEventListener('resize', this.repositionRosterWorkerMenuWithinViewport);" in text
+    assert "window.removeEventListener('scroll', this.repositionRosterWorkerMenuWithinViewport, true);" in text
+
+
+def test_leftpane_worker_roster_menu_clamps_rendered_bounds():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+
+    script = """
+const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(%(path)s, 'utf8');
+const context = {
+  agentColor: () => '',
+  workerColor: () => '',
+  getWorkerTypeIcon: () => 'bot',
+  window: {
+    innerWidth: 800,
+    innerHeight: 600,
+    addEventListener() {},
+    removeEventListener() {},
+    localStorage: { getItem: () => null, setItem() {} },
+  },
+  document: { documentElement: { clientWidth: 800, clientHeight: 600 } },
+};
+vm.createContext(context);
+vm.runInContext(src + '\\nglobalThis.LeftPane = LeftPane;', context);
+const self = {
+  openRosterWorkerMenuSlot: 5,
+  rosterWorkerMenuAnchorPos: { top: 580, left: 650 },
+  rosterWorkerMenuPos: { top: 580, left: 650 },
+  $refs: {
+    rosterWorkerMenu: { getBoundingClientRect: () => ({ width: 210, height: 320 }) },
+  },
+};
+context.LeftPane.methods.repositionRosterWorkerMenuWithinViewport.call(self);
+process.stdout.write(JSON.stringify(self.rosterWorkerMenuPos));
+""" % {
+        "path": json.dumps(str(LEFTPANE_PATH)),
+    }
+    result = subprocess.run(
+        [node, "-e", script], capture_output=True, text=True, timeout=15
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"top": 272, "left": 582}
+
+
 def test_leftpane_worker_roster_emits_app_level_worker_menu_events():
     left_pane = LEFTPANE_PATH.read_text(encoding="utf-8")
     app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
