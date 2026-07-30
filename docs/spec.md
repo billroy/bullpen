@@ -546,7 +546,7 @@ All state lives in the `.bullpen/` directory at the workspace root. No database.
     { "key": "done", "label": "Done", "color": "#10B981" },
     { "key": "blocked", "label": "Blocked", "color": "#EF4444" }
   ],
-  "agent_timeout_seconds": 600,
+  "agent_timeout_seconds": 1200,
   "max_prompt_chars": 100000
 }
 ```

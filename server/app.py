@@ -579,8 +579,10 @@ def reconcile(bp_dir):
             slot["task_queue"] = []
         else:
             slot.setdefault("task_queue", [])
-        if slot.get("state") == "working":
+        if slot.get("state") in {"working", "retrying"}:
             slot["state"] = "idle"
+        for key in ("retry_at", "retry_delay_seconds", "retry_attempt", "retry_max", "retry_error"):
+            slot.pop(key, None)
 
     from server.tasks import task_sort_key, update_task
 

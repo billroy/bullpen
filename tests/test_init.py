@@ -3,7 +3,7 @@
 import json
 import os
 
-from server.init import init_workspace, DEFAULT_CONFIG
+from server.init import DEFAULT_AGENT_TIMEOUT_SECONDS, DEFAULT_CONFIG, init_workspace
 
 
 class TestInitWorkspace:
@@ -22,6 +22,7 @@ class TestInitWorkspace:
         with open(config_path) as f:
             config = json.load(f)
         assert config == DEFAULT_CONFIG
+        assert config["agent_timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS == 1200
 
     def test_creates_layout(self, tmp_workspace):
         bp = init_workspace(tmp_workspace)

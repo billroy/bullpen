@@ -22,6 +22,8 @@ DEFAULT_WORKER_PILL_STYLES = {
     key: True for key in DEFAULT_PROVIDER_COLORS
 }
 
+DEFAULT_AGENT_TIMEOUT_SECONDS = 1200
+
 DEFAULT_CONFIG = {
     "name": "Bullpen",
     "theme": "dark",
@@ -41,7 +43,7 @@ DEFAULT_CONFIG = {
         {"key": "done", "label": "Done", "color": "#10B981"},
         {"key": "blocked", "label": "Blocked", "color": "#EF4444"},
     ],
-    "agent_timeout_seconds": 600,
+    "agent_timeout_seconds": DEFAULT_AGENT_TIMEOUT_SECONDS,
     "chat_timeout_seconds": 60,
     "max_prompt_chars": 100000,
 }

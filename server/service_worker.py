@@ -513,7 +513,7 @@ def _service_order_still_active(bp_dir, slot_index, task_id):
     )
 
 
-def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None):
+def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None, expected_task_id=None):
     """Start a ticket-triggered Service worker order from the normal queue."""
     from server import workers as worker_mod
     from server.worker_types import get_worker_type
@@ -538,12 +538,19 @@ def run_service_order(bp_dir, slot_index, socketio=None, ws_id=None):
         )
         return
 
-    begun = worker_mod._begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    begun = worker_mod._begin_run(
+        bp_dir, slot_index, socketio=socketio, ws_id=ws_id,
+        expected_task_id=expected_task_id,
+    )
     if begun is None:
         return
     layout, worker, task, task_id = begun
-    worker_snapshot = dict(worker)
-    worker_mod._commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id)
+    committed = worker_mod._commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id)
+    if committed is None:
+        worker_mod.drain_runnable_queues(bp_dir, socketio, ws_id)
+        return
+    _layout, committed_worker = committed
+    worker_snapshot = dict(committed_worker)
 
     thread = threading.Thread(
         target=_run_service_order_thread,

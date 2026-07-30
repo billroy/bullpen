@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from server.agents import get_adapter
+from server.init import DEFAULT_AGENT_TIMEOUT_SECONDS
 from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
 from server.usage import (
@@ -718,7 +719,7 @@ def assign_task(
         }, ws_id)
 
 
-def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+def start_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_task_id=None):
     """Dispatch the next run to the worker-type-specific backend.
 
     This is the shared entry point for every runnable worker type. It reads
@@ -747,20 +748,22 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         return
     worker_type = get_worker_type(worker.get("type", "ai"))
     if worker_type.type_id == "ai":
-        _run_ai_worker(bp_dir, slot_index, socketio, ws_id)
+        _run_ai_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id)
         return
     if worker_type.type_id == "shell":
-        _run_shell_worker(bp_dir, slot_index, socketio, ws_id)
+        _run_shell_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id)
         return
     if worker_type.type_id == "service":
         from server import service_worker as service_worker_mod
-        service_worker_mod.run_service_order(bp_dir, slot_index, socketio, ws_id)
+        service_worker_mod.run_service_order(
+            bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id,
+        )
         return
     if worker_type.type_id == "marker":
-        _run_marker_worker(bp_dir, slot_index, socketio, ws_id)
+        _run_marker_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id)
         return
     if worker_type.type_id == "notification":
-        _run_notification_worker(bp_dir, slot_index, socketio, ws_id)
+        _run_notification_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=expected_task_id)
         return
     # Unknown or not-yet-runnable types (eval, unknown) surface a toast and
     # never enter the lifecycle.
@@ -774,7 +777,7 @@ def start_worker(bp_dir, slot_index, socketio=None, ws_id=None):
 
 
 def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manual",
-               socketio=None, ws_id=None):
+               socketio=None, ws_id=None, expected_task_id=None):
     """Shared lifecycle preamble for every runnable worker type.
 
     Loads the layout, handles the empty-queue synthetic-ticket path, and
@@ -796,7 +799,12 @@ def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manu
     worker = slots[slot_index]
     if not worker:
         return None
-    if worker.get("state") == "working":
+    state = worker.get("state")
+    if state == "working":
+        return None
+    if expected_task_id is None and state == "retrying":
+        return None
+    if expected_task_id is not None and state != "retrying":
         return None
     blocked, _reason = worker_start_blocked(bp_dir, worker)
     if blocked:
@@ -807,6 +815,8 @@ def _begin_run(bp_dir, slot_index, *, trigger_kind="manual", trigger_label="manu
     queue = worker.get("task_queue", [])
     if queue != original_queue:
         _save_layout(bp_dir, layout)
+    if expected_task_id is not None and (not queue or queue[0] != expected_task_id):
+        return None
     if not queue:
         create_auto_task(
             bp_dir, slot_index, worker, socketio, ws_id,
@@ -853,7 +863,11 @@ def _commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id, worker_updat
         if slot_index >= len(slots):
             return None
         worker = slots[slot_index]
-        if not worker or worker.get("state") != "idle":
+        # A scheduled retry intentionally remains in `retrying` until the
+        # delayed callback claims the same queued task.  Accept that state at
+        # the atomic commit gate as well as `idle`; the queue-head check below
+        # still prevents a stale callback from launching a different task.
+        if not worker or worker.get("state") not in {"idle", "retrying"}:
             return None
         queue = worker.get("task_queue", [])
         if not queue or queue[0] != task_id:
@@ -883,9 +897,12 @@ def _commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id, worker_updat
     return layout, worker
 
 
-def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
+def _run_ai_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=None):
     """AI worker backend: resolves adapter, assembles prompt, launches agent."""
-    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    begun = _begin_run(
+        bp_dir, slot_index, socketio=socketio, ws_id=ws_id,
+        expected_task_id=expected_task_id,
+    )
     if begun is None:
         return
     layout, worker, task, task_id = begun
@@ -950,7 +967,7 @@ def _run_ai_worker(bp_dir, slot_index, socketio, ws_id):
         config = read_json(os.path.join(bp_dir, "config.json"))
     except FileNotFoundError:
         return
-    timeout = config.get("agent_timeout_seconds", 600)
+    timeout = config.get("agent_timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS)
 
     argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
     argv = harden_agent_argv(agent_name, argv, trust_mode=_worker_trust_mode(worker))
@@ -984,7 +1001,7 @@ class ShellResult:
     ticket_updates: dict | None = None
 
 
-def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_task_id=None):
     """Shell worker backend: validates config, prepares payload, launches shell."""
     try:
         layout = _load_layout(bp_dir)
@@ -1021,7 +1038,10 @@ def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         _block_agent_start_failure(bp_dir, slot_index, queue[0], errors[0], socketio, ws_id)
         return
 
-    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    begun = _begin_run(
+        bp_dir, slot_index, socketio=socketio, ws_id=ws_id,
+        expected_task_id=expected_task_id,
+    )
     if begun is None:
         return
     layout, worker, task, task_id = begun
@@ -1047,7 +1067,7 @@ def _run_shell_worker(bp_dir, slot_index, socketio=None, ws_id=None):
     thread.start()
 
 
-def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_task_id=None):
     """Marker worker backend: no subprocess, immediate disposition application."""
     try:
         preflight_layout = _load_layout(bp_dir)
@@ -1068,7 +1088,10 @@ def _run_marker_worker(bp_dir, slot_index, socketio=None, ws_id=None):
             }, ws_id)
         return
 
-    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    begun = _begin_run(
+        bp_dir, slot_index, socketio=socketio, ws_id=ws_id,
+        expected_task_id=expected_task_id,
+    )
     if begun is None:
         return
     _layout, worker, _task, task_id = begun
@@ -1260,9 +1283,12 @@ def _build_notification_payload(bp_dir, slot_index, worker, task, ws_id=None, la
     }
 
 
-def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None):
+def _run_notification_worker(bp_dir, slot_index, socketio=None, ws_id=None, expected_task_id=None):
     """Notification worker backend: emit client notification intent and await completion."""
-    begun = _begin_run(bp_dir, slot_index, socketio=socketio, ws_id=ws_id)
+    begun = _begin_run(
+        bp_dir, slot_index, socketio=socketio, ws_id=ws_id,
+        expected_task_id=expected_task_id,
+    )
     if begun is None:
         return
     layout, worker, task, task_id = begun
@@ -1749,7 +1775,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
     queue = worker.get("task_queue", [])
     is_front = queue and queue[0] == task_id
     is_running = (
-        (worker.get("state") == "working" and (is_front or assigned_slot == slot_index))
+        (worker.get("state") in {"working", "retrying"} and (is_front or assigned_slot == slot_index))
         or process_slot == slot_index
     )
 
@@ -3699,23 +3725,45 @@ def _on_agent_error(
 def _retry_worker_after_delay(bp_dir, slot_index, task_id, retry_delay, socketio=None, ws_id=None):
     """Retry a failed worker only if it is still waiting on the same task."""
     time.sleep(max(0, retry_delay))
-    try:
-        layout = _load_layout(bp_dir)
-    except FileNotFoundError:
+    repaired_layout = None
+    with _write_lock:
+        try:
+            layout = _load_layout(bp_dir)
+        except FileNotFoundError:
+            return
+        slots = layout.get("slots", [])
+        if slot_index >= len(slots):
+            return
+        worker = slots[slot_index]
+        if not worker or worker.get("state") != "retrying":
+            return
+        queue = worker.get("task_queue", [])
+        task = task_mod.read_task(bp_dir, task_id)
+        retry_is_current = (
+            bool(queue)
+            and queue[0] == task_id
+            and task is not None
+            and str(task.get("assigned_to")) == str(slot_index)
+        )
+        if not retry_is_current:
+            # A task can be moved or deleted during the backoff window.  Do
+            # not leave the worker permanently `retrying` when that happens.
+            for slot in slots:
+                if not slot:
+                    continue
+                slot_queue = slot.get("task_queue", [])
+                while task_id in slot_queue:
+                    slot_queue.remove(task_id)
+            _mark_worker_idle(worker)
+            _save_layout(bp_dir, layout)
+            repaired_layout = layout
+
+    if repaired_layout is not None:
+        if socketio:
+            _ws_emit(socketio, "layout:updated", repaired_layout, ws_id)
+        drain_runnable_queues(bp_dir, socketio, ws_id)
         return
-    slots = layout.get("slots", [])
-    if slot_index >= len(slots):
-        return
-    worker = slots[slot_index]
-    if not worker or worker.get("state") != "retrying":
-        return
-    queue = worker.get("task_queue", [])
-    if not queue or queue[0] != task_id:
-        return
-    task = task_mod.read_task(bp_dir, task_id)
-    if not task or str(task.get("assigned_to")) != str(slot_index):
-        return
-    start_worker(bp_dir, slot_index, socketio, ws_id)
+    start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=task_id)
 
 
 def _append_output(bp_dir, task_id, worker, output):

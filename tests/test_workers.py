@@ -494,6 +494,33 @@ class TestWorkerReconcile:
         assert updated_task["assigned_to"] == ""
         assert "Bullpen restarted while this task was in progress" in updated_task["body"]
 
+    def test_reconcile_clears_stale_retry_state(self, bp_dir, worker_slot):
+        task = create_task(bp_dir, "Interrupted retry task")
+        update_task(bp_dir, task["id"], {"status": "in_progress", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        worker.update({
+            "state": "retrying",
+            "task_queue": [task["id"]],
+            "retry_at": "2026-07-30T13:14:31Z",
+            "retry_delay_seconds": 5,
+            "retry_attempt": 1,
+            "retry_max": 2,
+            "retry_error": "temporary failure",
+        })
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        reconcile(bp_dir)
+
+        updated_worker = _load_layout(bp_dir)["slots"][worker_slot]
+        assert updated_worker["state"] == "idle"
+        assert updated_worker["task_queue"] == []
+        assert all(not key.startswith("retry_") for key in updated_worker)
+        updated_task = read_task(bp_dir, task["id"])
+        assert updated_task["status"] == "blocked"
+        assert updated_task["assigned_to"] == ""
+
     def test_yank_uses_assigned_to_when_queue_reference_is_missing(self, bp_dir, worker_slot):
         task = create_task(bp_dir, "Assigned missing queue yank")
         update_task(bp_dir, task["id"], {"status": "in_progress", "assigned_to": str(worker_slot)})
@@ -508,6 +535,28 @@ class TestWorkerReconcile:
         updated_layout = _load_layout(bp_dir)
         assert updated_layout["slots"][worker_slot]["state"] == "idle"
         assert updated_layout["slots"][worker_slot]["task_queue"] == []
+
+    def test_yank_clears_retrying_worker_state(self, bp_dir, worker_slot):
+        task = create_task(bp_dir, "Retrying task to retrieve")
+        update_task(bp_dir, task["id"], {"status": "in_progress", "assigned_to": str(worker_slot)})
+
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        worker.update({
+            "state": "retrying",
+            "task_queue": [task["id"]],
+            "retry_at": "2026-07-30T13:14:31Z",
+            "retry_attempt": 1,
+            "retry_max": 2,
+        })
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        assert yank_from_worker(bp_dir, task["id"]) is True
+
+        updated_worker = _load_layout(bp_dir)["slots"][worker_slot]
+        assert updated_worker["state"] == "idle"
+        assert updated_worker["task_queue"] == []
+        assert all(not key.startswith("retry_") for key in updated_worker)
 
     def test_yank_detaches_run_and_ignores_late_success(self, bp_dir, worker_slot, monkeypatch):
         task = create_task(bp_dir, "Late success yank")
@@ -644,6 +693,67 @@ class TestWorkerReconcile:
         assert worker["retry_max"] == 2
         assert worker["retry_delay_seconds"] == 5
         assert thread_targets and thread_targets[0][0] == _retry_worker_after_delay
+
+    def test_retry_callback_launches_second_process_and_completes(self, bp_dir, worker_slot, monkeypatch):
+        class FlakyAdapter(MockAdapter):
+            def __init__(self):
+                super().__init__()
+                self.build_calls = 0
+
+            @property
+            def name(self):
+                return "flaky-retry"
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                self.build_calls += 1
+                if self.build_calls == 1:
+                    return [sys.executable, "-c", "import sys; sys.exit(1)"]
+                return [sys.executable, "-c", "print('retry completed')"]
+
+        adapter = FlakyAdapter()
+        register_adapter(adapter.name, adapter)
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        worker["agent"] = adapter.name
+        worker["max_retries"] = 1
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        original_retry = workers_mod._retry_worker_after_delay
+
+        def retry_without_backoff(bp_dir, slot_index, task_id, _delay, socketio=None, ws_id=None):
+            original_retry(bp_dir, slot_index, task_id, 0, socketio, ws_id)
+
+        monkeypatch.setattr(workers_mod, "_retry_worker_after_delay", retry_without_backoff)
+
+        task = create_task(bp_dir, "Retry end-to-end")
+        assign_task(bp_dir, worker_slot, task["id"])
+        start_worker(bp_dir, worker_slot)
+
+        deadline = time.time() + 5
+        updated = read_task(bp_dir, task["id"])
+        while time.time() < deadline and updated["status"] != "review":
+            time.sleep(0.02)
+            updated = read_task(bp_dir, task["id"])
+
+        assert updated["status"] == "review"
+        assert adapter.build_calls == 2
+        assert sum(1 for row in updated.get("history", []) if row.get("event") == "retry") == 1
+        assert "[RETRYING in 5s]" in updated["body"]
+        assert "retry completed" in updated["body"]
+        final_worker = _load_layout(bp_dir)["slots"][worker_slot]
+        assert final_worker["state"] == "idle"
+        assert final_worker["task_queue"] == []
+
+    def test_stale_retry_start_does_not_create_synthetic_task(self, bp_dir, worker_slot):
+        before_ids = {task["id"] for task in list_tasks(bp_dir)}
+
+        start_worker(bp_dir, worker_slot, expected_task_id="ticket-no-longer-queued")
+
+        after_ids = {task["id"] for task in list_tasks(bp_dir)}
+        assert after_ids == before_ids
+        worker = _load_layout(bp_dir)["slots"][worker_slot]
+        assert worker["state"] == "idle"
+        assert worker["task_queue"] == []
 
     def test_worktree_setup_failure_is_non_retryable(self, bp_dir, worker_slot, monkeypatch):
         task = create_task(bp_dir, "Worktree failure task")
