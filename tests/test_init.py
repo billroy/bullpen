@@ -3,7 +3,12 @@
 import json
 import os
 
-from server.init import DEFAULT_AGENT_TIMEOUT_SECONDS, DEFAULT_CONFIG, init_workspace
+from server.init import (
+    CONFIG_SCHEMA_VERSION,
+    DEFAULT_AGENT_TIMEOUT_SECONDS,
+    DEFAULT_CONFIG,
+    init_workspace,
+)
 
 
 class TestInitWorkspace:
@@ -22,7 +27,9 @@ class TestInitWorkspace:
         with open(config_path) as f:
             config = json.load(f)
         assert config == DEFAULT_CONFIG
-        assert config["agent_timeout_seconds"] == DEFAULT_AGENT_TIMEOUT_SECONDS == 1200
+        assert config["config_schema_version"] == CONFIG_SCHEMA_VERSION == 1
+        assert "agent_timeout_seconds" not in config
+        assert DEFAULT_AGENT_TIMEOUT_SECONDS == 1200
 
     def test_creates_layout(self, tmp_workspace):
         bp = init_workspace(tmp_workspace)
@@ -58,6 +65,42 @@ class TestInitWorkspace:
         with open(config_path) as f:
             config2 = json.load(f)
         assert config2["name"] == "Modified"  # not overwritten
+
+    def test_migrates_legacy_agent_timeout_to_inherited_default(self, tmp_workspace):
+        bp = init_workspace(tmp_workspace)
+        config_path = os.path.join(bp, "config.json")
+        with open(config_path) as f:
+            config = json.load(f)
+        config.pop("config_schema_version")
+        config["agent_timeout_seconds"] = 600
+        config["name"] = "Keep me"
+        with open(config_path, "w") as f:
+            json.dump(config, f)
+
+        init_workspace(tmp_workspace)
+
+        with open(config_path) as f:
+            migrated = json.load(f)
+        assert migrated["config_schema_version"] == CONFIG_SCHEMA_VERSION
+        assert "agent_timeout_seconds" not in migrated
+        assert migrated["name"] == "Keep me"
+
+    def test_migration_preserves_intentional_agent_timeout_override(self, tmp_workspace):
+        bp = init_workspace(tmp_workspace)
+        config_path = os.path.join(bp, "config.json")
+        with open(config_path) as f:
+            config = json.load(f)
+        config.pop("config_schema_version")
+        config["agent_timeout_seconds"] = 900
+        with open(config_path, "w") as f:
+            json.dump(config, f)
+
+        init_workspace(tmp_workspace)
+
+        with open(config_path) as f:
+            migrated = json.load(f)
+        assert migrated["config_schema_version"] == CONFIG_SCHEMA_VERSION
+        assert migrated["agent_timeout_seconds"] == 900
 
     def test_backfills_required_profiles_in_nonempty_profile_dir(self, tmp_workspace):
         bp = init_workspace(tmp_workspace)

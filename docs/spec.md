@@ -536,6 +536,7 @@ All state lives in the `.bullpen/` directory at the workspace root. No database.
 ### config.json
 ```json
 {
+  "config_schema_version": 1,
   "name": "My Bullpen",
   "grid": { "rows": 4, "cols": 6 },
   "columns": [
@@ -546,10 +547,14 @@ All state lives in the `.bullpen/` directory at the workspace root. No database.
     { "key": "done", "label": "Done", "color": "#10B981" },
     { "key": "blocked", "label": "Blocked", "color": "#EF4444" }
   ],
-  "agent_timeout_seconds": 1200,
   "max_prompt_chars": 100000
 }
 ```
+
+`agent_timeout_seconds` is omitted by default so workspaces inherit the
+application default (currently 1200 seconds). Persist the key only for an
+intentional workspace-specific override. Versioned config migrations remove
+the historical persisted default of 600 seconds while preserving other values.
 
 ### layout.json
 

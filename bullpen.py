@@ -133,6 +133,41 @@ def parse_args(argv=None):
     ticket_list = ticket_subparsers.add_parser("list", help="List tickets")
     ticket_list.add_argument("--status", help="Optional status filter")
 
+    config_migrate_parser = subparsers.add_parser(
+        "config-migrate",
+        help="Plan or apply versioned workspace config migrations",
+        description=(
+            "Inspect registered and discovered Bullpen workspaces for pending "
+            "config migrations. The command is a dry-run unless --apply is set."
+        ),
+    )
+    config_migrate_parser.add_argument(
+        "--registry",
+        default=os.path.expanduser("~/.bullpen/projects.json"),
+        dest="config_migrate_registry",
+        help="Workspace registry path (default: ~/.bullpen/projects.json)",
+    )
+    config_migrate_parser.add_argument(
+        "--scan-root",
+        action="append",
+        default=[],
+        dest="config_migrate_scan_roots",
+        help="Also discover .bullpen/config.json files below this root; repeatable",
+    )
+    config_migrate_parser.add_argument(
+        "--apply",
+        action="store_true",
+        dest="config_migrate_apply",
+        help="Apply the reported migrations; otherwise perform a dry-run",
+    )
+    config_migrate_parser.add_argument(
+        "--output",
+        choices=["json", "text"],
+        default="text",
+        dest="config_migrate_output",
+        help="Output format (default: text)",
+    )
+
     model_catalog_parser = subparsers.add_parser(
         "model-catalog",
         help="Validate provider model candidates through Bullpen adapters",
@@ -490,6 +525,32 @@ def run_model_catalog_cli(args):
     return 0
 
 
+def run_config_migrate_cli(args):
+    """Plan or apply versioned workspace config migrations."""
+    import json
+
+    from server.config_migrations import (
+        format_migration_report,
+        migrate_workspace_configs,
+    )
+    from server.init import DEFAULT_AGENT_TIMEOUT_SECONDS
+
+    report = migrate_workspace_configs(
+        registry_path=args.config_migrate_registry,
+        scan_roots=args.config_migrate_scan_roots,
+        apply=args.config_migrate_apply,
+        default_agent_timeout_seconds=DEFAULT_AGENT_TIMEOUT_SECONDS,
+    )
+    if args.config_migrate_output == "json":
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(format_migration_report(report))
+
+    if report.get("discovery_error") or report["summary"]["errors"]:
+        return 1
+    return 0
+
+
 def set_password_cli(set_usernames=None, delete_usernames=None):
     """Prompt for username/password updates, write hashed credentials to the
     global .env file. Never echoes the password. Never accepts the
@@ -717,6 +778,8 @@ def main():
         sys.exit(run_mcp_token_cli(args))
     if args.command == "ticket":
         sys.exit(run_ticket_cli(args))
+    if args.command == "config-migrate":
+        sys.exit(run_config_migrate_cli(args))
     if args.command == "model-catalog":
         sys.exit(run_model_catalog_cli(args))
 

@@ -3,6 +3,10 @@
 import os
 import shutil
 
+from server.config_migrations import (
+    CURRENT_CONFIG_SCHEMA_VERSION,
+    migrate_workspace_config,
+)
 from server.persistence import write_json, atomic_write
 
 
@@ -23,8 +27,10 @@ DEFAULT_WORKER_PILL_STYLES = {
 }
 
 DEFAULT_AGENT_TIMEOUT_SECONDS = 1200
+CONFIG_SCHEMA_VERSION = CURRENT_CONFIG_SCHEMA_VERSION
 
 DEFAULT_CONFIG = {
+    "config_schema_version": CONFIG_SCHEMA_VERSION,
     "name": "Bullpen",
     "theme": "dark",
     "timezone": "UTC",
@@ -43,7 +49,6 @@ DEFAULT_CONFIG = {
         {"key": "done", "label": "Done", "color": "#10B981"},
         {"key": "blocked", "label": "Blocked", "color": "#EF4444"},
     ],
-    "agent_timeout_seconds": DEFAULT_AGENT_TIMEOUT_SECONDS,
     "chat_timeout_seconds": 60,
     "max_prompt_chars": 100000,
 }
@@ -78,10 +83,17 @@ def init_workspace(workspace):
     if not os.path.exists(gitignore_path):
         atomic_write(gitignore_path, "logs/\n")
 
-    # config.json — only create if missing
+    # config.json — create new configs at the current schema version and
+    # migrate legacy configs without disturbing intentional overrides.
     config_path = os.path.join(bp, "config.json")
     if not os.path.exists(config_path):
         write_json(config_path, DEFAULT_CONFIG)
+    else:
+        migrate_workspace_config(
+            config_path,
+            apply=True,
+            default_agent_timeout_seconds=DEFAULT_AGENT_TIMEOUT_SECONDS,
+        )
 
     # layout.json — only create if missing
     layout_path = os.path.join(bp, "layout.json")
