@@ -2174,6 +2174,7 @@ body {
   justify-content: flex-end;
   gap: 10px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .stats-pane-header h2 {
@@ -2199,6 +2200,8 @@ body {
 .stats-period-selector {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 3px;
   border-radius: 999px;

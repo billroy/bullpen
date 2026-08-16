@@ -13,6 +13,13 @@ model. Provider credentials must be created inside the sandbox by running the
 provider's native setup flow as the sandbox user. The implementation must not
 install heavyweight CLIs during every deploy.
 
+This document describes running the whole Bullpen application in one
+Microsandbox. It is not the isolation layout for a Pi worker. Pi uses a fresh
+per-run microVM whose sole host mount is the active project; see
+[pi-worker.md](pi-worker.md) and [pi-security.md](pi-security.md). In
+particular, the Pi runner must not reuse this deployment's `/app`, `/workspace`,
+or persistent `/home/bullpen` mount set.
+
 ## Architecture
 
 Use a two-phase flow behind one command-line entrypoint:

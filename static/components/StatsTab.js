@@ -3,7 +3,7 @@ const StatsTab = {
   emits: ['select-task'],
   data() {
     return {
-      selectedPeriodDays: 14,
+      selectedPeriodKey: '14d',
     };
   },
   template: `
@@ -82,11 +82,12 @@ const StatsTab = {
               <div class="stats-period-selector" role="group" aria-label="Trend period">
                 <button
                   v-for="option in periodOptions"
-                  :key="option.days"
+                  :key="option.key"
                   type="button"
                   class="stats-period-button"
-                  :class="{ 'is-active': option.days === selectedPeriodDays }"
-                  @click="selectedPeriodDays = option.days"
+                  :class="{ 'is-active': option.key === selectedPeriodKey }"
+                  :aria-pressed="option.key === selectedPeriodKey"
+                  @click="selectPeriod(option)"
                 >
                   {{ option.label }}
                 </button>
@@ -264,15 +265,22 @@ const StatsTab = {
     },
     periodOptions() {
       return [
-        { days: 1, label: '1d' },
-        { days: 7, label: '7d' },
-        { days: 14, label: '14d' },
-        { days: 30, label: '30d' },
-        { days: 90, label: '90d' },
+        { key: '1d', label: '1d', days: 1, title: 'Last day' },
+        { key: '7d', label: '7d', days: 7, title: 'Last 7 days' },
+        { key: '14d', label: '14d', days: 14, title: 'Last 14 days' },
+        { key: '30d', label: '30d', days: 30, title: 'Last 30 days' },
+        { key: '90d', label: '90d', days: 90, title: 'Last 90 days' },
+        { key: '6m', label: '6m', months: 6, title: 'Last 6 months' },
+        { key: '1y', label: '1y', years: 1, title: 'Last year' },
+        { key: '2y', label: '2y', years: 2, title: 'Last 2 years' },
+        { key: 'all', label: 'all', all: true, title: 'All time' },
       ];
     },
+    selectedPeriodOption() {
+      return this.periodOptions.find(option => option.key === this.selectedPeriodKey) || this.periodOptions[2];
+    },
     trendWindowLabel() {
-      return `Last ${this.selectedPeriodDays} day${this.selectedPeriodDays === 1 ? '' : 's'}`;
+      return this.selectedPeriodOption.title;
     },
     recentArchived() {
       return this.archiveTasks
@@ -281,15 +289,11 @@ const StatsTab = {
         .slice(0, 8);
     },
     dayKeys() {
-      const keys = [];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      for (let i = this.selectedPeriodDays - 1; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(today.getDate() - i);
-        keys.push(this.dayKey(d));
+      const today = this.startOfToday();
+      if (this.selectedPeriodOption.all) {
+        return this.dayKeysFrom(this.allTrendStartDate() || today, today);
       }
-      return keys;
+      return this.dayKeysFrom(this.periodStartDate(this.selectedPeriodOption, today), today);
     },
     sparklineCharts() {
       const archivedCounts = this.seriesFor(this.archiveTasks, task => this.bestArchiveDate(task), () => 1);
@@ -366,6 +370,9 @@ const StatsTab = {
     },
   },
   methods: {
+    selectPeriod(option) {
+      if (option?.key) this.selectedPeriodKey = option.key;
+    },
     tokenValue(task) {
       const value = Number(task?.tokens);
       return Number.isFinite(value) && value > 0 ? value : 0;
@@ -405,6 +412,50 @@ const StatsTab = {
       const millis = new Date(value).getTime();
       return Number.isFinite(millis) ? millis : 0;
     },
+    startOfToday() {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return today;
+    },
+    periodStartDate(option, today) {
+      const start = new Date(today);
+      if (option?.months) {
+        start.setMonth(start.getMonth() - option.months);
+      } else if (option?.years) {
+        start.setFullYear(start.getFullYear() - option.years);
+      } else {
+        const days = Math.max(1, Number(option?.days) || 14);
+        start.setDate(today.getDate() - (days - 1));
+      }
+      start.setHours(0, 0, 0, 0);
+      return start;
+    },
+    allTrendStartDate() {
+      let earliest = 0;
+      const remember = value => {
+        const millis = this.dateMillis(value);
+        if (millis > 0 && (!earliest || millis < earliest)) earliest = millis;
+      };
+      this.archiveTasks.forEach(task => remember(this.bestArchiveDate(task)));
+      this.liveTasks.forEach(task => remember(task?.created_at));
+      if (!earliest) return null;
+      const start = new Date(earliest);
+      start.setHours(0, 0, 0, 0);
+      const today = this.startOfToday();
+      return start.getTime() <= today.getTime() ? start : today;
+    },
+    dayKeysFrom(startDate, endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+      if (start.getTime() > end.getTime()) return [this.dayKey(end)];
+      const keys = [];
+      for (const d = new Date(start); d.getTime() <= end.getTime(); d.setDate(d.getDate() + 1)) {
+        keys.push(this.dayKey(d));
+      }
+      return keys;
+    },
     dayKey(value) {
       const d = value instanceof Date ? value : new Date(value);
       if (isNaN(d)) return '';
@@ -414,18 +465,19 @@ const StatsTab = {
       return `${year}-${month}-${day}`;
     },
     seriesFor(tasks, dateGetter, valueGetter) {
-      const buckets = Object.fromEntries(this.dayKeys.map(key => [key, 0]));
+      const keys = this.dayKeys;
+      const buckets = Object.fromEntries(keys.map(key => [key, 0]));
       (tasks || []).forEach(task => {
         const key = this.dayKey(dateGetter(task));
         if (key && Object.prototype.hasOwnProperty.call(buckets, key)) {
           buckets[key] += Number(valueGetter(task)) || 0;
         }
       });
-      return this.dayKeys.map(key => buckets[key] || 0);
+      return keys.map(key => buckets[key] || 0);
     },
     sparkPoints(values) {
       if (!Array.isArray(values) || values.length === 0) return '';
-      const max = Math.max(1, ...values);
+      const max = values.reduce((largest, value) => Math.max(largest, Number(value) || 0), 1);
       const step = values.length === 1 ? 0 : 160 / Math.max(1, values.length - 1);
       return values.map((value, index) => {
         const x = values.length === 1 ? 80 : Math.round(index * step * 100) / 100;
@@ -434,29 +486,34 @@ const StatsTab = {
       }).join(' ');
     },
     axisTicks() {
-      if (!this.dayKeys.length) return [];
+      const keys = this.dayKeys;
+      if (!keys.length) return [];
       const firstIndex = 0;
-      const lastIndex = this.dayKeys.length - 1;
-      const weeklyIndexes = [];
-      for (let index = firstIndex; index <= lastIndex; index += 7) {
-        weeklyIndexes.push(index);
+      const lastIndex = keys.length - 1;
+      const indexes = [];
+      const step = Math.max(1, Math.ceil(Math.max(1, lastIndex - firstIndex) / 5));
+      for (let index = firstIndex; index <= lastIndex; index += step) {
+        indexes.push(index);
       }
-      if (!weeklyIndexes.includes(lastIndex)) weeklyIndexes.push(lastIndex);
-      return weeklyIndexes.map(index => this.axisTick(this.dayKeys[index], index));
+      if (!indexes.includes(lastIndex)) indexes.push(lastIndex);
+      return indexes.map(index => this.axisTick(keys[index], index, keys.length));
     },
-    axisTick(dayKey, index) {
-      const maxIndex = Math.max(1, this.dayKeys.length - 1);
-      const percent = this.dayKeys.length === 1 ? 50 : (index / maxIndex) * 100;
+    axisTick(dayKey, index, keyCount = this.dayKeys.length) {
+      const maxIndex = Math.max(1, keyCount - 1);
+      const percent = keyCount === 1 ? 50 : (index / maxIndex) * 100;
       return {
         key: `${dayKey}-${index}`,
-        x: this.dayKeys.length === 1 ? 80 : Math.round((160 * index / maxIndex) * 100) / 100,
+        x: keyCount === 1 ? 80 : Math.round((160 * index / maxIndex) * 100) / 100,
         percent,
         label: this.formatDayKey(dayKey),
       };
     },
     formatDayKey(dayKey) {
       if (!dayKey) return '';
-      return this.formatDate(`${dayKey}T00:00:00`);
+      const options = this.dayKeys.length > 365
+        ? { month: 'short', year: 'numeric' }
+        : { month: 'short', day: 'numeric' };
+      return this.formatDateWithOptions(`${dayKey}T00:00:00`, options);
     },
     formatNumber(value) {
       const n = Number(value) || 0;
@@ -475,9 +532,12 @@ const StatsTab = {
       return this.formatNumber(chart?.total);
     },
     formatDate(value) {
+      return this.formatDateWithOptions(value, { month: 'short', day: 'numeric' });
+    },
+    formatDateWithOptions(value, options) {
       const millis = this.dateMillis(value);
       if (!millis) return '-';
-      return new Date(millis).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return new Date(millis).toLocaleDateString(undefined, options);
     },
     daysAgoLabel(millis) {
       const start = new Date();
