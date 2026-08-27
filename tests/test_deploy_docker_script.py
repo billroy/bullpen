@@ -146,6 +146,13 @@ def test_deploy_sprite_runs_and_verifies_opencode_postinstall():
     assert "opencode --version" in text
 
 
+def test_deploy_sprite_checks_existing_sprite_without_parsing_list_output():
+    text = _read("deploy-sprite.sh")
+
+    assert 'sprite info -s "$SPRITE_NAME" >/dev/null 2>&1' in text
+    assert 'sprite list 2>/dev/null | grep' not in text
+
+
 def test_docker_compose_hides_unavailable_projects_in_container():
     text = _read("docker-compose.yml")
     assert 'BULLPEN_HIDE_UNAVAILABLE_PROJECTS: "1"' in text

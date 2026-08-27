@@ -50,7 +50,9 @@ echo
 # ── create sprite ────────────────────────────────────────────────────
 
 step "Creating Sprite '${SPRITE_NAME}'"
-if sprite list 2>/dev/null | grep -q "^${SPRITE_NAME} "; then
+# Query the Sprite directly instead of parsing the human-oriented `sprite list`
+# table, whose leading decoration/spacing has changed between CLI releases.
+if sprite info -s "$SPRITE_NAME" >/dev/null 2>&1; then
     printf '\033[33malready exists\033[0m\n'
 else
     sprite create "$SPRITE_NAME" --skip-console >/dev/null
