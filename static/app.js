@@ -18,6 +18,7 @@ const app = createApp({
     WorkerTransferModal,
     ColumnManagerModal,
     BentoImportReviewModal,
+    WorkspaceImportCreateModal,
     ToastContainer,
   },
   setup() {
@@ -426,6 +427,12 @@ const app = createApp({
     const transferSlots = ref([]);
     const transferMode = ref('copy');
     const bentoImportReview = reactive({
+      visible: false,
+      preview: null,
+      resolve: null,
+      reject: null,
+    });
+    const workspaceImportCreate = reactive({
       visible: false,
       preview: null,
       resolve: null,
@@ -2316,6 +2323,33 @@ const app = createApp({
       if (resolve) resolve(decisions || {});
     }
 
+    function _reviewWorkspaceImportCreate(preview) {
+      return new Promise((resolve, reject) => {
+        workspaceImportCreate.preview = preview;
+        workspaceImportCreate.resolve = resolve;
+        workspaceImportCreate.reject = reject;
+        workspaceImportCreate.visible = true;
+      });
+    }
+
+    function closeWorkspaceImportCreate() {
+      const reject = workspaceImportCreate.reject;
+      workspaceImportCreate.visible = false;
+      workspaceImportCreate.preview = null;
+      workspaceImportCreate.resolve = null;
+      workspaceImportCreate.reject = null;
+      if (reject) reject(new Error('Project import canceled'));
+    }
+
+    function applyWorkspaceImportCreate(decisions) {
+      const resolve = workspaceImportCreate.resolve;
+      workspaceImportCreate.visible = false;
+      workspaceImportCreate.preview = null;
+      workspaceImportCreate.resolve = null;
+      workspaceImportCreate.reject = null;
+      if (resolve) resolve(decisions || {});
+    }
+
     async function _bentoImportPayloadForPreview(data, preview) {
       const decisions = await _reviewBentoImport(preview);
       const payload = { file: data };
@@ -2342,28 +2376,23 @@ const app = createApp({
       return _requestBentoImport(await _bentoImportPayloadForPreview(data, preview));
     }
 
-    function _requestArchiveImport(payload) {
+    function _requestProjectImportCreate(payload) {
       return new Promise((resolve, reject) => {
-        const requestId = payload.request_id || _nextRequestId('archive-import');
-        const expectedWorkspaceId = payload.workspaceId || activeWorkspaceId.value;
-        const expectedKind = payload.kind || 'workspace';
+        const requestId = payload.request_id || _nextRequestId('project-import-create');
         const timer = setTimeout(() => {
           cleanup();
-          reject(new Error('Archive import timed out'));
-        }, 30000);
+          reject(new Error('Project import timed out'));
+        }, 60000);
         const cleanup = () => {
           clearTimeout(timer);
-          socket.off('archive:imported', onImported);
-          socket.off('archive:error', onError);
+          socket.off('project:import-created', onCreated);
+          socket.off('project:import-create:error', onError);
         };
         const matches = (eventPayload) => {
           if (!eventPayload) return false;
-          if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;
-          if (expectedKind && eventPayload.kind && eventPayload.kind !== expectedKind) return false;
-          if (expectedKind === 'workspace' && expectedWorkspaceId && eventPayload.workspaceId && eventPayload.workspaceId !== expectedWorkspaceId) return false;
-          return true;
+          return !eventPayload.request_id || eventPayload.request_id === requestId;
         };
-        const onImported = (eventPayload) => {
+        const onCreated = (eventPayload) => {
           if (!matches(eventPayload)) return;
           cleanup();
           resolve(eventPayload);
@@ -2371,18 +2400,12 @@ const app = createApp({
         const onError = (eventPayload) => {
           if (!matches(eventPayload)) return;
           cleanup();
-          reject(new Error(eventPayload.error || 'Archive import failed'));
+          reject(new Error(eventPayload.error || 'Project import failed'));
         };
-        socket.on('archive:imported', onImported);
-        socket.on('archive:error', onError);
-        socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));
+        socket.on('project:import-created', onCreated);
+        socket.on('project:import-create:error', onError);
+        socket.emit('project:import-create', _wsData({ ...payload, request_id: requestId }));
       });
-    }
-
-    async function _importArchiveFile(file, kind) {
-      if (!file) return null;
-      const data = await file.arrayBuffer();
-      return _requestArchiveImport({ kind, file: data });
     }
 
     function _requestImportInspect(payload) {
@@ -2433,14 +2456,14 @@ const app = createApp({
           addToast('Package import complete' + (count ? ` (${count})` : ''));
           return result;
         }
-        if (inspected.import_type === 'workspace' || inspected.import_type === 'all') {
-          const result = await _requestArchiveImport({ kind: inspected.import_type, file: data });
-          if (inspected.import_type === 'workspace') {
-            addToast('Workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
-          } else {
-            addToast('All-workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
-          }
+        if (inspected.import_type === 'workspace') {
+          const decisions = await _reviewWorkspaceImportCreate(inspected.preview || {});
+          const result = await _requestProjectImportCreate({ file: data, name: decisions.name });
+          addToast(`Project "${result.name || decisions.name}" imported`);
           return result;
+        }
+        if (inspected.import_type === 'all') {
+          throw new Error('This archive contains multiple projects. Multi-project import is not currently supported.');
         }
         throw new Error('Unsupported import type');
       } catch (e) {
@@ -2520,13 +2543,7 @@ const app = createApp({
     }
 
     async function importWorkspace(file) {
-      if (!activeWorkspaceId.value) return;
-      try {
-        const result = await _importArchiveFile(file, 'workspace');
-        addToast('Workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
-      } catch (e) {
-        addToast('Workspace import failed: ' + e.message, 'error');
-      }
+      return importAny(file);
     }
 
     async function importWorkers(file) {
@@ -2541,12 +2558,7 @@ const app = createApp({
     }
 
     async function importAll(file) {
-      try {
-        const result = await _importArchiveFile(file, 'all');
-        addToast('All-workspace import complete' + (result?.imported ? ` (${result.imported})` : ''));
-      } catch (e) {
-        addToast('Import all failed: ' + e.message, 'error');
-      }
+      return importAny(file);
     }
 
     // Theme
@@ -2834,7 +2846,7 @@ const app = createApp({
       state, workspaces, activeWorkspaceId, switchWorkspace, projects, projectsLoaded, projectSettings, globalSettings,
       addProject, newProject, cloneProject, removeProject,
       connected, activeTab, setActiveTab, requestedCommitDiffHash, leftPaneVisible, workerMinimapCollapsed, setWorkerMinimapCollapsed, toasts, quickCreateClearToken,
-      showCreateModal, showColumnManager, bentoImportReview, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
+      showCreateModal, showColumnManager, bentoImportReview, workspaceImportCreate, selectedTask, selectedTaskReadOnly, configureSlot, configureWorkerData,
       toggleLeftPane, setTheme, setAmbientPreset, setAmbientVolume, setAmbientMuteWhileIdle, setProviderColor, resetProviderColors, setWorkerPillStyle, resetWorkerPillStyles, themeOptions, currentTheme, ambientPresets, currentAmbientPreset, currentAmbientVolume, currentAmbientMuteWhileIdle, currentProviderColors, defaultProviderColors, currentWorkerPillStyles, defaultWorkerPillStyles, createTask, quickCreateTask, requestQuickCalculate, updateTask, deleteTask, archiveTask, archiveColumnTasks, archiveDone, clearTaskOutput,
       paletteCommands, runPaletteCommand, runPaletteInput,
       moveTask, moveTaskProject, moveColumnTasks, selectTask, addWorker, removeWorker, removeWorkers, moveWorker, moveWorkerGroup, pasteWorkerConfig, pasteWorkerGroup,
@@ -2843,7 +2855,7 @@ const app = createApp({
       duplicateWorker, duplicateWorkers, multipleWorkspaces, taskById,
       transferSlot, transferSlots, transferMode, openTransfer, transferWorker,
       copyWorkerFromLeftPane,
-      closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal, closeBentoImportReview, applyBentoImportReview,
+      closeCreateModal, closeColumnManager, closeWorkerConfig, closeTransferModal, closeBentoImportReview, applyBentoImportReview, closeWorkspaceImportCreate, applyWorkspaceImportCreate,
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       terminalTabs, addTerminalTab, closeTerminalTab, restartTerminal, sendTerminalInput, resizeTerminal, setTerminalRef, onTerminalReady,
@@ -3123,6 +3135,13 @@ const app = createApp({
         :grid-cols="state.config.grid?.cols || 4"
         @close="closeBentoImportReview"
         @apply="applyBentoImportReview"
+      />
+      <WorkspaceImportCreateModal
+        :visible="workspaceImportCreate.visible"
+        :preview="workspaceImportCreate.preview"
+        :projects-root="projectSettings.projectsRoot"
+        @close="closeWorkspaceImportCreate"
+        @apply="applyWorkspaceImportCreate"
       />
       <ToastContainer :toasts="toasts" @dismiss="dismissToast" />
     </div>

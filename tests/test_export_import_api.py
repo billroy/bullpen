@@ -36,18 +36,25 @@ def _export_archive(client, **payload):
     return _received(client, "archive:exported")
 
 
-def _import_archive(client, data, **payload):
-    body = {"file": data}
-    body.update(payload)
-    client.emit("archive:import", body)
-    return _received(client, "archive:imported")
-
-
 def _archive_error(client, data, **payload):
     body = {"file": data}
     body.update(payload)
     client.emit("archive:import", body)
     return _received(client, "archive:error")
+
+
+def _import_create(client, data, **payload):
+    body = {"file": data}
+    body.update(payload)
+    client.emit("project:import-create", body)
+    return _received(client, "project:import-created")
+
+
+def _import_create_error(client, data, **payload):
+    body = {"file": data}
+    body.update(payload)
+    client.emit("project:import-create", body)
+    return _received(client, "project:import-create:error")
 
 
 def _inspect_import(client, data, **payload):
@@ -95,6 +102,10 @@ def test_import_inspect_detects_workspace_archive(tmp_workspace):
 
     payload = {
         ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
+        ".bullpen/layout.json": json.dumps({"slots": [{"name": "Builder"}]}),
+        ".bullpen/tasks/live.md": "---\nid: live\n---\n",
+        ".bullpen/tasks/archive/done.md": "---\nid: done\n---\n",
+        ".bullpen/profiles/custom.json": "{}",
     }
 
     inspected = _inspect_import(client, _zip_bytes(payload).getvalue(), request_id="inspect-workspace")
@@ -102,31 +113,113 @@ def test_import_inspect_detects_workspace_archive(tmp_workspace):
     assert inspected["ok"] is True
     assert inspected["import_type"] == "workspace"
     assert inspected["request_id"] == "inspect-workspace"
+    assert inspected["preview"] == {
+        "proposed_name": "Imported Workspace",
+        "proposed_slug": "imported-workspace",
+        "workers": 1,
+        "tickets": 1,
+        "archived_tickets": 1,
+        "profiles": 1,
+        "includes_project_files": False,
+    }
 
 
-def test_import_workspace_replaces_config_from_zip(tmp_workspace):
+def test_import_inspect_rejects_workspace_archive_missing_config(tmp_workspace):
+    init_workspace(tmp_workspace)
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+
+    error = _inspect_import_error(
+        client,
+        _zip_bytes({".bullpen/layout.json": json.dumps({"slots": []})}).getvalue(),
+    )
+
+    assert error["ok"] is False
+    assert error["error"] == "Workspace archive is missing config.json"
+
+
+def test_legacy_workspace_import_rejects_without_changing_selected_project(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
 
     original = read_json(os.path.join(bp_dir, "config.json"))
-    original_token = mcp_auth.read_workspace_mcp_token(bp_dir)
     assert original["name"] == "Bullpen"
 
     payload = {
         ".bullpen/config.json": json.dumps({**original, "name": "Imported Workspace"}),
     }
-    archive = _zip_bytes(payload)
+    error = _archive_error(client, _zip_bytes(payload).getvalue(), kind="workspace")
 
-    imported = _import_archive(client, archive.getvalue(), kind="workspace")
+    assert error["ok"] is False
+    assert error["error"] == "Workspace archives can only create new projects"
+    assert read_json(os.path.join(bp_dir, "config.json")) == original
+
+
+def test_import_create_adds_quarantined_project_without_changing_selected_project(tmp_workspace):
+    current = os.path.join(tmp_workspace, "current")
+    os.makedirs(current)
+    current_bp = init_workspace(current)
+    app = create_app(current, no_browser=True)
+    client = socketio.test_client(app)
+    original_config = read_json(os.path.join(current_bp, "config.json"))
+    worker = {
+        "name": "Builder",
+        "state": "running",
+        "task_queue": ["ticket-one"],
+        "started_at": "2026-08-28T12:00:00Z",
+    }
+    archive = _zip_bytes({
+        ".bullpen/config.json": json.dumps({"name": "Name From Archive"}),
+        ".bullpen/layout.json": json.dumps({"slots": [worker]}),
+    })
+
+    imported = _import_create(
+        client,
+        archive.getvalue(),
+        name="Imported Workspace",
+        request_id="create-one",
+    )
+
+    destination = os.path.realpath(os.path.join(tmp_workspace, "imported-workspace"))
+    imported_bp = os.path.join(destination, ".bullpen")
     assert imported["ok"] is True
-    assert imported["imported"] == 1
-    config = read_json(os.path.join(bp_dir, "config.json"))
+    assert imported["request_id"] == "create-one"
+    assert imported["name"] == "Imported Workspace"
+    assert imported["path"] == destination
+    assert read_json(os.path.join(current_bp, "config.json")) == original_config
+    config = read_json(os.path.join(imported_bp, "config.json"))
     assert config["name"] == "Imported Workspace"
-    assert config["server_host"] == app.config["host"]
-    assert config["server_port"] == app.config["port"]
-    assert "mcp_token" not in config
-    assert mcp_auth.read_workspace_mcp_token(bp_dir) == original_token
+    assert config["worker_automation_paused"] is True
+    imported_worker = read_json(os.path.join(imported_bp, "layout.json"))["slots"][0]
+    assert imported_worker["state"] == "idle"
+    assert imported_worker["paused"] is True
+    assert imported_worker["task_queue"] == []
+    assert "started_at" not in imported_worker
+    assert app.config["manager"].get(imported["workspaceId"]).path == destination
+
+
+def test_import_create_rejects_existing_destination_without_modifying_it(tmp_workspace):
+    current = os.path.join(tmp_workspace, "current")
+    destination = os.path.join(tmp_workspace, "imported-workspace")
+    os.makedirs(current)
+    os.makedirs(destination)
+    marker = os.path.join(destination, "keep.txt")
+    with open(marker, "w", encoding="utf-8") as handle:
+        handle.write("keep")
+    init_workspace(current)
+    app = create_app(current, no_browser=True)
+    client = socketio.test_client(app)
+    archive = _zip_bytes({
+        ".bullpen/config.json": json.dumps({"name": "Imported Workspace"}),
+    })
+
+    error = _import_create_error(client, archive.getvalue(), name="Imported Workspace")
+
+    assert error["ok"] is False
+    assert "already exists" in error["error"]
+    with open(marker, encoding="utf-8") as handle:
+        assert handle.read() == "keep"
 
 
 def test_import_inspect_detects_all_workspace_archive(tmp_workspace):
@@ -162,7 +255,7 @@ def test_import_inspect_detects_legacy_all_workspace_archive(tmp_workspace):
     assert inspected["legacy"] is True
 
 
-def test_export_all_and_import_all_round_trip(tmp_workspace):
+def test_export_all_round_trip_and_import_all_is_rejected(tmp_workspace):
     bp1 = init_workspace(tmp_workspace)
     app = create_app(tmp_workspace, no_browser=True)
     manager = app.config["manager"]
@@ -194,9 +287,6 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
             "server_port": app.config["port"],
         },
     )
-    token_one = mcp_auth.read_workspace_mcp_token(bp1)
-    token_two = mcp_auth.read_workspace_mcp_token(bp2)
-
     client = socketio.test_client(app)
     exported = _export_archive(client, kind="all")
     assert exported["ok"] is True
@@ -219,19 +309,13 @@ def test_export_all_and_import_all_round_trip(tmp_workspace):
         f"workspaces/{ws1_id}/.bullpen/config.json": json.dumps({"name": "Imported One", "columns": [], "grid": {"rows": 4, "cols": 6}}),
         f"workspaces/{ws2_id}/.bullpen/config.json": json.dumps({"name": "Imported Two", "columns": [], "grid": {"rows": 4, "cols": 6}}),
     })
-    imported = _import_archive(client, import_archive.getvalue(), kind="all")
-    assert imported["ok"] is True
-    assert imported["imported"] == 2
+    error = _archive_error(client, import_archive.getvalue(), kind="all")
+    assert error["ok"] is False
+    assert error["error"] == "Multi-project imports are not currently supported"
     config_one = read_json(os.path.join(bp1, "config.json"))
     config_two = read_json(os.path.join(bp2, "config.json"))
-    assert config_one["name"] == "Imported One"
-    assert config_two["name"] == "Imported Two"
-    for config in (config_one, config_two):
-        assert config["server_host"] == app.config["host"]
-        assert config["server_port"] == app.config["port"]
-        assert "mcp_token" not in config
-    assert mcp_auth.read_workspace_mcp_token(bp1) == token_one
-    assert mcp_auth.read_workspace_mcp_token(bp2) == token_two
+    assert config_one["name"] == "One"
+    assert config_two["name"] == "Two"
 
 
 def test_legacy_worker_zip_routes_are_removed(tmp_workspace):
@@ -301,9 +385,9 @@ def test_import_workspace_rejects_archive_with_too_many_files(tmp_workspace):
     for idx in range(_MAX_IMPORT_ARCHIVE_FILES):
         payload[f".bullpen/files/file-{idx}.txt"] = "ok"
 
-    error = _archive_error(client, _zip_bytes(payload).getvalue(), kind="workspace")
+    error = _inspect_import_error(client, _zip_bytes(payload).getvalue())
 
-    assert error["code"] == "invalid-archive"
+    assert error["code"] == "unknown-import-type"
     assert error["error"] == "Archive contains too many files"
 
 
@@ -317,9 +401,9 @@ def test_import_workspace_rejects_high_expansion_archive(tmp_workspace):
         ".bullpen/payload.txt": "A" * (_MAX_IMPORT_COMPRESSION_RATIO * 4096),
     }
 
-    error = _archive_error(client, _zip_bytes(bomb_payload).getvalue(), kind="workspace")
+    error = _inspect_import_error(client, _zip_bytes(bomb_payload).getvalue())
 
-    assert error["code"] == "invalid-archive"
+    assert error["code"] == "unknown-import-type"
     assert error["error"] == "Archive contains highly compressed entries"
 
 
@@ -328,7 +412,7 @@ def test_import_workspace_rejects_nested_archive_files(tmp_workspace):
     app = create_app(tmp_workspace, no_browser=True)
     client = socketio.test_client(app)
 
-    error = _archive_error(
+    error = _inspect_import_error(
         client,
         _zip_bytes(
             {
@@ -336,8 +420,7 @@ def test_import_workspace_rejects_nested_archive_files(tmp_workspace):
                 ".bullpen/nested/archive.zip": "not really a zip, still blocked",
             }
         ).getvalue(),
-        kind="workspace",
     )
 
-    assert error["code"] == "invalid-archive"
+    assert error["code"] == "unknown-import-type"
     assert error["error"] == "Archive contains nested archive files"

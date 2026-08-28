@@ -73,7 +73,6 @@ def test_app_wires_toolbar_export_import_events():
     assert "if (eventPayload.request_id && eventPayload.request_id !== requestId) return false;" in text
     assert "socket.emit('bento:export', _wsData({ ...payload, request_id: requestId }));" in text
     assert "await _downloadBentoExport({ kind: 'worker', slot }, 'bullpen-worker.bento');" in text
-    assert "socket.emit('archive:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "socket.emit('import:inspect', _wsData({ ...payload, request_id: requestId }));" in text
     assert "socket.emit('bento:preview', _wsData({ ...payload, request_id: requestId }));" in text
     assert "const inspected = await _requestImportInspect({ file: data });" in text
@@ -88,10 +87,16 @@ def test_app_wires_toolbar_export_import_events():
     assert "payload.placement = { strategy: 'preserve', state: placement.state };" in text
     assert "return _requestBentoImport(await _bentoImportPayloadForPreview(data, preview));" in text
     assert "<BentoImportReviewModal" in text
+    assert "<WorkspaceImportCreateModal" in text
+    assert ":visible=\"workspaceImportCreate.visible\"" in text
+    assert "function _reviewWorkspaceImportCreate(preview)" in text
+    assert "const decisions = await _reviewWorkspaceImportCreate(inspected.preview || {});" in text
+    assert "socket.emit('project:import-create', _wsData({ ...payload, request_id: requestId }));" in text
+    assert "Multi-project import is not currently supported." in text
     assert "socket.emit('bento:import', _wsData({ ...payload, request_id: requestId }));" in text
     assert "const data = await file.arrayBuffer();" in text
     assert "async function importAny(file) {" in text
-    assert "const result = await _importArchiveFile(file, 'all');" in text
+    assert "return importAny(file);" in text
     assert "Package import complete' + (count ? ` (${count})` : '')" in text
     assert "/api/export/workspace" not in text
     assert "/api/export/all" not in text
@@ -99,6 +104,18 @@ def test_app_wires_toolbar_export_import_events():
     assert "/api/import/all" not in text
     assert "/api/export/workers" not in text
     assert "/api/import/workers" not in text
+
+
+def test_workspace_import_create_modal_explains_safe_import_behavior():
+    modal = _read("static/components/WorkspaceImportCreateModal.js")
+    index = _read("static/index.html")
+    assert "/components/WorkspaceImportCreateModal.js" in index
+    assert "Import as New Project" in modal
+    assert "Project name" in modal
+    assert "This creates a new project and never changes the selected project." in modal
+    assert "Project repository and ordinary workspace files are not included" in modal
+    assert "Imported workers are stopped and automation starts paused." in modal
+    assert "Create Project" in modal
 
 
 def test_worker_colors_menu_includes_opencode_marker_and_notification():

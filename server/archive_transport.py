@@ -2,16 +2,16 @@
 
 import json
 import os
+import re
 import shutil
 import tempfile
+import unicodedata
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
 
-from server import mcp_auth
-from server.global_settings import load_global_settings
 from server.init import init_workspace
-from server.persistence import ensure_within, read_json
+from server.persistence import ensure_within, read_json, write_json
 
 
 MAX_IMPORT_ARCHIVE_BYTES = 200 * 1024 * 1024
@@ -169,73 +169,161 @@ def workspace_payload_root(extracted_root):
     return None
 
 
-def write_runtime_config(app, ws, preferred_token=None):
-    manager = app.config["manager"]
-    token = mcp_auth.ensure_workspace_runtime_config(
-        ws.bp_dir,
-        host=app.config.get("host", "127.0.0.1"),
-        port=app.config.get("port", 5000),
-        disallowed_tokens=mcp_auth.workspace_token_set(manager.all_workspaces(), exclude_bp_dir=ws.bp_dir),
-        preferred_token=preferred_token,
-    )
-    app.config.setdefault("mcp_tokens_by_workspace", {})
-    app.config["mcp_tokens_by_workspace"][ws.id] = token
+def _read_workspace_json_object(payload_root, filename, *, required=True):
+    path = os.path.join(payload_root, filename)
+    if not os.path.isfile(path):
+        if required:
+            raise ValueError(f"Workspace archive is missing {filename}")
+        return {}
+    try:
+        value = read_json(path)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Workspace archive contains invalid {filename}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"Workspace archive contains invalid {filename}")
+    return value
 
 
-def replace_workspace_bp_dir(app, socketio, ws, source_bp_dir):
-    manager = app.config["manager"]
-    bp_dir = ws.bp_dir
-    previous_token = mcp_auth.read_workspace_mcp_token(bp_dir)
-    if os.path.exists(bp_dir):
-        shutil.rmtree(bp_dir)
-    shutil.copytree(source_bp_dir, bp_dir)
-    init_workspace(ws.path)
-    write_runtime_config(app, ws, preferred_token=previous_token)
-    from server.app import load_state, reconcile
+def _workspace_archive_summary(payload_root):
+    config = _read_workspace_json_object(payload_root, "config.json")
+    layout = _read_workspace_json_object(payload_root, "layout.json", required=False)
+    slots = layout.get("slots") or []
+    if not isinstance(slots, list):
+        raise ValueError("Workspace archive contains invalid layout.json")
+    tasks_dir = os.path.join(payload_root, "tasks")
+    archive_dir = os.path.join(tasks_dir, "archive")
+    profiles_dir = os.path.join(payload_root, "profiles")
 
-    reconcile(bp_dir)
-    state = load_state(bp_dir, ws.path, workspace_display=ws.name)
-    state["workspaceId"] = ws.id
-    state["globalSettings"] = load_global_settings(manager.global_dir)
-    socketio.emit("state:init", state, to=ws.id)
-    socketio.emit("files:changed", {"workspaceId": ws.id}, to=ws.id)
+    def _count_files(directory, suffix):
+        if not os.path.isdir(directory):
+            return 0
+        return sum(
+            1
+            for name in os.listdir(directory)
+            if name.endswith(suffix) and os.path.isfile(os.path.join(directory, name))
+        )
+
+    proposed_name = str(config.get("name") or "Imported project").strip() or "Imported project"
+    return {
+        "proposed_name": proposed_name,
+        "proposed_slug": project_slug(proposed_name),
+        "workers": sum(1 for slot in (slots or []) if isinstance(slot, dict)),
+        "tickets": _count_files(tasks_dir, ".md"),
+        "archived_tickets": _count_files(archive_dir, ".md"),
+        "profiles": _count_files(profiles_dir, ".json"),
+        "includes_project_files": False,
+    }
 
 
-def import_workspace_archive(app, socketio, ws, fileobj):
+def preview_workspace_archive(fileobj):
     try:
         with zipfile.ZipFile(fileobj, "r") as zf:
-            with tempfile.TemporaryDirectory(prefix="bullpen_import_") as tmp_dir:
+            with tempfile.TemporaryDirectory(prefix="bullpen_import_preview_") as tmp_dir:
                 safe_extract_zip(zf, tmp_dir)
                 payload_root = workspace_payload_root(tmp_dir)
                 if not payload_root:
                     raise ValueError("Archive does not contain a workspace .bullpen payload")
-                replace_workspace_bp_dir(app, socketio, ws, payload_root)
+                return _workspace_archive_summary(payload_root)
     except zipfile.BadZipFile as exc:
         raise ValueError("Invalid zip file") from exc
-    return {"ok": True, "imported": 1, "workspaceId": ws.id}
+    finally:
+        if hasattr(fileobj, "seek"):
+            fileobj.seek(0)
+
+
+def validate_project_name(name):
+    value = str(name or "").strip()
+    if not value:
+        raise ValueError("Project name is required")
+    if len(value) > 100:
+        raise ValueError("Project name must be 100 characters or fewer")
+    if any(ord(char) < 32 for char in value) or any(char in value for char in ("/", "\\")):
+        raise ValueError("Project name contains invalid characters")
+    return value
+
+
+def project_slug(name):
+    value = unicodedata.normalize("NFKD", validate_project_name(name))
+    value = value.encode("ascii", "ignore").decode("ascii").lower()
+    value = re.sub(r"[^a-z0-9]+", "-", value).strip("-")
+    return value[:80].rstrip("-") or "imported-project"
+
+
+def _quarantine_imported_workspace(bp_dir, display_name):
+    config_path = os.path.join(bp_dir, "config.json")
+    config = portable_config(_read_workspace_json_object(bp_dir, "config.json"))
+    config["name"] = display_name
+    config["worker_automation_paused"] = True
+    write_json(config_path, config)
+
+    layout_path = os.path.join(bp_dir, "layout.json")
+    layout = _read_workspace_json_object(bp_dir, "layout.json", required=False)
+    slots = layout.get("slots")
+    if slots is not None and not isinstance(slots, list):
+        raise ValueError("Workspace archive contains invalid layout.json")
+    if isinstance(slots, list):
+        for worker in slots:
+            if not isinstance(worker, dict):
+                continue
+            worker["state"] = "idle"
+            worker["task_queue"] = []
+            worker["paused"] = True
+            worker.pop("started_at", None)
+        write_json(layout_path, layout)
+
+
+def import_workspace_archive_create(app, fileobj, *, name, parent_dir):
+    manager = app.config["manager"]
+    display_name = validate_project_name(name)
+    slug = project_slug(display_name)
+    destination = os.path.join(os.path.realpath(parent_dir), slug)
+    existing_names = {
+        str(project.get("name") or "").strip().casefold()
+        for project in manager.list_projects()
+    }
+    if display_name.casefold() in existing_names:
+        raise ValueError(f'A project named "{display_name}" already exists. Choose a different name.')
+    if os.path.exists(destination):
+        raise ValueError(f"The destination {destination} already exists. Choose a different project name.")
+
+    staging = tempfile.mkdtemp(prefix=f".{slug}.import-", dir=parent_dir)
+    created_destination = False
+    try:
+        with zipfile.ZipFile(fileobj, "r") as zf:
+            with tempfile.TemporaryDirectory(prefix="bullpen_import_create_") as tmp_dir:
+                safe_extract_zip(zf, tmp_dir)
+                payload_root = workspace_payload_root(tmp_dir)
+                if not payload_root:
+                    raise ValueError("Archive does not contain a workspace .bullpen payload")
+                shutil.copytree(payload_root, os.path.join(staging, ".bullpen"))
+        _quarantine_imported_workspace(os.path.join(staging, ".bullpen"), display_name)
+        init_workspace(staging)
+        os.rename(staging, destination)
+        created_destination = True
+        workspace_id = manager.register_project(destination, name=display_name)
+        return {
+            "ok": True,
+            "imported": 1,
+            "workspaceId": workspace_id,
+            "name": display_name,
+            "path": destination,
+        }
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Invalid zip file") from exc
+    except Exception:
+        if created_destination and os.path.isdir(destination):
+            shutil.rmtree(destination)
+        raise
+    finally:
+        if os.path.isdir(staging):
+            shutil.rmtree(staging)
+        if hasattr(fileobj, "seek"):
+            fileobj.seek(0)
+
+
+def import_workspace_archive(app, socketio, ws, fileobj):
+    raise ValueError("Workspace archives can only create new projects")
 
 
 def import_all_archive(app, socketio, fileobj):
-    manager = app.config["manager"]
-    imported = 0
-    try:
-        with zipfile.ZipFile(fileobj, "r") as zf:
-            with tempfile.TemporaryDirectory(prefix="bullpen_import_all_") as tmp_dir:
-                safe_extract_zip(zf, tmp_dir)
-                workspaces_dir = os.path.join(tmp_dir, "workspaces")
-                if not os.path.isdir(workspaces_dir):
-                    raise ValueError("Archive does not contain a workspaces/ directory")
-                for ws in manager.all_workspaces():
-                    candidate = os.path.join(workspaces_dir, ws.id)
-                    if not os.path.isdir(candidate):
-                        continue
-                    payload_root = workspace_payload_root(candidate)
-                    if not payload_root:
-                        continue
-                    replace_workspace_bp_dir(app, socketio, ws, payload_root)
-                    imported += 1
-    except zipfile.BadZipFile as exc:
-        raise ValueError("Invalid zip file") from exc
-    if imported == 0:
-        raise ValueError("No matching workspaces found in archive")
-    return {"ok": True, "imported": imported}
+    raise ValueError("Multi-project imports are not currently supported")

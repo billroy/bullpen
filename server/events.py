@@ -23,6 +23,8 @@ from server.archive_transport import (
     export_workspace_zip_bytes,
     import_all_archive,
     import_workspace_archive,
+    import_workspace_archive_create,
+    preview_workspace_archive,
 )
 from server import claude_models, codex_models, opencode_models
 from server.file_browser import (
@@ -1175,6 +1177,9 @@ def register_events(socketio, app):
                 preview.update(_bento_event_base(ws_id, payload))
                 result["preview"] = preview
                 result["kind"] = preview.get("kind")
+            elif detected.get("type") == "workspace":
+                fileobj.seek(0)
+                result["preview"] = preview_workspace_archive(fileobj)
             emit("import:inspected", result)
         except BentoCarrierError as e:
             emit("import:error", {
@@ -1191,6 +1196,15 @@ def register_events(socketio, app):
                 "ok": False,
                 "error": str(e),
                 "code": "unknown-import-type",
+            })
+        except Exception:
+            logging.exception("Import inspection failed")
+            emit("import:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": "Import inspection failed",
+                "code": "import-inspection-failed",
             })
 
     @socketio.on("models:opencode")
@@ -4745,6 +4759,56 @@ def register_events(socketio, app):
             return
 
         _activate_and_broadcast_project(manager, ws_id)
+
+    @socketio.on("project:import-create")
+    @with_lock
+    def on_project_import_create(data):
+        payload = data or {}
+        if _forbid_mcp_project_admin("project:import-create"):
+            return
+        manager = app.config["manager"]
+        ws_id, _bp_dir = _resolve(payload)
+        if not ws_id:
+            return
+        current = manager.get_or_activate(ws_id)
+        if not current:
+            emit("project:import-create:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": "Unknown project",
+                "code": "unknown-project",
+            })
+            return
+        parent_dir = projects_root() or os.path.dirname(current.path)
+        try:
+            fileobj = _archive_fileobj(payload)
+            result = import_workspace_archive_create(
+                app,
+                fileobj,
+                name=payload.get("name"),
+                parent_dir=parent_dir,
+            )
+            _activate_and_broadcast_project(manager, result["workspaceId"])
+            result["request_id"] = payload.get("request_id")
+            emit("project:import-created", result)
+        except ValueError as e:
+            emit("project:import-create:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": str(e),
+                "code": "import-create-rejected",
+            })
+        except Exception:
+            logging.exception("Project import-create failed")
+            emit("project:import-create:error", {
+                "workspaceId": ws_id,
+                "request_id": payload.get("request_id"),
+                "ok": False,
+                "error": "Project import failed",
+                "code": "import-create-failed",
+            })
 
     @socketio.on("project:clone")
     @with_lock
