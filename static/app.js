@@ -2847,7 +2847,7 @@ const app = createApp({
       outputBuffers, outputLinesForSlot, requestOutputCatchup, focusTabs, openFocusTab, closeFocusTab, focusTask, allTabs,
       ticketsViewMode, ticketListScope, setTicketListScope, visibleTicketTasks, chatTabs, addLiveAgentTab, closeLiveAgentTab,
       terminalTabs, addTerminalTab, closeTerminalTab, restartTerminal, sendTerminalInput, resizeTerminal, setTerminalRef, onTerminalReady,
-      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportWorker, exportWorkerGroup, exportAll, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
+      tabIcon, activeProjectName, exportWorkspace, exportWorkers, exportWorker, exportWorkerGroup, exportAll, importAnyFromPicker, importWorkspace, importWorkers, importAll, openCommitDiffFromTicket,
       bullpenTabRef,
     };
   },

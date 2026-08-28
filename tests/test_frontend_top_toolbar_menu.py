@@ -58,6 +58,8 @@ def test_app_wires_toolbar_export_import_events():
     assert "@export-all=\"exportAll\"" in text
     assert "@import-requested=\"importAnyFromPicker\"" in text
     assert "@import-file=\"importAny\"" not in text
+    setup_return = text[text.index("    return {", text.index("const taskById = computed")):text.index("  mounted() {")]
+    assert "importAnyFromPicker" in setup_return
     assert "@import-workspace=\"importWorkspace\"" not in text
     assert "@import-workers=\"importWorkers\"" not in text
     assert "@import-all=\"importAll\"" not in text
