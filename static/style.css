@@ -482,10 +482,6 @@ body {
   right: auto;
 }
 
-.toolbar-import-input {
-  display: none;
-}
-
 .toolbar-center {
   flex: 1;
   display: flex;

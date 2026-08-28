@@ -17,7 +17,9 @@ def test_toolbar_menu_contains_export_import_actions():
     assert "class=\"project-menu-item\" @click=\"onExportWorkers\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
     assert "class=\"project-menu-item\" @click=\"onExportAll\"><i class=\"menu-item-icon\" data-lucide=\"download\"" in text
     assert "class=\"project-menu-item\" @click=\"triggerImport\"><i class=\"menu-item-icon\" data-lucide=\"upload\"" in text
-    assert "accept=\".bento,.zip,application/zip,application/vnd.bullpen.bento+zip,application/vnd.bento+zip\"" in text
+    assert "this.$emit('import-requested');" in text
+    assert "ref=\"importInput\"" not in text
+    assert "onImportSelected" not in text
     assert "class=\"project-menu-item\" @click=\"onOpenGitHub\"><i class=\"menu-item-icon\" data-lucide=\"git-branch\"" in text
     assert "class=\"project-menu-item\" @click=\"onLogout\"><i class=\"menu-item-icon\" data-lucide=\"log-out\"" in text
     assert "<span class=\"menu-item-label\">Toggle Left Pane</span></button>" in text
@@ -54,7 +56,8 @@ def test_app_wires_toolbar_export_import_events():
     assert "@export-workspace=\"exportWorkspace\"" in text
     assert "@export-workers=\"exportWorkers\"" in text
     assert "@export-all=\"exportAll\"" in text
-    assert "@import-file=\"importAny\"" in text
+    assert "@import-requested=\"importAnyFromPicker\"" in text
+    assert "@import-file=\"importAny\"" not in text
     assert "@import-workspace=\"importWorkspace\"" not in text
     assert "@import-workers=\"importWorkers\"" not in text
     assert "@import-all=\"importAll\"" not in text

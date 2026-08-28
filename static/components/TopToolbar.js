@@ -20,7 +20,7 @@ const TopToolbar = {
     'set-worker-minimap-collapsed',
     'export-workspace',
     'export-all',
-    'import-file',
+    'import-requested',
     'quick-create-task',
     'run-palette-command',
     'run-palette-input',
@@ -397,10 +397,8 @@ const TopToolbar = {
       this.$emit('export-all');
     },
     triggerImport() {
-      if (!this.$refs.importInput) return;
-      this.$refs.importInput.value = '';
-      this.$refs.importInput.click();
       this.showMainMenu = false;
+      this.$emit('import-requested');
     },
     onOpenGitHub() {
       window.open('https://github.com/billroy/bullpen', '_blank', 'noopener,noreferrer');
@@ -431,11 +429,6 @@ const TopToolbar = {
 
       document.body.appendChild(form);
       form.submit();
-    },
-    onImportSelected(event) {
-      const file = event?.target?.files?.[0];
-      if (!file) return;
-      this.$emit('import-file', file);
     },
     onPaletteKeydown(event) {
       if (event.key === 'ArrowDown') {
@@ -599,13 +592,6 @@ const TopToolbar = {
               <button class="project-menu-item" @click="onOpenGitHub"><i class="menu-item-icon" data-lucide="git-branch" aria-hidden="true"></i><span class="menu-item-label">Bullpen on GitHub</span></button>
               <button class="project-menu-item" @click="onLogout"><i class="menu-item-icon" data-lucide="log-out" aria-hidden="true"></i><span class="menu-item-label">Logout</span></button>
             </div>
-            <input
-              ref="importInput"
-              type="file"
-              accept=".bento,.zip,application/zip,application/vnd.bullpen.bento+zip,application/vnd.bento+zip"
-              class="toolbar-import-input"
-              @change="onImportSelected"
-            >
           </div>
           <span class="toolbar-name">
             Bullpen<span v-if="projectName" :title="projectPath || ''"> / {{ projectName }}</span>
