@@ -12,7 +12,7 @@ from server.app import (
     socketio,
 )
 from server.init import init_workspace
-from server import mcp_auth
+from server import archive_transport, mcp_auth
 from server.persistence import read_json, write_json
 
 
@@ -220,6 +220,118 @@ def test_import_create_rejects_existing_destination_without_modifying_it(tmp_wor
     assert "already exists" in error["error"]
     with open(marker, encoding="utf-8") as handle:
         assert handle.read() == "keep"
+
+
+def test_import_create_exclusive_reservation_rejects_check_to_publish_race(
+    tmp_workspace,
+    monkeypatch,
+):
+    current = os.path.join(tmp_workspace, "current")
+    destination = os.path.realpath(os.path.join(tmp_workspace, "raced-project"))
+    os.makedirs(current)
+    init_workspace(current)
+    app = create_app(current, no_browser=True)
+    client = socketio.test_client(app)
+    archive = _zip_bytes({
+        ".bullpen/config.json": json.dumps({"name": "Raced Project"}),
+    })
+    real_reserve = archive_transport._reserve_import_destination
+
+    def reserve_after_competing_create(path):
+        os.mkdir(path)
+        real_reserve(path)
+
+    monkeypatch.setattr(
+        archive_transport,
+        "_reserve_import_destination",
+        reserve_after_competing_create,
+    )
+
+    error = _import_create_error(client, archive.getvalue(), name="Raced Project")
+
+    assert error["ok"] is False
+    assert "already exists" in error["error"]
+    assert os.path.isdir(destination)
+    assert os.listdir(destination) == []
+
+
+def test_import_create_rejects_registered_unavailable_destination(tmp_workspace):
+    current = os.path.join(tmp_workspace, "current")
+    unavailable = os.path.join(tmp_workspace, "reserved-project")
+    moved = os.path.join(tmp_workspace, "reserved-project-away")
+    os.makedirs(current)
+    os.makedirs(unavailable)
+    init_workspace(current)
+    app = create_app(current, no_browser=True)
+    manager = app.config["manager"]
+    registered_id = manager.register_project(unavailable, name="Different Display Name")
+    os.rename(unavailable, moved)
+    client = socketio.test_client(app)
+    archive = _zip_bytes({
+        ".bullpen/config.json": json.dumps({"name": "Reserved Project"}),
+    })
+
+    error = _import_create_error(client, archive.getvalue(), name="Reserved Project")
+
+    assert error["ok"] is False
+    assert "already registered as a project" in error["error"]
+    assert not os.path.lexists(unavailable)
+    registered = next(project for project in manager.list_projects() if project["id"] == registered_id)
+    assert registered["name"] == "Different Display Name"
+    assert registered["path"] == os.path.realpath(unavailable)
+
+
+def test_import_create_rejects_dangling_symlink_destination(tmp_workspace):
+    current = os.path.join(tmp_workspace, "current")
+    destination = os.path.join(tmp_workspace, "linked-project")
+    link_target = os.path.join(tmp_workspace, "missing-target")
+    os.makedirs(current)
+    os.symlink(link_target, destination)
+    init_workspace(current)
+    app = create_app(current, no_browser=True)
+    client = socketio.test_client(app)
+    archive = _zip_bytes({
+        ".bullpen/config.json": json.dumps({"name": "Linked Project"}),
+    })
+
+    error = _import_create_error(client, archive.getvalue(), name="Linked Project")
+
+    assert error["ok"] is False
+    assert "already exists" in error["error"]
+    assert os.path.islink(destination)
+    assert os.readlink(destination) == link_target
+
+
+def test_import_create_never_deletes_reserved_destination_on_registration_failure(
+    tmp_workspace,
+    monkeypatch,
+):
+    current = os.path.join(tmp_workspace, "current")
+    destination = os.path.realpath(os.path.join(tmp_workspace, "failed-project"))
+    os.makedirs(current)
+    init_workspace(current)
+    app = create_app(current, no_browser=True)
+    manager = app.config["manager"]
+    client = socketio.test_client(app)
+    archive = _zip_bytes({
+        ".bullpen/config.json": json.dumps({"name": "Failed Project"}),
+    })
+
+    def fail_registration(path, name=None):
+        with open(os.path.join(path, "do-not-delete.txt"), "w", encoding="utf-8") as handle:
+            handle.write("preserve")
+        raise RuntimeError("simulated registry failure")
+
+    monkeypatch.setattr(manager, "register_project", fail_registration)
+
+    error = _import_create_error(client, archive.getvalue(), name="Failed Project")
+
+    assert error["ok"] is False
+    assert "No existing files were replaced" in error["error"]
+    marker = os.path.join(destination, "do-not-delete.txt")
+    assert os.path.isfile(marker)
+    with open(marker, encoding="utf-8") as handle:
+        assert handle.read() == "preserve"
 
 
 def test_import_inspect_detects_all_workspace_archive(tmp_workspace):

@@ -249,6 +249,19 @@ def project_slug(name):
     return value[:80].rstrip("-") or "imported-project"
 
 
+def _project_path_key(path):
+    return os.path.realpath(os.path.abspath(path)).casefold()
+
+
+def _reserve_import_destination(destination):
+    try:
+        os.mkdir(destination, mode=0o700)
+    except FileExistsError as exc:
+        raise ValueError(
+            f"The destination {destination} already exists. Choose a different project name."
+        ) from exc
+
+
 def _quarantine_imported_workspace(bp_dir, display_name):
     config_path = os.path.join(bp_dir, "config.json")
     config = portable_config(_read_workspace_json_object(bp_dir, "config.json"))
@@ -277,17 +290,28 @@ def import_workspace_archive_create(app, fileobj, *, name, parent_dir):
     display_name = validate_project_name(name)
     slug = project_slug(display_name)
     destination = os.path.join(os.path.realpath(parent_dir), slug)
+    projects = manager.list_projects()
     existing_names = {
         str(project.get("name") or "").strip().casefold()
-        for project in manager.list_projects()
+        for project in projects
+    }
+    registered_paths = {
+        _project_path_key(project["path"])
+        for project in projects
+        if project.get("path")
     }
     if display_name.casefold() in existing_names:
         raise ValueError(f'A project named "{display_name}" already exists. Choose a different name.')
-    if os.path.exists(destination):
+    if _project_path_key(destination) in registered_paths:
+        raise ValueError(
+            f"The destination {destination} is already registered as a project. "
+            "Choose a different project name."
+        )
+    if os.path.lexists(destination):
         raise ValueError(f"The destination {destination} already exists. Choose a different project name.")
 
     staging = tempfile.mkdtemp(prefix=f".{slug}.import-", dir=parent_dir)
-    created_destination = False
+    destination_reserved = False
     try:
         with zipfile.ZipFile(fileobj, "r") as zf:
             with tempfile.TemporaryDirectory(prefix="bullpen_import_create_") as tmp_dir:
@@ -298,8 +322,12 @@ def import_workspace_archive_create(app, fileobj, *, name, parent_dir):
                 shutil.copytree(payload_root, os.path.join(staging, ".bullpen"))
         _quarantine_imported_workspace(os.path.join(staging, ".bullpen"), display_name)
         init_workspace(staging)
-        os.rename(staging, destination)
-        created_destination = True
+        _reserve_import_destination(destination)
+        destination_reserved = True
+        shutil.copytree(
+            os.path.join(staging, ".bullpen"),
+            os.path.join(destination, ".bullpen"),
+        )
         workspace_id = manager.register_project(destination, name=display_name)
         return {
             "ok": True,
@@ -310,9 +338,12 @@ def import_workspace_archive_create(app, fileobj, *, name, parent_dir):
         }
     except zipfile.BadZipFile as exc:
         raise ValueError("Invalid zip file") from exc
-    except Exception:
-        if created_destination and os.path.isdir(destination):
-            shutil.rmtree(destination)
+    except Exception as exc:
+        if destination_reserved:
+            raise ValueError(
+                "Project import could not be completed. No existing files were replaced; "
+                f"the incomplete import remains at {destination}."
+            ) from exc
         raise
     finally:
         if os.path.isdir(staging):
