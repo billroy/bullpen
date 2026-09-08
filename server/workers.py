@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from server.agents import get_adapter
+from server.display_text import normalize_display_text
 from server.init import DEFAULT_AGENT_TIMEOUT_SECONDS
 from server.locks import write_lock as _write_lock
 from server.persistence import read_json, write_json, atomic_write
@@ -2122,6 +2123,7 @@ class SubprocessRunner:
             display = self.line_formatter(display_line)
             if display is None:
                 return
+            display = normalize_display_text(display)
 
             for display_line in display.split("\n"):
                 combined_lines.append(display_line)

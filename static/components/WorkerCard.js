@@ -632,7 +632,10 @@ const WorkerCard = {
         if (idx < 0 || i < idx) { idx = i; markerLen = marker.length; }
       }
       if (idx < 0) return '';
-      const output = task.body.substring(idx + markerLen).trim();
+      const rawOutput = task.body.substring(idx + markerLen).trim();
+      const output = window.normalizeWorkerOutputText
+        ? window.normalizeWorkerOutputText(rawOutput)
+        : rawOutput;
       const lines = output.split('\n');
       return lines.slice(-5).join('\n');
     },

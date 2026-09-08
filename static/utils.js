@@ -2,6 +2,41 @@ window.BULLPEN_TASK_DND_MIME = 'application/x-bullpen-task-id';
 window.BULLPEN_TASK_DRAG_ACTIVE = false;
 window.BULLPEN_TASK_DRAG_TASK_ID = null;
 
+function normalizeWorkerOutputText(value) {
+  let text = value == null ? '' : String(value);
+  text = text
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b[P^_][\s\S]*?\x1b\\/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b[@-_]/g, '')
+    .replace(/\x9b[0-?]*[ -/]*[@-~]/g, '');
+
+  return text.split('\n').map((rawLine) => {
+    const cells = [];
+    let cursor = 0;
+    for (const char of rawLine) {
+      const code = char.codePointAt(0);
+      if (char === '\r') cursor = 0;
+      else if (char === '\b') cursor = Math.max(0, cursor - 1);
+      else if (char === '\t') {
+        cells.push(char);
+        cursor = cells.length;
+      } else if (code < 32 || (code >= 0x7f && code <= 0x9f)) {
+        continue;
+      } else if (cursor < cells.length) {
+        cells[cursor] = char;
+        cursor += 1;
+      } else {
+        cells.push(char);
+        cursor += 1;
+      }
+    }
+    return cells.join('');
+  }).join('\n');
+}
+
+window.normalizeWorkerOutputText = normalizeWorkerOutputText;
+
 const MODEL_OPTIONS = {
   antigravity: [
     'Gemini 3.5 Flash (Medium)',

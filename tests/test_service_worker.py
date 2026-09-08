@@ -112,6 +112,18 @@ def test_service_manual_start_stop_and_tail(tmp_workspace):
     assert controller.state_snapshot()["pid"] is None
 
 
+def test_service_log_display_strips_terminal_controls(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _install_service_worker(bp_dir, tmp_workspace)
+    socket = FakeSocket()
+    controller = get_controller(bp_dir, "ws-service-clean", 0, socket)
+
+    controller.emit_log(["\x1b[31merror\x1b[0m", "10%\r90%"])
+
+    payload = socket.events[-1][1]
+    assert payload["lines"] == ["error", "90%"]
+
+
 def test_service_restart_replaces_process(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     _install_service_worker(bp_dir, tmp_workspace)

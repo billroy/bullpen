@@ -270,6 +270,11 @@ class TestClaudeAdapter:
                          "input": {"command": "ls -la"}}]}})
         assert adapter.format_stream_line(line) == "$ ls -la"
 
+    def test_format_stream_line_decodes_escaped_tool_layout(self):
+        adapter = ClaudeAdapter()
+        line = json.dumps({"type": "tool", "content": r"first\nsecond\tvalue"})
+        assert adapter.format_stream_line(line) == "first\nsecond\tvalue"
+
     def test_format_stream_line_skips_system(self):
         adapter = ClaudeAdapter()
         line = json.dumps({"type": "system", "subtype": "init"})
@@ -495,6 +500,27 @@ class TestCodexAdapter:
         adapter = CodexAdapter()
         line = json.dumps({"type": "item.started", "item": {"type": "command_execution", "command": "ls -la"}})
         assert adapter.format_stream_line(line) == "$ ls -la"
+
+    def test_format_stream_line_command_completion_omits_duplicate_command(self):
+        adapter = CodexAdapter()
+        line = json.dumps({
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "printf output",
+                "output": r"first\nsecond",
+                "exit_code": 0,
+            },
+        })
+        assert adapter.format_stream_line(line) == "first\nsecond"
+
+    def test_format_stream_line_command_completion_keeps_failure_status(self):
+        adapter = CodexAdapter()
+        line = json.dumps({
+            "type": "item.completed",
+            "item": {"type": "command_execution", "command": "false", "exit_code": 1},
+        })
+        assert adapter.format_stream_line(line) == "[exit code 1]"
 
     def test_format_stream_line_skips_turn_events(self):
         adapter = CodexAdapter()

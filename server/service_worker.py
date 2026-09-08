@@ -19,6 +19,7 @@ from urllib.request import HTTPRedirectHandler, build_opener, Request
 
 from server.persistence import read_json
 from server import tasks as task_mod
+from server.display_text import normalize_display_text
 from server.templates import render_value_template
 from server.worker_types import normalize_layout
 
@@ -754,9 +755,13 @@ class ServiceWorkerController:
     def emit_log(self, lines, *, catchup=False, reset=False):
         if isinstance(lines, str):
             lines = [lines]
+        display_lines = []
+        for line in lines:
+            cleaned = normalize_display_text(line.rstrip("\n"))
+            display_lines.extend(cleaned.split("\n"))
         payload = {
             "slot": self.slot_index,
-            "lines": [line.rstrip("\n") for line in lines],
+            "lines": display_lines,
             "catchup": bool(catchup),
             "reset": bool(reset),
         }
@@ -855,7 +860,7 @@ class ServiceWorkerController:
         data = b"".join(chunks)[-max_bytes:]
         text = data.decode("utf-8", errors="replace")
         self.emit_state()
-        self.emit_log(text.splitlines(), catchup=True, reset=True)
+        self.emit_log(text, catchup=True, reset=True)
 
     def _current_stop_timeout(self):
         try:

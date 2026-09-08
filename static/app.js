@@ -1175,7 +1175,12 @@ const app = createApp({
       const tail = incoming.length > OUTPUT_BUFFER_CAP
         ? incoming.slice(-OUTPUT_BUFFER_CAP)
         : incoming;
-      for (let i = 0; i < tail.length; i++) buf.push(tail[i]);
+      for (let i = 0; i < tail.length; i++) {
+        const cleaned = window.normalizeWorkerOutputText
+          ? window.normalizeWorkerOutputText(tail[i])
+          : String(tail[i] ?? '');
+        for (const line of cleaned.split('\n')) buf.push(line);
+      }
       if (buf.length > OUTPUT_BUFFER_CAP) {
         buf.splice(0, buf.length - OUTPUT_BUFFER_CAP);
       }

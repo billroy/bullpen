@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from server.agents.base import AgentAdapter
+from server.display_text import decode_escaped_layout
 from server.agents.mcp_config import claude_mcp_config
 
 # Common install locations for claude CLI
@@ -379,6 +380,7 @@ class ClaudeAdapter(AgentAdapter):
                 text = "\n".join(texts)
             else:
                 text = str(content)
+            text = decode_escaped_layout(text)
             # Truncate very long tool output for display
             if len(text) > 2000:
                 text = text[:2000] + "\n[output truncated]"

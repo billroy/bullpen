@@ -7,6 +7,7 @@ import sys
 
 from server.agents.base import AgentAdapter
 from server.agents.mcp_config import codex_mcp_overrides
+from server.display_text import decode_escaped_layout
 from server.usage import extract_codex_usage_event, merge_usage_dicts, merge_usage_max
 
 if sys.platform == "win32":
@@ -121,17 +122,19 @@ class CodexAdapter(AgentAdapter):
             if item_type == "agent_message":
                 return item.get("text")
             if item_type == "command_execution":
-                cmd = item.get("command", "")
                 exit_code = item.get("exit_code")
-                parts = [f"$ {cmd}"]
+                # The matching item.started event already displayed the command.
+                # Completion should add only the result, not echo the command.
+                parts = []
                 output = item.get("output", "")
                 if output:
+                    output = decode_escaped_layout(output)
                     if len(output) > 2000:
                         output = output[:2000] + "\n[output truncated]"
                     parts.append(output)
                 if exit_code and exit_code != 0:
                     parts.append(f"[exit code {exit_code}]")
-                return "\n".join(parts)
+                return "\n".join(parts) if parts else None
             if item_type == "file_change":
                 path = item.get("path", "")
                 action = item.get("action", "modified")
