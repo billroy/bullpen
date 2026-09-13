@@ -915,7 +915,7 @@ class TestStartWorker:
         assert force_fail_message == [None]
         assert terminated == []
 
-    def test_opencode_error_event_triggers_early_provider_failure(self, monkeypatch):
+    def test_opencode_error_event_does_not_terminate_before_stream_finishes(self, monkeypatch):
         adapter = get_adapter("opencode")
         proc = type("Proc", (), {"poll": lambda self: None})()
         terminated = []
@@ -928,8 +928,8 @@ class TestStartWorker:
 
         workers_mod._observe_provider_failure(adapter, line, proc, force_fail_message, "stdout")
 
-        assert force_fail_message == ["OpenCode is not authenticated"]
-        assert terminated == [proc]
+        assert force_fail_message == [None]
+        assert terminated == []
 
     @pytest.mark.parametrize("partial_output", ["", "Research is still in progress."])
     def test_forced_provider_failure_keeps_error_authoritative(self, partial_output):
@@ -1321,10 +1321,12 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 11, "outpu
             "run",
             "--format",
             "json",
-            "--model",
-            "openrouter/meta-llama/llama-3.1-405b-instruct",
-            "--dangerously-skip-permissions",
-        ]
+                "--model",
+                "openrouter/meta-llama/llama-3.1-405b-instruct",
+                "--title",
+                "Bullpen",
+                "--dangerously-skip-permissions",
+            ]
         assert os.path.realpath(capture["cwd"]) == os.path.realpath(os.path.dirname(bp_dir))
         assert "Title: Lifecycle opencode" in capture["prompt"]
         assert "Run through the OpenCode adapter." in capture["prompt"]

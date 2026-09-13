@@ -997,6 +997,7 @@ class TestOpenCodeAdapter:
         assert argv[:4] == ["/usr/local/bin/opencode", "run", "--format", "json"]
         assert "--model" in argv
         assert "opencode/north-mini-code-free" in argv
+        assert argv[-2:] == ["--title", "Bullpen"]
         assert "test prompt" not in argv
         assert adapter.prompt_via_stdin() is True
 
@@ -1060,10 +1061,10 @@ class TestOpenCodeAdapter:
         line = json.dumps({"type": "step_finish", "part": {"tokens": {"total": 1}}})
         assert adapter.format_stream_line(line) is None
 
-    def test_format_stream_line_error_event(self):
+    def test_format_stream_line_buffers_error_event(self):
         adapter = OpenCodeAdapter()
         line = json.dumps({"type": "error", "error": {"data": {"message": "No endpoints found"}}})
-        assert adapter.format_stream_line(line) == "No endpoints found"
+        assert adapter.format_stream_line(line) is None
 
     def test_parse_output_success_fixture(self):
         adapter = OpenCodeAdapter()
@@ -1088,6 +1089,43 @@ class TestOpenCodeAdapter:
 
         assert result["success"] is False
         assert "No endpoints found" in result["error"]
+
+    def test_parse_output_recovers_when_successful_step_finishes_after_auxiliary_error(self):
+        adapter = OpenCodeAdapter()
+        stdout = "\n".join([
+            json.dumps({
+                "type": "error",
+                "error": {"data": {"message": "Title model is not authenticated"}},
+            }),
+            json.dumps({"type": "text", "part": {"text": "Primary response"}}),
+            json.dumps({"type": "step_finish", "part": {"reason": "stop"}}),
+        ])
+
+        result = adapter.parse_output(stdout, "", 0)
+
+        assert result == {
+            "success": True,
+            "output": "Primary response",
+            "error": None,
+            "usage": {},
+        }
+
+    def test_parse_output_keeps_error_after_earlier_completion(self):
+        adapter = OpenCodeAdapter()
+        stdout = "\n".join([
+            json.dumps({"type": "text", "part": {"text": "Partial response"}}),
+            json.dumps({"type": "step_finish", "part": {"reason": "stop"}}),
+            json.dumps({
+                "type": "error",
+                "error": {"data": {"message": "Primary request failed"}},
+            }),
+        ])
+
+        result = adapter.parse_output(stdout, "", 0)
+
+        assert result["success"] is False
+        assert result["output"] == "Partial response"
+        assert result["error"] == "Primary request failed"
 
 
 class TestRegistry:

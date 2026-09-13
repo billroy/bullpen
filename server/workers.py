@@ -2872,7 +2872,12 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message, stream="s
             return
         if not isinstance(event, dict) or event.get("type") != "error":
             return
-        candidate = adapter.format_stream_line(line) or line
+        # OpenCode multiplexes primary and auxiliary requests (including title
+        # generation) onto the same session error stream without identifying
+        # the request that failed.  Let parse_output() decide the final result
+        # after seeing the complete stream rather than terminating a healthy
+        # primary request early.
+        return
 
     if not is_non_retryable_provider_error(adapter.name, candidate):
         return

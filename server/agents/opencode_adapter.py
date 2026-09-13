@@ -110,6 +110,12 @@ class OpenCodeAdapter(AgentAdapter):
             "run",
             "--format", "json",
             "--model", model,
+            # OpenCode generates a title with a separate small-model request
+            # when a new session keeps its default title.  Errors from that
+            # auxiliary request are emitted as session-level errors and are
+            # indistinguishable from failures of the primary request.  Bullpen
+            # does not reuse OpenCode's session title, so avoid the extra call.
+            "--title", "Bullpen",
         ]
 
     def prepare_env(self, workspace, bp_dir=None, task_id=None):
@@ -193,7 +199,10 @@ class OpenCodeAdapter(AgentAdapter):
             return text.strip() if isinstance(text, str) and text.strip() else None
 
         if evt_type == "error":
-            return self._error_message(obj)
+            # Error events are finalized by parse_output().  Streaming them as
+            # assistant text duplicates the eventual chat/worker error, and
+            # OpenCode can emit recoverable errors from auxiliary requests.
+            return None
 
         if evt_type in {"step_start", "step_finish"}:
             return None
@@ -211,10 +220,12 @@ class OpenCodeAdapter(AgentAdapter):
         texts = []
         usage = {}
         error_msg = None
+        error_index = None
+        completion_index = None
         saw_json = False
         non_json_lines = []
 
-        for raw_line in (stdout or "").splitlines():
+        for event_index, raw_line in enumerate((stdout or "").splitlines()):
             line = raw_line.strip()
             if not line:
                 continue
@@ -233,6 +244,9 @@ class OpenCodeAdapter(AgentAdapter):
                     texts.append(text)
             elif evt_type == "error":
                 error_msg = self._error_message(obj)
+                error_index = event_index
+            elif evt_type == "step_finish":
+                completion_index = event_index
 
             extracted = extract_opencode_usage_event(obj)
             if extracted:
@@ -248,7 +262,13 @@ class OpenCodeAdapter(AgentAdapter):
                 "usage": usage,
             }
 
-        if error_msg:
+        recovered_after_error = (
+            bool(output)
+            and error_index is not None
+            and completion_index is not None
+            and completion_index > error_index
+        )
+        if error_msg and not recovered_after_error:
             return {
                 "success": False,
                 "output": output,

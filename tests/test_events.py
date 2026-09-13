@@ -3624,6 +3624,10 @@ with open(os.environ["BULLPEN_OPENCODE_CHAT_CAPTURE"], "w", encoding="utf-8") as
         "opencode_config": config,
     }, f)
 
+print(json.dumps({
+    "type": "error",
+    "error": {"data": {"message": "Auxiliary title request failed"}},
+}), flush=True)
 print(json.dumps({"type": "text", "part": {"text": "OpenCode chat ok"}}), flush=True)
 print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 13, "output": 5, "total": 18}}}), flush=True)
 """,
@@ -3667,6 +3671,8 @@ print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 13, "outpu
             "json",
             "--model",
             model,
+            "--title",
+            "Bullpen",
         ]
         assert "--dangerously-skip-permissions" not in capture["argv"]
         assert "hello opencode" in capture["prompt"]
