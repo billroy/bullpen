@@ -2860,12 +2860,23 @@ def _merge_live_usage_max(base, extra):
     return merged
 
 
-def _observe_provider_failure(adapter, line, proc, force_fail_message):
+def _observe_provider_failure(adapter, line, proc, force_fail_message, stream="stdout"):
     if force_fail_message[0] is not None:
         return
-    if not is_non_retryable_provider_error(adapter.name, line):
+
+    candidate = line
+    if adapter.name == "opencode" and stream == "stdout":
+        try:
+            event = json.loads((line or "").strip())
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(event, dict) or event.get("type") != "error":
+            return
+        candidate = line
+
+    if not is_non_retryable_provider_error(adapter.name, candidate):
         return
-    force_fail_message[0] = _provider_non_retryable_message(adapter.name, line)
+    force_fail_message[0] = _provider_non_retryable_message(adapter.name, candidate)
     if proc.poll() is None:
         try:
             _terminate_proc(proc)
@@ -2953,7 +2964,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
             stdin_text = prompt if adapter.prompt_via_stdin() else None
             def _observe_agent_line(line, stream, proc):
                 _maybe_emit_live_usage(line)
-                _observe_provider_failure(adapter, line, proc, force_fail_message)
+                _observe_provider_failure(adapter, line, proc, force_fail_message, stream)
 
             runner = SubprocessRunner(
                 bp_dir=bp_dir,

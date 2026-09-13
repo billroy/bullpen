@@ -899,6 +899,38 @@ class TestStartWorker:
         assert is_non_retryable_provider_error("opencode", "not authenticated")
         assert not is_non_retryable_provider_error("opencode", "Temporary upstream timeout")
 
+    def test_opencode_tool_output_does_not_trigger_early_provider_failure(self, monkeypatch):
+        adapter = get_adapter("opencode")
+        proc = type("Proc", (), {"poll": lambda self: None})()
+        terminated = []
+        monkeypatch.setattr(workers_mod, "_terminate_proc", lambda candidate: terminated.append(candidate))
+        force_fail_message = [None]
+        line = json.dumps({
+            "type": "tool_use",
+            "part": {"tool": "websearch", "output": "Attackers attempted to steal an API key."},
+        })
+
+        workers_mod._observe_provider_failure(adapter, line, proc, force_fail_message, "stdout")
+
+        assert force_fail_message == [None]
+        assert terminated == []
+
+    def test_opencode_error_event_triggers_early_provider_failure(self, monkeypatch):
+        adapter = get_adapter("opencode")
+        proc = type("Proc", (), {"poll": lambda self: None})()
+        terminated = []
+        monkeypatch.setattr(workers_mod, "_terminate_proc", lambda candidate: terminated.append(candidate))
+        force_fail_message = [None]
+        line = json.dumps({
+            "type": "error",
+            "error": {"data": {"message": "OpenCode is not authenticated"}},
+        })
+
+        workers_mod._observe_provider_failure(adapter, line, proc, force_fail_message, "stdout")
+
+        assert force_fail_message == ["Provider reported a non-retryable error."]
+        assert terminated == [proc]
+
     def test_non_retryable_antigravity_provider_error_is_classified_conservatively(self):
         assert is_non_retryable_provider_error("antigravity", "ModelNotFoundError: model not found")
         assert is_non_retryable_provider_error("antigravity", "OAuth login required: not authenticated")
