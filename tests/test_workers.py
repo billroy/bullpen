@@ -928,8 +928,29 @@ class TestStartWorker:
 
         workers_mod._observe_provider_failure(adapter, line, proc, force_fail_message, "stdout")
 
-        assert force_fail_message == ["Provider reported a non-retryable error."]
+        assert force_fail_message == ["OpenCode is not authenticated"]
         assert terminated == [proc]
+
+    @pytest.mark.parametrize("partial_output", ["", "Research is still in progress."])
+    def test_forced_provider_failure_keeps_error_authoritative(self, partial_output):
+        parsed = {
+            "success": False,
+            "output": partial_output,
+            "error": partial_output or "Exit code 143",
+            "usage": {"input_tokens": 42},
+        }
+
+        result = workers_mod._apply_forced_provider_failure(
+            parsed,
+            "OpenCode is not authenticated",
+        )
+
+        assert result == {
+            "success": False,
+            "output": partial_output,
+            "error": "OpenCode is not authenticated",
+            "usage": {"input_tokens": 42},
+        }
 
     def test_non_retryable_antigravity_provider_error_is_classified_conservatively(self):
         assert is_non_retryable_provider_error("antigravity", "ModelNotFoundError: model not found")

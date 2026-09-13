@@ -2872,16 +2872,31 @@ def _observe_provider_failure(adapter, line, proc, force_fail_message, stream="s
             return
         if not isinstance(event, dict) or event.get("type") != "error":
             return
-        candidate = line
+        candidate = adapter.format_stream_line(line) or line
 
     if not is_non_retryable_provider_error(adapter.name, candidate):
         return
-    force_fail_message[0] = _provider_non_retryable_message(adapter.name, candidate)
+    force_fail_message[0] = (
+        candidate
+        if adapter.name == "opencode" and stream == "stdout"
+        else _provider_non_retryable_message(adapter.name, candidate)
+    )
     if proc.poll() is None:
         try:
             _terminate_proc(proc)
         except OSError:
             pass
+
+
+def _apply_forced_provider_failure(result, error_message):
+    if not error_message:
+        return result
+    return {
+        "success": False,
+        "output": result.get("output", ""),
+        "error": error_message,
+        "usage": result.get("usage", {}),
+    }
 
 
 def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, workspace, socketio, ws_id=None, worktree_info=None):
@@ -3015,13 +3030,7 @@ def _run_agent(bp_dir, slot_index, task_id, argv, prompt, adapter, timeout, work
         stdout = completed.stdout
         exit_code = completed.returncode
         result = adapter.parse_output(stdout, stderr, exit_code)
-        if force_fail_message[0] and not result.get("output"):
-            result = {
-                "success": False,
-                "output": result.get("output", ""),
-                "error": force_fail_message[0],
-                "usage": result.get("usage", {}),
-            }
+        result = _apply_forced_provider_failure(result, force_fail_message[0])
 
         # Log the invocation
         _write_log(bp_dir, slot_index, task_id, prompt, result)
