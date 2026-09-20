@@ -1127,6 +1127,44 @@ class TestOpenCodeAdapter:
         assert result["output"] == "Partial response"
         assert result["error"] == "Primary request failed"
 
+    def test_parse_output_rejects_successful_completion_without_assistant_text(self):
+        adapter = OpenCodeAdapter()
+        stdout = "\n".join([
+            json.dumps({"type": "step_start", "part": {}}),
+            json.dumps({
+                "type": "step_finish",
+                "part": {
+                    "reason": "stop",
+                    "tokens": {
+                        "input": 100,
+                        "output": 5,
+                        "reasoning": 20,
+                        "cache": {"read": 50, "write": 0},
+                    },
+                },
+            }),
+        ])
+
+        result = adapter.parse_output(stdout, "", 0)
+
+        assert result["success"] is False
+        assert result["output"] == ""
+        assert result["error"] == "OpenCode completed without producing assistant output."
+        assert result["usage"]["input_tokens"] == 100
+        assert result["usage"]["output_tokens"] == 5
+        assert result["usage"]["reasoning_output_tokens"] == 20
+        assert result["usage"]["cached_input_tokens"] == 50
+
+    def test_parse_output_rejects_empty_stdout_with_zero_exit(self):
+        result = OpenCodeAdapter().parse_output("", "", 0)
+
+        assert result == {
+            "success": False,
+            "output": "",
+            "error": "OpenCode completed without producing assistant output.",
+            "usage": {},
+        }
+
 
 class TestRegistry:
     def test_get_claude(self):

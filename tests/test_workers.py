@@ -41,6 +41,7 @@ from server.workers import (
     is_non_retryable_provider_error,
 )
 from server.agents import get_adapter, register_adapter
+from server.agents.opencode_adapter import OpenCodeAdapter
 from tests.conftest import MockAdapter
 
 
@@ -743,6 +744,61 @@ class TestWorkerReconcile:
         final_worker = _load_layout(bp_dir)["slots"][worker_slot]
         assert final_worker["state"] == "idle"
         assert final_worker["task_queue"] == []
+
+    def test_empty_opencode_completion_retries_before_success(self, bp_dir, worker_slot, monkeypatch):
+        class EmptyThenSuccessfulOpenCodeAdapter(OpenCodeAdapter):
+            def __init__(self):
+                self.build_calls = 0
+
+            @property
+            def name(self):
+                return "opencode-empty-retry-test"
+
+            def available(self):
+                return True
+
+            def build_argv(self, prompt, model, workspace, bp_dir=None):
+                self.build_calls += 1
+                if self.build_calls == 1:
+                    events = [{"type": "step_finish", "part": {"reason": "stop"}}]
+                else:
+                    events = [
+                        {"type": "text", "part": {"text": "retry completed"}},
+                        {"type": "step_finish", "part": {"reason": "stop"}},
+                    ]
+                script = f"import json; events={events!r}; [print(json.dumps(event)) for event in events]"
+                return [sys.executable, "-c", script]
+
+        adapter = EmptyThenSuccessfulOpenCodeAdapter()
+        register_adapter(adapter.name, adapter)
+        layout = _load_layout(bp_dir)
+        worker = layout["slots"][worker_slot]
+        worker["agent"] = adapter.name
+        worker["max_retries"] = 1
+        write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+        original_retry = workers_mod._retry_worker_after_delay
+
+        def retry_without_backoff(bp_dir, slot_index, task_id, _delay, socketio=None, ws_id=None):
+            original_retry(bp_dir, slot_index, task_id, 0, socketio, ws_id)
+
+        monkeypatch.setattr(workers_mod, "_retry_worker_after_delay", retry_without_backoff)
+
+        task = create_task(bp_dir, "Retry empty OpenCode completion")
+        assign_task(bp_dir, worker_slot, task["id"])
+        start_worker(bp_dir, worker_slot)
+
+        deadline = time.time() + 5
+        updated = read_task(bp_dir, task["id"])
+        while time.time() < deadline and updated["status"] != "review":
+            time.sleep(0.02)
+            updated = read_task(bp_dir, task["id"])
+
+        assert updated["status"] == "review"
+        assert adapter.build_calls == 2
+        assert sum(1 for row in updated.get("history", []) if row.get("event") == "retry") == 1
+        assert "[RETRYING in 5s] OpenCode completed without producing assistant output." in updated["body"]
+        assert "retry completed" in updated["body"]
 
     def test_stale_retry_start_does_not_create_synthetic_task(self, bp_dir, worker_slot):
         before_ids = {task["id"] for task in list_tasks(bp_dir)}

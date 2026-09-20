@@ -288,9 +288,9 @@ class OpenCodeAdapter(AgentAdapter):
             }
 
         return {
-            "success": exit_code == 0,
+            "success": False,
             "output": output,
-            "error": None if exit_code == 0 else (stderr or "").strip(),
+            "error": "OpenCode completed without producing assistant output.",
             "usage": usage,
         }
 
