@@ -2,7 +2,6 @@
 
 import mimetypes
 import os
-import subprocess
 import tempfile
 import webbrowser
 from pathlib import Path
@@ -115,22 +114,8 @@ def workspace_file_path(workspace, filepath):
 
 
 def build_file_tree(workspace):
-    """Build file tree excluding .git, node_modules, gitignored paths."""
+    """Build the workspace file tree, excluding predefined internal directories."""
     excluded = {".git", "node_modules", "__pycache__", ".pytest_cache", ".venv", "venv"}
-
-    gitignored = set()
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
-            capture_output=True, text=True, cwd=workspace, timeout=5,
-        )
-        if result.returncode == 0:
-            for line in result.stdout.strip().split("\n"):
-                if line:
-                    gitignored.add(line.rstrip("/"))
-        gitignored.discard(".bullpen")
-    except Exception:
-        pass
 
     max_depth = 20
     max_nodes = 10_000
@@ -151,7 +136,7 @@ def build_file_tree(workspace):
             if name.startswith(".") and name in excluded:
                 continue
             rel_path = os.path.join(rel, name) if rel else name
-            if rel_path in gitignored or name in excluded:
+            if name in excluded:
                 continue
             full = os.path.join(path, name)
             node_count[0] += 1

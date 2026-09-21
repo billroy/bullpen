@@ -2,6 +2,7 @@
 
 import os
 import json
+import subprocess
 
 from server.app import create_app, socketio
 from server.init import init_workspace
@@ -397,4 +398,35 @@ def test_file_tree_returns_over_socket(tmp_workspace):
     assert body is not None
     assert body["request_id"] == "tree-one"
     assert any(node["path"] == "note.txt" for node in body["tree"])
+    client.disconnect()
+
+
+def test_file_tree_includes_gitignored_files(tmp_workspace):
+    subprocess.run(["git", "init", "-q", tmp_workspace], check=True)
+    init_workspace(tmp_workspace)
+    with open(os.path.join(tmp_workspace, ".gitignore"), "w", encoding="utf-8") as handle:
+        handle.write("reports/\n")
+    reports = os.path.join(tmp_workspace, "reports")
+    os.mkdir(reports)
+    with open(os.path.join(reports, "latest.html"), "w", encoding="utf-8") as handle:
+        handle.write("<h1>Latest</h1>")
+    subprocess.run(
+        ["git", "check-ignore", "-q", "reports/latest.html"],
+        cwd=tmp_workspace,
+        check=True,
+    )
+
+    app = create_app(tmp_workspace, no_browser=True)
+    client = socketio.test_client(app)
+    client.get_received()
+    client.emit("files:list", {
+        "workspaceId": app.config["startup_workspace_id"],
+        "request_id": "ignored-tree",
+    })
+
+    body = _received(client, "files:listed")
+    assert body is not None
+    reports_node = next(node for node in body["tree"] if node["path"] == "reports")
+    assert [node["path"] for node in reports_node["children"]] == ["reports/latest.html"]
+    assert not any(node["path"] == ".git" for node in body["tree"])
     client.disconnect()
