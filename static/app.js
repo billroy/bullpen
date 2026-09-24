@@ -3095,6 +3095,7 @@ const app = createApp({
       </div>
       <TaskCreateModal
         :visible="showCreateModal"
+        :columns="state.config.columns"
         @close="closeCreateModal"
         @create="createTask"
       />

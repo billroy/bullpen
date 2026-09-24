@@ -1,14 +1,31 @@
 const TaskCreateModal = {
-  props: ['visible'],
+  props: ['visible', 'columns'],
   emits: ['close', 'create'],
   data() {
     return {
       title: '',
       type: 'task',
       priority: 'normal',
+      status: 'inbox',
       tags: '',
       description: '',
     };
+  },
+  computed: {
+    writableColumns() {
+      const workerColumns = new Set(['assigned', 'in_progress']);
+      const columns = (this.columns || [])
+        .filter(col => col?.key && !workerColumns.has(col.key))
+        .map(col => ({
+          key: col.key,
+          label: col.label || col.key,
+        }));
+      return columns.length ? columns : [{ key: 'inbox', label: 'Inbox' }];
+    },
+    defaultStatus() {
+      if (this.writableColumns.some(col => col.key === 'inbox')) return 'inbox';
+      return this.writableColumns[0]?.key || 'inbox';
+    },
   },
   template: `
     <div v-if="visible" class="modal-overlay" @click.self="$emit('close')" @keydown.escape="$emit('close')" @keydown.meta.enter="onPrimaryShortcut" tabindex="0" ref="overlay">
@@ -44,6 +61,12 @@ const TaskCreateModal = {
             </label>
           </div>
           <label class="form-label">
+            Column
+            <select class="form-select" v-model="status">
+              <option v-for="col in writableColumns" :key="col.key" :value="col.key">{{ col.label }}</option>
+            </select>
+          </label>
+          <label class="form-label">
             Tags <span class="form-hint">(comma separated)</span>
             <input class="form-input" v-model="tags" placeholder="backend, auth">
           </label>
@@ -66,9 +89,15 @@ const TaskCreateModal = {
         this.title = '';
         this.type = 'task';
         this.priority = 'normal';
+        this.status = this.storedStatus();
         this.tags = '';
         this.description = '';
         this.$nextTick(() => this.$refs.titleInput?.focus());
+      }
+    },
+    columns() {
+      if (!this.writableColumns.some(col => col.key === this.status)) {
+        this.status = this.storedStatus();
       }
     }
   },
@@ -77,8 +106,29 @@ const TaskCreateModal = {
       e.preventDefault();
       this.submit();
     },
+    storedStatus() {
+      let stored = '';
+      try {
+        stored = window.localStorage?.getItem('bullpen.newTicket.status') || '';
+      } catch (err) {
+        stored = '';
+      }
+      if (stored && this.writableColumns.some(col => col.key === stored)) return stored;
+      return this.defaultStatus;
+    },
+    persistStatus() {
+      try {
+        window.localStorage?.setItem('bullpen.newTicket.status', this.status || this.defaultStatus);
+      } catch (err) {
+        // localStorage can be unavailable in private or embedded contexts.
+      }
+    },
     submit() {
       if (!this.title.trim()) return;
+      if (!this.writableColumns.some(col => col.key === this.status)) {
+        this.status = this.defaultStatus;
+      }
+      this.persistStatus();
       const tags = this.tags
         .split(',')
         .map(t => t.trim())
@@ -87,6 +137,7 @@ const TaskCreateModal = {
         title: this.title.trim(),
         type: this.type,
         priority: this.priority,
+        status: this.status,
         tags,
         description: this.description,
       });
