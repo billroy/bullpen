@@ -18,7 +18,7 @@ def test_top_toolbar_routes_gt_prefixed_entries_to_palette_events():
     assert "this.$emit('run-palette-command', result.command.id, result.args || '');" in text
     assert "this.$emit('run-palette-input', text);" in text
     assert "this.quickCreateText = '';" in text
-    assert "this.$emit('quick-create-task', payload);" in text
+    assert "this.$emit('quick-create-task', this.quickCreatePayload(payload));" in text
     assert "text.startsWith('>')" in text
     assert "text.startsWith('?')" in text
     assert "text.startsWith('/')" not in text
@@ -72,6 +72,26 @@ def test_toolbar_teaches_ticket_body_and_gt_command_mode():
     assert "Use Title / description" in text
     assert "Type > to run Bullpen commands" in text
     assert "Create ticket:" in text
+
+
+def test_toolbar_quick_create_column_selector_is_local_and_writable():
+    toolbar = _read("static/components/TopToolbar.js")
+    app = _read("static/app.js")
+    css = _read("static/style.css")
+
+    assert "'paletteCommands', 'columns']" in toolbar
+    assert "const workerColumns = new Set(['assigned', 'in_progress']);" in toolbar
+    assert ".filter(col => col?.key && !workerColumns.has(col.key))" in toolbar
+    assert "return columns.length ? columns : [{ key: 'inbox', label: 'Inbox' }];" in toolbar
+    assert "if (this.writableColumns.some(col => col.key === 'inbox')) return 'inbox';" in toolbar
+    assert "window.localStorage?.getItem('bullpen.quickCreate.status')" in toolbar
+    assert "window.localStorage?.setItem('bullpen.quickCreate.status', this.quickCreateStatus || this.defaultQuickCreateStatus);" in toolbar
+    assert '<select\n                class="form-select toolbar-quick-create-status"' in toolbar
+    assert '<option v-for="col in writableColumns" :key="col.key" :value="col.key">{{ col.label }}</option>' in toolbar
+    assert "return { ...payload, status: this.quickCreateStatus };" in toolbar
+    assert ':columns="state.config.columns"' in app
+    assert ".toolbar-quick-create-row" in css
+    assert ".top-toolbar .toolbar-quick-create-status" in css
 
 
 def test_empty_toolbar_focus_does_not_open_inline_palette_until_input():

@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerPillStyles', 'defaultWorkerPillStyles', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'quickCalculate', 'paletteCommands'],
+  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerPillStyles', 'defaultWorkerPillStyles', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'quickCalculate', 'paletteCommands', 'columns'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -31,6 +31,7 @@ const TopToolbar = {
       showMainMenu: false,
       showSafetyMenu: false,
       quickCreateText: '',
+      quickCreateStatus: 'inbox',
       quickCalculatePending: false,
       showPalette: false,
       paletteOverlayOpen: false,
@@ -45,6 +46,20 @@ const TopToolbar = {
     };
   },
   computed: {
+    writableColumns() {
+      const workerColumns = new Set(['assigned', 'in_progress']);
+      const columns = (this.columns || [])
+        .filter(col => col?.key && !workerColumns.has(col.key))
+        .map(col => ({
+          key: col.key,
+          label: col.label || col.key,
+        }));
+      return columns.length ? columns : [{ key: 'inbox', label: 'Inbox' }];
+    },
+    defaultQuickCreateStatus() {
+      if (this.writableColumns.some(col => col.key === 'inbox')) return 'inbox';
+      return this.writableColumns[0]?.key || 'inbox';
+    },
     paletteMode() {
       const text = this.quickCreateText.trimStart();
       if (text.startsWith('>')) return 'command';
@@ -162,6 +177,15 @@ const TopToolbar = {
       this.selectedPaletteIndex = 0;
       if (this.paletteOverlayOpen) this.showPalette = true;
     },
+    columns() {
+      const stored = this.storedQuickCreateStatus();
+      if (
+        !this.writableColumns.some(col => col.key === this.quickCreateStatus)
+        || (this.quickCreateStatus === 'inbox' && stored !== 'inbox')
+      ) {
+        this.quickCreateStatus = stored;
+      }
+    },
     selectedPaletteIndex() {
       this.$nextTick(() => this.scrollSelectedPaletteResultIntoView());
     },
@@ -179,6 +203,7 @@ const TopToolbar = {
     },
   },
   mounted() {
+    this.quickCreateStatus = this.storedQuickCreateStatus();
     document.addEventListener('click', this.onGlobalClick);
     window.addEventListener('blur', this.onWindowBlur);
     window.addEventListener('keydown', this.onGlobalKeydown);
@@ -206,6 +231,36 @@ const TopToolbar = {
       return slashIdx >= 0
         ? { title: raw.slice(0, slashIdx).trim(), description: raw.slice(slashIdx + 1).trim() }
         : { title: raw, description: '' };
+    },
+    storedQuickCreateStatus() {
+      let stored = '';
+      try {
+        stored = window.localStorage?.getItem('bullpen.quickCreate.status') || '';
+      } catch (err) {
+        stored = '';
+      }
+      if (stored && this.writableColumns.some(col => col.key === stored)) return stored;
+      return this.defaultQuickCreateStatus;
+    },
+    persistQuickCreateStatus() {
+      try {
+        window.localStorage?.setItem('bullpen.quickCreate.status', this.quickCreateStatus || this.defaultQuickCreateStatus);
+      } catch (err) {
+        // localStorage can be unavailable in private or embedded contexts.
+      }
+    },
+    quickCreatePayload(payload) {
+      if (!this.writableColumns.some(col => col.key === this.quickCreateStatus)) {
+        this.quickCreateStatus = this.defaultQuickCreateStatus;
+      }
+      this.persistQuickCreateStatus();
+      return { ...payload, status: this.quickCreateStatus };
+    },
+    onQuickCreateStatusChange(event) {
+      const value = event?.target?.value;
+      if (!value) return;
+      this.quickCreateStatus = value;
+      this.persistQuickCreateStatus();
     },
     toggleMainMenu() {
       this.showMainMenu = !this.showMainMenu;
@@ -481,7 +536,7 @@ const TopToolbar = {
       if (!result || result.disabledReason) return;
       if (result.kind === 'create') {
         if (!result.payload?.title) return;
-        this.$emit('quick-create-task', result.payload);
+        this.$emit('quick-create-task', this.quickCreatePayload(result.payload));
         this.showPalette = false;
         return;
       }
@@ -572,7 +627,7 @@ const TopToolbar = {
       }
       const payload = this.splitQuickCreateText(text);
       if (!payload.title) return;
-      this.$emit('quick-create-task', payload);
+      this.$emit('quick-create-task', this.quickCreatePayload(payload));
       this.showPalette = false;
     },
   },
@@ -600,15 +655,26 @@ const TopToolbar = {
         </div>
         <div class="toolbar-center">
           <div class="command-palette-inline" @click.stop>
-            <input
-              ref="quickCreateInput"
-              class="quick-create-input toolbar-quick-create-input"
-              v-model="quickCreateText"
-              placeholder="New ticket / description, or > commands"
-              @focus="onPaletteFocus"
-              @input="onPaletteInput"
-              @keydown="onPaletteKeydown"
-            />
+            <div class="toolbar-quick-create-row">
+              <select
+                class="form-select toolbar-quick-create-status"
+                :value="quickCreateStatus"
+                @change="onQuickCreateStatusChange"
+                title="Ticket destination column"
+                aria-label="Ticket destination column"
+              >
+                <option v-for="col in writableColumns" :key="col.key" :value="col.key">{{ col.label }}</option>
+              </select>
+              <input
+                ref="quickCreateInput"
+                class="quick-create-input toolbar-quick-create-input"
+                v-model="quickCreateText"
+                placeholder="New ticket / description, or > commands"
+                @focus="onPaletteFocus"
+                @input="onPaletteInput"
+                @keydown="onPaletteKeydown"
+              />
+            </div>
             <div v-if="showPalette && !paletteOverlayOpen" class="command-palette-menu">
               <button
                 v-for="(result, index) in visiblePaletteResults"

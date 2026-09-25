@@ -1256,13 +1256,14 @@ const app = createApp({
     function quickCreateTask(payload) {
       const title = typeof payload === 'string' ? payload.trim() : (payload?.title || '').trim();
       const description = typeof payload === 'string' ? '' : (payload?.description || '').trim();
+      const status = typeof payload === 'string' ? 'inbox' : (payload?.status || 'inbox');
       if (!title) return;
       if (!socket?.connected) {
         addToast('Disconnected from Bullpen server. Ticket was not created.', 'error');
         return;
       }
-      pendingQuickCreates.push({ title, description });
-      socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));
+      pendingQuickCreates.push({ title, description, status });
+      socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description, status }));
     }
     function requestQuickCalculate(source) {
       return new Promise((resolve, reject) => {
@@ -2906,6 +2907,7 @@ const app = createApp({
         :quick-create-clear-token="quickCreateClearToken"
         :quick-calculate="requestQuickCalculate"
         :palette-commands="paletteCommands"
+        :columns="state.config.columns"
         @toggle-left-pane="toggleLeftPane"
         @export-workspace="exportWorkspace"
         @export-workers="exportWorkers"

@@ -28,8 +28,9 @@ def test_app_quick_create_accepts_payload_with_description():
     assert "function quickCreateTask(payload)" in text
     assert "const title = typeof payload === 'string' ? payload.trim() : (payload?.title || '').trim();" in text
     assert "const description = typeof payload === 'string' ? '' : (payload?.description || '').trim();" in text
-    assert "pendingQuickCreates.push({ title, description });" in text
-    assert "socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description }));" in text
+    assert "const status = typeof payload === 'string' ? 'inbox' : (payload?.status || 'inbox');" in text
+    assert "pendingQuickCreates.push({ title, description, status });" in text
+    assert "socket.emit('task:create', _wsData({ title, type: 'task', priority: 'normal', tags: [], description, status }));" in text
 
 
 def test_quick_create_input_clears_only_after_create_ack():

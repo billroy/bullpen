@@ -497,14 +497,33 @@ body {
   max-width: 640px;
 }
 
+.toolbar-quick-create-row {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.top-toolbar .toolbar-quick-create-status {
+  flex: 0 0 132px;
+  width: 132px;
+  height: 38px;
+  border-right: 0;
+  border-radius: 4px 0 0 4px;
+  font-size: 13px;
+  margin: 0;
+}
+
 .top-toolbar .toolbar-quick-create-input {
   width: 100%;
   max-width: none;
+  min-width: 0;
   height: 38px;
   font-size: 16px;
   line-height: 1.2;
   padding: 0 14px;
   margin-bottom: 0;
+  border-radius: 0 4px 4px 0;
 }
 
 .command-palette-menu,
