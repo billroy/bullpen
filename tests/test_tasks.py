@@ -6,6 +6,7 @@ import pytest
 
 from server.init import init_workspace
 from server.tasks import (
+    LAST_STDOUT_MAX_BYTES,
     create_task,
     read_task,
     update_task,
@@ -55,11 +56,50 @@ class TestTaskCRUD:
         assert task["type"] == "task"
         assert task["priority"] == "normal"
         assert task["tags"] == []
+        assert task["last_stdout"] == ""
         assert "## Description" in task["body"]
 
         read_back = read_task(bp_dir, task["id"])
         assert read_back["title"] == "Test Task"
         assert read_back["status"] == "inbox"
+        assert read_back["last_stdout"] == ""
+
+    def test_last_stdout_round_trips_arbitrary_multiline_text(self, bp_dir):
+        task = create_task(bp_dir, "Captured stdout")
+        stdout = 'first line\n---\n"quoted" ☃\nlast line\n'
+
+        updated = update_task(bp_dir, task["id"], {"last_stdout": stdout})
+
+        assert updated["last_stdout"] == stdout
+        assert read_task(bp_dir, task["id"])["last_stdout"] == stdout
+        with open(os.path.join(bp_dir, "tasks", f"{task['id']}.md"), encoding="utf-8") as handle:
+            persisted = handle.read()
+        assert "last_stdout: \"first line\\n---\\n" in persisted
+
+    def test_missing_last_stdout_on_legacy_ticket_reads_as_empty(self, bp_dir):
+        task = create_task(bp_dir, "Legacy ticket")
+        path = os.path.join(bp_dir, "tasks", f"{task['id']}.md")
+        with open(path, encoding="utf-8") as handle:
+            persisted = handle.read()
+        persisted = "\n".join(
+            line for line in persisted.split("\n")
+            if not line.startswith("last_stdout:")
+        )
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(persisted)
+
+        assert read_task(bp_dir, task["id"])["last_stdout"] == ""
+
+    def test_last_stdout_is_capped_with_visible_marker(self, bp_dir):
+        task = create_task(bp_dir, "Large stdout")
+        updated = update_task(
+            bp_dir,
+            task["id"],
+            {"last_stdout": "x" * (LAST_STDOUT_MAX_BYTES + 100)},
+        )
+
+        assert len(updated["last_stdout"].encode("utf-8")) <= LAST_STDOUT_MAX_BYTES
+        assert updated["last_stdout"].endswith("[bullpen last_stdout truncated]\n")
 
     def test_create_with_tags(self, bp_dir):
         task = create_task(bp_dir, "Tagged", tags=["backend", "auth"])
@@ -144,6 +184,15 @@ class TestArchive:
         # File exists in archive
         archive_path = os.path.join(bp_dir, "tasks", "archive", f"{task_id}.md")
         assert os.path.exists(archive_path)
+
+    def test_archive_preserves_last_stdout(self, bp_dir):
+        task = create_task(bp_dir, "Archive stdout")
+        update_task(bp_dir, task["id"], {"last_stdout": "line one\nline two\n"})
+
+        archive_task(bp_dir, task["id"])
+
+        archived = {item["id"]: item for item in list_tasks(bp_dir, archived=True)}
+        assert archived[task["id"]]["last_stdout"] == "line one\nline two\n"
 
     def test_archive_nonexistent_task(self, bp_dir):
         # Should not raise

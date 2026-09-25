@@ -1,5 +1,6 @@
 """Task ticket CRUD."""
 
+import json
 import os
 import re
 import secrets
@@ -14,6 +15,29 @@ from server.persistence import (
 from server.usage import reported_task_time_ms_value
 
 BASE62 = string.digits + string.ascii_uppercase + string.ascii_lowercase
+LAST_STDOUT_MAX_BYTES = 65_536
+
+
+def _encode_last_stdout(value):
+    """Encode arbitrary stdout as a safe, single-line frontmatter scalar."""
+    data = str(value if value is not None else "").encode("utf-8", errors="replace")
+    if len(data) > LAST_STDOUT_MAX_BYTES:
+        marker = b"\n[bullpen last_stdout truncated]\n"
+        data = data[: LAST_STDOUT_MAX_BYTES - len(marker)] + marker
+    text = data.decode("utf-8", errors="replace")
+    return json.dumps(text, ensure_ascii=True)
+
+
+def _decode_last_stdout(value):
+    """Decode last_stdout while tolerating older, unencoded ticket values."""
+    if value is None:
+        return ""
+    raw = str(value)
+    try:
+        decoded = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return raw
+    return decoded if isinstance(decoded, str) else raw
 
 
 def _random_suffix(length=4):
@@ -63,6 +87,7 @@ def create_task(bp_dir, title, description="", task_type="task", priority="norma
         "created_at": now,
         "updated_at": now,
         "tags": tags or [],
+        "last_stdout": _encode_last_stdout(""),
     }
 
     body = ""
@@ -78,6 +103,7 @@ def create_task(bp_dir, title, description="", task_type="task", priority="norma
 def _with_reported_task_time(task):
     """Attach a non-persisted display/reporting task time field."""
     enriched = dict(task or {})
+    enriched["last_stdout"] = _decode_last_stdout(enriched.get("last_stdout"))
     enriched["reported_task_time_ms"] = reported_task_time_ms_value(enriched)
     return enriched
 
@@ -105,7 +131,7 @@ def update_task(bp_dir, task_id, fields):
     # Merge fields
     for k, v in fields.items():
         if k != "id":  # don't store id in frontmatter
-            meta[k] = v
+            meta[k] = _encode_last_stdout(v) if k == "last_stdout" else v
 
     meta["updated_at"] = _now_iso()
     write_frontmatter(path, meta, body, slug)

@@ -2995,7 +2995,7 @@ class TestNotificationWorker:
                 },
                 "speech": {
                     "enabled": True,
-                    "template": "Speak {ticket.priority} {ticket.title}.",
+                    "template": "Speak {ticket.priority} {ticket.title}: {ticket.last_stdout}",
                     "engine": "kokoro",
                     "voice": "af_heart",
                     "rate": 1,
@@ -3022,6 +3022,7 @@ class TestNotificationWorker:
         write_json(os.path.join(bp_dir, "layout.json"), layout)
 
         task = create_task(bp_dir, "Notification review task", priority="high")
+        task = update_task(bp_dir, task["id"], {"last_stdout": "jevq result\nsecond line"})
         assign_task(bp_dir, 0, task["id"])
         socket = CapturingSocket()
         start_worker(bp_dir, 0, socketio=socket, ws_id="ws-notify")
@@ -3042,7 +3043,7 @@ class TestNotificationWorker:
         assert payload["worker"]["name"] == "Notify Review"
         assert payload["ticket"]["id"] == task["id"]
         assert payload["channels"]["toast"]["text"] == "Notification review task reached Notify Review."
-        assert payload["channels"]["speech"]["text"] == "Speak high Notification review task."
+        assert payload["channels"]["speech"]["text"] == "Speak high Notification review task: jevq result\nsecond line"
 
         complete_notification_delivery(
             bp_dir,

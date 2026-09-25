@@ -1020,7 +1020,7 @@ const WorkerConfigModal = {
                   Message template
                   <textarea class="form-textarea" v-model="form.notification.toast.template" rows="3" maxlength="2000"
                             placeholder="{ticket.title} reached {worker.name}."></textarea>
-                  <span class="form-hint">Variables: <code>{ticket.title}</code>, <code>{worker.name}</code>, <code>{workspace.name}</code></span>
+                  <span class="form-hint">Variables: <code>{ticket.title}</code>, <code>{ticket.last_stdout}</code>, <code>{worker.name}</code>, <code>{workspace.name}</code></span>
                 </label>
                 <div class="form-row">
                   <label class="form-label">
@@ -1048,6 +1048,7 @@ const WorkerConfigModal = {
                   Speech template
                   <textarea class="form-textarea" v-model="form.notification.speech.template" rows="3" maxlength="2000"
                             placeholder="{ticket.title} is ready."></textarea>
+                  <span class="form-hint">Variables: <code>{ticket.title}</code>, <code>{ticket.last_stdout}</code>, <code>{worker.name}</code>, <code>{workspace.name}</code></span>
                 </label>
                 <div class="form-row">
                   <label class="form-label">

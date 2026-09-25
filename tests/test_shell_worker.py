@@ -11,7 +11,7 @@ import pytest
 import server.workers as workers_mod
 from server.init import init_workspace
 from server.persistence import read_json, write_json
-from server.tasks import create_task, list_tasks, read_task
+from server.tasks import create_task, list_tasks, read_task, update_task
 from server.workers import assign_task, start_worker, _load_layout, _processes
 
 
@@ -123,6 +123,7 @@ def test_shell_success_uses_configured_disposition_and_records_output(bp_dir):
     assert updated["assigned_to"] == ""
     assert "## Worker Output" in updated["body"]
     assert "hello Shell task" in updated["body"]
+    assert updated["last_stdout"] == "hello Shell task\n"
     assert "warn" in updated["body"]
     assert "worker_run" in json.dumps(updated.get("history", []))
     history = [row for row in updated.get("history", []) if row.get("event") == "worker_run"]
@@ -155,6 +156,25 @@ def test_shell_json_stdout_overrides_disposition_and_updates_ticket(bp_dir):
     assert updated["priority"] == "high"
     assert updated["tags"] == ["shell"]
     assert "shell appended" in updated["body"]
+    assert json.loads(updated["last_stdout"])["disposition"] == "done"
+
+
+def test_shell_input_includes_previous_last_stdout_and_empty_output_clears_it(bp_dir):
+    _set_shell_worker(
+        bp_dir,
+        command=_python_command(
+            "import json,sys; ticket=json.load(sys.stdin); "
+            "assert ticket['last_stdout'] == 'previous'; print('', end='')"
+        ),
+    )
+    task = create_task(bp_dir, "Pass stdout forward")
+    update_task(bp_dir, task["id"], {"last_stdout": "previous"})
+    assign_task(bp_dir, 0, task["id"])
+
+    start_worker(bp_dir, 0)
+    _wait_for_worker_done(bp_dir)
+
+    assert read_task(bp_dir, task["id"])["last_stdout"] == ""
 
 
 def test_shell_pass_to_manual_worker_queues_until_run(bp_dir):
@@ -340,7 +360,7 @@ def test_shell_exit_78_blocks_without_retry(bp_dir):
 def test_shell_exit_2_is_retryable_error(bp_dir):
     _set_shell_worker(
         bp_dir,
-        command=_python_command('import sys; print("bad", file=sys.stderr); sys.exit(2)'),
+        command=_python_command('import sys; print("partial result"); print("bad", file=sys.stderr); sys.exit(2)'),
         max_retries=0,
     )
     task = create_task(bp_dir, "Fail me")
@@ -352,6 +372,7 @@ def test_shell_exit_2_is_retryable_error(bp_dir):
     updated = read_task(bp_dir, task["id"])
     assert updated["status"] == "blocked"
     assert "Shell command exited 2" in updated["body"]
+    assert updated["last_stdout"] == "partial result\n"
 
 
 def test_shell_exit_127_reports_missing_command(bp_dir):

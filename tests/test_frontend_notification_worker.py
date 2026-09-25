@@ -40,6 +40,7 @@ def test_notification_worker_config_modal_fields_exist():
     assert "form.notification.flash.sequence" in text
     assert "form.notification.policy.cooldown_ms" in text
     assert "{ticket.title}" in text
+    assert text.count("{ticket.last_stdout}") >= 2
 
 
 def test_notification_worker_exposes_expanded_sound_effects():

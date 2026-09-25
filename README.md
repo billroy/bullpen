@@ -229,6 +229,12 @@ configured shell command against one ticket. Bullpen passes ticket data into the
 command, captures stdout/stderr, then uses the command's exit code and optional
 stdout JSON to decide what happens next.
 
+Every Shell worker attempt also replaces the ticket's `last_stdout` value with
+that attempt's captured stdout, including empty output and failed or retried
+attempts. Notification templates can reference it as `{ticket.last_stdout}`.
+The value is capped and safely escaped in ticket storage; workers receive the
+decoded text.
+
 ### Passing ticket data to a script
 
 Set **Pass ticket as** in the worker configuration.
@@ -248,6 +254,7 @@ JSON object to stdin:
   "tags": [],
   "body": "ticket body markdown",
   "history": [],
+  "last_stdout": "stdout from the previous shell attempt",
   "worker": {
     "name": "Script worker",
     "slot_index": 3,

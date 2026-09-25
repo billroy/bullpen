@@ -1175,6 +1175,7 @@ def _notification_context(bp_dir, slot_index, worker, task):
         "priority": task.get("priority", ""),
         "type": task.get("type", ""),
         "assigned_to": task.get("assigned_to", ""),
+        "last_stdout": task.get("last_stdout") or "",
     }
     value_trigger = _coerce_value_trigger_context(task.get("value_trigger"))
     if value_trigger is not None:
@@ -1477,6 +1478,7 @@ def _shell_payload(task, worker, slot_index, workspace):
         "tags": task.get("tags") or [],
         "body": task.get("body", ""),
         "history": task.get("history") or [],
+        "last_stdout": task.get("last_stdout") or "",
         "worker": {
             "name": worker.get("name", "Worker"),
             "slot_index": slot_index,
@@ -2700,7 +2702,11 @@ def _append_shell_run_record(bp_dir, task_id, worker, slot_index, result, comple
         desc_block = _build_shell_description_stub(timestamp, worker, row, stdout_rel, stderr_rel)
         proposed = _assemble(desc_block)
 
-    task_mod.update_task(bp_dir, task_id, {"history": history, "body": proposed})
+    task_mod.update_task(bp_dir, task_id, {
+        "history": history,
+        "body": proposed,
+        "last_stdout": completed.stdout or "",
+    })
     return row
 
 
