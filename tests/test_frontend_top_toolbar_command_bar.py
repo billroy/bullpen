@@ -87,6 +87,7 @@ def test_toolbar_quick_create_column_selector_is_local_and_writable():
     assert "window.localStorage?.getItem('bullpen.quickCreate.status')" in toolbar
     assert "window.localStorage?.setItem('bullpen.quickCreate.status', this.quickCreateStatus || this.defaultQuickCreateStatus);" in toolbar
     assert '<select\n                class="form-select toolbar-quick-create-status"' in toolbar
+    assert toolbar.index('class="quick-create-input toolbar-quick-create-input"') < toolbar.index('class="form-select toolbar-quick-create-status"')
     assert '<option v-for="col in writableColumns" :key="col.key" :value="col.key">{{ col.label }}</option>' in toolbar
     assert "return { ...payload, status: this.quickCreateStatus };" in toolbar
     assert ':columns="state.config.columns"' in app

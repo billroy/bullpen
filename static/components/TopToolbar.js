@@ -656,15 +656,6 @@ const TopToolbar = {
         <div class="toolbar-center">
           <div class="command-palette-inline" @click.stop>
             <div class="toolbar-quick-create-row">
-              <select
-                class="form-select toolbar-quick-create-status"
-                :value="quickCreateStatus"
-                @change="onQuickCreateStatusChange"
-                title="Ticket destination column"
-                aria-label="Ticket destination column"
-              >
-                <option v-for="col in writableColumns" :key="col.key" :value="col.key">{{ col.label }}</option>
-              </select>
               <input
                 ref="quickCreateInput"
                 class="quick-create-input toolbar-quick-create-input"
@@ -674,6 +665,15 @@ const TopToolbar = {
                 @input="onPaletteInput"
                 @keydown="onPaletteKeydown"
               />
+              <select
+                class="form-select toolbar-quick-create-status"
+                :value="quickCreateStatus"
+                @change="onQuickCreateStatusChange"
+                title="Ticket destination column"
+                aria-label="Ticket destination column"
+              >
+                <option v-for="col in writableColumns" :key="col.key" :value="col.key">{{ col.label }}</option>
+              </select>
             </div>
             <div v-if="showPalette && !paletteOverlayOpen" class="command-palette-menu">
               <button
