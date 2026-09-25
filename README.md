@@ -229,6 +229,14 @@ configured shell command against one ticket. Bullpen passes ticket data into the
 command, captures stdout/stderr, then uses the command's exit code and optional
 stdout JSON to decide what happens next.
 
+Shell workers inherit only a minimal environment. In the worker's
+**Environment** rows, choose **Literal value** to store a value in the workspace,
+or **Inherit from Bullpen** to resolve the named variable from the Bullpen server
+process each time the worker runs. Inherited values are not written to the
+workspace or included in workspace exports. A missing named variable stops the
+run with a configuration error. `BULLPEN_MCP_TOKEN` cannot be passed by either
+method.
+
 Every Shell worker attempt also replaces the ticket's `last_stdout` value with
 that attempt's captured stdout, including empty output and failed or retried
 attempts. Notification templates can reference it as `{ticket.last_stdout}`.

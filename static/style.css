@@ -4192,6 +4192,10 @@ body.worker-singleton-dragging * {
   align-items: center;
 }
 
+.shell-env-row--source {
+  grid-template-columns: minmax(10rem, 1fr) minmax(10rem, 1fr) minmax(12rem, 2fr) auto;
+}
+
 .notification-config-block {
   display: flex;
   flex-direction: column;

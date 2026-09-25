@@ -305,7 +305,7 @@ def _default_coord(index, config):
     return index % cols, index // cols
 
 
-def _normalize_env(env):
+def _normalize_env(env, *, allow_server_env=False):
     if not isinstance(env, list):
         return []
     normalized = []
@@ -314,6 +314,9 @@ def _normalize_env(env):
             continue
         key = str(item.get("key") or "").strip()
         if not key:
+            continue
+        if allow_server_env and item.get("source") == "server_env":
+            normalized.append({"key": key, "source": "server_env"})
             continue
         normalized.append({"key": key, "value": str(item.get("value") or "")})
     return normalized
@@ -530,7 +533,7 @@ def normalize_worker_slot(raw, *, index, config):
         if delivery not in ("stdin-json", "env-vars", "argv-json"):
             delivery = "stdin-json"
         slot["ticket_delivery"] = delivery
-        slot["env"] = _normalize_env(slot.get("env"))
+        slot["env"] = _normalize_env(slot.get("env"), allow_server_env=True)
     elif type_id == "service":
         command_source = str(slot.get("command_source") or "manual")
         if command_source not in SERVICE_COMMAND_SOURCES:
@@ -649,7 +652,10 @@ def serialize_worker_slot(slot, *, viewer):
                     continue
                 key = str(item.get("key") or "")
                 if key:
-                    redacted.append({"key": key, "value": "<redacted>"})
+                    if item.get("source") == "server_env":
+                        redacted.append({"key": key, "source": "server_env"})
+                    else:
+                        redacted.append({"key": key, "value": "<redacted>"})
             out["env"] = redacted
     return out
 

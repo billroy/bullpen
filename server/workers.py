@@ -1530,6 +1530,13 @@ def _minimal_shell_env(configured_env):
             continue
         if key == "BULLPEN_MCP_TOKEN":
             raise ValueError("BULLPEN_MCP_TOKEN cannot be configured for Shell workers.")
+        if item.get("source") == "server_env":
+            if key not in os.environ:
+                raise ValueError(
+                    f"Shell worker requires {key} from the Bullpen environment, but it is not set."
+                )
+            inherited[key] = os.environ[key]
+            continue
         inherited[key] = str(item.get("value") or "")
     return inherited
 

@@ -590,6 +590,32 @@ def test_shell_read_only_serialization_redacts_command_and_env_values(tmp_worksp
     assert read_only["env"] == [{"key": "TOKEN", "value": "<redacted>"}]
 
 
+def test_shell_server_env_reference_normalizes_without_a_value(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    slot = normalize_worker_slot(
+        {
+            "type": "shell",
+            "row": 0,
+            "col": 0,
+            "name": "Inherited Secret Shell",
+            "command": "true",
+            "env": [{
+                "key": "TYPESAFE_API_KEY",
+                "source": "server_env",
+                "value": "must-not-survive",
+            }],
+        },
+        index=0,
+        config=config,
+    )
+
+    expected = [{"key": "TYPESAFE_API_KEY", "source": "server_env"}]
+    assert slot["env"] == expected
+    assert serialize_worker_slot(slot, viewer=ViewerContext(can_edit=True))["env"] == expected
+    assert serialize_worker_slot(slot, viewer=ViewerContext(can_edit=False))["env"] == expected
+
+
 def test_service_read_only_serialization_redacts_plaintext_command_fields(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     config = read_json(os.path.join(bp_dir, "config.json"))

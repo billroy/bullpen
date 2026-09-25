@@ -283,14 +283,17 @@ The serialized read-only shape for shell env:
 ```json
 {
   "env": [
-    {"key": "FOO", "value": "<redacted>"}
+    {"key": "FOO", "value": "<redacted>"},
+    {"key": "TYPESAFE_API_KEY", "source": "server_env"}
   ]
 }
 ```
 
 Raw `layout.json`, workspace export archives, saved teams, and worker transfer
-payloads contain plaintext shell config in v1. The UI must warn users before
-creating or exporting Shell workers.
+payloads contain plaintext literal shell config in v1. Rows whose source is
+`server_env` contain only the variable name; Bullpen resolves their values from
+its process environment at run time. The UI must warn users before creating or
+exporting Shell workers.
 
 ---
 
@@ -322,11 +325,14 @@ Shell-specific fields:
   root. Relative paths resolve against the workspace root. Real path must stay
   within the workspace root.
 - **Timeout seconds** (`timeout_seconds`, int, default 60, max 600).
-- **Environment** (`env`, key/value list, optional). Merged on top of a minimal
-  inherited env. Stored plaintext in `layout.json`; the modal must warn:
-  "Values are stored in plaintext alongside the layout. Do not commit real
-  secrets here. Prefer referencing variables already present in the server
-  environment."
+- **Environment** (`env`, list, optional). Literal rows use `{key, value}` and
+  are merged on top of a minimal inherited env. Named inheritance rows use
+  `{key, source: "server_env"}`; their values are resolved from the Bullpen
+  process environment at run time and are never persisted in workspace state.
+  A missing named variable is a non-retryable configuration error.
+  `BULLPEN_MCP_TOKEN` remains prohibited for both row types. Literal values are
+  stored plaintext in `layout.json`; the modal warns users and directs secrets
+  already present in the server environment to named inheritance instead.
 - **Pass ticket as** (`ticket_delivery`, enum): `stdin-json` (default),
   `env-vars`, or `argv-json`.
 
@@ -646,16 +652,17 @@ It is not a sandbox. Baseline guardrails:
   reject paths outside the workspace root, including symlink escapes.
 - **Minimal inherited env.** Start with an allowlist and then apply configured
   env values.
-- **Secret env filtering.** Never inherit `BULLPEN_MCP_TOKEN`,
+- **Secret env filtering.** Never implicitly inherit `BULLPEN_MCP_TOKEN`,
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, or any variable whose
   name case-insensitively contains `TOKEN`, `SECRET`, `KEY`, `PASSWORD`,
-  `CREDENTIAL`, or `PASSPHRASE` unless the user explicitly re-adds it in the
-  Shell worker env. `BULLPEN_MCP_TOKEN` is the exception: it is always rejected
+  `CREDENTIAL`, or `PASSPHRASE` unless the user explicitly re-adds it as a
+  literal row or named `server_env` inheritance row. `BULLPEN_MCP_TOKEN` is the
+  exception: it is always rejected
   for Shell workers in v1. This catches names such as `AWS_ACCESS_KEY_ID`,
   `DATABASE_PASSWORD`, `GITHUB_TOKEN`, and `SERVICE_CREDENTIAL_FILE`.
-  The modal copy must explain the broad filter: "Common-name variables
-  containing TOKEN, KEY, SECRET, PASSWORD, CREDENTIAL, or PASSPHRASE are
-  filtered by default. Add non-sensitive variables back explicitly if needed."
+  The modal copy must explain that variables are filtered by default and that
+  named inheritance is the non-persisting path for values already present in
+  the Bullpen server environment.
 - **No MCP access in v1.** Shell workers cannot call Bullpen MCP tools by
   inheriting the host session. `BULLPEN_MCP_TOKEN` is neither inherited nor
   accepted as configured Shell env, even when another env rule would otherwise

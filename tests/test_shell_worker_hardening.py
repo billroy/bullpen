@@ -142,6 +142,50 @@ class TestSecretEnvFiltering:
         # The user knowingly re-added it, so we pass it through verbatim.
         assert env.get("GITHUB_TOKEN") == "explicit"
 
+    def test_named_server_env_is_inherited_without_storing_its_value(self, monkeypatch):
+        monkeypatch.setenv("TYPESAFE_API_KEY", "server-secret")
+
+        env = _minimal_shell_env([
+            {"key": "TYPESAFE_API_KEY", "source": "server_env"},
+        ])
+
+        assert env["TYPESAFE_API_KEY"] == "server-secret"
+
+    def test_missing_named_server_env_fails_clearly(self, monkeypatch):
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+
+        with pytest.raises(ValueError, match="TYPESAFE_API_KEY.*not set"):
+            _minimal_shell_env([
+                {"key": "TYPESAFE_API_KEY", "source": "server_env"},
+            ])
+
+    def test_shell_run_receives_named_server_env_without_persisting_value(
+        self, bp_dir, monkeypatch
+    ):
+        secret = "server-secret"
+        monkeypatch.setenv("TYPESAFE_API_KEY", secret)
+        command = _python_command(
+            "import os; print('present' if os.environ.get('TYPESAFE_API_KEY') "
+            "else 'missing')"
+        )
+        _set_shell_worker(
+            bp_dir,
+            command=command,
+            env=[{"key": "TYPESAFE_API_KEY", "source": "server_env"}],
+        )
+        task = create_task(bp_dir, "Inherited environment")
+        assign_task(bp_dir, 0, task["id"])
+
+        start_worker(bp_dir, 0)
+        _wait_for_worker_done(bp_dir)
+
+        assert read_task(bp_dir, task["id"])["last_stdout"] == "present\n"
+        persisted = read_json(os.path.join(bp_dir, "layout.json"))
+        assert persisted["slots"][0]["env"] == [
+            {"key": "TYPESAFE_API_KEY", "source": "server_env"},
+        ]
+        assert secret not in json.dumps(persisted)
+
 
 # -- parsing ----------------------------------------------------------------
 

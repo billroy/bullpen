@@ -214,7 +214,11 @@ const WorkerConfigModal = {
             cwd: w.cwd || '',
             timeout_seconds: w.timeout_seconds ?? 60,
             ticket_delivery: w.ticket_delivery || 'stdin-json',
-            env: Array.isArray(w.env) ? w.env.map(e => ({ key: e.key || '', value: e.value || '' })) : [],
+            env: Array.isArray(w.env) ? w.env.map(e => ({
+              key: e.key || '',
+              value: e.value || '',
+              source: e.source === 'server_env' ? 'server_env' : 'literal',
+            })) : [],
             // Service-specific fields
             command_source: w.command_source || 'manual',
             procfile_process: w.procfile_process || 'web',
@@ -748,11 +752,11 @@ const WorkerConfigModal = {
               <span class="form-hint">Executed with <code>/bin/sh -c</code> (POSIX) or <code>cmd.exe /c</code> (Windows). Ticket fields are never interpolated; Value placeholders are raw text.</span>
             </label>
             <div class="shell-warning">
-              <strong>Stored in plaintext:</strong> command and env values live in
+              <strong>Stored in plaintext:</strong> command and literal env values live in
               <code>layout.json</code>. Stdout/stderr are saved under
               <code>.bullpen/logs/worker-runs/</code> and appear in ticket
-              history. Do not put real secrets here; reference variables already
-              in the server environment instead.
+              history. Use <strong>Inherit from Bullpen</strong> for secrets that
+              already exist in the server environment.
             </div>
             <div class="form-row">
               <label class="form-label">
@@ -776,17 +780,22 @@ const WorkerConfigModal = {
             <div class="form-label">
               <span>Environment</span>
               <div class="shell-env-list">
-                <div v-for="(item, i) in form.env" :key="i" class="shell-env-row">
+                <div v-for="(item, i) in form.env" :key="i" class="shell-env-row shell-env-row--source">
                   <input class="form-input" v-model="item.key" placeholder="KEY" />
-                  <input class="form-input" v-model="item.value" placeholder="value" />
+                  <select class="form-select" v-model="item.source">
+                    <option value="literal">Literal value</option>
+                    <option value="server_env">Inherit from Bullpen</option>
+                  </select>
+                  <input v-if="item.source !== 'server_env'" class="form-input" v-model="item.value" placeholder="value" />
+                  <span v-else class="form-hint">Value is read when the worker runs.</span>
                   <button class="btn btn-sm btn-danger" @click="removeEnv(i)" title="Remove">&times;</button>
                 </div>
                 <button class="btn btn-sm" @click="addEnv">Add env var</button>
               </div>
               <span class="form-hint">
-                Variables whose names contain TOKEN, KEY, SECRET, PASSWORD,
-                CREDENTIAL, or PASSPHRASE are filtered from the inherited env
-                by default. Re-add them here explicitly if non-sensitive.
+                Variables are filtered from the inherited environment by default.
+                Choose <strong>Inherit from Bullpen</strong> to pass a named value
+                without storing it in the workspace.
                 <code>BULLPEN_MCP_TOKEN</code> is always rejected.
               </span>
             </div>
@@ -1602,7 +1611,7 @@ const WorkerConfigModal = {
       }
     },
     addEnv() {
-      this.form.env.push({ key: '', value: '' });
+      this.form.env.push({ key: '', value: '', source: 'literal' });
     },
     removeEnv(i) {
       this.form.env.splice(i, 1);
@@ -1793,7 +1802,13 @@ const WorkerConfigModal = {
         fields.color = String(fields.color || '').trim();
         fields.env = (fields.env || [])
           .filter(e => e && String(e.key || '').trim())
-          .map(e => ({ key: String(e.key).trim(), value: String(e.value || '') }));
+          .map(e => {
+            const key = String(e.key).trim();
+            if (this.isShell && e.source === 'server_env') {
+              return { key, source: 'server_env' };
+            }
+            return { key, value: String(e.value || '') };
+          });
         if (this.isShell) {
           delete fields.pre_start;
           delete fields.ticket_action;
