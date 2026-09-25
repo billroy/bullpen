@@ -1,5 +1,5 @@
 const TopToolbar = {
-  props: ['projectName', 'projectPath', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerPillStyles', 'defaultWorkerPillStyles', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'quickCalculate', 'paletteCommands', 'columns'],
+  props: ['projectName', 'projectPath', 'activeWorkspaceId', 'deployLabel', 'connected', 'themes', 'activeTheme', 'ambientPresets', 'ambientPreset', 'ambientVolume', 'ambientMuteWhileIdle', 'providerColors', 'defaultProviderColors', 'workerPillStyles', 'defaultWorkerPillStyles', 'workerAutomationPaused', 'workerMinimapCollapsed', 'quickCreateClearToken', 'quickCalculate', 'paletteCommands', 'columns'],
   emits: [
     'toggle-left-pane',
     'export-workers',
@@ -186,6 +186,12 @@ const TopToolbar = {
         this.quickCreateStatus = stored;
       }
     },
+    activeWorkspaceId() {
+      this.quickCreateStatus = this.storedQuickCreateStatus();
+    },
+    projectPath() {
+      if (!this.activeWorkspaceId) this.quickCreateStatus = this.storedQuickCreateStatus();
+    },
     selectedPaletteIndex() {
       this.$nextTick(() => this.scrollSelectedPaletteResultIntoView());
     },
@@ -232,10 +238,14 @@ const TopToolbar = {
         ? { title: raw.slice(0, slashIdx).trim(), description: raw.slice(slashIdx + 1).trim() }
         : { title: raw, description: '' };
     },
+    quickCreateStatusStorageKey() {
+      const workspaceKey = String(this.activeWorkspaceId || this.projectPath || 'default');
+      return `bullpen.quickCreate.status.${workspaceKey}`;
+    },
     storedQuickCreateStatus() {
       let stored = '';
       try {
-        stored = window.localStorage?.getItem('bullpen.quickCreate.status') || '';
+        stored = window.localStorage?.getItem(this.quickCreateStatusStorageKey()) || '';
       } catch (err) {
         stored = '';
       }
@@ -244,7 +254,7 @@ const TopToolbar = {
     },
     persistQuickCreateStatus() {
       try {
-        window.localStorage?.setItem('bullpen.quickCreate.status', this.quickCreateStatus || this.defaultQuickCreateStatus);
+        window.localStorage?.setItem(this.quickCreateStatusStorageKey(), this.quickCreateStatus || this.defaultQuickCreateStatus);
       } catch (err) {
         // localStorage can be unavailable in private or embedded contexts.
       }

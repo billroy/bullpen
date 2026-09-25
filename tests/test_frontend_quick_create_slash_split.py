@@ -221,3 +221,84 @@ const TopToolbar = context.__toolbar;
         "error",
     ]]
     assert all(call[0] != "quick-create-task" for call in payload["emitted"] + payload["errorEmitted"])
+
+
+def test_toolbar_quick_create_status_storage_is_per_workspace():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not available")
+
+    script = f"""
+const fs = require('fs');
+const vm = require('vm');
+const toolbarSource = fs.readFileSync({json.dumps(str(ROOT / "static" / "components" / "TopToolbar.js"))}, 'utf8');
+const store = new Map([
+  ['bullpen.quickCreate.status.ws-a', 'review'],
+  ['bullpen.quickCreate.status.ws-b', 'backlog'],
+  ['bullpen.quickCreate.status', 'done'],
+]);
+const context = {{
+  window: {{
+    localStorage: {{
+      getItem: key => store.has(key) ? store.get(key) : null,
+      setItem: (key, value) => store.set(key, String(value)),
+    }},
+  }},
+  console,
+}};
+vm.createContext(context);
+vm.runInContext(toolbarSource + `
+  globalThis.__toolbar = TopToolbar;
+`, context);
+const TopToolbar = context.__toolbar;
+
+const component = {{
+  activeWorkspaceId: 'ws-a',
+  projectPath: '/tmp/workspace-a',
+  quickCreateStatus: '',
+  writableColumns: [
+    {{ key: 'inbox', label: 'Inbox' }},
+    {{ key: 'backlog', label: 'Backlog' }},
+    {{ key: 'review', label: 'Review' }},
+  ],
+  defaultQuickCreateStatus: 'inbox',
+  quickCreateStatusStorageKey: TopToolbar.methods.quickCreateStatusStorageKey,
+  storedQuickCreateStatus: TopToolbar.methods.storedQuickCreateStatus,
+  persistQuickCreateStatus: TopToolbar.methods.persistQuickCreateStatus,
+  quickCreatePayload: TopToolbar.methods.quickCreatePayload,
+}};
+
+const wsAStatus = TopToolbar.methods.storedQuickCreateStatus.call(component);
+component.quickCreateStatus = wsAStatus;
+component.activeWorkspaceId = 'ws-b';
+TopToolbar.watch.activeWorkspaceId.call(component);
+const wsBStatus = component.quickCreateStatus;
+component.quickCreateStatus = 'review';
+const payload = TopToolbar.methods.quickCreatePayload.call(component, {{ title: 'Bug' }});
+
+component.activeWorkspaceId = '';
+component.projectPath = '/tmp/workspace-c';
+component.quickCreateStatus = 'backlog';
+TopToolbar.methods.persistQuickCreateStatus.call(component);
+
+process.stdout.write(JSON.stringify({{
+  wsAStatus,
+  wsBStatus,
+  payload,
+  wsBStored: store.get('bullpen.quickCreate.status.ws-b'),
+  pathStored: store.get('bullpen.quickCreate.status./tmp/workspace-c'),
+  legacyStored: store.get('bullpen.quickCreate.status'),
+}}));
+"""
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+
+    assert payload == {
+        "wsAStatus": "review",
+        "wsBStatus": "backlog",
+        "payload": {"title": "Bug", "status": "review"},
+        "wsBStored": "review",
+        "pathStored": "backlog",
+        "legacyStored": "done",
+    }

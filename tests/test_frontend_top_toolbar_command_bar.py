@@ -79,17 +79,24 @@ def test_toolbar_quick_create_column_selector_is_local_and_writable():
     app = _read("static/app.js")
     css = _read("static/style.css")
 
+    assert "'projectName', 'projectPath', 'activeWorkspaceId'" in toolbar
     assert "'paletteCommands', 'columns']" in toolbar
     assert "const workerColumns = new Set(['assigned', 'in_progress']);" in toolbar
     assert ".filter(col => col?.key && !workerColumns.has(col.key))" in toolbar
     assert "return columns.length ? columns : [{ key: 'inbox', label: 'Inbox' }];" in toolbar
     assert "if (this.writableColumns.some(col => col.key === 'inbox')) return 'inbox';" in toolbar
-    assert "window.localStorage?.getItem('bullpen.quickCreate.status')" in toolbar
-    assert "window.localStorage?.setItem('bullpen.quickCreate.status', this.quickCreateStatus || this.defaultQuickCreateStatus);" in toolbar
+    assert "quickCreateStatusStorageKey()" in toolbar
+    assert "const workspaceKey = String(this.activeWorkspaceId || this.projectPath || 'default');" in toolbar
+    assert "return `bullpen.quickCreate.status.${workspaceKey}`;" in toolbar
+    assert "window.localStorage?.getItem(this.quickCreateStatusStorageKey())" in toolbar
+    assert "window.localStorage?.setItem(this.quickCreateStatusStorageKey(), this.quickCreateStatus || this.defaultQuickCreateStatus);" in toolbar
+    assert "window.localStorage?.getItem('bullpen.quickCreate.status')" not in toolbar
+    assert "activeWorkspaceId() {" in toolbar
     assert '<select\n                class="form-select toolbar-quick-create-status"' in toolbar
     assert toolbar.index('class="quick-create-input toolbar-quick-create-input"') < toolbar.index('class="form-select toolbar-quick-create-status"')
     assert '<option v-for="col in writableColumns" :key="col.key" :value="col.key">{{ col.label }}</option>' in toolbar
     assert "return { ...payload, status: this.quickCreateStatus };" in toolbar
+    assert ':active-workspace-id="activeWorkspaceId"' in app
     assert ':columns="state.config.columns"' in app
     assert ".toolbar-quick-create-row" in css
     assert ".top-toolbar .toolbar-quick-create-status" in css
