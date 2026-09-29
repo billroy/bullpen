@@ -1642,7 +1642,8 @@ body {
 }
 
 .terminal-status-dot.status-exited,
-.terminal-status-dot.status-error {
+.terminal-status-dot.status-error,
+.terminal-status-dot.status-expired {
   background: var(--red);
 }
 

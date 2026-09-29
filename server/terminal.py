@@ -14,11 +14,14 @@ import threading
 import time
 import atexit
 import weakref
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 
 
 TERMINAL_OUTPUT_CHUNK = 16 * 1024
+TERMINAL_OUTPUT_BUFFER = 256 * 1024
 TERMINAL_CLOSE_TIMEOUT = 2.0
+TERMINAL_RECONNECT_GRACE = 120.0
 _MANAGERS = weakref.WeakSet()
 
 
@@ -34,7 +37,8 @@ atexit.register(_close_managers_at_exit)
 class TerminalSession:
     workspace_id: str
     terminal_id: str
-    owner_sid: str
+    client_id: str
+    owner_sid: str | None
     cwd: str
     pid: int
     master_fd: int
@@ -44,28 +48,63 @@ class TerminalSession:
     created_at: float
     last_seen_at: float
     label: str
+    detached_at: float | None = None
+    detach_generation: int = 0
+    output_seq: int = 0
+    output_buffer: deque = field(default_factory=deque)
+    output_buffer_bytes: int = 0
 
 
 class TerminalManager:
     """Manage interactive shell sessions exposed over Socket.IO."""
 
-    def __init__(self, socketio, *, per_workspace_limit=8, per_sid_limit=24):
+    def __init__(
+        self,
+        socketio,
+        *,
+        per_workspace_limit=8,
+        per_sid_limit=24,
+        reconnect_grace=TERMINAL_RECONNECT_GRACE,
+    ):
         self.socketio = socketio
         self.per_workspace_limit = per_workspace_limit
         self.per_sid_limit = per_sid_limit
+        self.reconnect_grace = reconnect_grace
         self._sessions = {}
         self._lock = threading.RLock()
         _MANAGERS.add(self)
 
-    def list_sessions(self, *, workspace_id, owner_sid):
+    def resume_sessions(self, *, workspace_id, client_id, owner_sid, last_sequences=None):
+        """Rebind a browser client's terminals and return buffered output for replay."""
+        last_sequences = last_sequences if isinstance(last_sequences, dict) else {}
         with self._lock:
-            return [
-                self._payload(session)
-                for session in self._sessions.values()
-                if session.workspace_id == workspace_id and session.owner_sid == owner_sid
-            ]
+            sessions = []
+            replay = []
+            for session in self._sessions.values():
+                if session.workspace_id != workspace_id or session.client_id != client_id:
+                    continue
+                session.owner_sid = owner_sid
+                session.detached_at = None
+                session.detach_generation += 1
+                session.last_seen_at = time.time()
+                sessions.append(self._payload(session))
+                try:
+                    last_seq = max(0, int(last_sequences.get(session.terminal_id, 0)))
+                except (TypeError, ValueError):
+                    last_seq = 0
+                replay.extend(
+                    {
+                        "workspaceId": session.workspace_id,
+                        "terminalId": session.terminal_id,
+                        "data": data,
+                        "seq": seq,
+                    }
+                    for seq, data, _size in session.output_buffer
+                    if seq > last_seq
+                )
+            return sessions, replay
 
-    def create(self, *, workspace_id, terminal_id, owner_sid, cwd, cols, rows):
+    def create(self, *, workspace_id, terminal_id, client_id, owner_sid, cwd, cols, rows):
         with self._lock:
             key = self._key(workspace_id, terminal_id)
             if key in self._sessions:
@@ -74,13 +113,13 @@ class TerminalManager:
                 1 for session in self._sessions.values()
                 if session.workspace_id == workspace_id and session.status == "running"
             )
-            sid_count = sum(
+            client_count = sum(
                 1 for session in self._sessions.values()
-                if session.owner_sid == owner_sid and session.status == "running"
+                if session.client_id == client_id and session.status == "running"
             )
             if ws_count >= self.per_workspace_limit:
                 raise ValueError(f"Terminal limit reached for this workspace ({self.per_workspace_limit})")
-            if sid_count >= self.per_sid_limit:
+            if client_count >= self.per_sid_limit:
                 raise ValueError(f"Terminal limit reached for this browser session ({self.per_sid_limit})")
 
             shell = self._select_shell()
@@ -114,6 +153,7 @@ class TerminalManager:
             session = TerminalSession(
                 workspace_id=workspace_id,
                 terminal_id=terminal_id,
+                client_id=client_id,
                 owner_sid=owner_sid,
                 cwd=cwd,
                 pid=proc.pid,
@@ -123,7 +163,7 @@ class TerminalManager:
                 status="running",
                 created_at=now,
                 last_seen_at=now,
-                label=self._next_label(workspace_id, owner_sid),
+                label=self._next_label(workspace_id, client_id),
             )
             thread = threading.Thread(target=self._reader_loop, args=(key,), daemon=True)
             session.reader_thread = thread
@@ -131,8 +171,8 @@ class TerminalManager:
             thread.start()
             return self._payload(session)
 
-    def write(self, *, workspace_id, terminal_id, owner_sid, data):
-        session = self._get_owned(workspace_id, terminal_id, owner_sid)
+    def write(self, *, workspace_id, terminal_id, client_id, owner_sid, data):
+        session = self._get_owned(workspace_id, terminal_id, client_id, owner_sid)
         if not session or session.status != "running":
             raise ValueError("Terminal is not running")
         encoded = data.encode("utf-8", errors="surrogatepass")
@@ -140,8 +180,8 @@ class TerminalManager:
             session.last_seen_at = time.time()
         os.write(session.master_fd, encoded)
 
-    def resize(self, *, workspace_id, terminal_id, owner_sid, cols, rows):
-        session = self._get_owned(workspace_id, terminal_id, owner_sid)
+    def resize(self, *, workspace_id, terminal_id, client_id, owner_sid, cols, rows):
+        session = self._get_owned(workspace_id, terminal_id, client_id, owner_sid)
         if not session:
             raise ValueError("Terminal not found")
         if session.status == "running":
@@ -149,36 +189,57 @@ class TerminalManager:
         with self._lock:
             session.last_seen_at = time.time()
 
-    def close(self, *, workspace_id, terminal_id, owner_sid, emit_closed=True):
+    def close(self, *, workspace_id, terminal_id, client_id, owner_sid, emit_closed=True):
         key = self._key(workspace_id, terminal_id)
         with self._lock:
             session = self._sessions.get(key)
-            if not session or session.owner_sid != owner_sid:
+            if (
+                not session
+                or session.client_id != client_id
+                or session.owner_sid != owner_sid
+            ):
                 return False
         self._terminate_session(key, emit_closed=emit_closed)
         return True
 
-    def restart(self, *, workspace_id, terminal_id, owner_sid, cwd, cols, rows):
+    def restart(self, *, workspace_id, terminal_id, client_id, owner_sid, cwd, cols, rows):
         self.close(
             workspace_id=workspace_id,
             terminal_id=terminal_id,
+            client_id=client_id,
             owner_sid=owner_sid,
             emit_closed=False,
         )
         return self.create(
             workspace_id=workspace_id,
             terminal_id=terminal_id,
+            client_id=client_id,
             owner_sid=owner_sid,
             cwd=cwd,
             cols=cols,
             rows=rows,
         )
 
-    def close_for_sid(self, owner_sid):
+    def detach_for_sid(self, owner_sid):
+        """Detach terminals from a transient socket while keeping their PTYs alive."""
         with self._lock:
-            keys = [key for key, session in self._sessions.items() if session.owner_sid == owner_sid]
-        for key in keys:
-            self._terminate_session(key, emit_closed=False)
+            detached = []
+            now = time.time()
+            for key, session in self._sessions.items():
+                if session.owner_sid != owner_sid:
+                    continue
+                session.owner_sid = None
+                session.detached_at = now
+                session.detach_generation += 1
+                detached.append((key, session.detach_generation))
+        for key, generation in detached:
+            timer = threading.Timer(
+                self.reconnect_grace,
+                self._expire_detached,
+                args=(key, generation),
+            )
+            timer.daemon = True
+            timer.start()
 
     def close_workspace(self, workspace_id):
         with self._lock:
@@ -209,15 +270,34 @@ class TerminalManager:
                     chunk = os.read(fd, TERMINAL_OUTPUT_CHUNK)
                     if not chunk:
                         break
-                    self.socketio.emit(
-                        "terminal:output",
-                        {
-                            "workspaceId": workspace_id,
-                            "terminalId": terminal_id,
-                            "data": chunk.decode("utf-8", errors="replace"),
-                        },
-                        to=owner_sid,
-                    )
+                    data = chunk.decode("utf-8", errors="replace")
+                    with self._lock:
+                        session = self._sessions.get(key)
+                        if not session:
+                            return
+                        session.output_seq += 1
+                        seq = session.output_seq
+                        size = len(chunk)
+                        session.output_buffer.append((seq, data, size))
+                        session.output_buffer_bytes += size
+                        while (
+                            session.output_buffer_bytes > TERMINAL_OUTPUT_BUFFER
+                            and len(session.output_buffer) > 1
+                        ):
+                            _old_seq, _old_data, old_size = session.output_buffer.popleft()
+                            session.output_buffer_bytes -= old_size
+                        owner_sid = session.owner_sid
+                    if owner_sid:
+                        self.socketio.emit(
+                            "terminal:output",
+                            {
+                                "workspaceId": workspace_id,
+                                "terminalId": terminal_id,
+                                "data": data,
+                                "seq": seq,
+                            },
+                            to=owner_sid,
+                        )
             except OSError as exc:
                 if exc.errno in (errno.EIO, errno.EBADF):
                     break
@@ -249,14 +329,29 @@ class TerminalManager:
                 "status": "exited",
             }
             owner_sid = session.owner_sid
-        self.socketio.emit("terminal:exit", payload, to=owner_sid)
+        if owner_sid:
+            self.socketio.emit("terminal:exit", payload, to=owner_sid)
+
+    def _expire_detached(self, key, generation):
+        with self._lock:
+            session = self._sessions.get(key)
+            if (
+                not session
+                or session.owner_sid is not None
+                or session.detach_generation != generation
+            ):
+                return
+            session = self._sessions.pop(key)
+        self._terminate_removed_session(session, emit_closed=False)
 
     def _terminate_session(self, key, *, emit_closed):
         with self._lock:
             session = self._sessions.pop(key, None)
         if not session:
             return
+        self._terminate_removed_session(session, emit_closed=emit_closed)
 
+    def _terminate_removed_session(self, session, *, emit_closed):
         proc = session.process
         if proc.poll() is None:
             try:
@@ -285,24 +380,28 @@ class TerminalManager:
             os.close(session.master_fd)
         except OSError:
             pass
-        if emit_closed:
+        if emit_closed and session.owner_sid:
             self.socketio.emit(
                 "terminal:closed",
                 {"workspaceId": session.workspace_id, "terminalId": session.terminal_id},
                 to=session.owner_sid,
             )
 
-    def _get_owned(self, workspace_id, terminal_id, owner_sid):
+    def _get_owned(self, workspace_id, terminal_id, client_id, owner_sid):
         with self._lock:
             session = self._sessions.get(self._key(workspace_id, terminal_id))
-            if not session or session.owner_sid != owner_sid:
+            if (
+                not session
+                or session.client_id != client_id
+                or session.owner_sid != owner_sid
+            ):
                 return None
             return session
 
-    def _next_label(self, workspace_id, owner_sid):
+    def _next_label(self, workspace_id, client_id):
         existing = [
             session.label for session in self._sessions.values()
-            if session.workspace_id == workspace_id and session.owner_sid == owner_sid
+            if session.workspace_id == workspace_id and session.client_id == client_id
         ]
         if "Terminal" not in existing:
             return "Terminal"
@@ -319,6 +418,12 @@ class TerminalManager:
             "status": session.status,
             "cwd": session.cwd,
             "pid": session.pid,
+            "outputSeq": session.output_seq,
+            "replayFromSeq": (
+                session.output_buffer[0][0]
+                if session.output_buffer
+                else session.output_seq + 1
+            ),
         }
 
     @staticmethod

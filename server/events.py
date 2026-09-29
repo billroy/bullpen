@@ -4510,6 +4510,9 @@ def register_events(socketio, app):
             "message": message,
         })
 
+    def _terminal_client_id(data):
+        return validate_terminal_id(data or {}, field="clientId")
+
     @socketio.on("terminal:create")
     def on_terminal_create(data):
         try:
@@ -4517,10 +4520,12 @@ def register_events(socketio, app):
             if not ws_id:
                 return
             terminal_id = validate_terminal_id(data or {})
+            client_id = _terminal_client_id(data)
             cols, rows = validate_terminal_size(data or {})
             payload = _terminal_manager().create(
                 workspace_id=ws_id,
                 terminal_id=terminal_id,
+                client_id=client_id,
                 owner_sid=request.sid,
                 cwd=workspace_path,
                 cols=cols,
@@ -4540,9 +4545,11 @@ def register_events(socketio, app):
             if not ws_id:
                 return
             terminal_id = validate_terminal_id(data or {})
+            client_id = _terminal_client_id(data)
             _terminal_manager().write(
                 workspace_id=ws_id,
                 terminal_id=terminal_id,
+                client_id=client_id,
                 owner_sid=request.sid,
                 data=validate_terminal_input(data or {}),
             )
@@ -4556,10 +4563,12 @@ def register_events(socketio, app):
             if not ws_id:
                 return
             terminal_id = validate_terminal_id(data or {})
+            client_id = _terminal_client_id(data)
             cols, rows = validate_terminal_size(data or {})
             _terminal_manager().resize(
                 workspace_id=ws_id,
                 terminal_id=terminal_id,
+                client_id=client_id,
                 owner_sid=request.sid,
                 cols=cols,
                 rows=rows,
@@ -4574,9 +4583,11 @@ def register_events(socketio, app):
             if not ws_id:
                 return
             terminal_id = validate_terminal_id(data or {})
+            client_id = _terminal_client_id(data)
             closed = _terminal_manager().close(
                 workspace_id=ws_id,
                 terminal_id=terminal_id,
+                client_id=client_id,
                 owner_sid=request.sid,
             )
             if not closed:
@@ -4591,10 +4602,12 @@ def register_events(socketio, app):
             if not ws_id:
                 return
             terminal_id = validate_terminal_id(data or {})
+            client_id = _terminal_client_id(data)
             cols, rows = validate_terminal_size(data or {})
             payload = _terminal_manager().restart(
                 workspace_id=ws_id,
                 terminal_id=terminal_id,
+                client_id=client_id,
                 owner_sid=request.sid,
                 cwd=workspace_path,
                 cols=cols,
@@ -4610,13 +4623,19 @@ def register_events(socketio, app):
             ws_id, _workspace_path = _terminal_workspace(data, "terminal:list")
             if not ws_id:
                 return
+            client_id = _terminal_client_id(data)
+            sessions, replay = _terminal_manager().resume_sessions(
+                workspace_id=ws_id,
+                client_id=client_id,
+                owner_sid=request.sid,
+                last_sequences=(data or {}).get("lastSequences"),
+            )
             emit("terminal:list", {
                 "workspaceId": ws_id,
-                "terminals": _terminal_manager().list_sessions(
-                    workspace_id=ws_id,
-                    owner_sid=request.sid,
-                ),
+                "terminals": sessions,
             })
+            for output in replay:
+                emit("terminal:output", output)
         except ValidationError as e:
             _emit_terminal_error(data, str(e))
 

@@ -522,7 +522,7 @@ def create_app(
     def on_disconnect():
         terminal_manager = app.config.get("terminal_manager")
         if terminal_manager:
-            terminal_manager.close_for_sid(request.sid)
+            terminal_manager.detach_for_sid(request.sid)
         mcp_sids.discard(request.sid)
         mcp_sid_workspace.pop(request.sid, None)
 

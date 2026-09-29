@@ -450,6 +450,18 @@ const app = createApp({
     const lastLiveAgentTabByWorkspace = reactive({});
     const terminalRefs = {};
     const terminalPendingOutput = {};
+    const terminalClientId = (() => {
+      const key = 'bullpen-terminal-client-id';
+      try {
+        const existing = sessionStorage.getItem(key);
+        if (existing) return existing;
+        const created = crypto.randomUUID();
+        sessionStorage.setItem(key, created);
+        return created;
+      } catch (_err) {
+        return crypto.randomUUID();
+      }
+    })();
     let taskDragActive = false;
     let draggedTaskId = null;
     const deferredTaskUpdates = new Map();
@@ -663,8 +675,48 @@ const app = createApp({
       const ref = terminalRefs[tabId];
       const pending = terminalPendingOutput[tabId];
       if (!ref || !pending?.length) return;
-      for (const chunk of pending) ref.write(chunk);
-      delete terminalPendingOutput[tabId];
+      const tab = _terminalTab(tabId);
+      if (!tab) return;
+      pending.sort((a, b) => (a.seq ?? -1) - (b.seq ?? -1));
+      const remaining = [];
+      for (const chunk of pending) {
+        if (!Number.isInteger(chunk.seq)) {
+          ref.write(chunk.data || '');
+        } else if (chunk.seq <= (tab.lastOutputSeq || 0)) {
+          continue;
+        } else if (chunk.seq === (tab.lastOutputSeq || 0) + 1) {
+          ref.write(chunk.data || '');
+          tab.lastOutputSeq = chunk.seq;
+        } else {
+          remaining.push(chunk);
+        }
+      }
+      if (remaining.length) terminalPendingOutput[tabId] = remaining;
+      else delete terminalPendingOutput[tabId];
+    }
+
+    function queueTerminalOutput(tab, data, seq = null) {
+      const pending = terminalPendingOutput[tab.id] || [];
+      pending.push({ data: data || '', seq: Number.isInteger(seq) ? seq : null });
+      let total = pending.reduce((sum, chunk) => sum + (chunk.data?.length || 0), 0);
+      while (total > 256000 && pending.length > 1) {
+        total -= pending.shift().data?.length || 0;
+      }
+      terminalPendingOutput[tab.id] = pending;
+      flushTerminalOutput(tab.id);
+    }
+
+    function requestTerminalResume(wsId) {
+      if (!wsId || !socket?.connected) return;
+      const lastSequences = {};
+      for (const tab of terminalTabs) {
+        if (tab.workspaceId === wsId) lastSequences[tab.terminalId] = tab.lastOutputSeq || 0;
+      }
+      socket.emit('terminal:list', {
+        workspaceId: wsId,
+        clientId: terminalClientId,
+        lastSequences,
+      });
     }
 
     function addTerminalTab({ activate = true } = {}) {
@@ -689,10 +741,11 @@ const app = createApp({
         label: perWsCount === 1 ? 'Terminal' : `Terminal ${perWsCount}`,
         status: 'starting',
         cwd: '',
+        lastOutputSeq: 0,
       };
       terminalTabs.push(tab);
       if (activate) setActiveTab(tab.id);
-      socket.emit('terminal:create', _wsData({ terminalId, ..._terminalSize() }));
+      socket.emit('terminal:create', _wsData({ terminalId, clientId: terminalClientId, ..._terminalSize() }));
       return tab;
     }
 
@@ -704,7 +757,11 @@ const app = createApp({
         if (!ok) return;
       }
       tab.status = 'closing';
-      socket.emit('terminal:close', { workspaceId: tab.workspaceId, terminalId: tab.terminalId });
+      socket.emit('terminal:close', {
+        workspaceId: tab.workspaceId,
+        terminalId: tab.terminalId,
+        clientId: terminalClientId,
+      });
       setTimeout(() => {
         if (_terminalTab(tab.id)?.status === 'closing') removeTerminalTab(tab.id);
       }, connected.value ? 1500 : 0);
@@ -732,20 +789,32 @@ const app = createApp({
       socket.emit('terminal:restart', {
         workspaceId: tab.workspaceId,
         terminalId: tab.terminalId,
+        clientId: terminalClientId,
         ..._terminalSize(),
       });
     }
 
     function sendTerminalInput({ terminalId, data }) {
       const tab = _terminalTab(terminalId);
-      if (!tab) return;
-      socket.emit('terminal:input', { workspaceId: tab.workspaceId, terminalId, data });
+      if (!tab || tab.status !== 'running') return;
+      socket.emit('terminal:input', {
+        workspaceId: tab.workspaceId,
+        terminalId,
+        clientId: terminalClientId,
+        data,
+      });
     }
 
     function resizeTerminal({ terminalId, cols, rows }) {
       const tab = _terminalTab(terminalId);
-      if (!tab || !cols || !rows) return;
-      socket.emit('terminal:resize', { workspaceId: tab.workspaceId, terminalId, cols, rows });
+      if (!tab || !['running', 'starting'].includes(tab.status) || !cols || !rows) return;
+      socket.emit('terminal:resize', {
+        workspaceId: tab.workspaceId,
+        terminalId,
+        clientId: terminalClientId,
+        cols,
+        rows,
+      });
     }
 
     function onTerminalReady(tabId) {
@@ -815,7 +884,11 @@ const app = createApp({
         disconnectToastId = null;
       }
       if (wasDisconnected) {
-        if (activeWorkspaceId.value) socket.emit('project:join', { workspaceId: activeWorkspaceId.value });
+        const reconnectWorkspaces = new Set(terminalTabs.map(tab => tab.workspaceId).filter(Boolean));
+        if (activeWorkspaceId.value) reconnectWorkspaces.add(activeWorkspaceId.value);
+        for (const workspaceId of reconnectWorkspaces) {
+          socket.emit('project:join', { workspaceId });
+        }
         if (activeWorkspaceId.value) activateStaleFormulas(activeWorkspaceId.value);
         addToast('Reconnected to Bullpen server');
       }
@@ -828,7 +901,7 @@ const app = createApp({
         disconnectToastId = addToast('Disconnected from Bullpen server. Changes are paused until connection is restored.', 'error');
       }
       for (const tab of terminalTabs) {
-        if (['running', 'starting'].includes(tab.status)) tab.status = 'error';
+        if (['running', 'starting'].includes(tab.status)) tab.status = 'reconnecting';
       }
     });
     // If the server rejects the upgrade (e.g. unauthenticated session),
@@ -881,6 +954,7 @@ const app = createApp({
         _updateDocumentTitle();
       }
       socket.emit('chat:tabs:request', { workspaceId: wsId });
+      requestTerminalResume(wsId);
     });
 
     socket.on('task:created', (task) => {
@@ -1063,7 +1137,7 @@ const app = createApp({
       const id = _terminalTabId(terminalId);
       let tab = terminalTabs.find(t => t.id === id);
       if (!tab) {
-        tab = { id, terminalId, workspaceId: wsId, label: data.label || 'Terminal', status: 'running', cwd: data.cwd || '' };
+        tab = { id, terminalId, workspaceId: wsId, label: data.label || 'Terminal', status: 'running', cwd: data.cwd || '', lastOutputSeq: 0 };
         terminalTabs.push(tab);
       }
       tab.workspaceId = wsId;
@@ -1076,18 +1150,7 @@ const app = createApp({
     socket.on('terminal:output', (data) => {
       const tab = _terminalTab(data?.terminalId);
       if (!tab) return;
-      const ref = terminalRefs[tab.id];
-      if (ref) {
-        ref.write(data?.data || '');
-        return;
-      }
-      const pending = terminalPendingOutput[tab.id] || [];
-      pending.push(data?.data || '');
-      let total = pending.reduce((sum, chunk) => sum + chunk.length, 0);
-      while (total > 256000 && pending.length > 1) {
-        total -= pending.shift().length;
-      }
-      terminalPendingOutput[tab.id] = pending;
+      queueTerminalOutput(tab, data?.data || '', Number.isInteger(data?.seq) ? data.seq : null);
     });
 
     socket.on('terminal:exit', (data) => {
@@ -1109,12 +1172,18 @@ const app = createApp({
     socket.on('terminal:list', (data) => {
       const wsId = data?.workspaceId || activeWorkspaceId.value;
       const incoming = Array.isArray(data?.terminals) ? data.terminals : [];
+      const incomingIds = new Set(incoming.map(item => item?.terminalId).filter(Boolean));
+      for (const tab of terminalTabs) {
+        if (tab.workspaceId === wsId && tab.status === 'reconnecting' && !incomingIds.has(tab.terminalId)) {
+          tab.status = 'expired';
+        }
+      }
       for (const item of incoming) {
         if (!item?.terminalId) continue;
         const id = _terminalTabId(item.terminalId);
         let tab = terminalTabs.find(t => t.id === id);
         if (!tab) {
-          tab = { id, terminalId: item.terminalId, workspaceId: wsId, label: item.label || 'Terminal', status: item.status || 'running', cwd: item.cwd || '' };
+          tab = { id, terminalId: item.terminalId, workspaceId: wsId, label: item.label || 'Terminal', status: item.status || 'running', cwd: item.cwd || '', lastOutputSeq: 0 };
           terminalTabs.push(tab);
         } else {
           tab.workspaceId = wsId;
@@ -1122,6 +1191,12 @@ const app = createApp({
           tab.status = item.status || tab.status;
           tab.cwd = item.cwd || tab.cwd;
         }
+        const replayFromSeq = Number(item.replayFromSeq || 0);
+        if (replayFromSeq > 0 && (tab.lastOutputSeq || 0) < replayFromSeq - 1) {
+          queueTerminalOutput(tab, '\r\n[terminal output omitted while disconnected]\r\n');
+          tab.lastOutputSeq = replayFromSeq - 1;
+        }
+        flushTerminalOutput(tab.id);
       }
     });
 

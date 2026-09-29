@@ -119,7 +119,9 @@ def test_switching_projects_joins_project_socket_room():
 def test_reconnect_rejoins_active_project_socket_room():
     text = _read("static/app.js")
     assert "if (wasDisconnected) {" in text
-    assert "if (activeWorkspaceId.value) socket.emit('project:join', { workspaceId: activeWorkspaceId.value });" in text
+    assert "if (activeWorkspaceId.value) reconnectWorkspaces.add(activeWorkspaceId.value);" in text
+    assert "for (const workspaceId of reconnectWorkspaces)" in text
+    assert "socket.emit('project:join', { workspaceId });" in text
     assert "addToast('Reconnected to Bullpen server');" in text
 
 

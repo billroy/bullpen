@@ -188,24 +188,16 @@ Restarting an exited terminal:
 
 ### Disconnect and Reconnect
 
-First iteration behavior:
+Implemented behavior:
 
 - Browser socket disconnect does not immediately kill PTYs.
-- Backend marks PTYs owned by that browser SID as detached.
-- PTYs are retained for a short grace period, recommended 2 minutes.
-- If the same browser reconnects and requests `terminal:list`, it may reattach to retained PTYs if a stable owner token is available.
-
-Minimal acceptable implementation:
-
-- On disconnect, terminate all PTYs for that SID.
-- Document this limitation in the UI by marking terminals as disconnected.
-
-Preferred implementation:
-
 - Store a per-page `terminalClientId` in `sessionStorage`.
 - Include it in terminal events.
 - Backend maps `(terminalClientId, workspaceId, terminalId)` to PTY sessions.
-- On reconnect, frontend emits `terminal:list` and reattaches tabs for retained sessions.
+- Backend marks PTYs owned by the disconnected SID as detached and retains them for two minutes.
+- On reconnect, frontend emits `terminal:list`, reattaches retained sessions to the new SID, and replays sequence-buffered output.
+- Input and resize traffic is suppressed while a terminal is reconnecting.
+- If the grace period expires, the tab becomes `expired` and offers Restart.
 
 ---
 
@@ -233,6 +225,7 @@ All events are browser-client only. MCP-authenticated clients must be rejected.
 {
   "workspaceId": "workspace-id",
   "terminalId": "uuid",
+  "clientId": "session-storage-uuid",
   "data": "raw input bytes as string"
 }
 ```
@@ -243,6 +236,7 @@ All events are browser-client only. MCP-authenticated clients must be rejected.
 {
   "workspaceId": "workspace-id",
   "terminalId": "uuid",
+  "clientId": "session-storage-uuid",
   "cols": 120,
   "rows": 32
 }
@@ -253,7 +247,8 @@ All events are browser-client only. MCP-authenticated clients must be rejected.
 ```json
 {
   "workspaceId": "workspace-id",
-  "terminalId": "uuid"
+  "terminalId": "uuid",
+  "clientId": "session-storage-uuid"
 }
 ```
 
@@ -263,6 +258,7 @@ All events are browser-client only. MCP-authenticated clients must be rejected.
 {
   "workspaceId": "workspace-id",
   "terminalId": "uuid",
+  "clientId": "session-storage-uuid",
   "cols": 120,
   "rows": 32
 }
@@ -273,7 +269,10 @@ All events are browser-client only. MCP-authenticated clients must be rejected.
 ```json
 {
   "workspaceId": "workspace-id",
-  "clientId": "session-storage-uuid"
+  "clientId": "session-storage-uuid",
+  "lastSequences": {
+    "terminal-id": 42
+  }
 }
 ```
 
@@ -596,7 +595,7 @@ Server cleanup cases:
 
 - Explicit `terminal:close`: send SIGHUP/SIGTERM to the process group, wait briefly, then SIGKILL if needed.
 - Shell exits: close FD, remove or mark exited.
-- Browser disconnect: mark detached and schedule cleanup after grace period, or terminate immediately for the minimal implementation.
+- Browser disconnect: mark detached and schedule cleanup after the two-minute reconnect grace period.
 - Workspace removed: terminate all terminal sessions for that workspace.
 - Server shutdown: terminate all terminal sessions.
 
@@ -737,4 +736,3 @@ Goal: validate PTY + Flask-SocketIO behavior before full UI polish.
 - Scrollback: 5000 lines.
 - Disconnect behavior for first implementation: terminate on disconnect if reconnect retention complicates the spike; otherwise implement 2-minute grace with `clientId`.
 - Transcript persistence: none.
-

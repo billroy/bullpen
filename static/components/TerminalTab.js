@@ -110,7 +110,7 @@ const TerminalTab = {
           <span v-if="terminal.cwd" class="terminal-cwd">{{ terminal.cwd }}</span>
         </div>
         <button
-          v-if="terminal.status === 'exited' || terminal.status === 'error'"
+          v-if="terminal.status === 'exited' || terminal.status === 'error' || terminal.status === 'expired'"
           class="btn btn-sm"
           @click="$emit('restart-terminal', terminal.id)"
         >
