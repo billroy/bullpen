@@ -548,6 +548,7 @@ def normalize_worker_slot(raw, *, index, config):
         if action not in SERVICE_TICKET_ACTIONS:
             action = "start-if-stopped-else-restart"
         slot["ticket_action"] = action
+        slot["start_when_bullpen_starts"] = bool(slot.get("start_when_bullpen_starts", False))
         slot["startup_grace_seconds"] = max(0, min(_safe_int(slot.get("startup_grace_seconds"), 2), 3600))
         slot["startup_timeout_seconds"] = max(1, min(_safe_int(slot.get("startup_timeout_seconds"), 60), 86400))
         health_type = str(slot.get("health_type") or "none")

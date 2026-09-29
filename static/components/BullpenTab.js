@@ -2184,7 +2184,7 @@ const BullpenTab = {
       const fields = ['type', 'profile', 'name', 'note', 'agent', 'model', 'activation', 'disposition', 'watch_column', 'expertise_prompt', 'trust_mode',
         'max_retries', 'use_worktree', 'auto_commit', 'auto_pr', 'trigger_time', 'trigger_interval_minutes',
         'trigger_every_day', 'command', 'cwd', 'timeout_seconds', 'ticket_delivery', 'env',
-        'pre_start', 'ticket_action', 'startup_grace_seconds', 'startup_timeout_seconds',
+        'pre_start', 'ticket_action', 'start_when_bullpen_starts', 'startup_grace_seconds', 'startup_timeout_seconds',
         'health_type', 'health_url', 'health_command', 'health_interval_seconds',
         'health_timeout_seconds', 'health_failure_threshold', 'on_crash',
         'stop_timeout_seconds', 'log_max_bytes', 'color', 'avatar'];

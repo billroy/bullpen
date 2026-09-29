@@ -52,6 +52,7 @@ _SERVICE_FIELDS = {
     "procfile_process",
     "port",
     "ticket_action",
+    "start_when_bullpen_starts",
     "startup_grace_seconds",
     "startup_timeout_seconds",
     "health_type",

@@ -15,6 +15,7 @@ from server.service_worker import (
     resolve_service_preview,
     suggest_service_port,
     start_service,
+    start_configured_services,
     stop_all_services,
     stop_service,
     tail_service,
@@ -138,8 +139,43 @@ def test_service_restart_replaces_process(tmp_workspace):
     assert restart_service(bp_dir, ws_id, 0, socket) is True
     assert _wait_for(lambda: controller.state_snapshot()["state"] == "running" and controller.state_snapshot()["pid"] != first_pid) is True
     assert controller.state_snapshot()["pid"] != first_pid
-
     stop_service(bp_dir, ws_id, 0, socket)
+
+
+def test_start_configured_services_starts_only_opted_in_services(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    _install_service_worker(
+        bp_dir,
+        tmp_workspace,
+        start_when_bullpen_starts=True,
+    )
+    layout = read_json(os.path.join(bp_dir, "layout.json"))
+    layout["slots"].append({
+        **layout["slots"][0],
+        "name": "Manual Service",
+        "start_when_bullpen_starts": False,
+    })
+    layout["slots"].append({
+        **layout["slots"][0],
+        "name": "Paused Service",
+        "start_when_bullpen_starts": True,
+        "paused": True,
+    })
+    write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+    socket = FakeSocket()
+    ws_id = "ws-service-startup"
+
+    try:
+        assert start_configured_services(bp_dir, ws_id, socket) == [0]
+        opted_in = get_controller(bp_dir, ws_id, 0, socket)
+        manual = get_controller(bp_dir, ws_id, 1, socket)
+        paused = get_controller(bp_dir, ws_id, 2, socket)
+        assert _wait_for(lambda: opted_in.state_snapshot()["state"] == "running") is True
+        assert manual.state_snapshot()["state"] == "stopped"
+        assert paused.state_snapshot()["state"] == "stopped"
+    finally:
+        stop_all_services(wait=True)
 
 
 def test_paused_service_worker_blocks_direct_start_and_restart(tmp_workspace):

@@ -418,6 +418,11 @@ def _load_service_slot(bp_dir, slot_index):
     return worker
 
 
+def _load_service_layout(bp_dir):
+    config = read_json(os.path.join(bp_dir, "config.json"))
+    return normalize_layout(read_json(os.path.join(bp_dir, "layout.json")), config=config)
+
+
 def _service_order_id(order):
     return str((order or {}).get("id") or _event_id())
 
@@ -1329,6 +1334,24 @@ def start_service(bp_dir, ws_id, slot, socketio=None):
         }, ws_id)
         return False
     return get_controller(bp_dir, ws_id, slot, socketio).start()
+
+
+def start_configured_services(bp_dir, ws_id, socketio=None):
+    """Start service workers that are configured to launch with Bullpen."""
+    layout = _load_service_layout(bp_dir)
+    started = []
+    for slot_index, worker in enumerate(layout.get("slots", [])):
+        if not isinstance(worker, dict):
+            continue
+        if worker.get("type") != "service":
+            continue
+        if not worker.get("start_when_bullpen_starts"):
+            continue
+        if worker.get("paused"):
+            continue
+        if start_service(bp_dir, ws_id, slot_index, socketio):
+            started.append(slot_index)
+    return started
 
 
 def stop_service(bp_dir, ws_id, slot, socketio=None):

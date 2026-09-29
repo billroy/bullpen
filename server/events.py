@@ -2289,6 +2289,7 @@ def register_events(socketio, app):
                 "cwd": str(fields.get("cwd", "") or ""),
                 "pre_start": str(fields.get("pre_start", "") or ""),
                 "ticket_action": fields.get("ticket_action", "start-if-stopped-else-restart"),
+                "start_when_bullpen_starts": bool(fields.get("start_when_bullpen_starts", False)),
                 "startup_grace_seconds": int(fields.get("startup_grace_seconds", 2) or 2),
                 "startup_timeout_seconds": int(fields.get("startup_timeout_seconds", 60) or 60),
                 "health_type": fields.get("health_type", "none"),

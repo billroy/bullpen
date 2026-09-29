@@ -171,6 +171,7 @@ def test_service_slot_normalizes_defaults_and_round_trips_through_team(tmp_works
     assert slot["type"] == "service"
     assert slot["activation"] == "manual"
     assert slot["ticket_action"] == "start-if-stopped-else-restart"
+    assert slot["start_when_bullpen_starts"] is False
     assert slot["startup_grace_seconds"] == 2
     assert slot["startup_timeout_seconds"] == 60
     assert slot["health_interval_seconds"] == 5

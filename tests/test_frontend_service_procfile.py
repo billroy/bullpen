@@ -23,6 +23,8 @@ def test_worker_config_modal_exposes_service_procfile_controls():
     assert "Suggested open port:" in text
     assert "data.suggested_port" in text
     assert "servicePortAutoFilled" in text
+    assert "Start when Bullpen starts" in text
+    assert "start_when_bullpen_starts: !!w.start_when_bullpen_starts" in text
     assert "activation: w.activation || (w.type === 'service' ? 'manual' : 'on_drop')" in text
     assert "function requestServicePreview(payload)" in app
     assert "socket.emit('service:preview', _wsData({ ...payload, request_id: requestId }));" in app

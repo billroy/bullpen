@@ -319,6 +319,7 @@ def create_app(
     # Startup reconciliation for all registered workspaces
     for ws in manager.all_workspaces():
         reconcile(ws.bp_dir)
+        service_worker_mod.start_configured_services(ws.bp_dir, ws.id, socketio)
 
     # --- Public (unauthenticated) assets allowlist ---------------------
     # These paths must load without a session so the login page can be

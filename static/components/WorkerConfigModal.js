@@ -225,6 +225,7 @@ const WorkerConfigModal = {
             port: w.port ?? '',
             pre_start: w.pre_start || '',
             ticket_action: w.ticket_action || 'start-if-stopped-else-restart',
+            start_when_bullpen_starts: !!w.start_when_bullpen_starts,
             startup_grace_seconds: w.startup_grace_seconds ?? 2,
             startup_timeout_seconds: w.startup_timeout_seconds ?? 60,
             health_type: w.health_type || 'none',
@@ -943,6 +944,10 @@ const WorkerConfigModal = {
                 <input class="form-input" v-model="form.cwd" placeholder="(workspace root)">
               </label>
             </div>
+            <label class="form-checkbox">
+              <input type="checkbox" v-model="form.start_when_bullpen_starts">
+              <span>Start when Bullpen starts</span>
+            </label>
             <div class="form-row">
               <label class="form-label">
                 Startup grace seconds
@@ -1714,6 +1719,7 @@ const WorkerConfigModal = {
         delete fields.port;
         delete fields.pre_start;
         delete fields.ticket_action;
+        delete fields.start_when_bullpen_starts;
         delete fields.startup_grace_seconds;
         delete fields.startup_timeout_seconds;
         delete fields.health_type;
@@ -1768,6 +1774,7 @@ const WorkerConfigModal = {
         delete fields.port;
         delete fields.pre_start;
         delete fields.ticket_action;
+        delete fields.start_when_bullpen_starts;
         delete fields.startup_grace_seconds;
         delete fields.startup_timeout_seconds;
         delete fields.health_type;
@@ -1812,6 +1819,7 @@ const WorkerConfigModal = {
         if (this.isShell) {
           delete fields.pre_start;
           delete fields.ticket_action;
+          delete fields.start_when_bullpen_starts;
           delete fields.startup_grace_seconds;
           delete fields.startup_timeout_seconds;
           delete fields.health_type;
@@ -1838,6 +1846,7 @@ const WorkerConfigModal = {
         delete fields.env;
         delete fields.pre_start;
         delete fields.ticket_action;
+        delete fields.start_when_bullpen_starts;
         delete fields.startup_grace_seconds;
         delete fields.startup_timeout_seconds;
         delete fields.health_type;

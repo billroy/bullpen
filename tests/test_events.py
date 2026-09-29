@@ -2525,6 +2525,7 @@ class TestWorkerEvents:
         assert worker["port"] is None
         assert worker["pre_start"] == "git fetch"
         assert worker["ticket_action"] == "start-if-stopped-else-restart"
+        assert worker["start_when_bullpen_starts"] is False
         assert worker["health_type"] == "http"
         assert worker["health_url"] == "http://localhost:3000/health"
         assert worker["state"] == "idle"
@@ -3090,6 +3091,7 @@ class TestWorkerEvents:
                 "cwd": "server",
                 "pre_start": "git fetch",
                 "ticket_action": "restart",
+                "start_when_bullpen_starts": True,
                 "startup_grace_seconds": 3,
                 "startup_timeout_seconds": 90,
                 "health_type": "shell",
@@ -3115,6 +3117,7 @@ class TestWorkerEvents:
         assert worker["cwd"] == "server"
         assert worker["pre_start"] == "git fetch"
         assert worker["ticket_action"] == "restart"
+        assert worker["start_when_bullpen_starts"] is True
         assert worker["startup_grace_seconds"] == 3
         assert worker["startup_timeout_seconds"] == 90
         assert worker["health_type"] == "shell"
