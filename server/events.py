@@ -4708,6 +4708,12 @@ def register_events(socketio, app):
         state["workspaceId"] = ws_id
         state["globalSettings"] = load_global_settings(manager.global_dir)
         emit("state:init", state)
+        service_worker_mod.emit_workspace_states(
+            ws.bp_dir,
+            ws_id,
+            socketio=socketio,
+            to=request.sid,
+        )
         _emit_chat_tabs(ws_id, sid=request.sid)
         private_layout = read_json(os.path.join(ws.bp_dir, "layout.json"))
         notify_dead_letters = app.config.get("notify_formula_trigger_dead_letters")

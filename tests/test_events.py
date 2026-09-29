@@ -696,12 +696,71 @@ def test_start_without_project_refresh_requires_join_for_registered_project(tmp_
     project_updates = [evt for evt in refresh_events if evt["name"] == "projects:updated"]
     assert project_updates[-1]["args"][0] == [{"id": ws_id, "name": "project-a", "available": True}]
 
+    bp_dir = app.config["manager"].get_bp_dir(ws_id)
+    controller = service_worker_mod.get_controller(bp_dir, ws_id, 0, socketio=None)
+    with controller._lock:
+        controller._state = "running"
+        controller._pid = 4343
+        controller._started_at = "2026-09-29T14:00:00Z"
+
     client.emit("project:join", {"workspaceId": ws_id})
     join_events = client.get_received()
     client.disconnect()
     state_events = [evt["args"][0] for evt in join_events if evt["name"] == "state:init"]
     assert state_events
     assert state_events[-1]["workspaceId"] == ws_id
+    service_states = [evt["args"][0] for evt in join_events if evt["name"] == "service:state"]
+    assert [evt["name"] for evt in join_events].index("state:init") < [
+        evt["name"] for evt in join_events
+    ].index("service:state")
+    assert service_states
+    assert service_states[-1]["workspaceId"] == ws_id
+    assert service_states[-1]["state"] == "running"
+    assert service_states[-1]["started_at"] == "2026-09-29T14:00:00Z"
+
+
+def test_initial_connect_replays_running_service_state_to_new_client(client):
+    existing, app = client
+    existing.emit("worker:paste", {
+        "coord": {"col": 0, "row": 0},
+        "worker": {
+            "type": "service",
+            "name": "Autostart Service",
+            "command_source": "procfile",
+            "procfile_process": "web",
+        },
+    })
+    existing.get_received()
+
+    ws_id = app.config["startup_workspace_id"]
+    controller = service_worker_mod.get_controller(app.config["bp_dir"], ws_id, 0, socketio=None)
+    with controller._lock:
+        controller._state = "running"
+        controller._pid = 4242
+        controller._started_at = "2026-09-29T13:00:00Z"
+
+    late_client = socketio.test_client(app)
+    events = late_client.get_received()
+    late_client.disconnect()
+
+    assert [evt for evt in events if evt["name"] == "state:init"]
+    service_states = [evt["args"][0] for evt in events if evt["name"] == "service:state"]
+    assert [evt["name"] for evt in events].index("state:init") < [
+        evt["name"] for evt in events
+    ].index("service:state")
+    assert service_states == [{
+        "slot": 0,
+        "state": "running",
+        "health": None,
+        "pid": 4242,
+        "started_at": "2026-09-29T13:00:00Z",
+        "exit_code": None,
+        "config_hash": None,
+        "active_config_hash": None,
+        "last_error": None,
+        "workspaceId": ws_id,
+    }]
+    assert [evt for evt in existing.get_received() if evt["name"] == "service:state"] == []
 
 
 def test_worker_start_joins_workspace_before_start_broadcast(tmp_path, monkeypatch):

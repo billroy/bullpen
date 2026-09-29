@@ -496,6 +496,12 @@ def create_app(
             state["workspaceId"] = ws.id
             state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
+            service_worker_mod.emit_workspace_states(
+                ws.bp_dir,
+                ws.id,
+                socketio=socketio,
+                to=request.sid,
+            )
             _notify_formula_trigger_dead_letters(ws.bp_dir, request.sid)
             drain = app.config.get("drain_formula_trigger_outbox")
             pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get("_formula_trigger_outbox")
@@ -512,6 +518,12 @@ def create_app(
             state["workspaceId"] = ws.id
             state["globalSettings"] = load_global_settings(manager.global_dir)
             socketio.emit("state:init", state, to=request.sid)
+            service_worker_mod.emit_workspace_states(
+                ws.bp_dir,
+                ws.id,
+                socketio=socketio,
+                to=request.sid,
+            )
             _notify_formula_trigger_dead_letters(ws.bp_dir, request.sid)
             drain = app.config.get("drain_formula_trigger_outbox")
             pending_triggers = read_json(os.path.join(ws.bp_dir, "layout.json")).get("_formula_trigger_outbox")
