@@ -3856,6 +3856,8 @@ def _write_log(bp_dir, slot_index, task_id, prompt, result):
 
     output_text = result.get('output', '')
     content = f"Task: {task_id}\nTimestamp: {_now_iso()}\nSuccess: {result['success']}\n"
+    if "completion_reason" in result:
+        content += f"Completion reason: {result.get('completion_reason') or 'missing'}\n"
     content += f"Output length: {len(output_text)} chars\n\n"
     content += f"--- Prompt (truncated) ---\n{log_prompt}\n\n"
     content += f"--- Output ---\n{output_text}\n"

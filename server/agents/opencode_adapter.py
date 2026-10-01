@@ -222,6 +222,7 @@ class OpenCodeAdapter(AgentAdapter):
         error_msg = None
         error_index = None
         completion_index = None
+        completion_reason = None
         saw_json = False
         non_json_lines = []
 
@@ -247,6 +248,8 @@ class OpenCodeAdapter(AgentAdapter):
                 error_index = event_index
             elif evt_type == "step_finish":
                 completion_index = event_index
+                part = obj.get("part") if isinstance(obj.get("part"), dict) else {}
+                completion_reason = part.get("reason")
 
             extracted = extract_opencode_usage_event(obj)
             if extracted:
@@ -260,6 +263,7 @@ class OpenCodeAdapter(AgentAdapter):
                 "output": output,
                 "error": error_msg or (stderr or "").strip() or output or f"Exit code {exit_code}",
                 "usage": usage,
+                "completion_reason": completion_reason,
             }
 
         recovered_after_error = (
@@ -274,10 +278,27 @@ class OpenCodeAdapter(AgentAdapter):
                 "output": output,
                 "error": error_msg,
                 "usage": usage,
+                "completion_reason": completion_reason,
+            }
+
+        if saw_json and completion_reason != "stop":
+            reason = completion_reason or "missing"
+            return {
+                "success": False,
+                "output": output,
+                "error": f"OpenCode ended before terminal completion (final step reason: {reason}).",
+                "usage": usage,
+                "completion_reason": completion_reason,
             }
 
         if output:
-            return {"success": True, "output": output, "error": None, "usage": usage}
+            return {
+                "success": True,
+                "output": output,
+                "error": None,
+                "usage": usage,
+                "completion_reason": completion_reason,
+            }
 
         if not saw_json and non_json_lines:
             return {
@@ -292,6 +313,7 @@ class OpenCodeAdapter(AgentAdapter):
             "output": output,
             "error": "OpenCode completed without producing assistant output.",
             "usage": usage,
+            "completion_reason": completion_reason,
         }
 
     def _error_message(self, obj):

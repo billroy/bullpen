@@ -1108,6 +1108,24 @@ class TestOpenCodeAdapter:
             "output": "Primary response",
             "error": None,
             "usage": {},
+            "completion_reason": "stop",
+        }
+
+    def test_parse_output_rejects_incomplete_tool_call_ending_with_progress_text(self):
+        adapter = OpenCodeAdapter()
+        stdout = "\n".join([
+            json.dumps({"type": "text", "part": {"text": "Now pulling primary local data."}}),
+            json.dumps({"type": "step_finish", "part": {"reason": "tool-calls"}}),
+        ])
+
+        result = adapter.parse_output(stdout, "", 0)
+
+        assert result == {
+            "success": False,
+            "output": "Now pulling primary local data.",
+            "error": "OpenCode ended before terminal completion (final step reason: tool-calls).",
+            "usage": {},
+            "completion_reason": "tool-calls",
         }
 
     def test_parse_output_keeps_error_after_earlier_completion(self):
@@ -1163,6 +1181,7 @@ class TestOpenCodeAdapter:
             "output": "",
             "error": "OpenCode completed without producing assistant output.",
             "usage": {},
+            "completion_reason": None,
         }
 
 

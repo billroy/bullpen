@@ -59,6 +59,29 @@ def _wait_for_worker_threads(timeout=3.0):
     return False
 
 
+def test_agent_log_records_completion_reason(bp_dir):
+    workers_mod._write_log(
+        bp_dir,
+        3,
+        "incomplete-opencode-run",
+        "test prompt",
+        {
+            "success": False,
+            "output": "Now pulling primary local data.",
+            "error": "OpenCode ended before terminal completion (final step reason: tool-calls).",
+            "completion_reason": "tool-calls",
+        },
+    )
+
+    log_names = os.listdir(os.path.join(bp_dir, "logs"))
+    assert len(log_names) == 1
+    with open(os.path.join(bp_dir, "logs", log_names[0]), encoding="utf-8") as log_file:
+        log_text = log_file.read()
+    assert "Success: False" in log_text
+    assert "Completion reason: tool-calls" in log_text
+    assert "--- Error ---" in log_text
+
+
 class UnavailableAdapter(MockAdapter):
     @property
     def name(self):
@@ -1334,7 +1357,7 @@ with open(os.environ["BULLPEN_OPENCODE_CAPTURE"], "w", encoding="utf-8") as f:
 
 print(json.dumps({"type": "step_start"}), flush=True)
 print(json.dumps({"type": "text", "part": {"text": "OpenCode lifecycle ok"}}), flush=True)
-print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 11, "output": 7, "total": 18}}}), flush=True)
+print(json.dumps({"type": "step_finish", "part": {"reason": "stop", "tokens": {"input": 11, "output": 7, "total": 18}}}), flush=True)
 """,
             encoding="utf-8",
         )
