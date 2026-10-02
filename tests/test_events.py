@@ -3691,7 +3691,7 @@ print(json.dumps({
     "error": {"data": {"message": "Auxiliary title request failed"}},
 }), flush=True)
 print(json.dumps({"type": "text", "part": {"text": "OpenCode chat ok"}}), flush=True)
-print(json.dumps({"type": "step_finish", "part": {"tokens": {"input": 13, "output": 5, "total": 18}}}), flush=True)
+print(json.dumps({"type": "step_finish", "part": {"reason": "stop", "tokens": {"input": 13, "output": 5, "total": 18}}}), flush=True)
 """,
             encoding="utf-8",
         )
@@ -3783,6 +3783,7 @@ with open(os.environ["BULLPEN_OPENCODE_CHAT_CAPTURE"], "w", encoding="utf-8") as
     }, f)
 
 print(json.dumps({"type": "text", "part": {"text": "workspace ok"}}), flush=True)
+print(json.dumps({"type": "step_finish", "part": {"reason": "stop"}}), flush=True)
 """,
             encoding="utf-8",
         )
