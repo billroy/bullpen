@@ -38,7 +38,7 @@ DEFAULT_BULLPEN_PORT = 8080
 DEFAULT_APP_PORT = 3000
 DEFAULT_BULLPEN_PORT_RANGE = (8081, 8180)
 DEFAULT_APP_PORT_RANGE = (3001, 3100)
-DEFAULT_MICROSANDBOX_BASE = "bullpen-microsandbox-local"
+DEFAULT_MICROSANDBOX_BASE = "bullpen-microsandbox-0.7"
 LOCALHOST = "127.0.0.1"
 PROFILE_ID_RE = re.compile(r"[^a-z0-9-]+")
 AI_PROVIDER_LABELS = {
@@ -133,9 +133,15 @@ def microsandbox_base_snapshots_payload() -> list[dict[str, Any]]:
             name = str(getattr(snapshot, "name", "") or "").strip()
             if not name:
                 continue
+            group = str(getattr(snapshot, "group", "") or "").strip()
+            reference = str(getattr(snapshot, "reference", "") or "").strip()
+            logical_name = group if group and group == name else (reference or name)
             snapshots.append(
                 {
-                    "name": name,
+                    "name": logical_name,
+                    "memberName": name,
+                    "group": group,
+                    "reference": reference or (f"{group}:{name}" if group else name),
                     "digest": str(getattr(snapshot, "digest", "") or ""),
                     "imageRef": str(getattr(snapshot, "image_ref", "") or ""),
                     "createdAt": getattr(snapshot, "created_at", None),

@@ -2,7 +2,7 @@ const { createApp, computed, nextTick, onMounted, reactive, ref, watch } = Vue;
 
 createApp({
   setup() {
-    const defaultMicrosandboxBase = 'bullpen-microsandbox-local';
+    const defaultMicrosandboxBase = 'bullpen-microsandbox-0.7';
     const state = reactive({
       profiles: [],
       selectedId: null,

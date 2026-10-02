@@ -135,7 +135,7 @@ def test_cli_resource_options_default_to_larger_final_sandbox(sb, tmp_path, monk
     assert config.memory_mib == 4096
     assert config.host_nofile == 12000
     assert config.guest_nofile == 65536
-    assert config.network_max_connections == 8192
+    assert config.network_max_connections == 4096
 
 
 def test_cli_rejects_invalid_resource_options(sb, tmp_path, monkeypatch):
@@ -844,7 +844,8 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
 
     class FakeSandbox:
         @staticmethod
-        def create(name, **kwargs):
+        def restore(snapshot, *, name, **kwargs):
+            calls["snapshot"] = snapshot
             calls["name"] = name
             calls["kwargs"] = kwargs
             return types.SimpleNamespace()
@@ -852,7 +853,7 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     class FakeSnapshot:
         @staticmethod
         def get(name):
-            return types.SimpleNamespace(name=name, path="/snapshots/bullpen-microsandbox-local")
+            return types.SimpleNamespace(reference=name)
 
     fake_module = types.SimpleNamespace(
         Sandbox=FakeSandbox,
@@ -892,26 +893,20 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     asyncio.run(runtime.create(config))
 
     assert calls["name"] == "testbox"
-    assert calls["kwargs"]["snapshot"] == "/snapshots/bullpen-microsandbox-local"
+    assert calls["snapshot"].reference == "bullpen-microsandbox-local:bullpen-microsandbox-local"
     assert "image" not in calls["kwargs"]
-    assert calls["kwargs"]["replace"] is True
-    assert calls["kwargs"]["detached"] is True
     assert calls["kwargs"]["cpus"] == 4
     assert calls["kwargs"]["memory"] == 4096
     assert "memory_mib" not in calls["kwargs"]
     assert calls["kwargs"]["ports"] == {8081: 8081, 3001: 3001}
-    assert calls["kwargs"]["network"].policy == "allow-all"
-    assert calls["kwargs"]["network"].max_connections == 8192
+    assert calls["kwargs"]["network_policy"] == "allow-all"
+    assert calls["kwargs"]["max_tcp_connections"] == 4096
+    assert calls["kwargs"]["max_udp_connections"] == 4096
     assert calls["kwargs"]["volumes"]["/app"] == {"path": str(ROOT), "readonly": True}
     assert calls["kwargs"]["volumes"]["/workspace"] == {"path": str(workspace), "readonly": False}
     assert "/workspace/project" not in calls["kwargs"]["volumes"]
     assert calls["kwargs"]["volumes"]["/home/bullpen"] == {"path": str(sandbox_home), "readonly": False}
     assert "/home/bullpen/.codex" not in calls["kwargs"]["volumes"]
-    assert calls["kwargs"]["env"] == {
-        "HOME": "/home/bullpen",
-        "USER": "bullpen",
-        "LOGNAME": "bullpen",
-    }
     assert config.runtime_env["BULLPEN_PROJECTS_ROOT"] == "/workspace"
     assert config.runtime_env["BULLPEN_START_WITHOUT_PROJECT"] == "1"
     assert "BULLPEN_WORKSPACE" not in config.runtime_env
@@ -919,7 +914,112 @@ def test_runtime_create_uses_expected_microsandbox_shape(sb, tmp_path, monkeypat
     assert config.runtime_env["BULLPEN_VENV"] == "/opt/bullpen-venv"
     assert config.runtime_env["BULLPEN_MICROSANDBOX_HOST_NOFILE"] == "12000"
     assert config.runtime_env["BULLPEN_MICROSANDBOX_GUEST_NOFILE"] == "65536"
-    assert config.runtime_env["BULLPEN_MICROSANDBOX_MAX_CONNECTIONS"] == "8192"
+    assert config.runtime_env["BULLPEN_MICROSANDBOX_MAX_CONNECTIONS"] == "4096"
+
+
+def test_microsandbox_version_validation_rejects_stale_sdk(sb):
+    with pytest.raises(sb.DeployError, match=r"requires microsandbox >= 0\.7\.5"):
+        sb.validate_microsandbox_version("0.6.16")
+
+
+def test_runtime_uses_matching_bundled_pair_when_home_runtime_drifted(sb, tmp_path, monkeypatch):
+    package = tmp_path / "microsandbox"
+    module_file = package / "__init__.py"
+    bundled_msb = package / "_bundled" / "bin" / "msb"
+    bundled_lib = package / "_bundled" / "lib" / "libkrunfw.5.dylib"
+    home_msb = tmp_path / "home" / "bin" / "msb"
+    for path in (module_file, bundled_msb, bundled_lib, home_msb):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+
+    def resolve_runtime():
+        selected = sb.os.environ.get("MSB_PATH", str(home_msb))
+        origin = "configuration" if "MSB_PATH" in sb.os.environ else "home"
+        return types.SimpleNamespace(msb_path=selected, origin=origin)
+
+    module = types.SimpleNamespace(__file__=str(module_file), resolve_runtime=resolve_runtime)
+    monkeypatch.delenv("MSB_PATH", raising=False)
+    monkeypatch.delenv("MSB_LIBKRUNFW_PATH", raising=False)
+    monkeypatch.delenv("MSB_HOME", raising=False)
+    monkeypatch.setattr(
+        sb,
+        "microsandbox_runtime_version",
+        lambda path: "0.7.5" if path == str(bundled_msb) else "0.7.6",
+    )
+
+    sb.configure_matching_microsandbox_runtime(module, "0.7.5")
+
+    assert sb.os.environ["MSB_PATH"] == str(bundled_msb)
+    assert sb.os.environ["MSB_LIBKRUNFW_PATH"] == str(bundled_lib)
+
+
+def test_runtime_rejects_mismatched_explicit_override(sb, tmp_path, monkeypatch):
+    runtime_path = tmp_path / "msb"
+    monkeypatch.setenv("MSB_PATH", str(runtime_path))
+    monkeypatch.delenv("MSB_LIBKRUNFW_PATH", raising=False)
+    monkeypatch.delenv("MSB_HOME", raising=False)
+    module = types.SimpleNamespace(
+        resolve_runtime=lambda: types.SimpleNamespace(msb_path=str(runtime_path), origin="environment"),
+    )
+    monkeypatch.setattr(sb, "microsandbox_runtime_version", lambda _path: "0.7.6")
+
+    with pytest.raises(sb.DeployError, match=r"SDK/runtime version mismatch.*SDK 0\.7\.5, runtime 0\.7\.6"):
+        sb.configure_matching_microsandbox_runtime(module, "0.7.5")
+
+
+@pytest.mark.parametrize("value", [0, 4097])
+def test_network_connection_limit_is_enforced(sb, value):
+    with pytest.raises(sb.DeployError, match="between 1 and 4096"):
+        sb.validate_network_max_connections(value)
+
+
+def test_create_snapshot_uses_grouped_microsandbox_contract(sb, monkeypatch):
+    calls = {}
+
+    class FakeSnapshot:
+        @staticmethod
+        async def remove(name, **kwargs):
+            calls["removed"] = (name, kwargs)
+
+        @staticmethod
+        async def create(name, **kwargs):
+            calls["created"] = (name, kwargs)
+
+    fake_module = types.SimpleNamespace(
+        Sandbox=object,
+        Snapshot=FakeSnapshot,
+        Volume=object,
+        Network=object,
+    )
+    monkeypatch.setitem(sys.modules, "microsandbox", fake_module)
+
+    asyncio.run(sb.MicrosandboxRuntime().create_snapshot("base-prepare", "base"))
+
+    assert calls["removed"] == ("base:base", {"force": True})
+    assert calls["created"] == (
+        "base",
+        {
+            "from_sandbox": "base-prepare",
+            "group": "base",
+            "labels": {"app": "bullpen", "kind": "microsandbox-base"},
+        },
+    )
+
+
+def test_get_running_sandbox_connects_catalog_handle(sb):
+    connected = types.SimpleNamespace(exec=lambda *_args, **_kwargs: None)
+
+    class Handle:
+        async def connect(self):
+            return connected
+
+    class Runtime:
+        async def get(self, _name):
+            return Handle()
+
+    config = types.SimpleNamespace(sandbox_name="demo")
+
+    assert asyncio.run(sb.get_running_sandbox(Runtime(), config)) is connected
 
 
 def test_host_port_preflight_reports_occupied_ports(sb, tmp_path, monkeypatch):
@@ -1940,7 +2040,7 @@ def test_microsandbox_prepare_cli_defaults_to_node_base(sb, tmp_path, monkeypatc
     config = sb.config_from_args(["--prepare-base", "--source-dir", str(ROOT), "--no-open"])
 
     assert config.action == "prepare-base"
-    assert config.base == "bullpen-microsandbox-local"
+    assert config.base == "bullpen-microsandbox-0.7"
     assert config.source_image == "node:22-bookworm"
     assert config.prepare_source == ROOT
     assert config.prepare_base_policy == "auto"

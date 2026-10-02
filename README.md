@@ -484,10 +484,10 @@ selected project. Projects cloned or created at sibling paths such as
 `/workspace/busy-deck` live inside the sandbox, while `/app` remains the
 read-only Bullpen source checkout.
 
-Install the Microsandbox Python package on the host first:
+Install Bullpen's pinned Microsandbox SDK on the host first:
 
 ```bash
-python3 -m pip install microsandbox
+python3 -m pip install -r requirements.txt
 ```
 
 Microsandbox deploy uses one Python entrypoint. On first run, the script creates
@@ -520,7 +520,7 @@ Claude, Codex, OpenCode, and GitHub login flows run inside the VM as the
 | `--app-port PORT` | `3000` | Host and guest app preview port exposed for project commands |
 | `--admin-user USER` | `admin` | Bullpen login user to bootstrap inside the sandbox |
 | `--admin-password PASSWORD` | prompt | Bullpen login password; prompted and confirmed when omitted |
-| `--base NAME` | `bullpen-microsandbox-local` | Prepared Microsandbox base snapshot |
+| `--base NAME` | `bullpen-microsandbox-0.7` | Prepared Microsandbox base snapshot group |
 | `--source-image IMAGE` | `node:22-bookworm` | OCI source image used when preparing the base |
 | `--prepare-base` | off | Prepare the reusable base and exit |
 | `--rebuild-base` | off | Rebuild the reusable base before continuing |
@@ -530,7 +530,7 @@ Claude, Codex, OpenCode, and GitHub login flows run inside the VM as the
 | `--memory-mib N` | `4096` | Sandbox memory in MiB |
 | `--host-nofile N` | `12000` | Target host process `RLIMIT_NOFILE` before the Microsandbox runtime is created |
 | `--guest-nofile N` | `65536` | Target `RLIMIT_NOFILE` for the in-sandbox `bullpen` user |
-| `--network-max-connections N` | `8192` | Microsandbox network connection tracker cap |
+| `--network-max-connections N` | `4096` | Microsandbox TCP and UDP connection tracker cap |
 | `--replace` | off | Replace an existing sandbox without prompting |
 | `--no-replace` | off | Abort if a sandbox with the same name already exists |
 | `--open` / `--no-open` | open | Open or suppress opening the Bullpen UI in a host browser |

@@ -397,8 +397,10 @@ def test_manager_profile_lifecycle_mutations_use_socketio(tmp_path, monkeypatch)
 
 def test_manager_api_lists_microsandbox_base_snapshots(tmp_path, monkeypatch):
     class Snapshot:
-        def __init__(self, name, image_ref):
+        def __init__(self, name, image_ref, group=None):
             self.name = name
+            self.group = group or name
+            self.reference = f"{self.group}:{name}"
             self.digest = f"sha256:{name}"
             self.image_ref = image_ref
             self.created_at = 1234
@@ -432,6 +434,9 @@ def test_manager_api_lists_microsandbox_base_snapshots(tmp_path, monkeypatch):
         "bullpen-microsandbox-local-v2",
     ]
     assert data["snapshots"][0]["imageRef"] == "node:22-bookworm"
+    assert data["snapshots"][0]["reference"] == (
+        f"{DEFAULT_MICROSANDBOX_BASE}:{DEFAULT_MICROSANDBOX_BASE}"
+    )
     assert "/api/microsandbox/base-snapshots" not in {rule.rule for rule in app.url_map.iter_rules()}
     client.disconnect()
 

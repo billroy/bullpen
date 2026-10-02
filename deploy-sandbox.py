@@ -32,7 +32,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from dataclasses import dataclass, field, replace as dataclass_replace
+from dataclasses import dataclass, field
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
@@ -47,14 +48,16 @@ BULLPEN_PORT_DEFAULT = 8080
 APP_PORT_DEFAULT = 3000
 ADMIN_USER_DEFAULT = "admin"
 SANDBOX_NAME_DEFAULT = "bullpen"
-BASE_DEFAULT = "bullpen-microsandbox-local"
+BASE_DEFAULT = "bullpen-microsandbox-0.7"
 SOURCE_IMAGE_DEFAULT = "node:22-bookworm"
+MICROSANDBOX_MIN_VERSION = "0.7.5"
 MANAGED_SOURCE_DIR_DEFAULT = Path.home() / ".bullpen" / "microsandbox-source" / "bullpen"
 VCPUS_DEFAULT = 4
 MEMORY_MIB_DEFAULT = 4096
 HOST_NOFILE_DEFAULT = 12000
 GUEST_NOFILE_DEFAULT = 65536
-NETWORK_MAX_CONNECTIONS_DEFAULT = 8192
+NETWORK_MAX_CONNECTIONS_DEFAULT = 4096
+NETWORK_MAX_CONNECTIONS_LIMIT = 4096
 HEALTH_TIMEOUT_SECONDS = 20
 SYSTEM_CA_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
 SYSTEM_CA_CERT_DIR = "/etc/ssl/certs"
@@ -113,6 +116,112 @@ SECRET_ENV_NAMES = {
 }
 
 
+def comparable_version(value: str) -> tuple[int, int, int]:
+    numeric = []
+    for part in value.split("."):
+        digits = ""
+        for char in part:
+            if not char.isdigit():
+                break
+            digits += char
+        if not digits:
+            break
+        numeric.append(int(digits))
+    return tuple((numeric + [0, 0, 0])[:3])
+
+
+def microsandbox_distribution_version(module: Any | None = None) -> str:
+    try:
+        return metadata.version("microsandbox")
+    except metadata.PackageNotFoundError:
+        version = getattr(module, "__version__", "")
+        return str(version) if version else ""
+
+
+def validate_microsandbox_version(version: str) -> None:
+    if not version:
+        raise DeployError(
+            "Could not determine the installed microsandbox package version. "
+            "Install the pinned runtime with: python3 -m pip install -r requirements.txt"
+        )
+    if comparable_version(version) < comparable_version(MICROSANDBOX_MIN_VERSION):
+        raise DeployError(
+            f"Bullpen requires microsandbox >= {MICROSANDBOX_MIN_VERSION} because its runtime adapter "
+            "uses grouped snapshots, restore-based startup, and later published-port fixes. "
+            f"Installed version: {version}. Upgrade with: python3 -m pip install -r requirements.txt"
+        )
+
+
+def microsandbox_runtime_version(msb_path: str) -> str:
+    try:
+        result = subprocess.run(
+            [msb_path, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise DeployError(f"Could not inspect Microsandbox runtime {msb_path}: {exc}") from exc
+    output = (result.stdout or result.stderr or "").strip()
+    match = re.search(r"\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b", output)
+    if result.returncode != 0 or match is None:
+        raise DeployError(
+            f"Could not determine the Microsandbox runtime version from {msb_path}. "
+            f"Command output: {output or '(empty)'}"
+        )
+    return match.group(1)
+
+
+def bundled_microsandbox_runtime(module: Any) -> tuple[Path, Path] | None:
+    module_file = getattr(module, "__file__", None)
+    if not module_file:
+        return None
+    bundled = Path(module_file).resolve().parent / "_bundled"
+    msb_name = "msb.exe" if os.name == "nt" else "msb"
+    msb_path = bundled / "bin" / msb_name
+    libraries = sorted((bundled / "lib").glob("libkrunfw*"))
+    if not msb_path.is_file() or not libraries:
+        return None
+    return msb_path, libraries[0]
+
+
+def configure_matching_microsandbox_runtime(module: Any, sdk_version: str) -> None:
+    resolve_runtime = getattr(module, "resolve_runtime", None)
+    if not callable(resolve_runtime):
+        return
+    try:
+        resolved = resolve_runtime()
+    except Exception as exc:
+        raise DeployError(f"Could not resolve the Microsandbox runtime: {exc}") from exc
+    runtime_version = microsandbox_runtime_version(str(resolved.msb_path))
+    if comparable_version(runtime_version) == comparable_version(sdk_version):
+        return
+
+    explicit_override = any(os.environ.get(name) for name in ("MSB_PATH", "MSB_LIBKRUNFW_PATH", "MSB_HOME"))
+    bundled = bundled_microsandbox_runtime(module)
+    if not explicit_override and str(getattr(resolved, "origin", "")) in {"home", "installed"} and bundled:
+        bundled_msb, bundled_libkrunfw = bundled
+        if comparable_version(microsandbox_runtime_version(str(bundled_msb))) == comparable_version(sdk_version):
+            os.environ["MSB_PATH"] = str(bundled_msb)
+            os.environ["MSB_LIBKRUNFW_PATH"] = str(bundled_libkrunfw)
+            selected = resolve_runtime()
+            if comparable_version(microsandbox_runtime_version(str(selected.msb_path))) == comparable_version(sdk_version):
+                return
+
+    override_hint = (
+        " Remove or correct MSB_PATH, MSB_LIBKRUNFW_PATH, and MSB_HOME."
+        if explicit_override
+        else " Reinstall the pinned Python package from requirements.txt."
+    )
+    raise DeployError(
+        "Microsandbox SDK/runtime version mismatch: "
+        f"Python SDK {sdk_version}, runtime {runtime_version} at {resolved.msb_path}. "
+        "Microsandbox launch contracts require a matching SDK/runtime release."
+        + override_hint
+    )
+
+
 class MicrosandboxRuntime:
     def __init__(self) -> None:
         try:
@@ -120,8 +229,12 @@ class MicrosandboxRuntime:
         except ImportError as exc:
             raise DeployError(
                 "The microsandbox Python package is required. Install it with: "
-                "python3 -m pip install microsandbox"
+                "python3 -m pip install -r requirements.txt"
             ) from exc
+
+        sdk_version = microsandbox_distribution_version(self.module)
+        validate_microsandbox_version(sdk_version)
+        configure_matching_microsandbox_runtime(self.module, sdk_version)
 
         try:
             self.Sandbox = getattr(self.module, "Sandbox")
@@ -199,7 +312,7 @@ class MicrosandboxRuntime:
             await result
 
     async def create(self, config: DeployConfig, *, expose_ports: bool = True) -> Any:
-        prepared_base = await self.prepared_base_snapshot_path(config.base)
+        prepared_base = await self.prepared_base_snapshot(config.base)
         try:
             config.sandbox_home.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -210,22 +323,22 @@ class MicrosandboxRuntime:
             "/home/bullpen": self.Volume.bind(str(config.sandbox_home)),
         }
         ensure_host_nofile(config.host_nofile)
-        network = network_with_max_connections(self.Network.allow_all(), config.network_max_connections)
+        network = self.Network.allow_all()
+        max_connections = validate_network_max_connections(config.network_max_connections)
         ports = {
             config.bullpen_port: config.bullpen_port,
             config.app_port: config.app_port,
         } if expose_ports else {}
-        result = self.Sandbox.create(
-            config.sandbox_name,
-            snapshot=prepared_base,
-            detached=True,
-            replace=bool(config.replace),
+        result = self.Sandbox.restore(
+            prepared_base,
+            name=config.sandbox_name,
             cpus=config.vcpus,
             memory=config.memory_mib,
             ports=ports,
             volumes=volumes,
-            network=network,
-            env=create_time_env(config),
+            network_policy=network.policy,
+            max_tcp_connections=max_connections,
+            max_udp_connections=max_connections,
         )
         if inspect.isawaitable(result):
             return await result
@@ -247,11 +360,23 @@ class MicrosandboxRuntime:
             return None
         return str(status)
 
+    async def connect(self, name: str) -> Any:
+        sandbox = await self.get(name)
+        if sandbox is None:
+            raise DeployError(f"Microsandbox '{name}' was not found.")
+        connect = getattr(sandbox, "connect", None)
+        if callable(connect):
+            result = connect()
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+        return sandbox
+
     async def get_prepared_base(self, base: str) -> Any | None:
         get = getattr(self.Snapshot, "get", None)
         if callable(get):
             try:
-                result = get(base)
+                result = get(self.prepared_base_snapshot_name(base))
                 if inspect.isawaitable(result):
                     result = await result
                 return result
@@ -262,24 +387,18 @@ class MicrosandboxRuntime:
     async def prepared_base_exists(self, base: str) -> bool:
         return await self.get_prepared_base(base) is not None
 
-    async def prepared_base_snapshot_path(self, base: str) -> str:
+    @staticmethod
+    def prepared_base_snapshot_name(base: str) -> str:
+        return base if ":" in base else f"{base}:{base}"
+
+    async def prepared_base_snapshot(self, base: str) -> Any:
         snapshot = await self.get_prepared_base(base)
         if snapshot is None:
             raise DeployError(
                 f"Prepared Microsandbox base '{base}' was not found. "
                 "Run: python3 deploy-sandbox.py --prepare-base"
             )
-        path = getattr(snapshot, "path", None)
-        if path is None:
-            open_snapshot = getattr(snapshot, "open", None)
-            if callable(open_snapshot):
-                opened = open_snapshot()
-                if inspect.isawaitable(opened):
-                    opened = await opened
-                path = getattr(opened, "path", None)
-        if not path:
-            raise DeployError(f"Prepared Microsandbox base '{base}' has no local snapshot path.")
-        return str(path)
+        return snapshot
 
     async def create_prepare_sandbox(self, name: str, source_image: str, source: Path) -> Any:
         if self.Image is None or not hasattr(self.Image, "oci"):
@@ -296,34 +415,43 @@ class MicrosandboxRuntime:
         return result
 
     async def create_base_validation_sandbox(self, name: str, base: str, config: DeployConfig) -> Any:
-        prepared_base = await self.prepared_base_snapshot_path(base)
+        prepared_base = await self.prepared_base_snapshot(base)
         await self.stop(name)
         try:
             await self.remove(name)
         except Exception:
             pass
         ensure_host_nofile(config.host_nofile)
-        network = network_with_max_connections(self.Network.allow_all(), config.network_max_connections)
-        result = self.Sandbox.create(
-            name,
-            snapshot=prepared_base,
-            detached=True,
-            replace=True,
+        network = self.Network.allow_all()
+        max_connections = validate_network_max_connections(config.network_max_connections)
+        result = self.Sandbox.restore(
+            prepared_base,
+            name=name,
             cpus=1,
             memory=1024,
             ports={},
-            network=network,
-            env={"HOME": "/root", "USER": "root", "LOGNAME": "root"},
+            network_policy=network.policy,
+            max_tcp_connections=max_connections,
+            max_udp_connections=max_connections,
         )
         if inspect.isawaitable(result):
             return await result
         return result
 
     async def create_snapshot(self, sandbox_name: str, base: str) -> None:
+        snapshot_name = self.prepared_base_snapshot_name(base)
+        remove = getattr(self.Snapshot, "remove", None)
+        if callable(remove):
+            try:
+                result = remove(snapshot_name, force=True)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:
+                pass
         result = self.Snapshot.create(
-            sandbox_name,
-            name=base,
-            force=True,
+            base,
+            from_sandbox=sandbox_name,
+            group=base,
             labels={"app": "bullpen", "kind": "microsandbox-base"},
         )
         if inspect.isawaitable(result):
@@ -445,17 +573,13 @@ def ensure_host_nofile(target: int) -> tuple[int, int]:
     return updated_soft, updated_hard
 
 
-def network_with_max_connections(network: Any, max_connections: int) -> Any:
-    if hasattr(network, "max_connections"):
-        try:
-            return dataclass_replace(network, max_connections=max_connections)
-        except TypeError:
-            setattr(network, "max_connections", max_connections)
-            return network
-    raise DeployError(
-        "The installed microsandbox SDK Network object does not expose max_connections; "
-        "upgrade microsandbox or omit this deploy path."
-    )
+def validate_network_max_connections(max_connections: int) -> int:
+    if max_connections < 1 or max_connections > NETWORK_MAX_CONNECTIONS_LIMIT:
+        raise DeployError(
+            "Microsandbox requires network max_connections to be between "
+            f"1 and {NETWORK_MAX_CONNECTIONS_LIMIT}; received {max_connections}."
+        )
+    return max_connections
 
 
 def prompt_password() -> str:
@@ -1130,6 +1254,12 @@ async def get_running_sandbox(runtime: MicrosandboxRuntime, config: DeployConfig
             f"Microsandbox '{config.sandbox_name}' is not running. Deploy Bullpen first:\n"
             "  python3 deploy-sandbox.py --replace"
         )
+    connect = getattr(sandbox, "connect", None)
+    if callable(connect):
+        connected = connect()
+        if inspect.isawaitable(connected):
+            connected = await connected
+        return connected
     return sandbox
 
 

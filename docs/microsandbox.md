@@ -83,7 +83,7 @@ Preferred behavior:
 - Do not require Docker to be installed. The prepare script should use Microsandbox's image/rootfs/snapshot capabilities directly. If the chosen Microsandbox primitive cannot consume `node:22-bookworm` without Docker, pick the nearest Microsandbox-native equivalent rather than adding Docker as a host dependency.
 - If `node:22-bookworm` does not work cleanly with Microsandbox on Apple Silicon, fall back to `python:3.12-bookworm` and add only the missing Node/npm/GitHub CLI pieces during prepare.
 - Do not use bare `debian` for the prepared Bullpen base except as a diagnostic fallback.
-- Store the prepared result locally under a stable name, for example `bullpen-microsandbox-local` if Microsandbox supports local OCI images, or a named local Microsandbox snapshot/volume if that is the better supported primitive.
+- Store the prepared result as the grouped snapshot `bullpen-microsandbox-0.7:bullpen-microsandbox-0.7` so it can coexist with bases from older runtime generations.
 - Verify all installed CLIs before declaring success:
 
 ```bash
@@ -115,7 +115,7 @@ Options:
 --app-port PORT              Host and guest client app port. Default: 3000
 --admin-user USER            Bullpen admin user. Default: admin
 --admin-password PASSWORD    Bullpen admin password. If omitted, prompt securely.
---base NAME                  Prepared Microsandbox base. Default: bullpen-microsandbox-local
+--base NAME                  Prepared Microsandbox base. Default: bullpen-microsandbox-0.7
 --source-image IMAGE         OCI image for base preparation. Default: node:22-bookworm
 --source-dir PATH            Bullpen source checkout for base preparation
 --prepare-base               Prepare the reusable base and exit
@@ -126,7 +126,7 @@ Options:
 --memory-mib N               Memory for the final sandbox in MiB. Default: 4096
 --host-nofile N              Target host process RLIMIT_NOFILE before creating the runtime. Default: 12000
 --guest-nofile N             Target bullpen user RLIMIT_NOFILE inside the sandbox. Default: 65536
---network-max-connections N  Microsandbox network connection tracker cap. Default: 8192
+--network-max-connections N  Microsandbox TCP and UDP connection tracker cap. Default: 4096
 --replace                    Replace an existing sandbox without prompting.
 --no-replace                 Abort if the sandbox already exists.
 --open                       Open the Bullpen UI in a host browser after startup. Default.
@@ -143,11 +143,11 @@ If `--admin-password` is omitted, prompt once and confirm it. No other option sh
 - Bullpen port: `8080`
 - Client app port: `3000`
 - Admin user: `admin`
-- Prepared base: `bullpen-microsandbox-local`
+- Prepared base group/member: `bullpen-microsandbox-0.7:bullpen-microsandbox-0.7`
 - Sandbox home: `~/.bullpen/microsandbox-home`
 - Host process `RLIMIT_NOFILE` target: `12000`
 - Guest `bullpen` user `RLIMIT_NOFILE`: `65536`
-- Microsandbox network `max_connections`: `8192`
+- Microsandbox TCP and UDP connection limits: `4096`
 - Browser opening: enabled
 - Replacement behavior: prompt if a sandbox with the same name exists, unless `--replace` or `--no-replace` is provided
 
@@ -160,7 +160,8 @@ user explicitly chooses the host directory that will be visible as
 Validate before creating or replacing the sandbox:
 
 - Python is 3.10+
-- The `microsandbox` Python package is importable; otherwise print `python3 -m pip install microsandbox`
+- The pinned `microsandbox==0.7.5` package is importable; otherwise print `python3 -m pip install -r requirements.txt`
+- The selected `msb` launcher patch version matches the Python SDK; use the bundled launcher when an unconfigured home install has drifted
 - Microsandbox runtime is installed; install it through the SDK when missing
 - Host is supported by Microsandbox: Apple Silicon macOS or Linux with KVM
 - Prepared Microsandbox base exists locally, or auto-prepare is enabled
@@ -176,16 +177,14 @@ Fail fast with one clear error message per problem. Do not run apt or npm during
 
 Use the native Microsandbox Python SDK.
 
-The sandbox create call should have this shape:
+The final sandbox restore call should have this shape:
 
 ```python
-sandbox = await Sandbox.create(
-    sandbox_name,
-    snapshot=prepared_base_snapshot_path,
-    detached=True,
-    replace=replace,
+sandbox = await Sandbox.restore(
+    prepared_base_snapshot,
+    name=sandbox_name,
     cpus=vcpus,
-    memory_mib=memory_mib,
+    memory=memory_mib,
     ports={
         bullpen_port: bullpen_port,
         app_port: app_port,
@@ -194,15 +193,16 @@ sandbox = await Sandbox.create(
         "/workspace": Volume.bind(workspace_path),
         "/home/bullpen": Volume.bind(sandbox_home),
     },
-    network=Network.allow_all(),
-    env=runtime_env,
+    network_policy=Network.allow_all().policy,
+    max_tcp_connections=network_max_connections,
+    max_udp_connections=network_max_connections,
 )
 ```
 
 Before creating the final sandbox, the deployer raises its own soft
 `RLIMIT_NOFILE` toward `--host-nofile` so the detached `msb` runtime inherits a
-larger host FD budget. The network object is created with
-`max_connections=--network-max-connections`. Inside the guest,
+larger host FD budget. Separate TCP and UDP connection limits are set from
+`--network-max-connections`. Inside the guest,
 `/etc/security/limits.d/bullpen-fd.conf` sets `--guest-nofile` for the
 `bullpen` user. These values are startup diagnostics as well as launch
 settings; Bullpen writes them to the sandbox logs before starting the server
