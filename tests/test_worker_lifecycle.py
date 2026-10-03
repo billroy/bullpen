@@ -249,6 +249,48 @@ class TestCommitRunStartEmitsCommonEvents:
         _wait_idle(bp_dir)
         assert self._extract_order(sock), [e[0] for e in sock.events]
 
+    def test_layout_update_replays_running_service_state(self, bp_dir, monkeypatch):
+        _install_slots(bp_dir, [_ai_worker()])
+        task = create_task(bp_dir, "AI task")
+        assign_task(bp_dir, 0, task["id"])
+        sock = CapturingSocket()
+        ws_id = "workspace-1"
+        started_at = "2026-10-01T15:58:38Z"
+
+        def replay_service_states(replay_bp_dir, replay_ws_id, socketio=None, **_kwargs):
+            assert replay_bp_dir == bp_dir
+            assert replay_ws_id == ws_id
+            socketio.emit(
+                "service:state",
+                {
+                    "slot": 1,
+                    "state": "running",
+                    "started_at": started_at,
+                    "workspaceId": replay_ws_id,
+                },
+                to=replay_ws_id,
+            )
+
+        monkeypatch.setattr(
+            "server.service_worker.emit_workspace_states",
+            replay_service_states,
+        )
+
+        start_worker(bp_dir, 0, socketio=sock, ws_id=ws_id)
+        _wait_idle(bp_dir)
+
+        layout_indexes = [
+            index for index, event in enumerate(sock.events)
+            if event[0] == "layout:updated"
+        ]
+        assert layout_indexes
+        for index in layout_indexes:
+            event, payload, room = sock.events[index + 1]
+            assert event == "service:state"
+            assert payload["state"] == "running"
+            assert payload["started_at"] == started_at
+            assert room == ws_id
+
 
 class TestEmptyQueueSyntheticTicket:
     """Manual empty-queue start synthesizes a ticket for both AI and Shell

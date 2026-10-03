@@ -261,7 +261,7 @@ def _consume_cancelled_run(run_id):
         return True
 
 
-def _ws_emit(socketio, event, payload, ws_id=None):
+def _ws_emit(socketio, event, payload, ws_id=None, *, bp_dir=None):
     """Emit a socket event with workspaceId attached, scoped to workspace room."""
     if event == "layout:updated" and isinstance(payload, dict) and "_formula_trigger_outbox" in payload:
         payload = dict(payload)
@@ -269,6 +269,18 @@ def _ws_emit(socketio, event, payload, ws_id=None):
     if ws_id and isinstance(payload, dict):
         payload["workspaceId"] = ws_id
     socketio.emit(event, payload, to=ws_id)
+    if event == "layout:updated" and bp_dir and ws_id:
+        # Layout payloads contain only persisted worker state. Re-apply the
+        # in-memory Service worker state after replacing client-side slots so
+        # unrelated worker lifecycle updates cannot make a running service
+        # appear stopped.
+        from server import service_worker as service_worker_mod
+
+        service_worker_mod.emit_workspace_states(
+            bp_dir,
+            ws_id,
+            socketio=socketio,
+        )
 
 
 def _finalize_task_time(bp_dir, task_id):
@@ -704,7 +716,7 @@ def assign_task(
     if socketio:
         task = task_mod.read_task(bp_dir, task_id)
         _ws_emit(socketio, "task:updated", task, ws_id)
-        _ws_emit(socketio, "layout:updated", layout, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
 
     # Check if worker should auto-start. Synthetic tasks created by an
     # explicit start_worker call are already on the start path, so do not
@@ -894,7 +906,7 @@ def _commit_run_start(bp_dir, slot_index, task_id, socketio, ws_id, worker_updat
 
     if socketio:
         _ws_emit(socketio, "task:updated", updated_task, ws_id)
-        _ws_emit(socketio, "layout:updated", layout, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
     return layout, worker
 
 
@@ -1436,7 +1448,7 @@ def complete_notification_delivery(bp_dir, slot_index, delivery_id, task_id, sta
             if socketio:
                 task = task_mod.read_task(bp_dir, task_id)
                 _ws_emit(socketio, "task:updated", task, ws_id)
-                _ws_emit(socketio, "layout:updated", layout, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
             return True
 
         _save_layout(bp_dir, layout)
@@ -1661,7 +1673,7 @@ def _block_agent_start_failure(bp_dir, slot_index, task_id, error_msg, socketio=
     if socketio:
         task = task_mod.read_task(bp_dir, task_id)
         _ws_emit(socketio, "task:updated", task, ws_id)
-        _ws_emit(socketio, "layout:updated", layout, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
 
 
 def _block_marker_run_failure(bp_dir, slot_index, task_id, error_msg, socketio=None, ws_id=None):
@@ -1721,7 +1733,7 @@ def stop_worker(bp_dir, slot_index, socketio=None, ws_id=None):
         if socketio:
             if cancel_payload:
                 _ws_emit(socketio, "notification:cancel", cancel_payload, ws_id)
-            _ws_emit(socketio, "layout:updated", layout, ws_id)
+            _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
     _request_process_shutdown_and_cleanup(bp_dir, entry)
 
 
@@ -1812,7 +1824,7 @@ def yank_from_worker(bp_dir, task_id, socketio=None, ws_id=None):
     _save_layout(bp_dir, layout)
 
     if socketio:
-        _ws_emit(socketio, "layout:updated", layout, ws_id)
+        _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
 
     # If worker was running this task and has more queued, advance
     if is_running and queue and worker.get("activation") in ("on_drop", "on_queue"):
@@ -3454,7 +3466,7 @@ def _on_agent_success(
                 # Reload layout after potential handoff to get current state
                 layout = _load_layout(bp_dir) if handed_off else layout
                 _ws_emit(socketio, "task:updated", task, ws_id)
-                _ws_emit(socketio, "layout:updated", layout, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
                 _ws_emit(socketio, "files:changed", {}, ws_id)
 
             has_more = queue and worker.get("activation") in ("on_drop", "on_queue")
@@ -3712,7 +3724,7 @@ def _on_agent_error(
 
             if socketio:
                 _ws_emit(socketio, "task:updated", retry_task_updated, ws_id)
-                _ws_emit(socketio, "layout:updated", layout, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
 
             should_retry = True
         else:
@@ -3739,7 +3751,7 @@ def _on_agent_error(
             if socketio:
                 task = task_mod.read_task(bp_dir, task_id)
                 _ws_emit(socketio, "task:updated", task, ws_id)
-                _ws_emit(socketio, "layout:updated", layout, ws_id)
+                _ws_emit(socketio, "layout:updated", layout, ws_id, bp_dir=bp_dir)
 
             should_advance = queue and worker.get("activation") in ("on_drop", "on_queue")
 
@@ -3800,7 +3812,7 @@ def _retry_worker_after_delay(bp_dir, slot_index, task_id, retry_delay, socketio
 
     if repaired_layout is not None:
         if socketio:
-            _ws_emit(socketio, "layout:updated", repaired_layout, ws_id)
+            _ws_emit(socketio, "layout:updated", repaired_layout, ws_id, bp_dir=bp_dir)
         drain_runnable_queues(bp_dir, socketio, ws_id)
         return
     start_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=task_id)
