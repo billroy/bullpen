@@ -90,6 +90,46 @@ def test_value_number_formatting_and_string_preservation_in_chromium():
                 proc.kill()
 
 
+def test_blank_cell_formula_creation_preserves_unit_in_chromium():
+    with tempfile.TemporaryDirectory(prefix="bullpen_value_formula_unit_pw_") as workspace:
+        port = _free_port()
+        proc = _start_server(workspace, port)
+        try:
+            base_url = f"http://127.0.0.1:{port}"
+            _wait_for_server(base_url)
+
+            with sync_playwright() as playwright:
+                browser = _launch_chromium(playwright)
+                page = browser.new_page(locale="en-US")
+                page.goto(base_url)
+                page.get_by_role("button", name="Workers").click()
+
+                viewport = page.locator(".worker-grid-viewport")
+                viewport.focus()
+                page.keyboard.type("E")
+                editor = page.get_by_role("textbox", name="Create value worker")
+                formula = 'Election/days:=DATEDIF(DATE(2026,10,5),DATE(2026,11,3),"D")'
+                editor.fill(formula)
+                editor.press("Enter")
+
+                card = page.locator(".worker-card", has_text="Election")
+                expect(card.locator(".worker-card-value-main")).to_have_text("29 d")
+                browser.close()
+
+            with open(os.path.join(workspace, ".bullpen", "layout.json"), encoding="utf-8") as handle:
+                layout = json.load(handle)
+            worker = next(slot for slot in layout["slots"] if slot and slot.get("type") == "value")
+            assert worker["name"] == "Election"
+            assert worker["unit"] == "day"
+            assert worker["formula"]["source"] == '=DATEDIF(DATE(2026,10,5),DATE(2026,11,3),"D")'
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 def test_compact_value_spreadsheet_style_selection_theme_and_persistence_in_chromium():
     with tempfile.TemporaryDirectory(prefix="bullpen_value_spreadsheet_pw_") as workspace:
         port = _free_port()

@@ -2338,6 +2338,7 @@ def register_events(socketio, app):
                 "row": row,
                 "col": col,
                 "name": str(fields.get("name", "") or "").strip(),
+                "unit": value_mod.normalize_unit(fields.get("unit")),
                 "value": payload["value"],
                 "value_type": payload["value_type"],
                 "resolved_value_type": payload["resolved_value_type"],
