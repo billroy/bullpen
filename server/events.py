@@ -268,7 +268,7 @@ _AI_COPY_FIELDS = {
     "trigger_interval_minutes", "trigger_every_day", "last_trigger_time",
     "paused", "task_queue", "state", "color", "avatar",
 }
-_DEFAULT_CHAT_TIMEOUT_SECONDS = 60
+_DEFAULT_CHAT_TIMEOUT_SECONDS = 1200
 _MAX_CHAT_TIMEOUT_SECONDS = 3600
 _MAX_NOTIFICATION_SPEECH_TEXT_LENGTH = 800
 
