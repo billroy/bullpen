@@ -1723,13 +1723,15 @@ class TestStopWorker:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX process-group behavior")
 class TestWorkerProcessTree:
-    def _start_process_tree_worker(self, bp_dir, worker_slot, tmp_path, *, max_retries=0):
+    def _start_process_tree_worker(self, bp_dir, worker_slot, tmp_path, *, max_retries=0, timeout_seconds=None):
         pid_file = tmp_path / "child.pid"
         term_file = tmp_path / "child.term"
         register_adapter("process-tree", ProcessTreeAdapter(pid_file, term_file))
         layout = _load_layout(bp_dir)
         layout["slots"][worker_slot]["agent"] = "process-tree"
         layout["slots"][worker_slot]["max_retries"] = max_retries
+        if timeout_seconds is not None:
+            layout["slots"][worker_slot]["timeout_seconds"] = timeout_seconds
         write_json(os.path.join(bp_dir, "layout.json"), layout)
         task = create_task(bp_dir, "Process tree task")
         assign_task(bp_dir, worker_slot, task["id"])
@@ -1759,10 +1761,12 @@ class TestWorkerProcessTree:
 
     def test_timeout_terminates_process_tree_and_blocks_task(self, bp_dir, worker_slot, tmp_path):
         config = read_json(os.path.join(bp_dir, "config.json"))
-        config["agent_timeout_seconds"] = 1
+        config["agent_timeout_seconds"] = 30
         write_json(os.path.join(bp_dir, "config.json"), config)
 
-        task, pid_file, term_file = self._start_process_tree_worker(bp_dir, worker_slot, tmp_path)
+        task, pid_file, term_file = self._start_process_tree_worker(
+            bp_dir, worker_slot, tmp_path, timeout_seconds=1,
+        )
         try:
             assert _wait_for_path(term_file, timeout=5.0), "child process did not receive SIGTERM"
             deadline = time.time() + 5.0
@@ -1774,6 +1778,34 @@ class TestWorkerProcessTree:
             assert "Agent timed out" in updated["body"]
         finally:
             _cleanup_child_pid(pid_file)
+
+
+def test_zero_agent_timeout_disables_watchdog(bp_dir, worker_slot):
+    class BriefAdapter(MockAdapter):
+        @property
+        def name(self):
+            return "brief-no-timeout"
+
+        def build_argv(self, prompt, model, workspace, bp_dir=None):
+            return [sys.executable, "-c", "import time; time.sleep(0.2); print('finished')"]
+
+    register_adapter("brief-no-timeout", BriefAdapter(output="finished"))
+    layout = _load_layout(bp_dir)
+    layout["slots"][worker_slot]["agent"] = "brief-no-timeout"
+    layout["slots"][worker_slot]["timeout_seconds"] = 0
+    write_json(os.path.join(bp_dir, "layout.json"), layout)
+
+    task = create_task(bp_dir, "No timeout task")
+    assign_task(bp_dir, worker_slot, task["id"])
+    start_worker(bp_dir, worker_slot)
+
+    deadline = time.time() + 3.0
+    updated = read_task(bp_dir, task["id"])
+    while time.time() < deadline and updated["status"] == "in_progress":
+        time.sleep(0.05)
+        updated = read_task(bp_dir, task["id"])
+    assert updated["status"] == "review"
+    assert "Agent timed out" not in updated["body"]
 
 
 class TestPromptAssembly:

@@ -517,6 +517,8 @@ def normalize_worker_slot(raw, *, index, config):
     if type_id == "ai":
         slot["agent"] = str(slot.get("agent") or "claude")
         slot["model"] = normalize_model(slot["agent"], slot.get("model") or "claude-sonnet-4-6")
+        if "timeout_seconds" in slot:
+            slot["timeout_seconds"] = max(0, _safe_int(slot.get("timeout_seconds"), 0))
         slot["expertise_prompt"] = str(slot.get("expertise_prompt") or "")
         slot["trust_mode"] = normalize_trust_mode(slot.get("trust_mode"), default=TRUST_MODE_TRUSTED)
         slot["use_worktree"] = bool(slot.get("use_worktree", False))

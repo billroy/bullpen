@@ -3188,6 +3188,7 @@ const app = createApp({
         :default-provider-colors="defaultProviderColors"
         :active-workspace-id="activeWorkspaceId"
         :last-ai-selection="globalSettings.last_ai_selection"
+        :workspace-agent-timeout-seconds="state.config.agent_timeout_seconds ?? 1200"
         @close="closeWorkerConfig"
         @save="saveWorkerConfig"
         @remove="removeWorker"

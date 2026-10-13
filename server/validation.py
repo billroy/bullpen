@@ -260,6 +260,14 @@ def validate_worker_configure(data, max_slots=100):
     if "max_retries" in fields:
         sanitized["max_retries"] = _int(fields["max_retries"], "max_retries", min_val=0, max_val=10)
         consumed.add("max_retries")
+    if "timeout_seconds" in fields:
+        raw_timeout = fields["timeout_seconds"]
+        if isinstance(raw_timeout, bool) or (
+            isinstance(raw_timeout, float) and not raw_timeout.is_integer()
+        ):
+            raise ValidationError("timeout_seconds must be an integer")
+        sanitized["timeout_seconds"] = _int(fields["timeout_seconds"], "timeout_seconds", min_val=0)
+        consumed.add("timeout_seconds")
     if "use_worktree" in fields:
         sanitized["use_worktree"] = bool(fields["use_worktree"])
         consumed.add("use_worktree")

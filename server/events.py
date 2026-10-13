@@ -57,6 +57,7 @@ from server.usage import (
 )
 from server.model_aliases import normalize_model
 from server.global_settings import last_ai_selection, load_global_settings, remember_ai_selection
+from server.init import DEFAULT_AGENT_TIMEOUT_SECONDS
 from server import workers as worker_mod
 from server import service_worker as service_worker_mod
 from server import values as value_mod
@@ -2228,6 +2229,7 @@ def register_events(socketio, app):
                 "expertise_prompt": profile.get("expertise_prompt", ""),
                 "trust_mode": normalize_trust_mode(fields.get("trust_mode"), default=TRUST_MODE_UNTRUSTED),
                 "max_retries": profile.get("default_max_retries", 1),
+                "timeout_seconds": int(config.get("agent_timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS)),
                 "use_worktree": False,
                 "auto_commit": False,
                 "auto_pr": False,

@@ -126,7 +126,7 @@ function cloneNotificationForm(raw) {
 }
 
 const WorkerConfigModal = {
-  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors', 'activeWorkspaceId', 'lastAiSelection'],
+  props: ['worker', 'slotIndex', 'columns', 'workers', 'gridRows', 'gridCols', 'providerColors', 'defaultProviderColors', 'activeWorkspaceId', 'lastAiSelection', 'workspaceAgentTimeoutSeconds'],
   emits: ['close', 'save', 'remove', 'save-profile'],
   data() {
     return {
@@ -212,7 +212,7 @@ const WorkerConfigModal = {
             // Shell-specific fields
             command: w.command || '',
             cwd: w.cwd || '',
-            timeout_seconds: w.timeout_seconds ?? 60,
+            timeout_seconds: w.timeout_seconds ?? (isAiForm ? (this.workspaceAgentTimeoutSeconds ?? 1200) : 60),
             ticket_delivery: w.ticket_delivery || 'stdin-json',
             env: Array.isArray(w.env) ? w.env.map(e => ({
               key: e.key || '',
@@ -742,6 +742,11 @@ const WorkerConfigModal = {
                 <span class="form-hint">OpenCode model IDs are passed through as <code>provider/model</code>.</span>
               </label>
             </template>
+            <label class="form-label">
+              Timeout (seconds)
+              <input class="form-input" type="number" v-model.number="form.timeout_seconds" min="0" step="1">
+              <span class="form-hint">Use 0 for no timeout. New workers default to the workspace timeout.</span>
+            </label>
           </template>
 
           <!-- Shell-only: command, delivery, cwd, timeout, env -->
@@ -1841,7 +1846,6 @@ const WorkerConfigModal = {
         delete fields.notification;
         delete fields.command;
         delete fields.cwd;
-        delete fields.timeout_seconds;
         delete fields.ticket_delivery;
         delete fields.env;
         delete fields.pre_start;

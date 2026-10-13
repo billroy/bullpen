@@ -46,6 +46,25 @@ def test_legacy_ai_slot_defaults_to_ai_and_saves_type(tmp_workspace):
     assert saved["slots"][0]["type"] == "ai"
 
 
+def test_ai_slot_preserves_explicit_timeout_including_no_timeout(tmp_workspace):
+    bp_dir = init_workspace(tmp_workspace)
+    config = read_json(os.path.join(bp_dir, "config.json"))
+
+    unlimited = normalize_worker_slot(
+        {"type": "ai", "name": "Unlimited", "timeout_seconds": 0},
+        index=0,
+        config=config,
+    )
+    long_running = normalize_worker_slot(
+        {"type": "ai", "name": "Long running", "timeout_seconds": 10000000},
+        index=1,
+        config=config,
+    )
+
+    assert unlimited["timeout_seconds"] == 0
+    assert long_running["timeout_seconds"] == 10000000
+
+
 def test_unknown_worker_type_preserves_unknown_fields_through_configure_and_copy(tmp_workspace):
     bp_dir = init_workspace(tmp_workspace)
     config = read_json(os.path.join(bp_dir, "config.json"))

@@ -178,6 +178,20 @@ class TestWorkerConfigureValidation:
         with pytest.raises(ValidationError, match="must be <="):
             validate_worker_configure({"slot": 0, "fields": {"max_retries": 99}})
 
+    @pytest.mark.parametrize("timeout", [0, 1, 3600, 10_000_000])
+    def test_agent_timeout_accepts_zero_or_any_positive_integer(self, timeout):
+        _, fields = validate_worker_configure({"slot": 0, "fields": {"timeout_seconds": timeout}})
+        assert fields["timeout_seconds"] == timeout
+
+    def test_agent_timeout_rejects_negative_values(self):
+        with pytest.raises(ValidationError, match="timeout_seconds must be >= 0"):
+            validate_worker_configure({"slot": 0, "fields": {"timeout_seconds": -1}})
+
+    @pytest.mark.parametrize("timeout", ["forever", 1.5, True])
+    def test_agent_timeout_rejects_non_integer_values(self, timeout):
+        with pytest.raises(ValidationError, match="timeout_seconds must be an integer"):
+            validate_worker_configure({"slot": 0, "fields": {"timeout_seconds": timeout}})
+
     def test_value_trigger_condition_fields_are_validated(self):
         _, fields = validate_worker_configure({
             "slot": 0,

@@ -980,7 +980,10 @@ def _run_ai_worker(bp_dir, slot_index, socketio, ws_id, expected_task_id=None):
         config = read_json(os.path.join(bp_dir, "config.json"))
     except FileNotFoundError:
         return
-    timeout = config.get("agent_timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS)
+    timeout = worker.get(
+        "timeout_seconds",
+        config.get("agent_timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS),
+    )
 
     argv = adapter.build_argv(prompt, model, agent_cwd, bp_dir=bp_dir)
     argv = harden_agent_argv(agent_name, argv, trust_mode=_worker_trust_mode(worker))
@@ -2096,9 +2099,11 @@ class SubprocessRunner:
             if proc.poll() is None:
                 _terminate_proc(proc)
 
-        timer = threading.Timer(self.timeout, _watchdog)
-        timer.daemon = True
-        timer.start()
+        timer = None
+        if self.timeout > 0:
+            timer = threading.Timer(self.timeout, _watchdog)
+            timer.daemon = True
+            timer.start()
 
         stdout_lines = collections.deque(maxlen=MAX_CAPTURED_LINES)
         stderr_lines = collections.deque(maxlen=MAX_CAPTURED_LINES)
@@ -2198,7 +2203,8 @@ class SubprocessRunner:
             proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             _stop_proc_with_timeout(proc)
-        timer.cancel()
+        if timer is not None:
+            timer.cancel()
         stderr_thread.join(timeout=2)
 
         to_emit = None
