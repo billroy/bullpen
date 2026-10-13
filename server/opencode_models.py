@@ -10,7 +10,7 @@ from server.agents.opencode_adapter import _find_opencode
 
 
 DEFAULT_CACHE_TTL_SECONDS = 300
-DEFAULT_TIMEOUT_SECONDS = 20
+DEFAULT_TIMEOUT_SECONDS = 30
 
 _CACHE = {}
 
