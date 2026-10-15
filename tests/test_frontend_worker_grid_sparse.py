@@ -410,6 +410,17 @@ def test_compact_worker_cards_have_pill_shaped_ends():
     assert "border-radius: 999px;" in compact_header
 
 
+def test_left_pane_worker_roster_matches_compact_worker_pills():
+    css = _read("static/style.css")
+    roster_item = css.split(".roster-item {", 1)[1].split("}", 1)[0]
+    compact_header = css.split(".worker-card--small .worker-card-header {", 1)[1].split("}", 1)[0]
+
+    assert "padding: 4px 10px;" in roster_item
+    assert "padding: 4px 10px;" in compact_header
+    assert "border-radius: 999px;" in roster_item
+    assert "border-radius: 999px;" in compact_header
+
+
 def test_minimap_bounds_clamp_to_a1_origin():
     tab = _read("static/components/BullpenTab.js")
     assert "const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);" in tab
