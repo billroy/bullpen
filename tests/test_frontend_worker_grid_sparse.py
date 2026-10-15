@@ -403,6 +403,13 @@ def test_worker_grid_cards_have_fixed_one_pixel_inset():
     assert ".worker-card.worker-card--small {\n  background: transparent !important;\n  border-color: transparent;\n}" in css
 
 
+def test_compact_worker_cards_have_pill_shaped_ends():
+    css = _read("static/style.css")
+    compact_header = css.split(".worker-card--small .worker-card-header {", 1)[1].split("}", 1)[0]
+
+    assert "border-radius: 999px;" in compact_header
+
+
 def test_minimap_bounds_clamp_to_a1_origin():
     tab = _read("static/components/BullpenTab.js")
     assert "const colMin = Math.max(0, Math.min(b?.colMin ?? 0, visible.colStart) - 2);" in tab

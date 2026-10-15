@@ -2992,7 +2992,7 @@ body.worker-singleton-dragging * {
 .worker-card--small .worker-card-header {
   flex: 1;
   padding: 4px 10px;
-  border-radius: calc(var(--radius-lg) - 1px);
+  border-radius: 999px;
 }
 
 .worker-card.worker-card--small.worker-card--spreadsheet,
